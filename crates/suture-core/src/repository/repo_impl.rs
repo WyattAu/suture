@@ -27,6 +27,7 @@ use crate::engine::apply::{apply_patch_chain, resolve_payload_to_hash, ApplyErro
 use crate::engine::diff::{diff_trees, DiffEntry, DiffType};
 use crate::engine::tree::FileTree;
 use crate::metadata::MetaError;
+use crate::patch::conflict::Conflict;
 use crate::patch::merge::MergeResult;
 use crate::patch::types::{OperationType, Patch, PatchId, TouchSet};
 use std::collections::HashSet;
@@ -66,6 +67,9 @@ pub enum RepoError {
     #[error("nothing to commit")]
     NothingToCommit,
 
+    #[error("merge in progress — resolve conflicts first")]
+    MergeInProgress,
+
     #[error("uncommitted changes would be overwritten (staged: {0})")]
     DirtyWorkingTree(usize),
 
@@ -96,6 +100,8 @@ pub struct Repository {
     author: String,
     /// Parsed ignore patterns.
     ignore_patterns: Vec<String>,
+    /// Pending merge parents (set during a conflicting merge).
+    pending_merge_parents: Vec<PatchId>,
 }
 
 impl Repository {
@@ -152,6 +158,7 @@ impl Repository {
             meta,
             author: author.to_string(),
             ignore_patterns,
+            pending_merge_parents: Vec::new(),
         })
     }
 
@@ -243,6 +250,7 @@ impl Repository {
             meta,
             author,
             ignore_patterns,
+            pending_merge_parents: Vec::new(),
         })
     }
 
@@ -311,11 +319,11 @@ impl Repository {
     pub fn status(&self) -> Result<RepoStatus, RepoError> {
         let working_set = self.meta.working_set()?;
         let branches = self.list_branches();
-        let head = self.dag.head();
+        let head = self.head()?;
 
         Ok(RepoStatus {
-            head_branch: head.as_ref().map(|(name, _)| name.clone()),
-            head_patch: head.as_ref().map(|(_, id)| *id),
+            head_branch: Some(head.0),
+            head_patch: Some(head.1),
             branch_count: branches.len(),
             staged_files: working_set
                 .iter()
@@ -419,7 +427,11 @@ impl Repository {
 
         let (branch_name, head_id) = self.head()?;
 
-        let mut parent_ids = vec![head_id];
+        let mut parent_ids = if self.pending_merge_parents.is_empty() {
+            vec![head_id]
+        } else {
+            std::mem::take(&mut self.pending_merge_parents)
+        };
         let mut last_patch_id = head_id;
 
         for (path, status) in &staged {
@@ -494,6 +506,61 @@ impl Repository {
 
         let tree = apply_patch_chain(&patches, resolve_payload_to_hash)?;
         Ok(tree)
+    }
+
+    /// Sync the working tree to match the current HEAD snapshot.
+    ///
+    /// Compares `old_tree` (the state before the operation) against the
+    /// current HEAD snapshot and applies file additions, modifications,
+    /// deletions, and renames to disk.
+    /// Update the working tree to match the current HEAD snapshot.
+    ///
+    /// Compares `old_tree` (the state before the operation) against the
+    /// current HEAD snapshot and applies file additions, modifications,
+    /// deletions, and renames to disk.
+    pub fn sync_working_tree(&self, old_tree: &FileTree) -> Result<(), RepoError> {
+        let new_tree = self.snapshot_head()?;
+        let diffs = diff_trees(old_tree, &new_tree);
+
+        for entry in &diffs {
+            let full_path = self.root.join(&entry.path);
+            match &entry.diff_type {
+                DiffType::Added | DiffType::Modified => {
+                    if let Some(new_hash) = &entry.new_hash {
+                        let blob = self.cas.get_blob(new_hash)?;
+                        if let Some(parent) = full_path.parent() {
+                            fs::create_dir_all(parent)?;
+                        }
+                        fs::write(&full_path, &blob)?;
+                    }
+                }
+                DiffType::Deleted => {
+                    if full_path.exists() {
+                        fs::remove_file(&full_path)?;
+                    }
+                }
+                DiffType::Renamed { old_path, .. } => {
+                    let old_full = self.root.join(old_path);
+                    if old_full.exists() {
+                        if let Some(parent) = full_path.parent() {
+                            fs::create_dir_all(parent)?;
+                        }
+                        fs::rename(&old_full, &full_path)?;
+                    }
+                }
+            }
+        }
+
+        for (path, _) in old_tree.iter() {
+            if !new_tree.contains(path) {
+                let full_path = self.root.join(path);
+                if full_path.exists() {
+                    let _ = fs::remove_file(&full_path);
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// Checkout a branch, updating the working tree to match its tip state.
@@ -634,7 +701,7 @@ impl Repository {
     /// Revert a commit by creating a new patch that undoes its changes.
     ///
     /// The revert creates inverse patches (Delete for Create, etc.)
-    /// and commits them on top of HEAD.
+    /// and commits them on top of HEAD, then syncs the working tree.
     pub fn revert(
         &mut self,
         patch_id: &PatchId,
@@ -650,9 +717,10 @@ impl Repository {
             .map(|m| m.to_string())
             .unwrap_or_else(|| format!("Revert {}", patch_id));
 
+        let old_tree = self.snapshot_head().unwrap_or_else(|_| FileTree::empty());
+
         match patch.operation_type {
             OperationType::Create | OperationType::Modify => {
-                // Create a Delete patch to undo the change
                 let revert_patch = Patch::new(
                     OperationType::Delete,
                     patch.touch_set.clone(),
@@ -670,11 +738,10 @@ impl Repository {
                 self.dag.update_branch(&branch, revert_id)?;
                 self.meta.set_branch(&branch, &revert_id)?;
 
+                self.sync_working_tree(&old_tree)?;
                 Ok(revert_id)
             }
             OperationType::Delete => {
-                // For a Delete revert, we need the blob from the parent's tree.
-                // Re-create by finding the file in the parent snapshot.
                 if let Some(parent_id) = patch.parent_ids.first() {
                     let parent_tree = self.snapshot(parent_id)?;
                     if let Some(path) = &patch.target_path
@@ -699,6 +766,7 @@ impl Repository {
                         self.dag.update_branch(&branch, revert_id)?;
                         self.meta.set_branch(&branch, &revert_id)?;
 
+                        self.sync_working_tree(&old_tree)?;
                         return Ok(revert_id);
                     }
                 }
@@ -722,6 +790,312 @@ impl Repository {
         let ba = BranchName::new(branch_a)?;
         let bb = BranchName::new(branch_b)?;
         self.dag.merge_branches(&ba, &bb).map_err(RepoError::Dag)
+    }
+
+    /// Execute a merge of `source_branch` into the current HEAD branch.
+    ///
+    /// For clean merges (no conflicts):
+    /// 1. Collect unique patches from both branches (after LCA)
+    /// 2. Apply the source branch's tree onto HEAD's working tree
+    /// 3. Create a merge commit (patch with two parents)
+    /// 4. Update the working tree to reflect the merge result
+    ///
+    /// For merges with conflicts:
+    /// 1. Apply all non-conflicting patches from source
+    /// 2. Return a `MergeExecutionResult` with conflict details
+    /// 3. The caller can then resolve conflicts and commit
+    pub fn execute_merge(
+        &mut self,
+        source_branch: &str,
+    ) -> Result<MergeExecutionResult, RepoError> {
+        if !self.pending_merge_parents.is_empty() {
+            return Err(RepoError::MergeInProgress);
+        }
+
+        let (head_branch, head_id) = self.head()?;
+        let source_bn = BranchName::new(source_branch)?;
+        let source_tip = self
+            .dag
+            .get_branch(&source_bn)
+            .ok_or_else(|| RepoError::BranchNotFound(source_branch.to_string()))?;
+
+        let head_bn = BranchName::new(&head_branch)?;
+
+        let merge_result = self.dag.merge_branches(&head_bn, &source_bn)?;
+
+        if head_id == source_tip {
+            return Ok(MergeExecutionResult {
+                is_clean: true,
+                merged_tree: self.snapshot_head()?,
+                merge_patch_id: None,
+                unresolved_conflicts: Vec::new(),
+                patches_applied: 0,
+            });
+        }
+
+        if merge_result.patches_b_only.is_empty() && merge_result.patches_a_only.is_empty() {
+            return Ok(MergeExecutionResult {
+                is_clean: true,
+                merged_tree: self.snapshot_head()?,
+                merge_patch_id: None,
+                unresolved_conflicts: Vec::new(),
+                patches_applied: 0,
+            });
+        }
+
+        if merge_result.is_clean {
+            self.execute_clean_merge(&head_id, &source_tip, &head_branch, &merge_result)
+        } else {
+            self.execute_conflicting_merge(
+                &head_id,
+                &source_tip,
+                source_branch,
+                &head_branch,
+                &merge_result,
+            )
+        }
+    }
+
+    fn execute_clean_merge(
+        &mut self,
+        head_id: &PatchId,
+        source_tip: &PatchId,
+        head_branch: &str,
+        merge_result: &MergeResult,
+    ) -> Result<MergeExecutionResult, RepoError> {
+        let head_tree = self.snapshot(head_id)?;
+        let source_tree = self.snapshot(source_tip)?;
+        let lca_id = self
+            .dag
+            .lca(head_id, source_tip)
+            .ok_or_else(|| RepoError::Custom("no common ancestor found".to_string()))?;
+        let lca_tree = self.snapshot(&lca_id).unwrap_or_else(|_| FileTree::empty());
+
+        let source_diffs = diff_trees(&lca_tree, &source_tree);
+        let mut merged_tree = head_tree.clone();
+
+        for entry in &source_diffs {
+            let full_path = self.root.join(&entry.path);
+            match &entry.diff_type {
+                DiffType::Added | DiffType::Modified => {
+                    if let Some(new_hash) = &entry.new_hash {
+                        let blob = self.cas.get_blob(new_hash)?;
+                        if let Some(parent) = full_path.parent() {
+                            fs::create_dir_all(parent)?;
+                        }
+                        fs::write(&full_path, &blob)?;
+                        merged_tree.insert(entry.path.clone(), *new_hash);
+                    }
+                }
+                DiffType::Deleted => {
+                    if full_path.exists() {
+                        fs::remove_file(&full_path)?;
+                    }
+                    merged_tree.remove(&entry.path);
+                }
+                DiffType::Renamed { old_path, .. } => {
+                    let old_full = self.root.join(old_path);
+                    if old_full.exists() {
+                        if let Some(parent) = full_path.parent() {
+                            fs::create_dir_all(parent)?;
+                        }
+                        fs::rename(&old_full, &full_path)?;
+                    }
+                    if let Some(old_hash) = entry.old_hash {
+                        merged_tree.remove(old_path);
+                        merged_tree.insert(entry.path.clone(), old_hash);
+                    }
+                }
+            }
+        }
+
+        let merge_patch = Patch::new(
+            OperationType::Merge,
+            TouchSet::empty(),
+            None,
+            vec![],
+            vec![*head_id, *source_tip],
+            self.author.clone(),
+            format!("Merge branch '{}' into {}", source_tip, head_branch),
+        );
+
+        let merge_id = self
+            .dag
+            .add_patch(merge_patch.clone(), vec![*head_id, *source_tip])?;
+        self.meta.store_patch(&merge_patch)?;
+
+        let branch = BranchName::new(head_branch)?;
+        self.dag.update_branch(&branch, merge_id)?;
+        self.meta.set_branch(&branch, &merge_id)?;
+
+        Ok(MergeExecutionResult {
+            is_clean: true,
+            merged_tree,
+            merge_patch_id: Some(merge_id),
+            unresolved_conflicts: Vec::new(),
+            patches_applied: merge_result.patches_b_only.len(),
+        })
+    }
+
+    fn execute_conflicting_merge(
+        &mut self,
+        head_id: &PatchId,
+        source_tip: &PatchId,
+        source_branch: &str,
+        head_branch: &str,
+        merge_result: &MergeResult,
+    ) -> Result<MergeExecutionResult, RepoError> {
+        let head_tree = self.snapshot(head_id)?;
+        let source_tree = self.snapshot(source_tip)?;
+
+        let lca_id = self
+            .dag
+            .lca(head_id, source_tip)
+            .ok_or_else(|| RepoError::Custom("no common ancestor found".to_string()))?;
+        let lca_tree = self.snapshot(&lca_id).unwrap_or_else(|_| FileTree::empty());
+
+        let conflicting_patch_ids: HashSet<PatchId> = merge_result
+            .conflicts
+            .iter()
+            .flat_map(|c| [c.patch_a_id, c.patch_b_id])
+            .collect();
+
+        let mut merged_tree = head_tree.clone();
+        let mut patches_applied = 0;
+
+        for entry in &merge_result.patches_b_only {
+            if conflicting_patch_ids.contains(entry) {
+                continue;
+            }
+            if let Some(patch) = self.dag.get_patch(entry) {
+                if patch.is_identity() || patch.operation_type == OperationType::Merge {
+                    continue;
+                }
+                if let Some(path) = &patch.target_path {
+                    let full_path = self.root.join(path);
+                    match patch.operation_type {
+                        OperationType::Create | OperationType::Modify => {
+                            if let Some(blob_hash) = resolve_payload_to_hash(patch)
+                                && self.cas.has_blob(&blob_hash)
+                            {
+                                let blob = self.cas.get_blob(&blob_hash)?;
+                                if let Some(parent) = full_path.parent() {
+                                    fs::create_dir_all(parent)?;
+                                }
+                                fs::write(&full_path, &blob)?;
+                                merged_tree.insert(path.clone(), blob_hash);
+                            }
+                        }
+                        OperationType::Delete => {
+                            if full_path.exists() {
+                                fs::remove_file(&full_path)?;
+                            }
+                            merged_tree.remove(path);
+                        }
+                        _ => {}
+                    }
+                }
+                patches_applied += 1;
+            }
+        }
+
+        let mut unresolved_conflicts = Vec::new();
+
+        for conflict in &merge_result.conflicts {
+            let conflict_info =
+                self.build_conflict_info(conflict, &head_tree, &source_tree, &lca_tree);
+            if let Some(info) = conflict_info {
+                let full_path = self.root.join(&info.path);
+                if let Some(parent) = full_path.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                let conflict_content =
+                    self.write_conflict_markers(&info, source_branch, head_branch)?;
+                fs::write(&full_path, conflict_content.as_bytes())?;
+                let hash = self.cas.put_blob(conflict_content.as_bytes())?;
+                merged_tree.insert(info.path.clone(), hash);
+                unresolved_conflicts.push(info);
+            }
+        }
+
+        self.pending_merge_parents = vec![*head_id, *source_tip];
+
+        Ok(MergeExecutionResult {
+            is_clean: false,
+            merged_tree,
+            merge_patch_id: None,
+            unresolved_conflicts,
+            patches_applied,
+        })
+    }
+
+    fn build_conflict_info(
+        &self,
+        conflict: &Conflict,
+        head_tree: &FileTree,
+        source_tree: &FileTree,
+        lca_tree: &FileTree,
+    ) -> Option<ConflictInfo> {
+        let patch_a = self.dag.get_patch(&conflict.patch_a_id)?;
+        let patch_b = self.dag.get_patch(&conflict.patch_b_id)?;
+
+        let path = patch_a
+            .target_path
+            .clone()
+            .or_else(|| patch_b.target_path.clone())?;
+
+        let our_content_hash = head_tree.get(&path).copied();
+        let their_content_hash = source_tree.get(&path).copied();
+        let base_content_hash = lca_tree.get(&path).copied();
+
+        Some(ConflictInfo {
+            path,
+            our_patch_id: conflict.patch_a_id,
+            their_patch_id: conflict.patch_b_id,
+            our_content_hash,
+            their_content_hash,
+            base_content_hash,
+        })
+    }
+
+    fn write_conflict_markers(
+        &self,
+        info: &ConflictInfo,
+        #[allow(unused_variables)] source_branch: &str,
+        #[allow(unused_variables)] head_branch: &str,
+    ) -> Result<String, RepoError> {
+        let our_content = match info.our_content_hash {
+            Some(hash) => String::from_utf8(self.cas.get_blob(&hash)?).unwrap_or_default(),
+            None => String::new(),
+        };
+
+        let their_content = match info.their_content_hash {
+            Some(hash) => String::from_utf8(self.cas.get_blob(&hash)?).unwrap_or_default(),
+            None => String::new(),
+        };
+
+        let base_content = match info.base_content_hash {
+            Some(hash) => Some(String::from_utf8(self.cas.get_blob(&hash)?).unwrap_or_default()),
+            None => None,
+        };
+
+        let merged = three_way_merge(
+            base_content.as_deref(),
+            &our_content,
+            &their_content,
+        );
+
+        match merged {
+            Ok(content) => Ok(content),
+            Err(conflict_lines) => {
+                let mut result = String::new();
+                for line in conflict_lines {
+                    result.push_str(&line);
+                    result.push('\n');
+                }
+                Ok(result)
+            }
+        }
     }
 
     // =========================================================================
@@ -780,6 +1154,46 @@ impl Repository {
     /// Get a reference to the CAS.
     pub fn cas(&self) -> &BlobStore {
         &self.cas
+    }
+
+    // =========================================================================
+    // Remote Operations
+    // =========================================================================
+
+    /// Add a remote Hub.
+    /// Stores the remote URL in metadata config as "remote.<name>.url".
+    pub fn add_remote(&self, name: &str, url: &str) -> Result<(), RepoError> {
+        let key = format!("remote.{}.url", name);
+        self.meta.set_config(&key, url).map_err(RepoError::Meta)
+    }
+
+    /// List configured remotes.
+    pub fn list_remotes(&self) -> Result<Vec<(String, String)>, RepoError> {
+        let mut remotes = Vec::new();
+        for (key, value) in self.meta.list_config()? {
+            if let Some(name) = key.strip_prefix("remote.").and_then(|n| n.strip_suffix(".url")) {
+                remotes.push((name.to_string(), value));
+            }
+        }
+        Ok(remotes)
+    }
+
+    /// Get the URL for a remote.
+    pub fn get_remote_url(&self, name: &str) -> Result<String, RepoError> {
+        let key = format!("remote.{}.url", name);
+        self.meta
+            .get_config(&key)
+            .unwrap_or(None)
+            .ok_or_else(|| RepoError::Custom(format!("remote '{}' not found", name)))
+    }
+
+    /// Get all patches in the DAG as a Vec.
+    pub fn all_patches(&self) -> Vec<Patch> {
+        self.dag
+            .patch_ids()
+            .iter()
+            .filter_map(|id| self.dag.get_patch(id).cloned())
+            .collect()
     }
 }
 
@@ -903,6 +1317,70 @@ pub struct RepoStatus {
     pub staged_files: Vec<(String, FileStatus)>,
     /// Total number of patches in the DAG.
     pub patch_count: usize,
+}
+
+// =============================================================================
+// Merge Execution Types
+// =============================================================================
+
+/// Result of executing a merge.
+#[derive(Debug, Clone)]
+pub struct MergeExecutionResult {
+    /// Whether the merge was fully clean (no conflicts).
+    pub is_clean: bool,
+    /// The resulting file tree after the merge.
+    pub merged_tree: FileTree,
+    /// The merge commit patch ID (set if is_clean or all conflicts resolved).
+    pub merge_patch_id: Option<PatchId>,
+    /// Unresolved conflicts (empty if is_clean).
+    pub unresolved_conflicts: Vec<ConflictInfo>,
+    /// Number of patches applied from the source branch.
+    pub patches_applied: usize,
+}
+
+/// Information about an unresolved merge conflict.
+#[derive(Debug, Clone)]
+pub struct ConflictInfo {
+    /// The path where the conflict occurs.
+    pub path: String,
+    /// The patch ID from the current branch.
+    pub our_patch_id: PatchId,
+    /// The patch ID from the source branch.
+    pub their_patch_id: PatchId,
+    /// Our version of the file (blob hash).
+    pub our_content_hash: Option<Hash>,
+    /// Their version of the file (blob hash).
+    pub their_content_hash: Option<Hash>,
+    /// The base version of the file (blob hash from LCA).
+    pub base_content_hash: Option<Hash>,
+}
+
+/// Simple whole-file three-way merge.
+///
+/// Returns `Ok(merged_content)` if clean, `Err(conflict_marker_lines)` if conflicts.
+fn three_way_merge(
+    base: Option<&str>,
+    ours: &str,
+    theirs: &str,
+) -> Result<String, Vec<String>> {
+    match base {
+        Some(b) if b == ours => Ok(theirs.to_string()),
+        Some(b) if b == theirs => Ok(ours.to_string()),
+        _ if ours == theirs => Ok(ours.to_string()),
+        _ => {
+            let mut lines = Vec::new();
+            lines.push("<<<<<<< ours (HEAD)".to_string());
+            for line in ours.lines() {
+                lines.push(line.to_string());
+            }
+            lines.push("=======".to_string());
+            for line in theirs.lines() {
+                lines.push(line.to_string());
+            }
+            lines.push(">>>>>>> theirs".to_string());
+            Err(lines)
+        }
+    }
 }
 
 // =============================================================================
@@ -1119,13 +1597,12 @@ mod tests {
         repo.add("test.txt").unwrap();
         let commit_id = repo.commit("add file").unwrap();
 
-        // Revert the commit
+        // Revert the commit — should remove the file from disk
         repo.revert(&commit_id, None).unwrap();
 
-        // The file should still exist on disk (revert only adds a patch to the DAG)
-        // but the snapshot should no longer include it
         let tree = repo.snapshot_head().unwrap();
         assert!(!tree.contains("test.txt"));
+        assert!(!test_file.exists(), "revert should remove the file from the working tree");
     }
 
     #[test]
@@ -1213,5 +1690,152 @@ mod tests {
         let count = repo.add_all().unwrap();
         assert_eq!(count, 2);
         Ok(())
+    }
+
+    #[test]
+    fn test_execute_merge_clean() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut repo = Repository::init(dir.path(), "alice").unwrap();
+
+        fs::write(dir.path().join("base.txt"), "base").unwrap();
+        repo.add("base.txt").unwrap();
+        repo.commit("add base").unwrap();
+
+        repo.create_branch("feature", None).unwrap();
+
+        fs::write(dir.path().join("main_file.txt"), "main content").unwrap();
+        repo.add("main_file.txt").unwrap();
+        repo.commit("add main file").unwrap();
+
+        repo.checkout("feature").unwrap();
+
+        fs::write(dir.path().join("feat_file.txt"), "feature content").unwrap();
+        repo.add("feat_file.txt").unwrap();
+        repo.commit("add feature file").unwrap();
+
+        let result = repo.execute_merge("main").unwrap();
+        assert!(result.is_clean);
+        assert!(result.merge_patch_id.is_some());
+        assert!(result.unresolved_conflicts.is_empty());
+        assert!(dir.path().join("main_file.txt").exists());
+        assert!(dir.path().join("feat_file.txt").exists());
+        assert!(dir.path().join("base.txt").exists());
+
+        let log = repo.log(None).unwrap();
+        let merge_patch = log.iter().find(|p| p.operation_type == OperationType::Merge);
+        assert!(merge_patch.is_some());
+        assert_eq!(merge_patch.unwrap().parent_ids.len(), 2);
+    }
+
+    #[test]
+    fn test_execute_merge_conflicting() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut repo = Repository::init(dir.path(), "alice").unwrap();
+
+        fs::write(dir.path().join("shared.txt"), "original").unwrap();
+        repo.add("shared.txt").unwrap();
+        repo.commit("add shared").unwrap();
+
+        repo.create_branch("feature", None).unwrap();
+
+        fs::write(dir.path().join("shared.txt"), "main version").unwrap();
+        repo.add("shared.txt").unwrap();
+        repo.commit("modify on main").unwrap();
+
+        repo.checkout("feature").unwrap();
+
+        fs::write(dir.path().join("shared.txt"), "feature version").unwrap();
+        repo.add("shared.txt").unwrap();
+        repo.commit("modify on feature").unwrap();
+
+        let result = repo.execute_merge("main").unwrap();
+        assert!(!result.is_clean);
+        assert!(result.merge_patch_id.is_none());
+        assert_eq!(result.unresolved_conflicts.len(), 1);
+        assert_eq!(result.unresolved_conflicts[0].path, "shared.txt");
+
+        let content = fs::read_to_string(dir.path().join("shared.txt")).unwrap();
+        assert!(content.contains("<<<<<<< ours (HEAD)"));
+        assert!(content.contains("main version"));
+        assert!(content.contains("feature version"));
+        assert!(content.contains(">>>>>>> theirs"));
+    }
+
+    #[test]
+    fn test_execute_merge_fast_forward() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut repo = Repository::init(dir.path(), "alice").unwrap();
+
+        fs::write(dir.path().join("base.txt"), "base").unwrap();
+        repo.add("base.txt").unwrap();
+        repo.commit("add base").unwrap();
+
+        repo.create_branch("feature", None).unwrap();
+
+        repo.checkout("feature").unwrap();
+        fs::write(dir.path().join("new_file.txt"), "new content").unwrap();
+        repo.add("new_file.txt").unwrap();
+        repo.commit("add new file on feature").unwrap();
+
+        repo.checkout("main").unwrap();
+
+        let result = repo.execute_merge("feature").unwrap();
+        assert!(result.is_clean);
+        assert!(dir.path().join("new_file.txt").exists());
+    }
+
+    #[test]
+    fn test_resolve_merge_conflict() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut repo = Repository::init(dir.path(), "alice").unwrap();
+
+        fs::write(dir.path().join("shared.txt"), "original").unwrap();
+        repo.add("shared.txt").unwrap();
+        repo.commit("add shared").unwrap();
+
+        repo.create_branch("feature", None).unwrap();
+
+        fs::write(dir.path().join("shared.txt"), "main version").unwrap();
+        repo.add("shared.txt").unwrap();
+        repo.commit("modify on main").unwrap();
+
+        repo.checkout("feature").unwrap();
+
+        fs::write(dir.path().join("shared.txt"), "feature version").unwrap();
+        repo.add("shared.txt").unwrap();
+        repo.commit("modify on feature").unwrap();
+
+        let _result = repo.execute_merge("main").unwrap();
+
+        fs::write(dir.path().join("shared.txt"), "resolved content").unwrap();
+        repo.add("shared.txt").unwrap();
+        let commit_id = repo.commit("resolve merge conflict").unwrap();
+
+        assert!(repo.pending_merge_parents.is_empty());
+
+        let log = repo.log(None).unwrap();
+        let resolve_patch = log.iter().find(|p| p.id == commit_id).unwrap();
+        assert_eq!(resolve_patch.parent_ids.len(), 2);
+    }
+
+    #[test]
+    fn test_three_way_merge() {
+        let ours = "line1\nline2-modified\nline3";
+        let theirs = "line1\nline2-modified\nline3";
+        let result = three_way_merge(Some("line1\nline2\nline3"), ours, theirs);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), ours);
+
+        let result = three_way_merge(Some("base"), "base", "changed");
+        assert_eq!(result.unwrap(), "changed");
+
+        let result = three_way_merge(Some("base"), "changed", "base");
+        assert_eq!(result.unwrap(), "changed");
+
+        let result = three_way_merge(None, "ours content", "theirs content");
+        assert!(result.is_err());
+        let lines = result.unwrap_err();
+        assert!(lines[0].contains("<<<<<<<"));
+        assert!(lines.last().unwrap().contains(">>>>>>>"));
     }
 }

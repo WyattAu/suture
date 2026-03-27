@@ -367,6 +367,22 @@ impl MetadataStore {
         Ok(())
     }
 
+    /// List all config key-value pairs.
+    pub fn list_config(&self) -> Result<Vec<(String, String)>, MetaError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT key, value FROM config ORDER BY key")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        let mut result = Vec::new();
+        for row in rows {
+            let Ok(pair) = row else { continue };
+            result.push(pair);
+        }
+        Ok(result)
+    }
+
     /// Get a configuration value.
     pub fn get_config(&self, key: &str) -> Result<Option<String>, MetaError> {
         let result = self.conn.query_row(

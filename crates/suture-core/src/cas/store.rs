@@ -134,6 +134,32 @@ impl BlobStore {
         Ok(hash)
     }
 
+    /// Store a blob with an explicit hash (used when receiving blobs from a remote).
+    ///
+    /// Verifies the data matches the expected hash before storing.
+    pub fn put_blob_with_hash(&self, data: &[u8], expected_hash: &Hash) -> Result<(), CasError> {
+        let blob_path = self.blob_path(expected_hash);
+
+        if blob_path.exists() {
+            return Ok(());
+        }
+
+        hasher::verify_hash(data, expected_hash)?;
+
+        if let Some(parent) = blob_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        if self.compress {
+            let compressed = compressor::compress(data, self.compression_level)?;
+            fs::write(&blob_path, &compressed)?;
+        } else {
+            fs::write(&blob_path, data)?;
+        }
+
+        Ok(())
+    }
+
     /// Retrieve a blob by its BLAKE3 hash.
     ///
     /// Decompresses if necessary and verifies the hash of the result.

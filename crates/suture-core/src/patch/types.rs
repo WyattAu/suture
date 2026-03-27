@@ -194,6 +194,32 @@ impl Patch {
         patch
     }
 
+    /// Create a patch with an explicit ID (used by Hub when reconstructing from proto/network).
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_id(
+        id: Hash,
+        operation_type: OperationType,
+        touch_set: TouchSet,
+        target_path: Option<String>,
+        payload: Vec<u8>,
+        parent_ids: Vec<PatchId>,
+        author: String,
+        message: String,
+        timestamp: u64,
+    ) -> Self {
+        Self {
+            id,
+            operation_type,
+            touch_set,
+            target_path,
+            payload,
+            parent_ids,
+            author,
+            message,
+            timestamp,
+        }
+    }
+
     /// Create an identity (no-op) patch.
     pub fn identity(parent: PatchId, author: String) -> Self {
         Self::new(
