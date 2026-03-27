@@ -1,0 +1,100 @@
+[[interface]]
+id = "IF-CAS-001"
+name = "Content Addressable Storage"
+version = "1.0.0"
+provider = "COMP-CAS-001"
+consumers = ["COMP-PATCH-001", "COMP-META-001", "COMP-CLI-001"]
+description = "Content-addressable blob storage with BLAKE3 hashing and Zstd compression"
+
+[[interface.operation]]
+name = "put_blob"
+description = "Store a blob, returning its BLAKE3 hash. Deduplicates if already present."
+
+[[interface.operation.parameter]]
+name = "data"
+type = "Vec<u8>"
+description = "Raw blob data to store"
+direction = "in"
+
+[[interface.operation.return]]
+type = "Result<Hash, CasError>"
+description = "BLAKE3 hash of the stored blob"
+
+[interface.operation.complexity]
+time = "O(n) where n = len(data)"
+space = "O(n) for compression buffer"
+
+[[interface.operation.precondition]]
+id = "PRE-CAS-001"
+expression = "data.len() > 0 || allow_empty"
+enforcement = "validate"
+error_code = "EMPTY_BLOB"
+error_message = "Blob data must not be empty"
+
+[[interface.operation.postcondition]]
+id = "POST-CAS-001"
+expression = "exists blob at hash H(data) in storage"
+enforcement = "verify"
+
+[[interface.operation]]
+name = "get_blob"
+description = "Retrieve a blob by its BLAKE3 hash, decompressing if necessary."
+
+[[interface.operation.parameter]]
+name = "hash"
+type = "Hash"
+description = "BLAKE3 hash of the desired blob"
+direction = "in"
+
+[[interface.operation.return]]
+type = "Result<Vec<u8>, CasError>"
+description = "Decompressed blob data"
+
+[interface.operation.complexity]
+time = "O(n) where n = blob size"
+space = "O(n) for decompression buffer"
+
+[[interface.operation.precondition]]
+id = "PRE-CAS-002"
+expression = "hash is valid 32-byte BLAKE3 hash"
+enforcement = "validate"
+error_code = "INVALID_HASH"
+
+[[interface.operation.postcondition]]
+id = "POST-CAS-002"
+expression = "H(result) == hash"
+enforcement = "assert"
+
+[[interface.operation]]
+name = "has_blob"
+description = "Check if a blob exists in the store."
+
+[[interface.operation.parameter]]
+name = "hash"
+type = "Hash"
+direction = "in"
+
+[[interface.operation.return]]
+type = "bool"
+
+[interface.operation.complexity]
+time = "O(1) filesystem stat"
+space = "O(1)"
+
+[[interface.operation]]
+name = "delete_blob"
+description = "Remove a blob from the store. Fails if blob is referenced by a patch."
+
+[[interface.operation.parameter]]
+name = "hash"
+type = "Hash"
+direction = "in"
+
+[[interface.operation.return]]
+type = "Result<(), CasError>"
+
+[[interface.operation.precondition]]
+id = "PRE-CAS-003"
+expression = "blob is not referenced by any patch in the DAG"
+enforcement = "validate"
+error_code = "BLOB_IN_USE"

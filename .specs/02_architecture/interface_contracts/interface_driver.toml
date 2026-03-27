@@ -1,0 +1,85 @@
+[[interface]]
+id = "IF-DRIVER-001"
+name = "SutureDriver SDK"
+version = "1.0.0"
+provider = "COMP-DRIVER-001"
+consumers = ["COMP-CLI-001", "suture-driver-otio (external)"]
+description = "Trait for implementing semantic versioning support for specific file formats"
+
+[[interface.operation]]
+name = "name"
+description = "Return the driver's name."
+return_type = "&str"
+
+[[interface.operation]]
+name = "supported_extensions"
+description = "Return file extensions this driver handles."
+return_type = "&[&str]"
+
+[[interface.operation]]
+name = "serialize"
+description = "Parse a file into a sequence of semantic patches."
+
+[[interface.operation.parameter]]
+name = "path"
+type = "&Path"
+direction = "in"
+
+[[interface.operation.return]]
+type = "Result<Vec<Patch>, DriverError>"
+
+[[interface.operation.precondition]]
+id = "PRE-DRV-001"
+expression = "file exists at path"
+enforcement = "validate"
+error_code = "FILE_NOT_FOUND"
+
+[[interface.operation.precondition]]
+id = "PRE-DRV-002"
+expression = "file extension is in supported_extensions()"
+enforcement = "validate"
+error_code = "UNSUPPORTED_FORMAT"
+
+[[interface.operation]]
+name = "deserialize"
+description = "Apply a sequence of patches to produce a file."
+
+[[interface.operation.parameter]]
+name = "patches"
+type = "&[Patch]"
+direction = "in"
+[[interface.operation.parameter]]
+name = "target"
+type = "&Path"
+direction = "in"
+
+[[interface.operation.return]]
+type = "Result<(), DriverError>"
+
+[[interface.operation]]
+name = "touch_set"
+description = "Compute the set of addresses touched by a patch."
+
+[[interface.operation.parameter]]
+name = "patch"
+type = "&Patch"
+direction = "in"
+
+[[interface.operation.return]]
+type = "Result<Vec<String>, DriverError>"
+
+[[interface.operation]]
+name = "visual_diff"
+description = "Generate a visual representation of the difference between two patch states."
+
+[[interface.operation.parameter]]
+name = "base_patches"
+type = "&[Patch]"
+direction = "in"
+[[interface.operation.parameter]]
+name = "other_patches"
+type = "&[Patch]"
+direction = "in"
+
+[[interface.operation.return]]
+type = "Result<VisualDiff, DriverError>"

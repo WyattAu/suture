@@ -1,0 +1,340 @@
+//! Core patch types.
+//!
+//! A `Patch` represents a semantic operation on a project state. Each patch has:
+//! - A unique identifier (BLAKE3 hash of its content)
+//! - A set of parent patch IDs (typically one, two for merge commits)
+//! - An operation type and payload
+//! - A touch set (the addresses/resources this patch modifies)
+//! - Metadata (timestamp, author, message)
+
+use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
+use std::time::{SystemTime, UNIX_EPOCH};
+use suture_common::Hash;
+
+/// Unique identifier for a patch (BLAKE3 hash of serialized patch content).
+pub type PatchId = Hash;
+
+/// The type of operation a patch represents.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum OperationType {
+    /// Create a new file or resource.
+    Create,
+    /// Delete a file or resource.
+    Delete,
+    /// Modify the content of a file or resource.
+    Modify,
+    /// Move/rename a file or resource.
+    Move,
+    /// Update metadata (permissions, timestamps, etc.).
+    Metadata,
+    /// A merge commit (combines two or more parent patches).
+    Merge,
+    /// No-op / identity patch.
+    Identity,
+}
+
+impl std::fmt::Display for OperationType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OperationType::Create => write!(f, "create"),
+            OperationType::Delete => write!(f, "delete"),
+            OperationType::Modify => write!(f, "modify"),
+            OperationType::Move => write!(f, "move"),
+            OperationType::Metadata => write!(f, "metadata"),
+            OperationType::Merge => write!(f, "merge"),
+            OperationType::Identity => write!(f, "identity"),
+        }
+    }
+}
+
+/// A touch set — the set of addresses/resources that a patch modifies.
+///
+/// Touch sets are the basis for commutativity detection:
+/// two patches commute if and only if their touch sets are disjoint.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TouchSet {
+    inner: HashSet<String>,
+}
+
+impl TouchSet {
+    /// Create an empty touch set (identity patch).
+    pub fn empty() -> Self {
+        Self {
+            inner: HashSet::new(),
+        }
+    }
+
+    /// Create a touch set from a single address.
+    pub fn single(addr: impl Into<String>) -> Self {
+        let mut set = HashSet::new();
+        set.insert(addr.into());
+        Self { inner: set }
+    }
+
+    /// Create a touch set from a list of addresses.
+    pub fn from_addrs(addrs: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        Self {
+            inner: addrs.into_iter().map(Into::into).collect(),
+        }
+    }
+
+    /// Check if this touch set is empty.
+    pub fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
+    /// Check if this touch set intersects with another.
+    pub fn intersects(&self, other: &TouchSet) -> bool {
+        self.inner.intersection(&other.inner).next().is_some()
+    }
+
+    /// Get the intersection of two touch sets.
+    pub fn intersection(&self, other: &TouchSet) -> TouchSet {
+        TouchSet {
+            inner: self.inner.intersection(&other.inner).cloned().collect(),
+        }
+    }
+
+    /// Get the number of addresses in this touch set.
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    /// Iterate over the addresses in this touch set.
+    pub fn iter(&self) -> impl Iterator<Item = &String> {
+        self.inner.iter()
+    }
+
+    /// Add an address to the touch set.
+    pub fn insert(&mut self, addr: impl Into<String>) {
+        self.inner.insert(addr.into());
+    }
+
+    /// Get all addresses as a sorted Vec.
+    pub fn addresses(&self) -> Vec<String> {
+        let mut addrs: Vec<String> = self.inner.iter().cloned().collect();
+        addrs.sort();
+        addrs
+    }
+
+    /// Check if the touch set contains a specific address.
+    pub fn contains(&self, addr: &str) -> bool {
+        self.inner.contains(addr)
+    }
+}
+
+/// A patch — the fundamental unit of change in Suture.
+///
+/// A patch transforms a project state by modifying a set of addresses
+/// (its "touch set"). Patches are immutable once created.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Patch {
+    /// Unique identifier (BLAKE3 hash of patch content).
+    pub id: PatchId,
+
+    /// Parent patch IDs. Typically one parent; merge patches have two.
+    pub parent_ids: Vec<PatchId>,
+
+    /// The type of operation this patch performs.
+    pub operation_type: OperationType,
+
+    /// The set of addresses this patch modifies.
+    /// Used for commutativity and conflict detection.
+    pub touch_set: TouchSet,
+
+    /// The target file path (if applicable).
+    pub target_path: Option<String>,
+
+    /// The operation payload (serialized operation data).
+    /// Format depends on the operation type and the driver.
+    pub payload: Vec<u8>,
+
+    /// Creation timestamp (Unix epoch seconds).
+    pub timestamp: u64,
+
+    /// Author identifier.
+    pub author: String,
+
+    /// Human-readable description of the change.
+    pub message: String,
+}
+
+impl Patch {
+    /// Create a new patch.
+    pub fn new(
+        operation_type: OperationType,
+        touch_set: TouchSet,
+        target_path: Option<String>,
+        payload: Vec<u8>,
+        parent_ids: Vec<PatchId>,
+        author: String,
+        message: String,
+    ) -> Self {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+
+        // Build the patch without ID first, then compute ID from content
+        let mut patch = Self {
+            id: Hash::ZERO, // Placeholder
+            parent_ids,
+            operation_type,
+            touch_set,
+            target_path,
+            payload,
+            timestamp,
+            author,
+            message,
+        };
+
+        // Compute ID from the patch's content (everything except the ID itself)
+        patch.id = patch.compute_id();
+        patch
+    }
+
+    /// Create an identity (no-op) patch.
+    pub fn identity(parent: PatchId, author: String) -> Self {
+        Self::new(
+            OperationType::Identity,
+            TouchSet::empty(),
+            None,
+            Vec::new(),
+            vec![parent],
+            author,
+            "identity".to_string(),
+        )
+    }
+
+    /// Compute the BLAKE3 hash of this patch's content.
+    ///
+    /// The hash is computed over all fields except the ID itself,
+    /// providing content-addressed patch identification.
+    fn compute_id(&self) -> Hash {
+        use crate::cas::hasher::hash_with_context;
+        let data = serde_json::to_vec(&PatchForHash {
+            parent_ids: &self.parent_ids,
+            operation_type: &self.operation_type,
+            touch_set: &self.touch_set,
+            target_path: &self.target_path,
+            payload: &self.payload,
+            timestamp: self.timestamp,
+            author: &self.author,
+            message: &self.message,
+        })
+        .unwrap_or_default();
+        hash_with_context("suture-patch", &data)
+    }
+
+    /// Check if this is an identity (no-op) patch.
+    pub fn is_identity(&self) -> bool {
+        self.operation_type == OperationType::Identity && self.touch_set.is_empty()
+    }
+}
+
+/// Helper struct for serializing a patch for hashing (excludes the ID field).
+#[derive(Serialize)]
+struct PatchForHash<'a> {
+    parent_ids: &'a Vec<PatchId>,
+    operation_type: &'a OperationType,
+    touch_set: &'a TouchSet,
+    target_path: &'a Option<String>,
+    payload: &'a Vec<u8>,
+    timestamp: u64,
+    author: &'a String,
+    message: &'a String,
+}
+
+/// A general operation that can be applied to a state.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Operation {
+    /// The operation type.
+    pub op_type: OperationType,
+    /// The file/resource path this operation targets.
+    pub path: String,
+    /// The addresses this operation modifies (for conflict detection).
+    pub addresses: Vec<String>,
+    /// The operation data (format-specific).
+    pub data: Vec<u8>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_test_patch(addr: &str, author: &str) -> Patch {
+        Patch::new(
+            OperationType::Modify,
+            TouchSet::single(addr),
+            Some(format!("file_{}", addr)),
+            vec![],
+            vec![],
+            author.to_string(),
+            format!("edit {}", addr),
+        )
+    }
+
+    #[test]
+    fn test_patch_deterministic_id() {
+        let p1 = make_test_patch("A1", "alice");
+        let p2 = make_test_patch("A1", "alice");
+        assert_eq!(p1.id, p2.id, "Same patch content must produce same ID");
+    }
+
+    #[test]
+    fn test_patch_different_id() {
+        let p1 = make_test_patch("A1", "alice");
+        let p2 = make_test_patch("B1", "alice");
+        assert_ne!(p1.id, p2.id, "Different patches must have different IDs");
+    }
+
+    #[test]
+    fn test_touch_set_empty() {
+        let ts = TouchSet::empty();
+        assert!(ts.is_empty());
+        assert_eq!(ts.len(), 0);
+    }
+
+    #[test]
+    fn test_touch_set_intersects() {
+        let ts1 = TouchSet::from_addrs(["A1", "B1", "C1"]);
+        let ts2 = TouchSet::from_addrs(["C1", "D1", "E1"]);
+        let ts3 = TouchSet::from_addrs(["X1", "Y1"]);
+
+        assert!(
+            ts1.intersects(&ts2),
+            "A1,B1,C1 and C1,D1,E1 should intersect at C1"
+        );
+        assert!(
+            !ts1.intersects(&ts3),
+            "A1,B1,C1 and X1,Y1 should not intersect"
+        );
+    }
+
+    #[test]
+    fn test_touch_set_intersection() {
+        let ts1 = TouchSet::from_addrs(["A1", "B1", "C1"]);
+        let ts2 = TouchSet::from_addrs(["C1", "D1"]);
+        let intersection = ts1.intersection(&ts2);
+        assert_eq!(intersection.len(), 1);
+        assert!(intersection.contains("C1"));
+    }
+
+    #[test]
+    fn test_identity_patch() {
+        let parent = Hash::from_hex(&"0".repeat(64)).unwrap();
+        let id = Patch::identity(parent, "alice".to_string());
+        assert!(id.is_identity());
+        assert!(id.touch_set.is_empty());
+    }
+
+    #[test]
+    fn test_patch_serialization_roundtrip() {
+        let patch = make_test_patch("X1", "bob");
+        let json = serde_json::to_string(&patch).unwrap();
+        let deserialized: Patch = serde_json::from_str(&json).unwrap();
+        assert_eq!(patch.id, deserialized.id);
+        assert_eq!(patch.touch_set, deserialized.touch_set);
+    }
+}

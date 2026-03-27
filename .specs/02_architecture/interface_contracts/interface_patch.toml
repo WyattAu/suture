@@ -1,0 +1,86 @@
+[[interface]]
+id = "IF-PATCH-001"
+name = "Patch Algebra Engine"
+version = "1.0.0"
+provider = "COMP-PATCH-001"
+consumers = ["COMP-DAG-001", "COMP-DRIVER-001", "COMP-CLI-001"]
+description = "Patch creation, commutativity checking, merging, and conflict detection"
+
+[[interface.operation]]
+name = "commute"
+description = "Check if two patches commute (can be applied in either order)."
+
+[[interface.operation.parameter]]
+name = "patch_a"
+type = "&Patch"
+direction = "in"
+[[interface.operation.parameter]]
+name = "patch_b"
+type = "&Patch"
+direction = "in"
+
+[[interface.operation.return]]
+type = "CommuteResult"
+
+[interface.operation.complexity]
+time = "O(|T(a)| + |T(b)|) where T is touch set"
+space = "O(1)"
+
+[[interface.operation.postcondition]]
+id = "POST-PATCH-001"
+expression = "if result == CommuteResult::Commutes then T(a) ∩ T(b) = ∅"
+enforcement = "assert"
+
+[[interface.operation]]
+name = "merge"
+description = "Three-way merge: compute the merged patch set from base and two branches."
+
+[[interface.operation.parameter]]
+name = "base_patches"
+type = "&[Patch]"
+direction = "in"
+[[interface.operation.parameter]]
+name = "branch_a_patches"
+type = "&[Patch]"
+direction = "in"
+[[interface.operation.parameter]]
+name = "branch_b_patches"
+type = "&[Patch]"
+direction = "in"
+
+[[interface.operation.return]]
+type = "Result<MergeResult, MergeError>"
+
+[interface.operation.complexity]
+time = "O(|A_unique| × |B_unique|) naive; O((|A|+|B|) × log(max_T)) indexed"
+space = "O(|A_unique| + |B_unique| + conflicts)"
+
+[[interface.operation.postcondition]]
+id = "POST-PATCH-002"
+expression = "result.merged contains all non-conflicting patches from both branches"
+enforcement = "verify"
+
+[[interface.operation.postcondition]]
+id = "POST-PATCH-003"
+expression = "result.conflicts contains exactly the pairs with overlapping touch sets"
+enforcement = "verify"
+
+[[interface.operation]]
+name = "detect_conflicts"
+description = "Identify all pairs of patches with overlapping touch sets."
+
+[[interface.operation.parameter]]
+name = "patches_a"
+type = "&[Patch]"
+direction = "in"
+[[interface.operation.parameter]]
+name = "patches_b"
+type = "&[Patch]"
+direction = "in"
+
+[[interface.operation.return]]
+type = "Vec<Conflict>"
+
+[interface.operation.complexity]
+time = "O(|A| × |B| × max_T) naive"
+space = "O(conflicts)"
