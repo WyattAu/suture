@@ -63,7 +63,10 @@ impl SutureHubServer {
         // Verify signature if provided and auth is configured
         if let Some(ref sig_bytes) = req.signature {
             let store = self.storage.lock().await;
-            if let Err(e) = verify_push_signature(&store, &req, sig_bytes) {
+            // Only verify signature if auth keys are configured
+            if store.has_authorized_keys().unwrap_or(false)
+                && let Err(e) = verify_push_signature(&store, &req, sig_bytes)
+            {
                 return Err((
                     StatusCode::FORBIDDEN,
                     PushResponse {

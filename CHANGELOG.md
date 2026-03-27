@@ -1,8 +1,48 @@
 # Changelog
 
-## [0.2.0-dev] - 2026-03-27
+## [0.2.0] - 2026-03-27
 
 ### Added
+
+#### Incremental Push
+- `patches_since(since_id)` — walks DAG from branch tips, returns only new patches
+- Topological sort (Kahn's algorithm) ensures parents-before-children ordering
+- CLI `push` tracks `remote.<name>.last_pushed` config for incremental sync
+- Push now shows patch count: "Push successful (3 patch(es))"
+
+#### Author Identity
+- `Repository::init()` defaults to `"unknown"` author (no longer hardcoded `"alice"`)
+- `open()` reads `user.name` config first, falls back to `author`, then `"unknown"`
+- `get_config` / `set_config` / `list_config` exposed as public API
+- CLI `config` command: list all, get single key, set key=value
+- Internal keys (`head_branch`, `pending_merge_parents`) hidden from `config` listing
+- Init prints hint: "run `suture config user.name \"Your Name\"` to set your identity"
+
+#### Tag Support
+- `create_tag(name, target)` / `delete_tag(name)` / `list_tags()` / `resolve_tag(name)`
+- Tags stored as `tag.<name>` config entries mapping to patch IDs
+- CLI `tag` command: list all, create at HEAD or `--target <ref>`, `--delete`
+
+#### Branch Delete
+- `delete_branch(name)` with current-branch protection
+- Removes branch from both DAG and metadata
+- CLI `branch --delete <name>`
+
+#### Conflict Resolution Persistence
+- `pending_merge_parents` persisted to config as JSON on merge
+- Restored on `Repository::open()`
+- Cleared on commit (conflict resolved)
+
+#### Ed25519 Signing Wired Into Push
+- CLI `key generate [name]` — generates Ed25519 keypair
+- Private key saved to `.suture/keys/<name>.ed25519`
+- Public key stored in config as `key.public.<name>`
+- CLI `key list` / `key public [name]`
+- `signing.key` config auto-set to `"default"` on key generation
+- `cmd_push()` reads private key, signs canonical push bytes, attaches signature
+- Hub only verifies signatures when authorized keys are configured
+- Hub accepts signed pushes even without auth (backward compatible)
+- `canonical_push_bytes()` aligned between CLI and hub (includes operation_type)
 
 #### Line-Level Diff3 Merge
 - `engine::merge` module with LCS-based line diff algorithm
@@ -23,12 +63,13 @@
 - `authorized_keys` table in hub storage for registering public keys
 - Push request signature verification using canonical bytes
 - Auth is optional — only enforced when authorized keys are configured
-- `signature` field in `PushRequest` (optional, base64-encoded 64-byte Ed25519 sig)
+- `signature` field in `PushRequest` (optional, 64-byte Ed25519 sig)
 - 3 auth tests: required-when-keys-exist, valid-signature-succeeds, no-auth-when-unconfigured
 
 #### Quality
-- Test count: 199 (up from 180 in v0.1.0)
+- Test count: 203 (up from 180 in v0.1.0)
 - Zero clippy warnings, zero audit findings
+- End-to-end verified: signed push with hub auth, pull by unauthorized client
 
 ## [0.1.0] - 2026-03-27
 
@@ -128,7 +169,5 @@
 ### Known Limitations
 - No VFS (NFSv4/ProjFS) support
 - No Raft/gRPC-based distributed consensus
-- Ed25519 signing module ready but not yet integrated into commit flow
-- CLI `push` does not yet sign requests (TODO: sign when key is configured)
 - Lean 4 formal proofs pending toolchain installation
 - Checkout does not handle uncommitted working tree changes (only staged)

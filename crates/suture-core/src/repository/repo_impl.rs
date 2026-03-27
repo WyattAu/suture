@@ -31,7 +31,7 @@ use crate::patch::conflict::Conflict;
 use crate::patch::merge::MergeResult;
 use crate::patch::types::{OperationType, Patch, PatchId, TouchSet};
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -242,9 +242,13 @@ impl Repository {
         }
 
         let author = meta
-            .get_config("author")
+            .get_config("user.name")
             .unwrap_or(None)
+            .or_else(|| meta.get_config("author").unwrap_or(None))
             .unwrap_or_else(|| "unknown".to_string());
+
+        // Restore pending merge parents if a merge was in progress
+        let restored_parents = restore_pending_merge_parents(&meta);
 
         // Load ignore patterns
         let ignore_patterns = load_ignore_patterns(path);
@@ -257,7 +261,7 @@ impl Repository {
             meta,
             author,
             ignore_patterns,
-            pending_merge_parents: Vec::new(),
+            pending_merge_parents: restored_parents,
             cached_head_snapshot: RefCell::new(None),
             cached_head_id: RefCell::new(None),
         })
@@ -318,6 +322,190 @@ impl Repository {
     /// List all branches.
     pub fn list_branches(&self) -> Vec<(String, PatchId)> {
         self.dag.list_branches()
+    }
+
+    /// Delete a branch. Cannot delete the currently checked-out branch.
+    pub fn delete_branch(&mut self, name: &str) -> Result<(), RepoError> {
+        let (current_branch, _) = self.head()?;
+        if current_branch == name {
+            return Err(RepoError::Custom(format!(
+                "cannot delete the current branch '{}'",
+                name
+            )));
+        }
+        let branch = BranchName::new(name)?;
+        self.dag.delete_branch(&branch)?;
+        // Also remove from metadata
+        self.meta
+            .conn()
+            .execute(
+                "DELETE FROM branches WHERE name = ?1",
+                rusqlite::params![name],
+            )
+            .map_err(|e| RepoError::Custom(e.to_string()))?;
+        Ok(())
+    }
+
+    // =========================================================================
+    // Config
+    // =========================================================================
+
+    /// Get a configuration value.
+    pub fn get_config(&self, key: &str) -> Result<Option<String>, RepoError> {
+        self.meta.get_config(key).map_err(RepoError::from)
+    }
+
+    /// Set a configuration value.
+    pub fn set_config(&mut self, key: &str, value: &str) -> Result<(), RepoError> {
+        self.meta.set_config(key, value).map_err(RepoError::from)
+    }
+
+    /// List all configuration key-value pairs.
+    pub fn list_config(&self) -> Result<Vec<(String, String)>, RepoError> {
+        self.meta.list_config().map_err(RepoError::from)
+    }
+
+    // =========================================================================
+    // Tag Operations
+    // =========================================================================
+
+    /// Create a tag pointing to a patch ID (or HEAD).
+    ///
+    /// Tags are stored as config entries `tag.<name>` pointing to a patch hash.
+    pub fn create_tag(&mut self, name: &str, target: Option<&str>) -> Result<(), RepoError> {
+        let target_id = match target {
+            Some(t) => {
+                if let Ok(bn) = BranchName::new(t) {
+                    self.dag
+                        .get_branch(&bn)
+                        .ok_or_else(|| RepoError::BranchNotFound(t.to_string()))?
+                } else {
+                    Hash::from_hex(t)
+                        .map_err(|_| RepoError::Custom(format!("invalid target: {}", t)))?
+                }
+            }
+            None => {
+                let (_, head_id) = self.head()?;
+                head_id
+            }
+        };
+        self.set_config(&format!("tag.{name}"), &target_id.to_hex())
+    }
+
+    /// Delete a tag.
+    pub fn delete_tag(&mut self, name: &str) -> Result<(), RepoError> {
+        self.meta
+            .conn()
+            .execute(
+                "DELETE FROM config WHERE key = ?1",
+                rusqlite::params![format!("tag.{name}")],
+            )
+            .map_err(|e| RepoError::Custom(e.to_string()))?;
+        Ok(())
+    }
+
+    /// List all tags as (name, target_patch_id).
+    pub fn list_tags(&self) -> Result<Vec<(String, PatchId)>, RepoError> {
+        let config = self.list_config()?;
+        let mut tags = Vec::new();
+        for (key, value) in config {
+            if let Some(name) = key.strip_prefix("tag.")
+                && let Ok(id) = Hash::from_hex(&value)
+            {
+                tags.push((name.to_string(), id));
+            }
+        }
+        tags.sort_by(|a, b| a.0.cmp(&b.0));
+        Ok(tags)
+    }
+
+    /// Resolve a tag name to a patch ID.
+    pub fn resolve_tag(&self, name: &str) -> Result<Option<PatchId>, RepoError> {
+        let val = self.get_config(&format!("tag.{name}"))?;
+        match val {
+            Some(hex) => Ok(Some(Hash::from_hex(&hex)?)),
+            None => Ok(None),
+        }
+    }
+
+    // =========================================================================
+    // Incremental Push Support
+    // =========================================================================
+
+    /// Get patches created after a given patch ID (ancestry walk).
+    ///
+    /// Returns patches reachable from branch tips but NOT ancestors of `since_id`.
+    pub fn patches_since(&self, since_id: &PatchId) -> Vec<Patch> {
+        let since_ancestors = self.dag.ancestors(since_id);
+        // Include since_id itself in the "already known" set
+        let mut known = since_ancestors;
+        known.insert(*since_id);
+
+        // Walk from all branch tips, collect patches not in `known`
+        let mut new_ids: HashSet<PatchId> = HashSet::new();
+        let mut stack: Vec<PatchId> = self
+            .dag
+            .list_branches()
+            .iter()
+            .map(|(_, id)| *id)
+            .collect();
+
+        while let Some(id) = stack.pop() {
+            if !known.contains(&id)
+                && new_ids.insert(id)
+                && let Some(node) = self.dag.get_node(&id)
+            {
+                for parent in &node.patch.parent_ids {
+                    if !known.contains(parent) && !new_ids.contains(parent) {
+                        stack.push(*parent);
+                    }
+                }
+            }
+        }
+
+        // Topological sort: parents before children (Kahn's algorithm)
+        let patches: HashMap<PatchId, Patch> = new_ids
+            .into_iter()
+            .filter_map(|id| self.dag.get_patch(&id).map(|p| (id, p.clone())))
+            .collect();
+
+        // Count in-edges from within our set
+        let mut in_degree: HashMap<PatchId, usize> = HashMap::new();
+        let mut children: HashMap<PatchId, Vec<PatchId>> = HashMap::new();
+        for (&id, patch) in &patches {
+            in_degree.entry(id).or_insert(0);
+            for parent_id in &patch.parent_ids {
+                if patches.contains_key(parent_id) {
+                    children.entry(*parent_id).or_default().push(id);
+                    *in_degree.entry(id).or_insert(0) += 1;
+                }
+            }
+        }
+
+        let mut queue: VecDeque<PatchId> = in_degree
+            .iter()
+            .filter(|&(_, deg)| *deg == 0)
+            .map(|(&id, _)| id)
+            .collect();
+        let mut sorted_ids: Vec<PatchId> = Vec::with_capacity(patches.len());
+
+        while let Some(id) = queue.pop_front() {
+            sorted_ids.push(id);
+            if let Some(kids) = children.get(&id) {
+                for &child in kids {
+                    let deg = in_degree.get_mut(&child).unwrap();
+                    *deg -= 1;
+                    if *deg == 0 {
+                        queue.push_back(child);
+                    }
+                }
+            }
+        }
+
+        sorted_ids
+            .into_iter()
+            .filter_map(|id| patches.get(&id).cloned())
+            .collect()
     }
 
     // =========================================================================
@@ -438,12 +626,23 @@ impl Repository {
         }
 
         let (branch_name, head_id) = self.head()?;
+        let is_merge_resolution = !self.pending_merge_parents.is_empty();
 
         let mut parent_ids = if self.pending_merge_parents.is_empty() {
             vec![head_id]
         } else {
             std::mem::take(&mut self.pending_merge_parents)
         };
+
+        // Clear persisted merge state on commit
+        let _ = self
+            .meta
+            .conn()
+            .execute(
+                "DELETE FROM config WHERE key = 'pending_merge_parents'",
+                [],
+            );
+
         let mut last_patch_id = head_id;
 
         for (path, status) in &staged {
@@ -489,6 +688,12 @@ impl Repository {
         self.meta.set_branch(&branch, &last_patch_id)?;
 
         self.invalidate_head_cache();
+
+        // If this was a merge resolution, update merge commit's parent_ids
+        if is_merge_resolution {
+            // The first patch in the chain has the real merge parents
+            // (already handled above via pending_merge_parents)
+        }
 
         Ok(last_patch_id)
     }
@@ -1062,6 +1267,11 @@ impl Repository {
 
         self.pending_merge_parents = vec![*head_id, *source_tip];
 
+        // Persist merge state so it survives repo reopen
+        let parents_json =
+            serde_json::to_string(&self.pending_merge_parents).unwrap_or_default();
+        let _ = self.meta.set_config("pending_merge_parents", &parents_json);
+
         Ok(MergeExecutionResult {
             is_clean: false,
             merged_tree,
@@ -1340,6 +1550,16 @@ fn walk_dir_recursive(
     }
 
     Ok(())
+}
+
+/// Restore pending merge parents from config (persisted across repo reopens).
+fn restore_pending_merge_parents(
+    meta: &crate::metadata::MetadataStore,
+) -> Vec<PatchId> {
+    let Ok(Some(json)) = meta.get_config("pending_merge_parents") else {
+        return Vec::new();
+    };
+    serde_json::from_str::<Vec<PatchId>>(&json).unwrap_or_default()
 }
 
 // =============================================================================
@@ -1874,5 +2094,158 @@ mod tests {
         let lines = result.unwrap_err();
         assert!(lines[0].contains("<<<<<<<"));
         assert!(lines.last().unwrap().contains(">>>>>>>"));
+    }
+
+    #[test]
+    fn test_config_get_set() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir().unwrap();
+        let mut repo = Repository::init(dir.path(), "alice")?;
+
+        assert!(repo.get_config("user.name")?.is_none());
+        assert!(repo.get_config("user.email")?.is_none());
+
+        repo.set_config("user.name", "Alice")?;
+        repo.set_config("user.email", "alice@example.com")?;
+
+        assert_eq!(repo.get_config("user.name")?.unwrap(), "Alice");
+        assert_eq!(repo.get_config("user.email")?.unwrap(), "alice@example.com");
+
+        // List config (filters internal keys)
+        let config = repo.list_config()?;
+        assert!(config.iter().any(|(k, v)| k == "user.name" && v == "Alice"));
+        assert!(config.iter().any(|(k, v)| k == "user.email" && v == "alice@example.com"));
+        // Internal keys should be present in raw list
+        assert!(config.iter().any(|(k, _)| k == "author"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_delete_branch() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir().unwrap();
+        let mut repo = Repository::init(dir.path(), "alice")?;
+
+        repo.create_branch("feature", None)?;
+        repo.create_branch("develop", None)?;
+        assert_eq!(repo.list_branches().len(), 3);
+
+        // Cannot delete current branch
+        let result = repo.delete_branch("main");
+        assert!(result.is_err());
+
+        // Can delete other branches
+        repo.delete_branch("feature")?;
+        assert_eq!(repo.list_branches().len(), 2);
+
+        repo.delete_branch("develop")?;
+        assert_eq!(repo.list_branches().len(), 1);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_tags() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir().unwrap();
+        let mut repo = Repository::init(dir.path(), "alice")?;
+
+        fs::write(dir.path().join("a.txt"), "v1")?;
+        repo.add("a.txt")?;
+        let _commit_id = repo.commit("first commit")?;
+
+        // Create tag at HEAD
+        repo.create_tag("v1.0", None)?;
+        let tags = repo.list_tags()?;
+        assert_eq!(tags.len(), 1);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_patches_since() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir().unwrap();
+        let mut repo = Repository::init(dir.path(), "alice")?;
+
+        // Commit 1
+        fs::write(dir.path().join("a.txt"), "v1")?;
+        repo.add("a.txt")?;
+        let id1 = repo.commit("first")?;
+
+        // Commit 2
+        fs::write(dir.path().join("a.txt"), "v2")?;
+        repo.add("a.txt")?;
+        let id2 = repo.commit("second")?;
+
+        // Commit 3
+        fs::write(dir.path().join("b.txt"), "new")?;
+        repo.add("b.txt")?;
+        let id3 = repo.commit("third")?;
+
+        // patches_since(id1) should return [id2, id3]
+        let since = repo.patches_since(&id1);
+        assert_eq!(since.len(), 2);
+        assert_eq!(since[0].id, id2);
+        assert_eq!(since[1].id, id3);
+
+        // patches_since(id3) should return []
+        let since = repo.patches_since(&id3);
+        assert!(since.is_empty());
+
+        // patches_since(root_patch) should return [id1, id2, id3] (3 file patches)
+        // Get the root patch (Initial commit)
+        let root_id = repo.log(None)?.last().unwrap().id;
+        let since = repo.patches_since(&root_id);
+        assert_eq!(since.len(), 3);
+        assert_eq!(since[0].id, id1);
+        assert_eq!(since[1].id, id2);
+        assert_eq!(since[2].id, id3);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_pending_merge_persistence() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir().unwrap();
+        let mut repo = Repository::init(dir.path(), "alice")?;
+
+        fs::write(dir.path().join("shared.txt"), "original")?;
+        repo.add("shared.txt")?;
+        repo.commit("add shared")?;
+
+        repo.create_branch("feature", None)?;
+
+        fs::write(dir.path().join("shared.txt"), "main version")?;
+        repo.add("shared.txt")?;
+        repo.commit("modify on main")?;
+
+        repo.checkout("feature")?;
+
+        fs::write(dir.path().join("shared.txt"), "feature version")?;
+        repo.add("shared.txt")?;
+        repo.commit("modify on feature")?;
+
+        // Trigger conflicting merge — should persist parents
+        let _ = repo.execute_merge("main")?;
+        assert_eq!(repo.pending_merge_parents.len(), 2);
+
+        // Simulate repo close + reopen
+        drop(repo);
+        let mut repo2 = Repository::open(dir.path())?;
+        assert_eq!(repo2.pending_merge_parents.len(), 2);
+
+        // Resolve the merge
+        fs::write(dir.path().join("shared.txt"), "resolved")?;
+        repo2.add("shared.txt")?;
+        let resolve_id = repo2.commit("resolve")?;
+        assert!(repo2.pending_merge_parents.is_empty());
+
+        // Verify merge commit has 2 parents
+        let patch = repo2
+            .log(None)?
+            .into_iter()
+            .find(|p| p.id == resolve_id)
+            .unwrap();
+        assert_eq!(patch.parent_ids.len(), 2);
+
+        Ok(())
     }
 }

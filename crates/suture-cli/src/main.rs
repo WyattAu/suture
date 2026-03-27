@@ -1,5 +1,6 @@
 use base64::Engine;
 use clap::{Parser, Subcommand};
+use ed25519_dalek::Signer;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -40,10 +41,16 @@ enum Commands {
     /// Branch operations
     Branch {
         /// Branch name
-        name: String,
+        name: Option<String>,
         /// Start branch from this target (branch name or HEAD)
         #[arg(short, long)]
         target: Option<String>,
+        /// Delete a branch
+        #[arg(short, long)]
+        delete: bool,
+        /// List branches
+        #[arg(short, long)]
+        list: bool,
     },
     /// Show commit history
     Log {
@@ -77,6 +84,25 @@ enum Commands {
         /// Source branch to merge into HEAD
         source: String,
     },
+    /// Tag operations
+    Tag {
+        /// Tag name (required for create/delete, omit to list)
+        name: Option<String>,
+        /// Target commit/branch (default: HEAD)
+        #[arg(short, long)]
+        target: Option<String>,
+        /// Delete a tag
+        #[arg(short, long)]
+        delete: bool,
+        /// List tags
+        #[arg(short, long)]
+        list: bool,
+    },
+    /// Get or set configuration values
+    Config {
+        /// Key to get, or key=value to set
+        key_value: Vec<String>,
+    },
     /// Remote operations
     Remote {
         #[command(subcommand)]
@@ -93,6 +119,29 @@ enum Commands {
         /// Remote name (default: "origin")
         #[arg(default_value = "origin")]
         remote: String,
+    },
+    /// Signing key management
+    Key {
+        #[command(subcommand)]
+        action: KeyAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum KeyAction {
+    /// Generate a new Ed25519 keypair
+    Generate {
+        /// Key name (default: "default")
+        #[arg(default_value = "default")]
+        name: String,
+    },
+    /// List local signing keys (public keys)
+    List,
+    /// Show the public key for a named key
+    Public {
+        /// Key name (default: "default")
+        #[arg(default_value = "default")]
+        name: String,
     },
 }
 
@@ -235,6 +284,39 @@ fn proto_to_patch(proto: &PatchProto) -> Result<suture_core::patch::types::Patch
     ))
 }
 
+/// Build canonical bytes for a push request (for Ed25519 signing).
+/// Must match the hub's `canonical_push_bytes` exactly.
+fn canonical_push_bytes(req: &PushRequest) -> Vec<u8> {
+    let mut buf = Vec::new();
+
+    buf.extend_from_slice(req.repo_id.as_bytes());
+    buf.push(0);
+
+    buf.extend_from_slice(&(req.patches.len() as u64).to_le_bytes());
+    for patch in &req.patches {
+        buf.extend_from_slice(patch.id.value.as_bytes());
+        buf.push(0);
+        buf.extend_from_slice(patch.operation_type.as_bytes());
+        buf.push(0);
+        buf.extend_from_slice(patch.author.as_bytes());
+        buf.push(0);
+        buf.extend_from_slice(patch.message.as_bytes());
+        buf.push(0);
+        buf.extend_from_slice(&patch.timestamp.to_le_bytes());
+        buf.push(0);
+    }
+
+    buf.extend_from_slice(&(req.branches.len() as u64).to_le_bytes());
+    for branch in &req.branches {
+        buf.extend_from_slice(branch.name.as_bytes());
+        buf.push(0);
+        buf.extend_from_slice(branch.target_id.value.as_bytes());
+        buf.push(0);
+    }
+
+    buf
+}
+
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
@@ -244,15 +326,28 @@ async fn main() {
         Commands::Status => cmd_status().await,
         Commands::Add { paths, all } => cmd_add(&paths, all).await,
         Commands::Commit { message } => cmd_commit(&message).await,
-        Commands::Branch { name, target } => cmd_branch(&name, target.as_deref()).await,
+        Commands::Branch {
+            name,
+            target,
+            delete,
+            list,
+        } => cmd_branch(name.as_deref(), target.as_deref(), delete, list).await,
         Commands::Log { branch } => cmd_log(branch.as_deref()).await,
         Commands::Checkout { branch } => cmd_checkout(&branch).await,
         Commands::Diff { from, to } => cmd_diff(from.as_deref(), to.as_deref()).await,
         Commands::Revert { commit, message } => cmd_revert(&commit, message.as_deref()).await,
         Commands::Merge { source } => cmd_merge(&source).await,
+        Commands::Tag {
+            name,
+            target,
+            delete,
+            list,
+        } => cmd_tag(name.as_deref(), target.as_deref(), delete, list).await,
+        Commands::Config { key_value } => cmd_config(&key_value).await,
         Commands::Remote { action } => cmd_remote(&action).await,
         Commands::Push { remote } => cmd_push(&remote).await,
         Commands::Pull { remote } => cmd_pull(&remote).await,
+        Commands::Key { action } => cmd_key(&action).await,
     };
 
     if let Err(e) = result {
@@ -263,11 +358,12 @@ async fn main() {
 
 async fn cmd_init(path: &str) -> Result<(), Box<dyn std::error::Error>> {
     let repo_path = PathBuf::from(path);
-    let repo = suture_core::repository::Repository::init(&repo_path, "local")?;
+    let repo = suture_core::repository::Repository::init(&repo_path, "unknown")?;
     println!(
         "Initialized empty Suture repository in {}",
         repo_path.display()
     );
+    println!("Hint: run `suture config user.name \"Your Name\"` to set your identity");
     drop(repo);
     Ok(())
 }
@@ -319,10 +415,41 @@ async fn cmd_commit(message: &str) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn cmd_branch(name: &str, target: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_branch(
+    name: Option<&str>,
+    target: Option<&str>,
+    delete: bool,
+    list: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
-    repo.create_branch(name, target)?;
-    println!("Created branch '{}'", name);
+
+    if list || name.is_none() {
+        let branches = repo.list_branches();
+        if branches.is_empty() {
+            println!("No branches.");
+        } else {
+            let head = repo.head().ok();
+            let head_branch = head.as_ref().map(|(n, _)| n.as_str());
+            for (bname, _target) in &branches {
+                let marker = if head_branch == Some(bname.as_str()) {
+                    "* "
+                } else {
+                    "  "
+                };
+                println!("{}{}", marker, bname);
+            }
+        }
+        return Ok(());
+    }
+
+    let name = name.unwrap();
+    if delete {
+        repo.delete_branch(name)?;
+        println!("Deleted branch '{}'", name);
+    } else {
+        repo.create_branch(name, target)?;
+        println!("Created branch '{}'", name);
+    }
     Ok(())
 }
 
@@ -417,6 +544,76 @@ async fn cmd_merge(source: &str) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+async fn cmd_tag(
+    name: Option<&str>,
+    target: Option<&str>,
+    delete: bool,
+    list: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+
+    if list || name.is_none() {
+        let tags = repo.list_tags()?;
+        if tags.is_empty() {
+            println!("No tags.");
+        } else {
+            for (tname, target_id) in &tags {
+                println!("{}  {}", tname, target_id);
+            }
+        }
+        return Ok(());
+    }
+
+    let name = name.unwrap();
+    if delete {
+        repo.delete_tag(name)?;
+        println!("Deleted tag '{}'", name);
+    } else {
+        repo.create_tag(name, target)?;
+        let target_id = repo.resolve_tag(name)?.unwrap();
+        println!("Tag '{}' -> {}", name, target_id);
+    }
+    Ok(())
+}
+
+async fn cmd_config(key_value: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+
+    if key_value.is_empty() {
+        // List all config
+        let entries = repo.list_config()?;
+        if entries.is_empty() {
+            println!("No configuration set.");
+        } else {
+            for (key, value) in &entries {
+                // Hide internal keys
+                if key.starts_with("pending_merge_parents") || key.starts_with("head_branch") {
+                    continue;
+                }
+                println!("{}={}", key, value);
+            }
+        }
+        return Ok(());
+    }
+
+    let kv = &key_value[0];
+    if let Some((key, value)) = kv.split_once('=') {
+        repo.set_config(key.trim(), value.trim())?;
+        println!("{}={}", key.trim(), value.trim());
+    } else {
+        let key = kv.trim();
+        match repo.get_config(key)? {
+            Some(value) => println!("{}", value),
+            None => {
+                eprintln!("config key '{}' not found", key);
+                std::process::exit(1);
+            }
+        }
+    }
+
+    Ok(())
+}
+
 async fn cmd_remote(action: &RemoteAction) -> Result<(), Box<dyn std::error::Error>> {
     let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
     match action {
@@ -438,11 +635,57 @@ async fn cmd_remote(action: &RemoteAction) -> Result<(), Box<dyn std::error::Err
     Ok(())
 }
 
+/// Sign a push request if a signing key is configured.
+/// Returns the request with the signature field populated.
+fn sign_push_request(
+    repo: &suture_core::repository::Repository,
+    mut req: PushRequest,
+) -> Result<PushRequest, Box<dyn std::error::Error>> {
+    let key_name = match repo.get_config("signing.key")? {
+        Some(name) => name,
+        None => return Ok(req), // No signing configured
+    };
+
+    let keys_dir = std::path::Path::new(".suture").join("keys");
+    let key_path = keys_dir.join(format!("{key_name}.ed25519"));
+
+    let priv_key_bytes = std::fs::read(&key_path).map_err(|e| {
+        format!(
+            "cannot read signing key '{}': {e}. Run `suture key generate {key_name}`",
+            key_path.display()
+        )
+    })?;
+
+    if priv_key_bytes.len() != 32 {
+        return Err("invalid private key length (expected 32 bytes)".into());
+    }
+
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(
+        priv_key_bytes
+            .as_slice()
+            .try_into()
+            .map_err(|_| "invalid key bytes")?,
+    );
+    let canonical = canonical_push_bytes(&req);
+    let signature = signing_key.sign(&canonical);
+    req.signature = Some(signature.to_bytes().to_vec());
+
+    Ok(req)
+}
+
 async fn cmd_push(remote: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+    let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
     let url = repo.get_remote_url(remote)?;
 
-    let patches = repo.all_patches();
+    // Incremental push: check last-pushed state
+    let push_state_key = format!("remote.{}.last_pushed", remote);
+    let patches = if let Some(last_pushed_hex) = repo.get_config(&push_state_key)? {
+        let last_pushed = suture_common::Hash::from_hex(&last_pushed_hex)?;
+        repo.patches_since(&last_pushed)
+    } else {
+        repo.all_patches()
+    };
+
     let branches = repo.list_branches();
     let b64 = base64::engine::general_purpose::STANDARD;
 
@@ -478,8 +721,11 @@ async fn cmd_push(remote: &str) -> Result<(), Box<dyn std::error::Error>> {
             })
             .collect(),
         blobs,
-        signature: None, // TODO: sign when key is configured
+        signature: None,
     };
+
+    // Sign the push if a signing key is configured
+    let push_body = sign_push_request(&repo, push_body)?;
 
     let client = reqwest::Client::new();
     let resp = client
@@ -491,7 +737,10 @@ async fn cmd_push(remote: &str) -> Result<(), Box<dyn std::error::Error>> {
     if resp.status().is_success() {
         let result: PushResponse = resp.json().await?;
         if result.success {
-            println!("Push successful");
+            // Update last-pushed state to current HEAD
+            let (_, head_id) = repo.head()?;
+            repo.set_config(&push_state_key, &head_id.to_hex())?;
+            println!("Push successful ({} patch(es))", patches.len());
         } else {
             eprintln!("Push failed: {:?}", result.error);
         }
@@ -541,7 +790,9 @@ async fn cmd_pull(remote: &str) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let b64 = base64::engine::general_purpose::STANDARD;
-    let old_tree = repo.snapshot_head().unwrap_or_else(|_| suture_core::engine::tree::FileTree::empty());
+    let old_tree =
+        repo.snapshot_head()
+            .unwrap_or_else(|_| suture_core::engine::tree::FileTree::empty());
 
     for blob in &result.blobs {
         let hash = suture_common::Hash::from_hex(&blob.hash.value)?;
@@ -579,5 +830,64 @@ async fn cmd_pull(remote: &str) -> Result<(), Box<dyn std::error::Error>> {
     repo.sync_working_tree(&old_tree)?;
 
     println!("Pull successful: {} new patch(es)", new_patches);
+    Ok(())
+}
+
+async fn cmd_key(action: &KeyAction) -> Result<(), Box<dyn std::error::Error>> {
+    let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+
+    match action {
+        KeyAction::Generate { name } => {
+            let keypair = suture_core::signing::SigningKeypair::generate();
+            let keys_dir = std::path::Path::new(".suture").join("keys");
+            std::fs::create_dir_all(&keys_dir)?;
+
+            let priv_path = keys_dir.join(format!("{name}.ed25519"));
+            std::fs::write(&priv_path, keypair.private_key_bytes())?;
+
+            // Store public key in repo config
+            let pub_hex = hex::encode(keypair.public_key_bytes());
+            repo.set_config(&format!("key.public.{name}"), &pub_hex)?;
+
+            // Set as default signing key if this is the "default" key
+            if name == "default" {
+                repo.set_config("signing.key", "default")?;
+            }
+
+            println!("Generated keypair '{}'", name);
+            println!("  Private key: {}", priv_path.display());
+            println!("  Public key:  {}", pub_hex);
+            if name != "default" {
+                println!(
+                    "Hint: run `suture config signing.key={name}` to use this key for signing"
+                );
+            }
+        }
+        KeyAction::List => {
+            let entries = repo.list_config()?;
+            let mut found = false;
+            for (key, value) in &entries {
+                if let Some(name) = key.strip_prefix("key.public.") {
+                    println!("{}  {}", name, value);
+                    found = true;
+                }
+            }
+            if !found {
+                println!("No signing keys found.");
+                println!("Run `suture key generate` to create one.");
+            }
+        }
+        KeyAction::Public { name } => {
+            let key = format!("key.public.{name}");
+            match repo.get_config(&key)? {
+                Some(pub_hex) => println!("{}", pub_hex),
+                None => {
+                    eprintln!("No public key found for '{}'", name);
+                    std::process::exit(1);
+                }
+            }
+        }
+    }
+
     Ok(())
 }
