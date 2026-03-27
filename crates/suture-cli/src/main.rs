@@ -146,6 +146,9 @@ struct PushRequest {
     patches: Vec<PatchProto>,
     branches: Vec<BranchProto>,
     blobs: Vec<BlobRef>,
+    /// Optional Ed25519 signature.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    signature: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -475,6 +478,7 @@ async fn cmd_push(remote: &str) -> Result<(), Box<dyn std::error::Error>> {
             })
             .collect(),
         blobs,
+        signature: None, // TODO: sign when key is configured
     };
 
     let client = reqwest::Client::new();

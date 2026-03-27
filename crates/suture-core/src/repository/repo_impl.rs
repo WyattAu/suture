@@ -30,6 +30,7 @@ use crate::metadata::MetaError;
 use crate::patch::conflict::Conflict;
 use crate::patch::merge::MergeResult;
 use crate::patch::types::{OperationType, Patch, PatchId, TouchSet};
+use std::cell::RefCell;
 use std::collections::HashSet;
 use std::fs;
 use std::io;
@@ -102,6 +103,10 @@ pub struct Repository {
     ignore_patterns: Vec<String>,
     /// Pending merge parents (set during a conflicting merge).
     pending_merge_parents: Vec<PatchId>,
+    /// Cached FileTree snapshot for the current HEAD.
+    cached_head_snapshot: RefCell<Option<FileTree>>,
+    /// The patch ID that the cached snapshot corresponds to.
+    cached_head_id: RefCell<Option<PatchId>>,
 }
 
 impl Repository {
@@ -159,6 +164,8 @@ impl Repository {
             author: author.to_string(),
             ignore_patterns,
             pending_merge_parents: Vec::new(),
+            cached_head_snapshot: RefCell::new(None),
+            cached_head_id: RefCell::new(None),
         })
     }
 
@@ -251,6 +258,8 @@ impl Repository {
             author,
             ignore_patterns,
             pending_merge_parents: Vec::new(),
+            cached_head_snapshot: RefCell::new(None),
+            cached_head_id: RefCell::new(None),
         })
     }
 
@@ -397,6 +406,9 @@ impl Repository {
 
     /// Check if a path is tracked.
     fn is_tracked(&self, path: &str) -> Result<bool, RepoError> {
+        if let Some(ref tree) = *self.cached_head_snapshot.borrow() {
+            return Ok(tree.contains(path));
+        }
         for id in self.dag.patch_ids() {
             if let Some(node) = self.dag.get_node(&id)
                 && node.patch.target_path.as_deref() == Some(path)
@@ -476,6 +488,8 @@ impl Repository {
         self.dag.update_branch(&branch, last_patch_id)?;
         self.meta.set_branch(&branch, &last_patch_id)?;
 
+        self.invalidate_head_cache();
+
         Ok(last_patch_id)
     }
 
@@ -485,17 +499,32 @@ impl Repository {
 
     /// Build a FileTree snapshot for the HEAD commit.
     ///
-    /// Applies all patches from root to HEAD tip to produce the current
-    /// file tree state.
+    /// Returns a cached snapshot if the HEAD has not changed since the last
+    /// call, making this O(1) instead of O(n) where n = total patches.
     pub fn snapshot_head(&self) -> Result<FileTree, RepoError> {
         let (_, head_id) = self.head()?;
-        self.snapshot(&head_id)
+
+        if let Some(cached_id) = *self.cached_head_id.borrow()
+            && cached_id == head_id
+            && let Some(ref tree) = *self.cached_head_snapshot.borrow()
+        {
+            return Ok(tree.clone());
+        }
+
+        let tree = self.snapshot_uncached(&head_id)?;
+        *self.cached_head_snapshot.borrow_mut() = Some(tree.clone());
+        *self.cached_head_id.borrow_mut() = Some(head_id);
+        Ok(tree)
     }
 
-    /// Build a FileTree snapshot for a specific patch.
-    ///
-    /// Applies all patches from root to the given patch ID.
-    pub fn snapshot(&self, patch_id: &PatchId) -> Result<FileTree, RepoError> {
+    /// Invalidate the cached HEAD snapshot.
+    fn invalidate_head_cache(&self) {
+        *self.cached_head_snapshot.borrow_mut() = None;
+        *self.cached_head_id.borrow_mut() = None;
+    }
+
+    /// Build a FileTree snapshot for a specific patch (uncached).
+    fn snapshot_uncached(&self, patch_id: &PatchId) -> Result<FileTree, RepoError> {
         let mut chain = self.dag.patch_chain(patch_id);
         // patch_chain returns [tip, parent, ..., root] — reverse for oldest-first
         chain.reverse();
@@ -506,6 +535,13 @@ impl Repository {
 
         let tree = apply_patch_chain(&patches, resolve_payload_to_hash)?;
         Ok(tree)
+    }
+
+    /// Build a FileTree snapshot for a specific patch.
+    ///
+    /// Applies all patches from root to the given patch ID.
+    pub fn snapshot(&self, patch_id: &PatchId) -> Result<FileTree, RepoError> {
+        self.snapshot_uncached(patch_id)
     }
 
     /// Sync the working tree to match the current HEAD snapshot.
@@ -738,6 +774,8 @@ impl Repository {
                 self.dag.update_branch(&branch, revert_id)?;
                 self.meta.set_branch(&branch, &revert_id)?;
 
+                self.invalidate_head_cache();
+
                 self.sync_working_tree(&old_tree)?;
                 Ok(revert_id)
             }
@@ -765,6 +803,8 @@ impl Repository {
                         let branch = BranchName::new(&branch_name)?;
                         self.dag.update_branch(&branch, revert_id)?;
                         self.meta.set_branch(&branch, &revert_id)?;
+
+                        self.invalidate_head_cache();
 
                         self.sync_working_tree(&old_tree)?;
                         return Ok(revert_id);
@@ -927,6 +967,8 @@ impl Repository {
         let branch = BranchName::new(head_branch)?;
         self.dag.update_branch(&branch, merge_id)?;
         self.meta.set_branch(&branch, &merge_id)?;
+
+        self.invalidate_head_cache();
 
         Ok(MergeExecutionResult {
             is_clean: true,
@@ -1355,7 +1397,7 @@ pub struct ConflictInfo {
     pub base_content_hash: Option<Hash>,
 }
 
-/// Simple whole-file three-way merge.
+/// Line-level three-way merge using diff3 algorithm.
 ///
 /// Returns `Ok(merged_content)` if clean, `Err(conflict_marker_lines)` if conflicts.
 fn three_way_merge(
@@ -1363,23 +1405,18 @@ fn three_way_merge(
     ours: &str,
     theirs: &str,
 ) -> Result<String, Vec<String>> {
-    match base {
-        Some(b) if b == ours => Ok(theirs.to_string()),
-        Some(b) if b == theirs => Ok(ours.to_string()),
-        _ if ours == theirs => Ok(ours.to_string()),
-        _ => {
-            let mut lines = Vec::new();
-            lines.push("<<<<<<< ours (HEAD)".to_string());
-            for line in ours.lines() {
-                lines.push(line.to_string());
-            }
-            lines.push("=======".to_string());
-            for line in theirs.lines() {
-                lines.push(line.to_string());
-            }
-            lines.push(">>>>>>> theirs".to_string());
-            Err(lines)
-        }
+    use crate::engine::merge::three_way_merge_lines;
+
+    let base_lines: Vec<&str> = base.map(|s| s.lines().collect()).unwrap_or_default();
+    let ours_lines: Vec<&str> = ours.lines().collect();
+    let theirs_lines: Vec<&str> = theirs.lines().collect();
+
+    let result = three_way_merge_lines(&base_lines, &ours_lines, &theirs_lines, "ours (HEAD)", "theirs");
+
+    if result.is_clean {
+        Ok(result.lines.join("\n"))
+    } else {
+        Err(result.lines)
     }
 }
 

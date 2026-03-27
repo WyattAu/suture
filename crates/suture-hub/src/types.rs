@@ -36,6 +36,10 @@ pub struct PushRequest {
     pub patches: Vec<PatchProto>,
     pub branches: Vec<BranchProto>,
     pub blobs: Vec<BlobRef>,
+    /// Optional Ed25519 signature (64 bytes, base64-encoded).
+    /// Required when the hub has authorized keys configured.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

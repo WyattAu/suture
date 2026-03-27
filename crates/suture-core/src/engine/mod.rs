@@ -16,8 +16,10 @@
 
 pub mod apply;
 pub mod diff;
+pub mod merge;
 pub mod tree;
 
 pub use apply::{apply_patch, apply_patch_chain, ApplyError};
 pub use diff::{diff_trees, DiffEntry, DiffType};
+pub use merge::{three_way_merge_lines, MergeOutput};
 pub use tree::FileTree;
