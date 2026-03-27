@@ -1,0 +1,6 @@
+[package]
+name = "suture-driver-otio"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
