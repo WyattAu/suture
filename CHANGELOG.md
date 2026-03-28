@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.3.0] - 2026-03-28
+
+### Added
+
+#### Shell Completions
+- `clap_complete` dependency for generating shell completion scripts
+- CLI `completions` command: `suture completions bash|zsh|fish`
+
+#### Log Graph
+- `--graph` flag on `log` command shows ASCII branch topology
+- Column-based rendering with merge lines and branch alignment
+- Logical commit grouping (patches sharing message+timestamp grouped as one)
+- Topological sort newest-first ordering
+- Branch labels at tips with `*` marker for HEAD branch
+
+#### Working Tree Safety
+- `has_uncommitted_changes()` detects both staged and unstaged changes
+- `checkout()` auto-stashes dirty working tree before switching, restores after
+- Matches git behavior: dirty state is preserved across branch switches
+
+#### Stash
+- `stash_push(message)` — saves staged and unstaged changes as a stash entry
+- `stash_pop()` — applies highest-index stash and removes it
+- `stash_apply(index)` — applies stash without removing it
+- `stash_list()` — lists all stash entries with message, branch, and HEAD
+- `stash_drop(index)` — removes a stash entry
+- Stash entries stored as config entries (`stash.{index}.{message,head_branch,head_id,files}`)
+- CLI commands: `suture stash push [-m msg]`, `suture stash pop`, `suture stash apply <n>`, `suture stash list`, `suture stash drop <n>`
+
+#### Quality
+- Test count: 213 (up from 203 in v0.2.0)
+- 9 new stash tests covering push/pop, list, drop, apply-keeps-entry, has_uncommitted_changes variants
+- Zero clippy warnings, zero audit findings
+
 ## [0.2.0] - 2026-03-27
 
 ### Added
@@ -170,4 +204,4 @@
 - No VFS (NFSv4/ProjFS) support
 - No Raft/gRPC-based distributed consensus
 - Lean 4 formal proofs pending toolchain installation
-- Checkout does not handle uncommitted working tree changes (only staged)
+- Checkout does not handle uncommitted working tree changes (only staged) → Fixed in v0.3.0 with auto-stash

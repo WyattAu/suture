@@ -699,6 +699,251 @@ impl Repository {
     }
 
     // =========================================================================
+    // Stash
+    // =========================================================================
+
+    pub fn has_uncommitted_changes(&self) -> Result<bool, RepoError> {
+        let working_set = self.meta.working_set()?;
+
+        let has_staged = working_set.iter().any(|(_, s)| {
+            matches!(
+                s,
+                FileStatus::Added | FileStatus::Modified | FileStatus::Deleted
+            )
+        });
+        if has_staged {
+            return Ok(true);
+        }
+
+        if let Ok(head_tree) = self.snapshot_head() {
+            for (path, hash) in head_tree.iter() {
+                let full_path = self.root.join(path);
+                if let Ok(data) = fs::read(&full_path) {
+                    let current_hash = Hash::from_data(&data);
+                    if &current_hash != hash {
+                        return Ok(true);
+                    }
+                } else {
+                    return Ok(true);
+                }
+            }
+        }
+
+        Ok(false)
+    }
+
+    pub fn stash_push(&mut self, message: Option<&str>) -> Result<usize, RepoError> {
+        if !self.has_uncommitted_changes()? {
+            return Err(RepoError::NothingToCommit);
+        }
+
+        let working_set = self.meta.working_set()?;
+        let mut files: Vec<(String, Option<String>)> = Vec::new();
+
+        for (path, status) in &working_set {
+            match status {
+                FileStatus::Added | FileStatus::Modified => {
+                    let full_path = self.root.join(path);
+                    if let Ok(data) = fs::read(&full_path) {
+                        let hash = self.cas.put_blob(&data)?;
+                        files.push((path.clone(), Some(hash.to_hex())));
+                    } else {
+                        files.push((path.clone(), None));
+                    }
+                }
+                FileStatus::Deleted => {
+                    files.push((path.clone(), None));
+                }
+                _ => {}
+            }
+        }
+
+        if let Ok(head_tree) = self.snapshot_head() {
+            for (path, _hash) in head_tree.iter() {
+                let full_path = self.root.join(path);
+                if let Ok(data) = fs::read(&full_path) {
+                    let current_hash = Hash::from_data(&data);
+                    if &current_hash != _hash {
+                        let already = files.iter().any(|(p, _)| p == path);
+                        if !already {
+                            let hash = self.cas.put_blob(&data)?;
+                            files.push((path.clone(), Some(hash.to_hex())));
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut index: usize = 0;
+        loop {
+            let key = format!("stash.{}.message", index);
+            if self.meta.get_config(&key)?.is_none() {
+                break;
+            }
+            index += 1;
+        }
+
+        let (branch_name, head_id) = self.head()?;
+        let msg = message.unwrap_or("WIP").to_string();
+        let files_json = serde_json::to_string(&files).unwrap_or_else(|_| "[]".to_string());
+
+        self.set_config(&format!("stash.{}.message", index), &msg)?;
+        self.set_config(&format!("stash.{}.head_branch", index), &branch_name)?;
+        self.set_config(
+            &format!("stash.{}.head_id", index),
+            &head_id.to_hex(),
+        )?;
+        self.set_config(&format!("stash.{}.files", index), &files_json)?;
+
+        self.meta.conn().execute("DELETE FROM working_set", []).map_err(|e| RepoError::Meta(crate::metadata::MetaError::Database(e)))?;
+
+        if let Ok(head_tree) = self.snapshot_head() {
+            let current_tree = head_tree;
+            for (path, _) in current_tree.iter() {
+                let full_path = self.root.join(path);
+                if full_path.exists() {
+                    let _ = fs::remove_file(&full_path);
+                }
+            }
+            for (path, hash) in current_tree.iter() {
+                let full_path = self.root.join(path);
+                if let Some(parent) = full_path.parent() {
+                    let _ = fs::create_dir_all(parent);
+                }
+                if let Ok(blob) = self.cas.get_blob(hash) {
+                    let _ = fs::write(&full_path, &blob);
+                }
+            }
+        }
+
+        Ok(index)
+    }
+
+    pub fn stash_pop(&mut self) -> Result<(), RepoError> {
+        let stashes = self.stash_list()?;
+        if stashes.is_empty() {
+            return Err(RepoError::Custom("No stashes found".to_string()));
+        }
+        let highest = stashes.iter().map(|s| s.index).max().unwrap();
+        self.stash_apply(highest)?;
+        self.stash_drop(highest)?;
+        Ok(())
+    }
+
+    pub fn stash_apply(&mut self, index: usize) -> Result<(), RepoError> {
+        let files_key = format!("stash.{}.files", index);
+        let files_json = self
+            .meta
+            .get_config(&files_key)?
+            .ok_or_else(|| RepoError::Custom(format!("stash@{{{}}} not found", index)))?;
+
+        let head_id_key = format!("stash.{}.head_id", index);
+        let stash_head_id = self
+            .meta
+            .get_config(&head_id_key)?
+            .unwrap_or_default();
+
+        if let Ok((_, current_head_id)) = self.head()
+            && current_head_id.to_hex() != stash_head_id
+        {
+            eprintln!(
+                "Warning: HEAD has moved since stash@{{{}}} was created",
+                index
+            );
+        }
+
+        let files: Vec<(String, Option<String>)> =
+            serde_json::from_str(&files_json).unwrap_or_default();
+
+        for (path, hash_opt) in &files {
+            let full_path = self.root.join(path);
+            match hash_opt {
+                Some(hex_hash) => {
+                    let hash = Hash::from_hex(hex_hash).map_err(|e| {
+                        RepoError::Custom(format!("invalid hash in stash: {}", e))
+                    })?;
+                    let blob = self.cas.get_blob(&hash)?;
+                    if let Some(parent) = full_path.parent() {
+                        fs::create_dir_all(parent)?;
+                    }
+                    fs::write(&full_path, &blob)?;
+                    let repo_path = RepoPath::new(path.clone())?;
+                    self.meta
+                        .working_set_add(&repo_path, FileStatus::Modified)?;
+                }
+                None => {
+                    if full_path.exists() {
+                        fs::remove_file(&full_path)?;
+                    }
+                    let repo_path = RepoPath::new(path.clone())?;
+                    self.meta
+                        .working_set_add(&repo_path, FileStatus::Deleted)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn stash_list(&self) -> Result<Vec<StashEntry>, RepoError> {
+        let all_config = self.list_config()?;
+        let mut entries = Vec::new();
+
+        for (key, value) in &all_config {
+            if let Some(rest) = key.strip_prefix("stash.")
+                && let Some(idx_str) = rest.strip_suffix(".message")
+                && let Ok(idx) = idx_str.parse::<usize>()
+            {
+                let branch_key = format!("stash.{}.head_branch", idx);
+                let head_id_key = format!("stash.{}.head_id", idx);
+                let branch = self
+                    .meta
+                    .get_config(&branch_key)?
+                    .unwrap_or_default();
+                let head_id = self
+                    .meta
+                    .get_config(&head_id_key)?
+                    .unwrap_or_default();
+                entries.push(StashEntry {
+                    index: idx,
+                    message: value.clone(),
+                    branch,
+                    head_id,
+                });
+            }
+        }
+
+        entries.sort_by_key(|e| e.index);
+        Ok(entries)
+    }
+
+    pub fn stash_drop(&mut self, index: usize) -> Result<(), RepoError> {
+        let prefix = format!("stash.{}.", index);
+        let all_config = self.list_config()?;
+        let keys_to_delete: Vec<String> = all_config
+            .iter()
+            .filter(|(k, _)| k.starts_with(&prefix))
+            .map(|(k, _)| k.clone())
+            .collect();
+
+        if keys_to_delete.is_empty() {
+            return Err(RepoError::Custom(format!(
+                "stash@{{{}}} not found",
+                index
+            )));
+        }
+
+        for key in &keys_to_delete {
+            self.meta.conn().execute(
+                "DELETE FROM config WHERE key = ?1",
+                rusqlite::params![key],
+            ).map_err(|e| RepoError::Meta(crate::metadata::MetaError::Database(e)))?;
+        }
+
+        Ok(())
+    }
+
+    // =========================================================================
     // Snapshot & Checkout
     // =========================================================================
 
@@ -816,37 +1061,22 @@ impl Repository {
     pub fn checkout(&mut self, branch_name: &str) -> Result<FileTree, RepoError> {
         let target = BranchName::new(branch_name)?;
 
-        // Verify branch exists
         let target_id = self
             .dag
             .get_branch(&target)
             .ok_or_else(|| RepoError::BranchNotFound(branch_name.to_string()))?;
 
-        // Check for uncommitted changes
-        let working_set = self.meta.working_set()?;
-        let staged_count = working_set
-            .iter()
-            .filter(|(_, s)| {
-                matches!(
-                    s,
-                    FileStatus::Added | FileStatus::Modified | FileStatus::Deleted
-                )
-            })
-            .count();
-        if staged_count > 0 {
-            return Err(RepoError::DirtyWorkingTree(staged_count));
+        let has_changes = self.has_uncommitted_changes()?;
+        if has_changes {
+            self.stash_push(Some("auto-stash before checkout"))?;
         }
 
-        // Build target file tree
         let target_tree = self.snapshot(&target_id)?;
 
-        // Build current file tree (if we can)
         let current_tree = self.snapshot_head().unwrap_or_else(|_| FileTree::empty());
 
-        // Compute diff: what needs to change on disk
         let diffs = diff_trees(&current_tree, &target_tree);
 
-        // Apply changes to the working tree
         for entry in &diffs {
             let full_path = self.root.join(&entry.path);
             match &entry.diff_type {
@@ -876,9 +1106,6 @@ impl Repository {
             }
         }
 
-        // Clean up files that exist on disk but not in the target tree
-        // (files that were in the old tree but not in the new tree,
-        //  and aren't already handled by the diff)
         for (path, _) in current_tree.iter() {
             if !target_tree.contains(path) {
                 let full_path = self.root.join(path);
@@ -888,12 +1115,17 @@ impl Repository {
             }
         }
 
-        // Update HEAD: record which branch is checked out in config.
-        // Do NOT move the target branch pointer — checkout only changes
-        // the working tree and which branch HEAD refers to.
         self.meta
             .set_config("head_branch", branch_name)
             .map_err(RepoError::Meta)?;
+
+        self.invalidate_head_cache();
+
+        if has_changes
+            && let Err(e) = self.stash_pop()
+        {
+            eprintln!("Warning: could not restore stashed changes: {}", e);
+        }
 
         Ok(target_tree)
     }
@@ -1566,6 +1798,15 @@ fn restore_pending_merge_parents(
 // Repository Status
 // =============================================================================
 
+/// A single stash entry.
+#[derive(Debug, Clone)]
+pub struct StashEntry {
+    pub index: usize,
+    pub message: String,
+    pub branch: String,
+    pub head_id: String,
+}
+
 /// Repository status information.
 #[derive(Debug, Clone)]
 pub struct RepoStatus {
@@ -1819,9 +2060,13 @@ mod tests {
         fs::write(&staged, "staged").unwrap();
         repo.add("staged.txt").unwrap();
 
-        // Checkout should fail
+        // Checkout now auto-stashes instead of refusing
         let result = repo.checkout("main");
-        assert!(matches!(result, Err(RepoError::DirtyWorkingTree(_))));
+        assert!(result.is_ok());
+
+        // After auto-stash pop, the stashed changes should be restored to the working set
+        let working_set = repo.meta.working_set().unwrap();
+        assert!(working_set.iter().any(|(p, _)| p == "staged.txt"));
     }
 
     #[test]
@@ -2245,6 +2490,181 @@ mod tests {
             .find(|p| p.id == resolve_id)
             .unwrap();
         assert_eq!(patch.parent_ids.len(), 2);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_has_uncommitted_changes_clean() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = Repository::init(dir.path(), "alice")?;
+
+        assert!(!repo.has_uncommitted_changes()?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_has_uncommitted_changes_staged() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = Repository::init(dir.path(), "alice")?;
+
+        fs::write(dir.path().join("a.txt"), "content")?;
+        repo.add("a.txt")?;
+
+        assert!(repo.has_uncommitted_changes()?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_has_uncommitted_changes_unstaged() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir().unwrap();
+        let mut repo = Repository::init(dir.path(), "alice")?;
+
+        fs::write(dir.path().join("a.txt"), "original")?;
+        repo.add("a.txt")?;
+        repo.commit("initial")?;
+
+        fs::write(dir.path().join("a.txt"), "modified on disk")?;
+
+        assert!(repo.has_uncommitted_changes()?);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_stash_push_pop() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir().unwrap();
+        let mut repo = Repository::init(dir.path(), "alice")?;
+
+        fs::write(dir.path().join("a.txt"), "original")?;
+        repo.add("a.txt")?;
+        repo.commit("initial")?;
+
+        fs::write(dir.path().join("a.txt"), "staged changes")?;
+        repo.add("a.txt")?;
+
+        let stash_index = repo.stash_push(Some("my stash"))?;
+        assert_eq!(stash_index, 0);
+
+        assert!(repo.meta.working_set()?.is_empty());
+        let on_disk = fs::read_to_string(dir.path().join("a.txt"))?;
+        assert_eq!(on_disk, "original");
+
+        repo.stash_pop()?;
+
+        let on_disk = fs::read_to_string(dir.path().join("a.txt"))?;
+        assert_eq!(on_disk, "staged changes");
+
+        let ws = repo.meta.working_set()?;
+        assert_eq!(ws.len(), 1);
+        assert_eq!(ws[0].0, "a.txt");
+        assert_eq!(ws[0].1, FileStatus::Modified);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_stash_list() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir().unwrap();
+        let mut repo = Repository::init(dir.path(), "alice")?;
+
+        fs::write(dir.path().join("a.txt"), "original")?;
+        repo.add("a.txt")?;
+        repo.commit("initial")?;
+
+        fs::write(dir.path().join("a.txt"), "change 1")?;
+        repo.add("a.txt")?;
+        let idx0 = repo.stash_push(Some("first stash"))?;
+        assert_eq!(idx0, 0);
+
+        fs::write(dir.path().join("a.txt"), "change 2")?;
+        repo.add("a.txt")?;
+        let idx1 = repo.stash_push(Some("second stash"))?;
+        assert_eq!(idx1, 1);
+
+        let list = repo.stash_list()?;
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].index, 0);
+        assert_eq!(list[0].message, "first stash");
+        assert_eq!(list[1].index, 1);
+        assert_eq!(list[1].message, "second stash");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_stash_apply_keeps_entry() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir().unwrap();
+        let mut repo = Repository::init(dir.path(), "alice")?;
+
+        fs::write(dir.path().join("a.txt"), "original")?;
+        repo.add("a.txt")?;
+        repo.commit("initial")?;
+
+        fs::write(dir.path().join("a.txt"), "changes to apply")?;
+        repo.add("a.txt")?;
+        let idx = repo.stash_push(Some("keep me"))?;
+        assert_eq!(idx, 0);
+
+        repo.stash_apply(0)?;
+
+        let on_disk = fs::read_to_string(dir.path().join("a.txt"))?;
+        assert_eq!(on_disk, "changes to apply");
+
+        let list = repo.stash_list()?;
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].index, 0);
+        assert_eq!(list[0].message, "keep me");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_stash_drop() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir().unwrap();
+        let mut repo = Repository::init(dir.path(), "alice")?;
+
+        fs::write(dir.path().join("a.txt"), "original")?;
+        repo.add("a.txt")?;
+        repo.commit("initial")?;
+
+        fs::write(dir.path().join("a.txt"), "stashed content")?;
+        repo.add("a.txt")?;
+        repo.stash_push(Some("droppable"))?;
+
+        repo.stash_drop(0)?;
+
+        let list = repo.stash_list()?;
+        assert!(list.is_empty());
+
+        let result = repo.stash_drop(0);
+        assert!(result.is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_stash_pop_empty() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir().unwrap();
+        let mut repo = Repository::init(dir.path(), "alice")?;
+
+        let result = repo.stash_pop();
+        assert!(result.is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_stash_push_nothing() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir().unwrap();
+        let mut repo = Repository::init(dir.path(), "alice")?;
+
+        let result = repo.stash_push(None);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("nothing to commit"));
 
         Ok(())
     }

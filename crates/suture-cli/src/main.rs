@@ -1,5 +1,5 @@
 use base64::Engine;
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 use ed25519_dalek::Signer;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -56,6 +56,8 @@ enum Commands {
     Log {
         /// Branch to show log for (default: HEAD)
         branch: Option<String>,
+        #[arg(short, long)]
+        graph: bool,
     },
     /// Switch to a different branch
     Checkout {
@@ -125,6 +127,16 @@ enum Commands {
         #[command(subcommand)]
         action: KeyAction,
     },
+    /// Stash management
+    Stash {
+        #[command(subcommand)]
+        action: StashAction,
+    },
+    /// Generate shell completions
+    Completions {
+        /// Shell to generate completions for
+        shell: clap_complete::Shell,
+    },
 }
 
 #[derive(Subcommand)]
@@ -143,6 +155,15 @@ enum KeyAction {
         #[arg(default_value = "default")]
         name: String,
     },
+}
+
+#[derive(Subcommand)]
+enum StashAction {
+    Push { #[arg(short, long)] message: Option<String> },
+    Pop,
+    Apply { index: usize },
+    List,
+    Drop { index: usize },
 }
 
 #[derive(Subcommand)]
@@ -332,7 +353,7 @@ async fn main() {
             delete,
             list,
         } => cmd_branch(name.as_deref(), target.as_deref(), delete, list).await,
-        Commands::Log { branch } => cmd_log(branch.as_deref()).await,
+        Commands::Log { branch, graph } => cmd_log(branch.as_deref(), graph).await,
         Commands::Checkout { branch } => cmd_checkout(&branch).await,
         Commands::Diff { from, to } => cmd_diff(from.as_deref(), to.as_deref()).await,
         Commands::Revert { commit, message } => cmd_revert(&commit, message.as_deref()).await,
@@ -348,12 +369,50 @@ async fn main() {
         Commands::Push { remote } => cmd_push(&remote).await,
         Commands::Pull { remote } => cmd_pull(&remote).await,
         Commands::Key { action } => cmd_key(&action).await,
+        Commands::Stash { action } => cmd_stash(&action).await,
+        Commands::Completions { shell } => {
+            clap_complete::generate(shell, &mut Cli::command(), "suture", &mut std::io::stdout());
+            Ok(())
+        }
     };
 
     if let Err(e) = result {
         eprintln!("Error: {e}");
         std::process::exit(1);
     }
+}
+
+async fn cmd_stash(action: &StashAction) -> Result<(), Box<dyn std::error::Error>> {
+    let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+    match action {
+        StashAction::Push { message } => {
+            let idx = repo.stash_push(message.as_deref())?;
+            println!("Saved as stash@{{{}}}", idx);
+        }
+        StashAction::Pop => {
+            repo.stash_pop()?;
+            println!("Stash popped.");
+        }
+        StashAction::Apply { index } => {
+            repo.stash_apply(*index)?;
+            println!("Applied stash@{{{}}}", index);
+        }
+        StashAction::List => {
+            let stashes = repo.stash_list()?;
+            if stashes.is_empty() {
+                println!("No stashes found.");
+            } else {
+                for s in &stashes {
+                    println!("stash@{{{}}}: {} ({})", s.index, s.message, s.branch);
+                }
+            }
+        }
+        StashAction::Drop { index } => {
+            repo.stash_drop(*index)?;
+            println!("Dropped stash@{{{}}}", index);
+        }
+    }
+    Ok(())
 }
 
 async fn cmd_init(path: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -453,21 +512,106 @@ async fn cmd_branch(
     Ok(())
 }
 
-async fn cmd_log(branch: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_log(branch: Option<&str>, graph: bool) -> Result<(), Box<dyn std::error::Error>> {
     let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
-    let patches = repo.log(branch)?;
 
-    if patches.is_empty() {
+    if !graph {
+        let patches = repo.log(branch)?;
+
+        if patches.is_empty() {
+            println!("No commits.");
+            return Ok(());
+        }
+
+        for (i, patch) in patches.iter().enumerate() {
+            if i == 0 {
+                println!("* {} {}", patch.id.to_hex(), patch.message);
+            } else {
+                println!("  {} {}", patch.id.to_hex(), patch.message);
+            }
+        }
+
+        return Ok(());
+    }
+
+    let branches = repo.list_branches();
+    if branches.is_empty() {
         println!("No commits.");
         return Ok(());
     }
 
-    for (i, patch) in patches.iter().enumerate() {
-        if i == 0 {
-            println!("* {} {}", patch.id.to_hex(), patch.message);
+    let all_patches = repo.all_patches();
+    let mut commit_groups: Vec<(Vec<suture_core::patch::types::PatchId>, String, u64)> = Vec::new();
+    let mut seen_messages: std::collections::HashMap<(String, u64), usize> = std::collections::HashMap::new();
+
+    for patch in &all_patches {
+        let key = (patch.message.clone(), patch.timestamp);
+        if let Some(&idx) = seen_messages.get(&key) {
+            commit_groups[idx].0.push(patch.id);
         } else {
-            println!("  {} {}", patch.id.to_hex(), patch.message);
+            seen_messages.insert(key, commit_groups.len());
+            commit_groups.push((vec![patch.id], patch.message.clone(), patch.timestamp));
         }
+    }
+
+    commit_groups.sort_by(|a, b| b.2.cmp(&a.2));
+
+    let branch_tips: std::collections::HashSet<suture_core::patch::types::PatchId> = branches
+        .iter()
+        .map(|(_, id)| *id)
+        .collect();
+
+    let tip_list: Vec<_> = branches.iter().collect();
+    let mut col_assign: std::collections::HashMap<suture_core::patch::types::PatchId, usize> = std::collections::HashMap::new();
+    for (i, (_, id)) in tip_list.iter().enumerate() {
+        col_assign.insert(*id, i);
+    }
+
+    let mut next_col = tip_list.len();
+
+    let num_cols = tip_list.len() + 5;
+    for (patch_ids, message, _ts) in &commit_groups {
+        let mut row = vec![' '; num_cols];
+        let mut used_cols: std::collections::HashSet<usize> = std::collections::HashSet::new();
+
+        for pid in patch_ids {
+            if let Some(&col) = col_assign.get(pid) {
+                row[col] = '*';
+                used_cols.insert(col);
+            } else {
+                row[next_col % num_cols] = '*';
+                used_cols.insert(next_col % num_cols);
+                col_assign.insert(*pid, next_col % num_cols);
+                next_col += 1;
+            }
+        }
+
+        let is_tip = patch_ids.iter().any(|pid| branch_tips.contains(pid));
+        if !is_tip {
+            for &col in &used_cols {
+                row[col] = '|';
+            }
+        }
+
+        let row_str: String = row.iter().collect();
+        let short_hash = if let Some(pid) = patch_ids.first() {
+            pid.to_hex().chars().take(8).collect()
+        } else {
+            "????????".to_string()
+        };
+
+        let labels: Vec<String> = branches
+            .iter()
+            .filter(|(_, id)| patch_ids.contains(id))
+            .map(|(name, _)| name.clone())
+            .collect();
+        let label_str = if labels.is_empty() {
+            String::new()
+        } else {
+            format!(" ({})", labels.join(", "))
+        };
+
+        println!("{} {} {}{}", row_str, short_hash, message, label_str);
     }
 
     Ok(())
