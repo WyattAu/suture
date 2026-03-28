@@ -84,6 +84,17 @@ pub enum RepoError {
     Custom(String),
 }
 
+/// Reset mode for the `reset` command.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResetMode {
+    /// Move branch pointer only; keep staging and working tree.
+    Soft,
+    /// Move branch pointer and clear staging; keep working tree.
+    Mixed,
+    /// Move branch pointer, clear staging, and restore working tree.
+    Hard,
+}
+
 /// The Suture Repository.
 pub struct Repository {
     /// Path to the repository root (the directory containing `.suture/`).
@@ -1165,6 +1176,53 @@ impl Repository {
         };
 
         Ok(diff_trees(&old_tree, &new_tree))
+    }
+
+    // =========================================================================
+    // Reset
+    // =========================================================================
+
+    /// Reset HEAD to a specific commit.
+    ///
+    /// Resolves `target` (hex hash or branch name), moves the current branch
+    /// pointer, and optionally clears staging and/or restores the working tree
+    /// depending on `mode`.
+    ///
+    /// Returns the resolved target patch ID.
+    pub fn reset(&mut self, target: &str, mode: ResetMode) -> Result<PatchId, RepoError> {
+        let target_id = if let Ok(hash) = Hash::from_hex(target)
+            && self.dag.has_patch(&hash)
+        {
+            hash
+        } else {
+            let bn = BranchName::new(target)?;
+            self.dag
+                .get_branch(&bn)
+                .ok_or_else(|| RepoError::BranchNotFound(target.to_string()))?
+        };
+
+        let (branch_name, _) = self.head()?;
+        let old_tree = self.snapshot_head().unwrap_or_else(|_| FileTree::empty());
+
+        let branch = BranchName::new(&branch_name)?;
+        self.dag.update_branch(&branch, target_id)?;
+        self.meta.set_branch(&branch, &target_id)?;
+        self.invalidate_head_cache();
+
+        match mode {
+            ResetMode::Soft => {}
+            ResetMode::Mixed | ResetMode::Hard => {
+                self.meta
+                    .conn()
+                    .execute("DELETE FROM working_set", [])
+                    .map_err(|e| RepoError::Meta(crate::metadata::MetaError::Database(e)))?;
+                if mode == ResetMode::Hard {
+                    self.sync_working_tree(&old_tree)?;
+                }
+            }
+        }
+
+        Ok(target_id)
     }
 
     // =========================================================================
@@ -2665,6 +2723,114 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("nothing to commit"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_reset_soft() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir().unwrap();
+        let mut repo = Repository::init(dir.path(), "alice")?;
+
+        fs::write(dir.path().join("file1.txt"), "first content")?;
+        repo.add("file1.txt")?;
+        let first_commit = repo.commit("first commit")?;
+
+        fs::write(dir.path().join("file2.txt"), "second content")?;
+        repo.add("file2.txt")?;
+        repo.commit("second commit")?;
+
+        // Stage a modification before reset to verify soft preserves staging
+        fs::write(dir.path().join("file2.txt"), "modified second")?;
+        repo.add("file2.txt")?;
+
+        let result = repo.reset(&first_commit.to_hex(), ResetMode::Soft)?;
+        assert_eq!(result, first_commit);
+
+        // HEAD points to first commit
+        let (_, head_id) = repo.head()?;
+        assert_eq!(head_id, first_commit);
+
+        // Working tree still has file2 (soft doesn't touch working tree)
+        assert!(dir.path().join("file2.txt").exists());
+        assert_eq!(
+            fs::read_to_string(dir.path().join("file2.txt"))?,
+            "modified second"
+        );
+
+        // Staging area still has the staged changes (soft doesn't clear staging)
+        let status = repo.status()?;
+        assert_eq!(status.staged_files.len(), 1);
+        assert_eq!(status.staged_files[0].0, "file2.txt");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_reset_mixed() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir().unwrap();
+        let mut repo = Repository::init(dir.path(), "alice")?;
+
+        fs::write(dir.path().join("file1.txt"), "first content")?;
+        repo.add("file1.txt")?;
+        let first_commit = repo.commit("first commit")?;
+
+        fs::write(dir.path().join("file2.txt"), "second content")?;
+        repo.add("file2.txt")?;
+        repo.commit("second commit")?;
+
+        // Stage a modification before reset to verify mixed clears staging
+        fs::write(dir.path().join("file2.txt"), "modified second")?;
+        repo.add("file2.txt")?;
+
+        let result = repo.reset(&first_commit.to_hex(), ResetMode::Mixed)?;
+        assert_eq!(result, first_commit);
+
+        // HEAD points to first commit
+        let (_, head_id) = repo.head()?;
+        assert_eq!(head_id, first_commit);
+
+        // Working tree still has file2 content on disk (mixed doesn't touch working tree)
+        assert!(dir.path().join("file2.txt").exists());
+        assert_eq!(
+            fs::read_to_string(dir.path().join("file2.txt"))?,
+            "modified second"
+        );
+
+        // Staging area is cleared
+        let status = repo.status()?;
+        assert!(status.staged_files.is_empty());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_reset_hard() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir().unwrap();
+        let mut repo = Repository::init(dir.path(), "alice")?;
+
+        fs::write(dir.path().join("file1.txt"), "first content")?;
+        repo.add("file1.txt")?;
+        let first_commit = repo.commit("first commit")?;
+
+        fs::write(dir.path().join("file2.txt"), "second content")?;
+        repo.add("file2.txt")?;
+        repo.commit("second commit")?;
+
+        let result = repo.reset(&first_commit.to_hex(), ResetMode::Hard)?;
+        assert_eq!(result, first_commit);
+
+        // HEAD points to first commit
+        let (_, head_id) = repo.head()?;
+        assert_eq!(head_id, first_commit);
+
+        // Working tree matches first commit (file2 removed from disk)
+        assert!(dir.path().join("file1.txt").exists());
+        assert!(!dir.path().join("file2.txt").exists());
+
+        let tree = repo.snapshot_head()?;
+        assert!(tree.contains("file1.txt"));
+        assert!(!tree.contains("file2.txt"));
 
         Ok(())
     }

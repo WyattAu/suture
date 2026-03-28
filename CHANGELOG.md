@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.4.0] - 2026-03-28
+
+### Added
+
+#### Human-Readable Diff Output
+- `suture diff` now shows line-level content with `+`/`-` prefixes
+- ANSI color output (green for additions, red for deletions, bold cyan for headers)
+- `diff --git a/<path> b/<path>` headers and `@@ hunk @@` markers
+- Added, Deleted, Modified, and Renamed files all display correctly
+- Uses existing LCS-based `diff_lines` from the merge engine
+
+#### Enhanced Status
+- `suture status` now shows unstaged changes alongside staged changes
+- "Unstaged changes:" section with modified, deleted, and untracked files
+- Files modified after staging marked with `[staged+unstaged]`
+- Walks repository directory and compares against HEAD tree
+
+#### Clone Command
+- `suture clone <url> [dir]` — bootstrap a repository from a remote Hub
+- Creates target directory, initializes repo, adds "origin" remote, pulls patches
+- Extracts directory name from URL when not specified
+
+#### Fetch Command
+- `suture fetch [remote]` — fetch patches from remote without updating working tree
+- Updates DAG and metadata only (no working tree sync)
+- Extracted shared `do_fetch`/`do_pull` helpers for code reuse
+
+#### Reset Command
+- `suture reset [--mode soft|mixed|hard] <ref>` — move HEAD to a different commit
+- `--soft`: move branch pointer, keep staging and working tree
+- `--mixed` (default): move branch pointer, clear staging, keep working tree
+- `--hard`: move branch pointer, clear staging, restore working tree to target
+- `ResetMode` enum exposed from `suture-core`
+
+#### Quality
+- Test count: 216 (up from 213 in v0.3.0)
+- 3 new reset tests (soft, mixed, hard modes)
+- Zero clippy warnings, zero audit findings
+
 ## [0.3.0] - 2026-03-28
 
 ### Added

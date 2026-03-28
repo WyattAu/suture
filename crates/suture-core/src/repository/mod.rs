@@ -5,4 +5,4 @@
 //! and MetadataStore to provide a unified API.
 
 pub mod repo_impl;
-pub use repo_impl::{ConflictInfo, MergeExecutionResult, RepoError, RepoStatus, Repository, StashEntry};
+pub use repo_impl::{ConflictInfo, MergeExecutionResult, RepoError, RepoStatus, Repository, ResetMode, StashEntry};

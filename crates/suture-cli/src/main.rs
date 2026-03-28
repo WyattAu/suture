@@ -4,6 +4,11 @@ use ed25519_dalek::Signer;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+const ANSI_RED: &str = "\x1b[31m";
+const ANSI_GREEN: &str = "\x1b[32m";
+const ANSI_BOLD_CYAN: &str = "\x1b[1;36m";
+const ANSI_RESET: &str = "\x1b[0m";
+
 #[derive(Parser)]
 #[command(
     name = "suture",
@@ -122,6 +127,27 @@ enum Commands {
         #[arg(default_value = "origin")]
         remote: String,
     },
+    /// Fetch patches from a remote Hub without merging
+    Fetch {
+        /// Remote name (default: "origin")
+        #[arg(default_value = "origin")]
+        remote: String,
+    },
+    /// Clone a repository from a remote Hub
+    Clone {
+        /// Remote URL (e.g., http://localhost:50051)
+        url: String,
+        /// Target directory (default: repo name extracted from URL)
+        dir: Option<String>,
+    },
+    /// Reset HEAD to a specific commit
+    Reset {
+        /// Target commit hash or branch name
+        target: String,
+        /// Reset mode
+        #[arg(short, long, default_value = "mixed")]
+        mode: String,
+    },
     /// Signing key management
     Key {
         #[command(subcommand)]
@@ -216,7 +242,6 @@ struct PushRequest {
     patches: Vec<PatchProto>,
     branches: Vec<BranchProto>,
     blobs: Vec<BlobRef>,
-    /// Optional Ed25519 signature.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     signature: Option<Vec<u8>>,
 }
@@ -305,8 +330,6 @@ fn proto_to_patch(proto: &PatchProto) -> Result<suture_core::patch::types::Patch
     ))
 }
 
-/// Build canonical bytes for a push request (for Ed25519 signing).
-/// Must match the hub's `canonical_push_bytes` exactly.
 fn canonical_push_bytes(req: &PushRequest) -> Vec<u8> {
     let mut buf = Vec::new();
 
@@ -336,6 +359,138 @@ fn canonical_push_bytes(req: &PushRequest) -> Vec<u8> {
     }
 
     buf
+}
+
+fn sign_push_request(
+    repo: &suture_core::repository::Repository,
+    mut req: PushRequest,
+) -> Result<PushRequest, Box<dyn std::error::Error>> {
+    let key_name = match repo.get_config("signing.key")? {
+        Some(name) => name,
+        None => return Ok(req),
+    };
+
+    let keys_dir = std::path::Path::new(".suture").join("keys");
+    let key_path = keys_dir.join(format!("{key_name}.ed25519"));
+
+    let priv_key_bytes = std::fs::read(&key_path).map_err(|e| {
+        format!(
+            "cannot read signing key '{}': {e}. Run `suture key generate {key_name}`",
+            key_path.display()
+        )
+    })?;
+
+    if priv_key_bytes.len() != 32 {
+        return Err("invalid private key length (expected 32 bytes)".into());
+    }
+
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(
+        priv_key_bytes
+            .as_slice()
+            .try_into()
+            .map_err(|_| "invalid key bytes")?,
+    );
+    let canonical = canonical_push_bytes(&req);
+    let signature = signing_key.sign(&canonical);
+    req.signature = Some(signature.to_bytes().to_vec());
+
+    Ok(req)
+}
+
+fn walk_repo_files(dir: &std::path::Path) -> Vec<String> {
+    let mut files = Vec::new();
+    walk_repo_files_inner(dir, dir, &mut files);
+    files
+}
+
+fn walk_repo_files_inner(root: &std::path::Path, current: &std::path::Path, files: &mut Vec<String>) {
+    let Ok(entries) = std::fs::read_dir(current) else {
+        return;
+    };
+    for entry in entries.filter_map(|e| e.ok()) {
+        let path = entry.path();
+        let name = entry.file_name();
+        if name == ".suture" {
+            continue;
+        }
+        let rel = path
+            .strip_prefix(root)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .replace('\\', "/");
+        if path.is_dir() {
+            walk_repo_files_inner(root, &path, files);
+        } else if path.is_file() {
+            files.push(rel);
+        }
+    }
+}
+
+fn format_line_diff(path: &str, changes: &[suture_core::engine::merge::LineChange]) {
+    use suture_core::engine::merge::LineChange;
+
+    let has_changes = changes.iter().any(|c| !matches!(c, LineChange::Unchanged(_)));
+    if !has_changes {
+        return;
+    }
+
+    println!("{ANSI_BOLD_CYAN}diff --git a/{path} b/{path}{ANSI_RESET}");
+    println!("{ANSI_BOLD_CYAN}--- a/{path}{ANSI_RESET}");
+    println!("{ANSI_BOLD_CYAN}+++ b/{path}{ANSI_RESET}");
+
+    let mut old_line = 1usize;
+    let mut new_line = 1usize;
+    let mut i = 0;
+
+    while i < changes.len() {
+        match &changes[i] {
+            LineChange::Unchanged(lines) => {
+                old_line += lines.len();
+                new_line += lines.len();
+                i += 1;
+            }
+            LineChange::Deleted(_) | LineChange::Inserted(_) => {
+                let hunk_old_start = old_line;
+                let hunk_new_start = new_line;
+                let mut hunk_old_count = 0usize;
+                let mut hunk_new_count = 0usize;
+                let mut hunk_lines: Vec<(char, String)> = Vec::new();
+
+                while i < changes.len() {
+                    match &changes[i] {
+                        LineChange::Deleted(lines) => {
+                            for line in lines {
+                                hunk_lines.push(('-', line.clone()));
+                                hunk_old_count += 1;
+                                old_line += 1;
+                            }
+                            i += 1;
+                        }
+                        LineChange::Inserted(lines) => {
+                            for line in lines {
+                                hunk_lines.push(('+', line.clone()));
+                                hunk_new_count += 1;
+                                new_line += 1;
+                            }
+                            i += 1;
+                        }
+                        LineChange::Unchanged(_) => break,
+                    }
+                }
+
+                println!(
+                    "{ANSI_BOLD_CYAN}@@ -{hunk_old_start},{hunk_old_count} +{hunk_new_start},{hunk_new_count} @@{ANSI_RESET}"
+                );
+                for (prefix, line) in &hunk_lines {
+                    if *prefix == '-' {
+                        println!("{ANSI_RED}-{line}{ANSI_RESET}");
+                    } else {
+                        println!("{ANSI_GREEN}+{line}{ANSI_RESET}");
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[tokio::main]
@@ -368,6 +523,9 @@ async fn main() {
         Commands::Remote { action } => cmd_remote(&action).await,
         Commands::Push { remote } => cmd_push(&remote).await,
         Commands::Pull { remote } => cmd_pull(&remote).await,
+        Commands::Fetch { remote } => cmd_fetch(&remote).await,
+        Commands::Clone { url, dir } => cmd_clone(&url, dir.as_deref()).await,
+        Commands::Reset { target, mode } => cmd_reset(&target, &mode).await,
         Commands::Key { action } => cmd_key(&action).await,
         Commands::Stash { action } => cmd_stash(&action).await,
         Commands::Completions { shell } => {
@@ -447,6 +605,57 @@ async fn cmd_status() -> Result<(), Box<dyn std::error::Error>> {
         println!("\nStaged changes:");
         for (path, file_status) in &status.staged_files {
             println!("  {:?} {}", file_status, path);
+        }
+    }
+
+    let head_tree = repo
+        .snapshot_head()
+        .unwrap_or_else(|_| suture_core::engine::tree::FileTree::empty());
+    let staged_paths: std::collections::HashSet<&str> =
+        status.staged_files.iter().map(|(p, _)| p.as_str()).collect();
+
+    let mut unstaged_modified: Vec<String> = Vec::new();
+    let mut unstaged_deleted: Vec<String> = Vec::new();
+    let mut untracked: Vec<String> = Vec::new();
+
+    let repo_dir = std::path::Path::new(".");
+    let disk_files = walk_repo_files(repo_dir);
+
+    for rel_path in &disk_files {
+        let full_path = repo_dir.join(rel_path);
+        if let Ok(data) = std::fs::read(&full_path) {
+            let current_hash = suture_common::Hash::from_data(&data);
+            if let Some(head_hash) = head_tree.get(rel_path) {
+                if &current_hash != head_hash {
+                    unstaged_modified.push(rel_path.clone());
+                }
+            } else if !staged_paths.contains(rel_path.as_str()) {
+                untracked.push(rel_path.clone());
+            }
+        }
+    }
+
+    for (path, _) in head_tree.iter() {
+        if !disk_files.iter().any(|f| f == path) && !staged_paths.contains(path.as_str()) {
+            unstaged_deleted.push(path.clone());
+        }
+    }
+
+    if !unstaged_modified.is_empty() || !unstaged_deleted.is_empty() || !untracked.is_empty() {
+        println!("\nUnstaged changes:");
+        for path in &unstaged_modified {
+            let marker = if staged_paths.contains(path.as_str()) {
+                " [staged+unstaged]"
+            } else {
+                ""
+            };
+            println!("  modified: {}{}", path, marker);
+        }
+        for path in &unstaged_deleted {
+            println!("  deleted:  {}", path);
+        }
+        for path in &untracked {
+            println!("  untracked: {}", path);
         }
     }
 
@@ -626,6 +835,7 @@ async fn cmd_checkout(branch: &str) -> Result<(), Box<dyn std::error::Error>> {
 
 async fn cmd_diff(from: Option<&str>, to: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
     use suture_core::engine::diff::DiffType;
+    use suture_core::engine::merge::diff_lines;
 
     let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
     let entries = repo.diff(from, to)?;
@@ -638,10 +848,66 @@ async fn cmd_diff(from: Option<&str>, to: Option<&str>) -> Result<(), Box<dyn st
     for entry in &entries {
         match &entry.diff_type {
             DiffType::Renamed { old_path, new_path } => {
-                println!("{} {} → {}", entry.diff_type, old_path, new_path);
+                println!(
+                    "{ANSI_BOLD_CYAN}renamed {} → {}{ANSI_RESET}",
+                    old_path, new_path
+                );
             }
-            _ => {
-                println!("{} {}", entry.diff_type, entry.path);
+            DiffType::Added => {
+                if let Some(new_hash) = &entry.new_hash {
+                    let Ok(new_blob) = repo.cas().get_blob(new_hash) else {
+                        println!(
+                            "{ANSI_BOLD_CYAN}added {} (binary){ANSI_RESET}",
+                            entry.path
+                        );
+                        continue;
+                    };
+                    let new_str = String::from_utf8_lossy(&new_blob);
+                    let new_lines: Vec<&str> = new_str.lines().collect();
+                    let changes = diff_lines(&[], &new_lines);
+                    format_line_diff(&entry.path, &changes);
+                } else {
+                    println!("{ANSI_BOLD_CYAN}added {}{ANSI_RESET}", entry.path);
+                }
+            }
+            DiffType::Deleted => {
+                if let Some(old_hash) = &entry.old_hash {
+                    let Ok(old_blob) = repo.cas().get_blob(old_hash) else {
+                        println!(
+                            "{ANSI_BOLD_CYAN}deleted {} (binary){ANSI_RESET}",
+                            entry.path
+                        );
+                        continue;
+                    };
+                    let old_str = String::from_utf8_lossy(&old_blob);
+                    let old_lines: Vec<&str> = old_str.lines().collect();
+                    let changes = diff_lines(&old_lines, &[]);
+                    format_line_diff(&entry.path, &changes);
+                } else {
+                    println!("{ANSI_BOLD_CYAN}deleted {}{ANSI_RESET}", entry.path);
+                }
+            }
+            DiffType::Modified => {
+                if let (Some(old_hash), Some(new_hash)) = (&entry.old_hash, &entry.new_hash) {
+                    match (repo.cas().get_blob(old_hash), repo.cas().get_blob(new_hash)) {
+                        (Ok(old_blob), Ok(new_blob)) => {
+                            let old_str = String::from_utf8_lossy(&old_blob);
+                            let new_str = String::from_utf8_lossy(&new_blob);
+                            let old_lines: Vec<&str> = old_str.lines().collect();
+                            let new_lines: Vec<&str> = new_str.lines().collect();
+                            let changes = diff_lines(&old_lines, &new_lines);
+                            format_line_diff(&entry.path, &changes);
+                        }
+                        _ => {
+                            println!(
+                                "{ANSI_BOLD_CYAN}modified {} (binary){ANSI_RESET}",
+                                entry.path
+                            );
+                        }
+                    }
+                } else {
+                    println!("{ANSI_BOLD_CYAN}modified {}{ANSI_RESET}", entry.path);
+                }
             }
         }
     }
@@ -724,13 +990,11 @@ async fn cmd_config(key_value: &[String]) -> Result<(), Box<dyn std::error::Erro
     let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
 
     if key_value.is_empty() {
-        // List all config
         let entries = repo.list_config()?;
         if entries.is_empty() {
             println!("No configuration set.");
         } else {
             for (key, value) in &entries {
-                // Hide internal keys
                 if key.starts_with("pending_merge_parents") || key.starts_with("head_branch") {
                     continue;
                 }
@@ -779,49 +1043,10 @@ async fn cmd_remote(action: &RemoteAction) -> Result<(), Box<dyn std::error::Err
     Ok(())
 }
 
-/// Sign a push request if a signing key is configured.
-/// Returns the request with the signature field populated.
-fn sign_push_request(
-    repo: &suture_core::repository::Repository,
-    mut req: PushRequest,
-) -> Result<PushRequest, Box<dyn std::error::Error>> {
-    let key_name = match repo.get_config("signing.key")? {
-        Some(name) => name,
-        None => return Ok(req), // No signing configured
-    };
-
-    let keys_dir = std::path::Path::new(".suture").join("keys");
-    let key_path = keys_dir.join(format!("{key_name}.ed25519"));
-
-    let priv_key_bytes = std::fs::read(&key_path).map_err(|e| {
-        format!(
-            "cannot read signing key '{}': {e}. Run `suture key generate {key_name}`",
-            key_path.display()
-        )
-    })?;
-
-    if priv_key_bytes.len() != 32 {
-        return Err("invalid private key length (expected 32 bytes)".into());
-    }
-
-    let signing_key = ed25519_dalek::SigningKey::from_bytes(
-        priv_key_bytes
-            .as_slice()
-            .try_into()
-            .map_err(|_| "invalid key bytes")?,
-    );
-    let canonical = canonical_push_bytes(&req);
-    let signature = signing_key.sign(&canonical);
-    req.signature = Some(signature.to_bytes().to_vec());
-
-    Ok(req)
-}
-
 async fn cmd_push(remote: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
     let url = repo.get_remote_url(remote)?;
 
-    // Incremental push: check last-pushed state
     let push_state_key = format!("remote.{}.last_pushed", remote);
     let patches = if let Some(last_pushed_hex) = repo.get_config(&push_state_key)? {
         let last_pushed = suture_common::Hash::from_hex(&last_pushed_hex)?;
@@ -868,7 +1093,6 @@ async fn cmd_push(remote: &str) -> Result<(), Box<dyn std::error::Error>> {
         signature: None,
     };
 
-    // Sign the push if a signing key is configured
     let push_body = sign_push_request(&repo, push_body)?;
 
     let client = reqwest::Client::new();
@@ -881,7 +1105,6 @@ async fn cmd_push(remote: &str) -> Result<(), Box<dyn std::error::Error>> {
     if resp.status().is_success() {
         let result: PushResponse = resp.json().await?;
         if result.success {
-            // Update last-pushed state to current HEAD
             let (_, head_id) = repo.head()?;
             repo.set_config(&push_state_key, &head_id.to_hex())?;
             println!("Push successful ({} patch(es))", patches.len());
@@ -896,8 +1119,10 @@ async fn cmd_push(remote: &str) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn cmd_pull(remote: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+async fn do_fetch(
+    repo: &mut suture_core::repository::Repository,
+    remote: &str,
+) -> Result<usize, Box<dyn std::error::Error>> {
     let url = repo.get_remote_url(remote)?;
 
     let known_branches = repo
@@ -923,20 +1148,17 @@ async fn cmd_pull(remote: &str) -> Result<(), Box<dyn std::error::Error>> {
 
     if !resp.status().is_success() {
         let text = resp.text().await?;
-        eprintln!("Pull failed: {}", text);
-        return Ok(());
+        eprintln!("Fetch failed: {}", text);
+        return Ok(0);
     }
 
     let result: PullResponse = resp.json().await?;
     if !result.success {
-        eprintln!("Pull failed: {:?}", result.error);
-        return Ok(());
+        eprintln!("Fetch failed: {:?}", result.error);
+        return Ok(0);
     }
 
     let b64 = base64::engine::general_purpose::STANDARD;
-    let old_tree =
-        repo.snapshot_head()
-            .unwrap_or_else(|_| suture_core::engine::tree::FileTree::empty());
 
     for blob in &result.blobs {
         let hash = suture_common::Hash::from_hex(&blob.hash.value)?;
@@ -971,9 +1193,80 @@ async fn cmd_pull(remote: &str) -> Result<(), Box<dyn std::error::Error>> {
         repo.meta().set_branch(&branch_name, &target_id)?;
     }
 
-    repo.sync_working_tree(&old_tree)?;
+    Ok(new_patches)
+}
 
+async fn do_pull(
+    repo: &mut suture_core::repository::Repository,
+    remote: &str,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    let old_tree = repo
+        .snapshot_head()
+        .unwrap_or_else(|_| suture_core::engine::tree::FileTree::empty());
+    let new_patches = do_fetch(repo, remote).await?;
+    repo.sync_working_tree(&old_tree)?;
+    Ok(new_patches)
+}
+
+async fn cmd_pull(remote: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+    let new_patches = do_pull(&mut repo, remote).await?;
     println!("Pull successful: {} new patch(es)", new_patches);
+    Ok(())
+}
+
+async fn cmd_fetch(remote: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+    let new_patches = do_fetch(&mut repo, remote).await?;
+    println!("Fetch successful: {} new patch(es)", new_patches);
+    Ok(())
+}
+
+async fn cmd_clone(url: &str, dir: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    let repo_name = dir.unwrap_or_else(|| {
+        url.trim_end_matches('/')
+            .rsplit('/')
+            .next()
+            .unwrap_or("suture-repo")
+    });
+
+    let repo_path = PathBuf::from(repo_name);
+    if repo_path.exists() {
+        return Err(format!("directory '{}' already exists", repo_name).into());
+    }
+
+    std::fs::create_dir_all(&repo_path)?;
+    let mut repo = suture_core::repository::Repository::init(&repo_path, "unknown")?;
+    repo.add_remote("origin", url)?;
+
+    let new_patches = do_pull(&mut repo, "origin").await?;
+
+    println!("Cloned into '{}'", repo_name);
+    if new_patches > 0 {
+        println!("  {} patch(es) pulled", new_patches);
+    }
+    Ok(())
+}
+
+async fn cmd_reset(target: &str, mode: &str) -> Result<(), Box<dyn std::error::Error>> {
+    use suture_core::repository::ResetMode;
+
+    let reset_mode = match mode {
+        "soft" => ResetMode::Soft,
+        "mixed" => ResetMode::Mixed,
+        "hard" => ResetMode::Hard,
+        _ => {
+            return Err(format!(
+                "invalid reset mode: '{}' (expected soft, mixed, hard)",
+                mode
+            )
+            .into());
+        }
+    };
+
+    let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+    let target_id = repo.reset(target, reset_mode)?;
+    println!("HEAD is now at {}", target_id);
     Ok(())
 }
 
@@ -989,11 +1282,9 @@ async fn cmd_key(action: &KeyAction) -> Result<(), Box<dyn std::error::Error>> {
             let priv_path = keys_dir.join(format!("{name}.ed25519"));
             std::fs::write(&priv_path, keypair.private_key_bytes())?;
 
-            // Store public key in repo config
             let pub_hex = hex::encode(keypair.public_key_bytes());
             repo.set_config(&format!("key.public.{name}"), &pub_hex)?;
 
-            // Set as default signing key if this is the "default" key
             if name == "default" {
                 repo.set_config("signing.key", "default")?;
             }
