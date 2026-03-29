@@ -74,6 +74,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
+name = "arbitrary"
+version = "1.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3d036a3c4ab069c7b410a2ce876bd74808d2d0888a82667669f8e783a898bf1"
+dependencies = [
+ "derive_arbitrary",
+]
+
+[[package]]
 name = "arrayref"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -371,6 +380,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "crc32fast"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9481c1c90cbf2ac953f07c8d4a58aa3945c425b7185c9154d67a65e4230da511"
+dependencies = [
+ "cfg-if",
+]
+
+[[package]]
 name = "criterion"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -503,6 +521,17 @@ checksum = "e7c1832837b905bbfb5101e07cc24c8deddf52f93225eee6ead5f4d63d53ddcb"
 dependencies = [
  "const-oid",
  "zeroize",
+]
+
+[[package]]
+name = "derive_arbitrary"
+version = "1.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e567bd82dcff979e4b03460c307b3cdc9e96fde3d73bed1496d2bc75d9dd62a"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -1457,6 +1486,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a1d01941d82fa2ab50be1e79e6714289dd7cde78eba4c074bc5a4374f650dfe0"
 
 [[package]]
+name = "quick-xml"
+version = "0.37.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "331e97a1af0bf59823e6eadffe373d7b27f485be8748f71471c662c1f269b7fb"
+dependencies = [
+ "memchr",
+ "serde",
+]
+
+[[package]]
 name = "quote"
 version = "1.0.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2042,10 +2081,14 @@ dependencies = [
  "suture-core",
  "suture-driver",
  "suture-driver-csv",
+ "suture-driver-docx",
  "suture-driver-json",
+ "suture-driver-pptx",
  "suture-driver-toml",
+ "suture-driver-xlsx",
  "suture-driver-xml",
  "suture-driver-yaml",
+ "suture-ooxml",
  "tokio",
 ]
 
@@ -2100,6 +2143,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "suture-driver-docx"
+version = "0.1.0"
+dependencies = [
+ "quick-xml",
+ "serde",
+ "serde_json",
+ "suture-driver",
+ "suture-ooxml",
+ "zip",
+]
+
+[[package]]
 name = "suture-driver-json"
 version = "0.1.0"
 dependencies = [
@@ -2119,11 +2174,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "suture-driver-pptx"
+version = "0.1.0"
+dependencies = [
+ "quick-xml",
+ "serde",
+ "suture-driver",
+ "suture-ooxml",
+]
+
+[[package]]
 name = "suture-driver-toml"
 version = "0.1.0"
 dependencies = [
  "suture-driver",
  "toml",
+]
+
+[[package]]
+name = "suture-driver-xlsx"
+version = "0.1.0"
+dependencies = [
+ "quick-xml",
+ "serde",
+ "suture-driver",
+ "suture-ooxml",
 ]
 
 [[package]]
@@ -2169,6 +2244,18 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "suture-ooxml"
+version = "0.1.0"
+dependencies = [
+ "quick-xml",
+ "serde",
+ "serde_json",
+ "suture-driver",
+ "thiserror",
+ "zip",
 ]
 
 [[package]]
@@ -3060,6 +3147,21 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "zip"
+version = "2.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fabe6324e908f85a1c52063ce7aa26b68dcb7eb6dbc83a2d148403c9bc3eba50"
+dependencies = [
+ "arbitrary",
+ "crc32fast",
+ "crossbeam-utils",
+ "displaydoc",
+ "indexmap",
+ "memchr",
+ "thiserror",
 ]
 
 [[package]]

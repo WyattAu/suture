@@ -12,6 +12,10 @@ suture-driver-toml = { path = "../suture-driver-toml" }
 suture-driver-csv = { path = "../suture-driver-csv" }
 suture-driver-yaml = { path = "../suture-driver-yaml" }
 suture-driver-xml = { path = "../suture-driver-xml" }
+suture-ooxml = { path = "../suture-ooxml" }
+suture-driver-docx = { path = "../suture-driver-docx" }
+suture-driver-xlsx = { path = "../suture-driver-xlsx" }
+suture-driver-pptx = { path = "../suture-driver-pptx" }
 clap = { version = "4.5", features = ["derive"] }
 clap_complete = "4.6"
 reqwest = { version = "0.12", features = ["json"] }

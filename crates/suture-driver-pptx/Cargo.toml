@@ -1,0 +1,10 @@
+[package]
+name = "suture-driver-pptx"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+suture-driver = { path = "../suture-driver" }
+suture-ooxml = { path = "../suture-ooxml" }
+quick-xml = "0.37"
+serde = { version = "1", features = ["derive"] }
