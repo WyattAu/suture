@@ -14,11 +14,13 @@
 //! - THM-CONF-001: Conflict nodes preserve all information from both branches
 
 pub mod commute;
+pub mod compose;
 pub mod conflict;
 pub mod merge;
 pub mod types;
 
 pub use commute::{commute, CommuteResult};
-pub use conflict::{Conflict, ConflictNode};
+pub use compose::{compose, compose_chain, ComposeError, ComposeResult};
+pub use conflict::{Conflict, ConflictClass, ConflictNode};
 pub use merge::{merge, MergeError, MergeResult};
 pub use types::{Operation, OperationType, Patch, PatchId, TouchSet};

@@ -122,6 +122,20 @@ impl TouchSet {
     pub fn contains(&self, addr: &str) -> bool {
         self.inner.contains(addr)
     }
+
+    /// Compute the union of two touch sets.
+    pub fn union(&self, other: &TouchSet) -> TouchSet {
+        TouchSet {
+            inner: self.inner.union(&other.inner).cloned().collect(),
+        }
+    }
+
+    /// Subtract addresses from this touch set.
+    pub fn subtract(&self, other: &TouchSet) -> TouchSet {
+        TouchSet {
+            inner: self.inner.difference(&other.inner).cloned().collect(),
+        }
+    }
 }
 
 /// A patch — the fundamental unit of change in Suture.
@@ -362,5 +376,47 @@ mod tests {
         let deserialized: Patch = serde_json::from_str(&json).unwrap();
         assert_eq!(patch.id, deserialized.id);
         assert_eq!(patch.touch_set, deserialized.touch_set);
+    }
+
+    #[test]
+    fn test_touch_set_union() {
+        let ts1 = TouchSet::from_addrs(["A1", "B1", "C1"]);
+        let ts2 = TouchSet::from_addrs(["C1", "D1", "E1"]);
+        let union = ts1.union(&ts2);
+        assert_eq!(union.len(), 5);
+        assert!(union.contains("A1"));
+        assert!(union.contains("B1"));
+        assert!(union.contains("C1"));
+        assert!(union.contains("D1"));
+        assert!(union.contains("E1"));
+    }
+
+    #[test]
+    fn test_touch_set_union_empty() {
+        let ts1 = TouchSet::from_addrs(["A1"]);
+        let ts2 = TouchSet::empty();
+        let union = ts1.union(&ts2);
+        assert_eq!(union.len(), 1);
+        assert!(union.contains("A1"));
+    }
+
+    #[test]
+    fn test_touch_set_subtract() {
+        let ts1 = TouchSet::from_addrs(["A1", "B1", "C1", "D1"]);
+        let ts2 = TouchSet::from_addrs(["B1", "D1"]);
+        let result = ts1.subtract(&ts2);
+        assert_eq!(result.len(), 2);
+        assert!(result.contains("A1"));
+        assert!(result.contains("C1"));
+        assert!(!result.contains("B1"));
+        assert!(!result.contains("D1"));
+    }
+
+    #[test]
+    fn test_touch_set_subtract_empty() {
+        let ts1 = TouchSet::from_addrs(["A1", "B1"]);
+        let ts2 = TouchSet::empty();
+        let result = ts1.subtract(&ts2);
+        assert_eq!(result.len(), 2);
     }
 }

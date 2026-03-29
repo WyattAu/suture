@@ -1,5 +1,55 @@
 # Changelog
 
+## [0.10.0] - 2026-03-29
+
+### Added
+
+#### Formal Patch Algebra (Core Theory)
+- **Patch composition** (`patch/compose.rs`): `compose()` collapses two patches into one equivalent operation; `compose_chain()` handles sequences
+- **THM-COMPOSE-001**: Composed patch preserves union of touch sets; parent chain collapses
+- **DEF-COMPOSE-001**: Formal definition — apply(P₃, pre_P₁) = apply(P₂, apply(P₁, pre_P₁))
+- 8 composition tests (linear chain, disjoint/overlapping touch sets, chain, error cases)
+
+#### Conflict Classification (Core Theory)
+- **`ConflictClass`** enum: `AutoResolvable` (identical changes), `DriverResolvable` (different sub-addresses), `Genuine` (same element, different values), `Structural` (operation type mismatch)
+- **`Conflict::classify()`** method: inspects patch payloads to determine conflict severity
+- **`TouchSet::union()`** and **`TouchSet::subtract()`**: set-theoretic operations on touch sets
+- 9 new tests (classification: 5, touch set operations: 4)
+
+#### `suture squash` (Path A — Git Parity)
+- `Repository::squash(count, message)` — composes last N patches into one
+- Verifies chain ancestry before composing
+- Updates branch pointer and records reflog
+- CLI: `suture squash N [-m message]`
+
+#### `log --all` (Path A — Git Parity)
+- `suture log --all` — shows commits across ALL branches, deduplicated, sorted by timestamp
+- Collects from all branch tips via `dag().patch_chain()`
+- Graph mode auto-disabled with `--all`
+
+#### `log --since/--until` (Path A — Git Parity)
+- `suture log --since "3 days ago"` — show commits newer than threshold
+- `suture log --until "2026-01-15"` — show commits older than threshold
+- Supports ISO dates (YYYY-MM-DD) and relative times (N seconds/minutes/hours/days/weeks/months/years ago)
+
+#### CSV Semantic Merge (Path B — Semantic Differentiator)
+- `CsvDriver::merge()` — three-way merge for CSV files
+- Header union: columns added by either side are included
+- Cell-by-cell conflict detection: same-index, different-value = conflict
+- 4 tests: no-conflict, conflict, added rows, header change
+
+#### OTIO Element ID Fix (Path B — Semantic Differentiator)
+- Fixed element ID collision: `element_id()` now includes index and name (`{index}:{type}:{name}`)
+- Multiple clips/tracks of same type get unique IDs
+- Updated `collect_elements()` to pass child index through recursion
+- Added `test_unique_ids_for_same_type` verification test
+
+#### Quality
+- Test count: 296 (up from 274 in v0.9.0)
+- 22 new tests (8 compose, 9 conflict/touchset, 4 CSV merge, 1 OTIO)
+- Zero clippy warnings, zero audit findings
+- 14 workspace crates
+
 ## [0.9.0] - 2026-03-29
 
 ### Added

@@ -214,46 +214,48 @@ impl OtioDriver {
             .map_err(|e| OtioError::InvalidStructure(format!("root node parse error: {e}")))?;
 
         self.elements.clear();
-        self.collect_elements(node, None)?;
+        self.collect_elements(node, None, 0)?;
         Ok(())
     }
 
-    fn collect_elements(&mut self, node: OtioNode, parent_id: Option<String>) -> Result<()> {
-        let element_id = Self::element_id(&node, parent_id.as_deref());
-
+    fn collect_elements(&mut self, node: OtioNode, parent_id: Option<String>, index: usize) -> Result<()> {
         match &node {
             OtioNode::Timeline(tl) => {
+                let element_id = Self::element_id("timeline", &tl.name, index, parent_id.as_deref());
                 self.elements.push(TimelineElement::Timeline {
                     id: element_id.clone(),
                     name: tl.name.clone(),
                 });
-                for child in &tl.tracks {
-                    self.collect_elements(child.clone(), Some(element_id.clone()))?;
+                for (i, child) in tl.tracks.iter().enumerate() {
+                    self.collect_elements(child.clone(), Some(element_id.clone()), i)?;
                 }
             }
             OtioNode::Stack(st) => {
+                let element_id = Self::element_id("stack", &st.name, index, parent_id.as_deref());
                 self.elements.push(TimelineElement::Track {
                     id: element_id.clone(),
                     name: st.name.clone(),
                     kind: "Stack".to_string(),
                     parent_id: parent_id.clone(),
                 });
-                for child in &st.children {
-                    self.collect_elements(child.clone(), Some(element_id.clone()))?;
+                for (i, child) in st.children.iter().enumerate() {
+                    self.collect_elements(child.clone(), Some(element_id.clone()), i)?;
                 }
             }
             OtioNode::Track(tr) => {
+                let element_id = Self::element_id("track", &tr.name, index, parent_id.as_deref());
                 self.elements.push(TimelineElement::Track {
                     id: element_id.clone(),
                     name: tr.name.clone(),
                     kind: tr.kind.clone(),
                     parent_id: parent_id.clone(),
                 });
-                for child in &tr.children {
-                    self.collect_elements(child.clone(), Some(element_id.clone()))?;
+                for (i, child) in tr.children.iter().enumerate() {
+                    self.collect_elements(child.clone(), Some(element_id.clone()), i)?;
                 }
             }
             OtioNode::Clip(cl) => {
+                let element_id = Self::element_id("clip", &cl.name, index, parent_id.as_deref());
                 self.elements.push(TimelineElement::Clip {
                     id: element_id,
                     name: cl.name.clone(),
@@ -261,6 +263,7 @@ impl OtioDriver {
                 });
             }
             OtioNode::Transition(tr) => {
+                let element_id = Self::element_id("transition", &tr.name, index, parent_id.as_deref());
                 self.elements.push(TimelineElement::Transition {
                     id: element_id,
                     name: tr.name.clone(),
@@ -268,26 +271,18 @@ impl OtioDriver {
                 });
             }
             OtioNode::SerializableCollection(sc) => {
-                for child in &sc.children {
-                    self.collect_elements(child.clone(), parent_id.clone())?;
+                for (i, child) in sc.children.iter().enumerate() {
+                    self.collect_elements(child.clone(), parent_id.clone(), i)?;
                 }
             }
         }
         Ok(())
     }
 
-    fn element_id(node: &OtioNode, parent_id: Option<&str>) -> String {
-        let type_key = match node {
-            OtioNode::Timeline(_) => "timeline",
-            OtioNode::Track(_) => "track",
-            OtioNode::Stack(_) => "stack",
-            OtioNode::Clip(_) => "clip",
-            OtioNode::Transition(_) => "transition",
-            OtioNode::SerializableCollection(_) => "collection",
-        };
+    fn element_id(ty: &str, name: &str, index: usize, parent_id: Option<&str>) -> String {
         match parent_id {
-            Some(pid) => format!("{pid}/{type_key}"),
-            None => type_key.to_string(),
+            Some(pid) => format!("{pid}/{}:{}:{}", index, ty, name),
+            None => format!("{}:{}:{}", index, ty, name),
         }
     }
 
@@ -515,10 +510,10 @@ mod tests {
         let mut driver = OtioDriver::new();
         driver.parse_otio(minimal_timeline_otio()).unwrap();
 
-        let tl = driver.find_element("timeline").unwrap();
+        let tl = driver.find_element("0:timeline:TestTimeline").unwrap();
         assert_eq!(tl.name(), "TestTimeline");
 
-        let clip = driver.find_element("timeline/track/clip").unwrap();
+        let clip = driver.find_element("0:timeline:TestTimeline/0:track:Video/0:clip:Intro").unwrap();
         assert_eq!(clip.name(), "Intro");
 
         assert!(driver.find_element("nonexistent").is_none());
@@ -529,8 +524,9 @@ mod tests {
         let mut driver = OtioDriver::new();
         driver.parse_otio(minimal_timeline_otio()).unwrap();
 
+        let track_id = "0:timeline:TestTimeline/0:track:Video";
         let changes = vec![ChangeDescription {
-            element_id: "timeline/track".to_string(),
+            element_id: track_id.to_string(),
             field_path: "name".to_string(),
             old_value: Some("Video".to_string()),
             new_value: Some("Audio".to_string()),
@@ -538,10 +534,10 @@ mod tests {
 
         let touch_set = driver.compute_touch_set(&changes);
 
-        assert!(touch_set.contains(&"timeline/track".to_string()));
-        assert!(touch_set.contains(&"timeline/track/clip".to_string()));
-        assert!(touch_set.contains(&"timeline/track/transition".to_string()));
-        assert!(touch_set.contains(&"timeline/track/clip".to_string()));
+        assert!(touch_set.contains(&track_id.to_string()));
+        assert!(touch_set.contains(&"0:timeline:TestTimeline/0:track:Video/0:clip:Intro".to_string()));
+        assert!(touch_set.contains(&"0:timeline:TestTimeline/0:track:Video/1:transition:Dissolve".to_string()));
+        assert!(touch_set.contains(&"0:timeline:TestTimeline/0:track:Video/2:clip:Main".to_string()));
     }
 
     #[test]
@@ -550,14 +546,14 @@ mod tests {
         driver.parse_otio(minimal_timeline_otio()).unwrap();
 
         let changes = vec![ChangeDescription {
-            element_id: "timeline".to_string(),
+            element_id: "0:timeline:TestTimeline".to_string(),
             field_path: "name".to_string(),
             old_value: Some("TestTimeline".to_string()),
             new_value: Some("NewName".to_string()),
         }];
 
         let touch_set = driver.compute_touch_set(&changes);
-        assert_eq!(touch_set, vec!["timeline"]);
+        assert_eq!(touch_set, vec!["0:timeline:TestTimeline"]);
     }
 
     #[test]
@@ -652,5 +648,54 @@ mod tests {
         assert_eq!(driver.elements().len(), 3);
         assert_eq!(driver.elements()[1].name(), "V1");
         assert_eq!(driver.elements()[2].name(), "A1");
+    }
+
+    #[test]
+    fn test_unique_ids_for_same_type() {
+        let json = r#"{
+            "OTIO_SCHEMA": "otio.schema.Timeline",
+            "name": "Test",
+            "metadata": {},
+            "tracks": [
+                {
+                    "OTIO_SCHEMA": "otio.schema.Track",
+                    "name": "V1",
+                    "kind": "Video",
+                    "metadata": {},
+                    "children": [
+                        {
+                            "OTIO_SCHEMA": "otio.schema.Clip",
+                            "name": "Shot",
+                            "metadata": {},
+                            "source_range": {
+                                "start_time": { "value": 0.0, "rate": 24.0 },
+                                "duration": { "value": 100.0, "rate": 24.0 }
+                            }
+                        },
+                        {
+                            "OTIO_SCHEMA": "otio.schema.Clip",
+                            "name": "Shot",
+                            "metadata": {},
+                            "source_range": {
+                                "start_time": { "value": 100.0, "rate": 24.0 },
+                                "duration": { "value": 100.0, "rate": 24.0 }
+                            }
+                        }
+                    ]
+                }
+            ]
+        }"#;
+
+        let mut driver = OtioDriver::new();
+        driver.parse_otio(json).unwrap();
+
+        let clip_ids: Vec<&str> = driver
+            .elements()
+            .iter()
+            .filter(|e| e.element_type() == "Clip")
+            .map(|e| e.id())
+            .collect();
+        assert_eq!(clip_ids.len(), 2);
+        assert_ne!(clip_ids[0], clip_ids[1]);
     }
 }

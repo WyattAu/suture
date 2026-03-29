@@ -98,6 +98,105 @@ impl CsvDriver {
         changes
     }
 
+    fn merge_csv(
+        base_headers: &[String],
+        base_rows: &[Vec<String>],
+        ours_headers: &[String],
+        ours_rows: &[Vec<String>],
+        theirs_headers: &[String],
+        theirs_rows: &[Vec<String>],
+    ) -> Result<Option<String>, DriverError> {
+        let base_set: std::collections::HashSet<&str> =
+            base_headers.iter().map(|s| s.as_str()).collect();
+        let ours_set: std::collections::HashSet<&str> =
+            ours_headers.iter().map(|s| s.as_str()).collect();
+        let theirs_set: std::collections::HashSet<&str> =
+            theirs_headers.iter().map(|s| s.as_str()).collect();
+
+        let all_header_names: std::collections::HashSet<&str> = base_set
+            .iter()
+            .chain(ours_set.iter())
+            .chain(theirs_set.iter())
+            .copied()
+            .collect();
+
+        let mut merged_headers: Vec<String> = Vec::new();
+        for &h in &all_header_names {
+            let in_base = base_set.contains(h);
+            let in_ours = ours_set.contains(h);
+            let in_theirs = theirs_set.contains(h);
+            match (in_base, in_ours, in_theirs) {
+                (true, true, false) | (false, true, false) => merged_headers.push(h.to_string()),
+                (true, false, true) | (false, false, true) => merged_headers.push(h.to_string()),
+                (true, true, true) => merged_headers.push(h.to_string()),
+                (false, true, true) => merged_headers.push(h.to_string()),
+                (true, false, false) | (false, false, false) => {}
+            }
+        }
+
+        let max_rows = base_rows.len().max(ours_rows.len()).max(theirs_rows.len());
+        let mut merged_rows: Vec<Vec<String>> = Vec::new();
+
+        for i in 0..max_rows {
+            let base_row = base_rows.get(i);
+            let ours_row = ours_rows.get(i);
+            let theirs_row = theirs_rows.get(i);
+
+            match (base_row, ours_row, theirs_row) {
+                (None, Some(o), None) => merged_rows.push(o.clone()),
+                (None, None, Some(t)) => merged_rows.push(t.clone()),
+                (None, Some(o), Some(t)) => {
+                    if o == t {
+                        merged_rows.push(o.clone());
+                    } else {
+                        return Ok(None);
+                    }
+                }
+                (None, None, _) => {}
+                (Some(_), Some(o), None) => merged_rows.push(o.clone()),
+                (Some(_), None, Some(t)) => merged_rows.push(t.clone()),
+                (Some(_), None, None) => {}
+                (Some(b), Some(o), Some(t)) => {
+                    if o == t {
+                        merged_rows.push(o.clone());
+                    } else {
+                        let max_cols = b.len().max(o.len()).max(t.len());
+                        let mut merged_row = Vec::new();
+                        for col in 0..max_cols {
+                            let bv = b.get(col).map(|s| s.as_str()).unwrap_or("");
+                            let ov = o.get(col).map(|s| s.as_str()).unwrap_or("");
+                            let tv = t.get(col).map(|s| s.as_str()).unwrap_or("");
+                            if ov == tv {
+                                merged_row.push(ov.to_string());
+                            } else if ov == bv {
+                                merged_row.push(tv.to_string());
+                            } else if tv == bv {
+                                merged_row.push(ov.to_string());
+                            } else {
+                                return Ok(None);
+                            }
+                        }
+                        merged_rows.push(merged_row);
+                    }
+                }
+            }
+        }
+
+        let mut output = csv::WriterBuilder::new().from_writer(vec![]);
+        output
+            .write_record(&merged_headers)
+            .map_err(|e| DriverError::SerializationError(e.to_string()))?;
+        for row in &merged_rows {
+            output
+                .write_record(row)
+                .map_err(|e| DriverError::SerializationError(e.to_string()))?;
+        }
+        let bytes = output
+            .into_inner()
+            .map_err(|e| DriverError::SerializationError(e.to_string()))?;
+        Ok(Some(String::from_utf8_lossy(&bytes).to_string()))
+    }
+
     fn format_change(change: &SemanticChange) -> String {
         match change {
             SemanticChange::Added { path, value } => {
@@ -189,6 +288,20 @@ impl SutureDriver for CsvDriver {
         let lines: Vec<String> = changes.iter().map(Self::format_change).collect();
         Ok(lines.join("\n"))
     }
+
+    fn merge(&self, base: &str, ours: &str, theirs: &str) -> Result<Option<String>, DriverError> {
+        let (base_headers, base_rows) = Self::parse_csv(base)?;
+        let (ours_headers, ours_rows) = Self::parse_csv(ours)?;
+        let (theirs_headers, theirs_rows) = Self::parse_csv(theirs)?;
+        Self::merge_csv(
+            &base_headers,
+            &base_rows,
+            &ours_headers,
+            &ours_rows,
+            &theirs_headers,
+            &theirs_rows,
+        )
+    }
 }
 
 #[cfg(test)]
@@ -245,5 +358,56 @@ mod tests {
             path: "/rows/1".to_string(),
             old_value: "Bob,bob@example.com".to_string(),
         }));
+    }
+
+    #[test]
+    fn test_csv_merge_no_conflict() {
+        let driver = CsvDriver::new();
+        let base = "name,email,age\nAlice,alice@example.com,30\nBob,bob@example.com,25\n";
+        let ours = "name,email,age\nAlice,alice@new.com,30\nBob,bob@example.com,25\n";
+        let theirs = "name,email,age\nAlice,alice@example.com,30\nBob,bob@example.com,26\n";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(merged.contains("alice@new.com"));
+        assert!(merged.contains("26"));
+    }
+
+    #[test]
+    fn test_csv_merge_conflict() {
+        let driver = CsvDriver::new();
+        let base = "name,email\nAlice,alice@example.com\n";
+        let ours = "name,email\nAlice,alice@ours.com\n";
+        let theirs = "name,email\nAlice,alice@theirs.com\n";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_csv_merge_added_rows() {
+        let driver = CsvDriver::new();
+        let base = "name,email\nAlice,alice@example.com\nBob,bob@example.com\n";
+        let ours = "name,email\nAlice,alice@example.com\nBob,bob@example.com\nCharlie,charlie@example.com\n";
+        let theirs = "name,email\nAlice,alice@example.com\nBob,bob@example.com\n";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(merged.contains("Charlie,charlie@example.com"));
+    }
+
+    #[test]
+    fn test_csv_merge_header_change() {
+        let driver = CsvDriver::new();
+        let base = "name,email\nAlice,alice@example.com\n";
+        let ours = "name,email,phone\nAlice,alice@example.com,555-0001\n";
+        let theirs = "name,email\nAlice,alice@example.com\n";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(merged.contains("phone"));
     }
 }

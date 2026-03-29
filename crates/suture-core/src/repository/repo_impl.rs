@@ -1373,6 +1373,71 @@ impl Repository {
     }
 
     // =========================================================================
+    // Squash
+    // =========================================================================
+
+    /// Squash the last N patches on the current branch into a single patch.
+    ///
+    /// Returns the new tip patch ID.
+    pub fn squash(&mut self, count: usize, message: &str) -> Result<PatchId, RepoError> {
+        if count < 2 {
+            return Err(RepoError::Custom("need at least 2 patches to squash".into()));
+        }
+
+        let (branch_name, tip_id) = self.head()?;
+        let chain = self.dag().patch_chain(&tip_id);
+
+        // chain is tip-first, so the last N patches are chain[0..count]
+        if chain.len() < count + 1 {
+            return Err(RepoError::Custom(format!(
+                "only {} patches on branch, cannot squash {}",
+                chain.len(),
+                count
+            )));
+        }
+
+        // Extract patches to squash (reversed to get oldest-first)
+        let mut to_squash = Vec::new();
+        for i in (0..count).rev() {
+            let pid = &chain[i];
+            let patch = self
+                .dag()
+                .get_patch(pid)
+                .ok_or_else(|| RepoError::Custom(format!("patch not found: {}", pid.to_hex())))?;
+            to_squash.push(patch.clone());
+        }
+
+        let parent_of_first = *to_squash[0]
+            .parent_ids
+            .first()
+            .ok_or_else(|| RepoError::Custom("cannot squash root patch".into()))?;
+
+        let result =
+            crate::patch::compose::compose_chain(&to_squash, &self.author, message)
+                .map_err(|e| RepoError::Custom(e.to_string()))?;
+
+        let new_id = self
+            .dag_mut()
+            .add_patch(result.patch.clone(), vec![parent_of_first])?;
+        self.meta().store_patch(&result.patch)?;
+
+        let branch = BranchName::new(&branch_name)
+            .map_err(|e| RepoError::Custom(e.to_string()))?;
+        self.dag_mut().update_branch(&branch, new_id)?;
+        self.meta().set_branch(&branch, &new_id)?;
+
+        self.record_reflog(
+            to_squash.last().map(|p| &p.id).unwrap_or(&parent_of_first),
+            &new_id,
+            &format!("squash: {} patches into one", count),
+        )?;
+
+        self.invalidate_head_cache();
+
+        Ok(new_id)
+    }
+
+    // =========================================================================
     // Merge
     // =========================================================================
 

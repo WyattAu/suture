@@ -84,6 +84,15 @@ enum Commands {
         /// Filter by commit message pattern
         #[arg(long)]
         grep: Option<String>,
+        /// Show commits across all branches
+        #[arg(long)]
+        all: bool,
+        /// Show commits newer than a date/time (format: "2026-01-15" or "2 weeks ago")
+        #[arg(long)]
+        since: Option<String>,
+        /// Show commits older than a date/time (same format as --since)
+        #[arg(long)]
+        until: Option<String>,
     },
     /// Switch to a different branch
     Checkout {
@@ -246,6 +255,14 @@ enum Commands {
         good: String,
         /// Known bad commit (has bug)
         bad: String,
+    },
+    /// Squash N commits into one
+    Squash {
+        /// Number of commits to squash
+        count: usize,
+        /// Custom message for the squashed commit (default: combined messages)
+        #[arg(short, long)]
+        message: Option<String>,
     },
 }
 
@@ -680,7 +697,10 @@ async fn main() {
             oneline,
             author,
             grep,
-        } => cmd_log(branch.as_deref(), graph, oneline, author.as_deref(), grep.as_deref()).await,
+            all,
+            since,
+            until,
+        } => cmd_log(branch.as_deref(), graph, oneline, author.as_deref(), grep.as_deref(), all, since.as_deref(), until.as_deref()).await,
         Commands::Checkout { branch } => cmd_checkout(&branch).await,
         Commands::Mv { source, destination } => cmd_mv(&source, &destination).await,
         Commands::Diff { from, to } => cmd_diff(from.as_deref(), to.as_deref()).await,
@@ -718,6 +738,7 @@ async fn main() {
         Commands::Gc => cmd_gc().await,
         Commands::Fsck => cmd_fsck().await,
         Commands::Bisect { good, bad } => cmd_bisect(good.as_str(), bad.as_str()).await,
+        Commands::Squash { count, message } => cmd_squash(count, message.as_deref()).await,
         Commands::Version => cmd_version().await,
     };
 
@@ -729,6 +750,14 @@ async fn main() {
 
 async fn cmd_version() -> Result<(), Box<dyn std::error::Error>> {
     println!("suture {}", env!("CARGO_PKG_VERSION"));
+    Ok(())
+}
+
+async fn cmd_squash(count: usize, message: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+    let msg = message.unwrap_or("squashed commit");
+    let new_id = repo.squash(count, msg)?;
+    println!("Squashed {} commits into {}", count, new_id);
     Ok(())
 }
 
@@ -1225,18 +1254,78 @@ async fn cmd_branch(
     Ok(())
 }
 
+fn parse_time_filter(s: &str) -> Result<u64, String> {
+    if let Some(rest) = s.strip_suffix(" ago") {
+        let parts: Vec<&str> = rest.split_whitespace().collect();
+        if parts.len() == 2
+            && let Ok(n) = parts[0].parse::<u64>()
+        {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            let seconds = match parts[1] {
+                "second" | "seconds" => n,
+                "minute" | "minutes" => n * 60,
+                "hour" | "hours" => n * 3600,
+                "day" | "days" => n * 86400,
+                "week" | "weeks" => n * 86400 * 7,
+                "month" | "months" => n * 86400 * 30,
+                "year" | "years" => n * 86400 * 365,
+                _ => return Err(format!("unknown time unit: {}", parts[1])),
+            };
+            return Ok(now.saturating_sub(seconds));
+        }
+    }
+
+    Err(format!("invalid time filter: {}", s))
+}
+
+#[allow(clippy::too_many_arguments)]
 async fn cmd_log(
     branch: Option<&str>,
     graph: bool,
     oneline: bool,
     author: Option<&str>,
     grep: Option<&str>,
+    all: bool,
+    since: Option<&str>,
+    until: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
 
-    if !graph {
-        let mut patches = repo.log(branch)?;
+    let since_ts = since.map(parse_time_filter).transpose()?;
+    let until_ts = until.map(parse_time_filter).transpose()?;
 
+    let show_graph = graph && !all;
+
+    if !show_graph {
+        let mut patches = if all {
+            let branches = repo.list_branches();
+            let mut seen = std::collections::HashSet::new();
+            let mut all_patches = Vec::new();
+            for (_, tip_id) in &branches {
+                let chain = repo.dag().patch_chain(tip_id);
+                for pid in &chain {
+                    if seen.insert(*pid)
+                        && let Some(patch) = repo.dag().get_patch(pid)
+                    {
+                        all_patches.push(patch.clone());
+                    }
+                }
+            }
+            all_patches.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+            all_patches
+        } else {
+            repo.log(branch)?
+        };
+
+        if let Some(since) = since_ts {
+            patches.retain(|p| p.timestamp >= since);
+        }
+        if let Some(until) = until_ts {
+            patches.retain(|p| p.timestamp <= until);
+        }
         if let Some(author_filter) = author {
             patches.retain(|p| p.author.contains(author_filter));
         }

@@ -1,8 +1,29 @@
 //! Conflict types for non-commutative patch pairs.
 
+use crate::patch::types::Patch;
 use crate::patch::types::PatchId;
 use crate::patch::types::TouchSet;
 use serde::{Deserialize, Serialize};
+
+/// Classification of a conflict's severity and resolvability.
+///
+/// Per THM-CONFCLASS-001 (YP-ALGEBRA-PATCH-001):
+/// Conflict classification determines the merge strategy:
+/// - Type I: Auto-resolve (identical changes)
+/// - Type II: Attempt driver merge
+/// - Type III: Human intervention required
+/// - Type IV: Structural restructuring (highest complexity)
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ConflictClass {
+    /// Both sides made the identical change — auto-resolvable.
+    AutoResolvable,
+    /// Both changed different aspects of the same element — may be driver-resolvable.
+    DriverResolvable,
+    /// Both changed the same element differently — genuine conflict.
+    Genuine,
+    /// One side restructured, other modified — structural conflict.
+    Structural,
+}
 
 /// A conflict between two patches that cannot commute.
 ///
@@ -63,6 +84,40 @@ impl Conflict {
             conflict_addresses: sorted,
         }
     }
+
+    /// Classify this conflict based on patch payloads.
+    ///
+    /// Returns a ConflictClass indicating the severity and potential resolvability.
+    pub fn classify(&self, patch_a: Option<&Patch>, patch_b: Option<&Patch>) -> ConflictClass {
+        match (patch_a, patch_b) {
+            (Some(pa), Some(pb)) => {
+                if pa.payload == pb.payload && pa.operation_type == pb.operation_type {
+                    ConflictClass::AutoResolvable
+                } else if pa.operation_type == pb.operation_type {
+                    let a_sub: Vec<String> = self
+                        .conflict_addresses
+                        .iter()
+                        .filter(|a| pa.touch_set.contains(a))
+                        .cloned()
+                        .collect();
+                    let b_sub: Vec<String> = self
+                        .conflict_addresses
+                        .iter()
+                        .filter(|a| pb.touch_set.contains(a))
+                        .cloned()
+                        .collect();
+                    if a_sub != b_sub {
+                        ConflictClass::DriverResolvable
+                    } else {
+                        ConflictClass::Genuine
+                    }
+                } else {
+                    ConflictClass::Structural
+                }
+            }
+            _ => ConflictClass::Genuine,
+        }
+    }
 }
 
 impl ConflictNode {
@@ -115,5 +170,132 @@ mod tests {
         );
         assert_eq!(node.status, ConflictStatus::Unresolved);
         assert_eq!(node.touch_set.len(), 2);
+    }
+
+    #[test]
+    fn test_classify_auto_resolvable() {
+        let root = Hash::from_data(b"root");
+        let pa = Patch::new(
+            crate::patch::types::OperationType::Modify,
+            TouchSet::from_addrs(["f1"]),
+            Some("f1".to_string()),
+            b"same content".to_vec(),
+            vec![root],
+            "alice".to_string(),
+            "edit".to_string(),
+        );
+        let pb = Patch::new(
+            crate::patch::types::OperationType::Modify,
+            TouchSet::from_addrs(["f1"]),
+            Some("f1".to_string()),
+            b"same content".to_vec(),
+            vec![root],
+            "bob".to_string(),
+            "edit".to_string(),
+        );
+
+        let conflict = Conflict::new(pa.id, pb.id, vec!["f1".to_string()]);
+        assert_eq!(
+            conflict.classify(Some(&pa), Some(&pb)),
+            ConflictClass::AutoResolvable
+        );
+    }
+
+    #[test]
+    fn test_classify_genuine() {
+        let root = Hash::from_data(b"root");
+        let pa = Patch::new(
+            crate::patch::types::OperationType::Modify,
+            TouchSet::from_addrs(["f1"]),
+            Some("f1".to_string()),
+            b"version A".to_vec(),
+            vec![root],
+            "alice".to_string(),
+            "edit A".to_string(),
+        );
+        let pb = Patch::new(
+            crate::patch::types::OperationType::Modify,
+            TouchSet::from_addrs(["f1"]),
+            Some("f1".to_string()),
+            b"version B".to_vec(),
+            vec![root],
+            "bob".to_string(),
+            "edit B".to_string(),
+        );
+
+        let conflict = Conflict::new(pa.id, pb.id, vec!["f1".to_string()]);
+        assert_eq!(
+            conflict.classify(Some(&pa), Some(&pb)),
+            ConflictClass::Genuine
+        );
+    }
+
+    #[test]
+    fn test_classify_structural() {
+        let root = Hash::from_data(b"root");
+        let pa = Patch::new(
+            crate::patch::types::OperationType::Modify,
+            TouchSet::from_addrs(["f1"]),
+            Some("f1".to_string()),
+            b"modified content".to_vec(),
+            vec![root],
+            "alice".to_string(),
+            "modify".to_string(),
+        );
+        let pb = Patch::new(
+            crate::patch::types::OperationType::Delete,
+            TouchSet::from_addrs(["f1"]),
+            Some("f1".to_string()),
+            vec![],
+            vec![root],
+            "bob".to_string(),
+            "delete".to_string(),
+        );
+
+        let conflict = Conflict::new(pa.id, pb.id, vec!["f1".to_string()]);
+        assert_eq!(
+            conflict.classify(Some(&pa), Some(&pb)),
+            ConflictClass::Structural
+        );
+    }
+
+    #[test]
+    fn test_classify_driver_resolvable() {
+        let root = Hash::from_data(b"root");
+        let pa = Patch::new(
+            crate::patch::types::OperationType::Modify,
+            TouchSet::from_addrs(["f1.key_a"]),
+            Some("f1".to_string()),
+            b"val_a".to_vec(),
+            vec![root],
+            "alice".to_string(),
+            "edit key_a".to_string(),
+        );
+        let pb = Patch::new(
+            crate::patch::types::OperationType::Modify,
+            TouchSet::from_addrs(["f1.key_b"]),
+            Some("f1".to_string()),
+            b"val_b".to_vec(),
+            vec![root],
+            "bob".to_string(),
+            "edit key_b".to_string(),
+        );
+
+        let conflict = Conflict::new(
+            pa.id,
+            pb.id,
+            vec!["f1.key_a".to_string(), "f1.key_b".to_string()],
+        );
+        assert_eq!(
+            conflict.classify(Some(&pa), Some(&pb)),
+            ConflictClass::DriverResolvable
+        );
+    }
+
+    #[test]
+    fn test_classify_missing_patches() {
+        let conflict = Conflict::new(test_hash("a"), test_hash("b"), vec!["f1".to_string()]);
+        assert_eq!(conflict.classify(None, None), ConflictClass::Genuine);
+        assert_eq!(conflict.classify(None, None), ConflictClass::Genuine);
     }
 }
