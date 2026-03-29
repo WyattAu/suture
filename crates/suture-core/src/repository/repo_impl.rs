@@ -2127,6 +2127,151 @@ impl Repository {
     }
 
     // =========================================================================
+    // Garbage Collection
+    // =========================================================================
+
+    /// Remove unreachable patches from the repository.
+    ///
+    /// Patches not reachable from any branch tip are deleted from the
+    /// metadata store (patches, edges, signatures tables). The in-memory
+    /// DAG is not updated; reopen the repository after GC to get a clean DAG.
+    pub fn gc(&self) -> Result<GcResult, RepoError> {
+        let branches = self.dag.list_branches();
+        let all_ids: HashSet<PatchId> = self.dag.patch_ids().into_iter().collect();
+
+        let mut reachable: HashSet<PatchId> = HashSet::new();
+        for (_name, tip_id) in &branches {
+            reachable.insert(*tip_id);
+            for anc in self.dag.ancestors(tip_id) {
+                reachable.insert(anc);
+            }
+        }
+
+        let unreachable: Vec<&PatchId> = all_ids.iter().filter(|id| !reachable.contains(id)).collect();
+        let conn = self.meta().conn();
+
+        for id in &unreachable {
+            let hex = id.to_hex();
+            conn.execute("DELETE FROM signatures WHERE patch_id = ?1", rusqlite::params![hex])
+                .map_err(|e| RepoError::Custom(e.to_string()))?;
+            conn.execute("DELETE FROM edges WHERE parent_id = ?1 OR child_id = ?1", rusqlite::params![hex])
+                .map_err(|e| RepoError::Custom(e.to_string()))?;
+            conn.execute("DELETE FROM patches WHERE id = ?1", rusqlite::params![hex])
+                .map_err(|e| RepoError::Custom(e.to_string()))?;
+        }
+
+        Ok(GcResult {
+            patches_removed: unreachable.len(),
+        })
+    }
+
+    // =========================================================================
+    // Filesystem Check
+    // =========================================================================
+
+    /// Verify repository integrity.
+    ///
+    /// Checks DAG consistency (parent references), branch integrity
+    /// (branch targets exist), blob references (CAS has blobs referenced
+    /// by patches), and HEAD consistency.
+    pub fn fsck(&self) -> Result<FsckResult, RepoError> {
+        let mut checks_passed = 0usize;
+        let mut warnings = Vec::new();
+        let mut errors = Vec::new();
+
+        // 1. DAG consistency: every patch's parents exist in the DAG
+        let all_ids: HashSet<PatchId> = self.dag.patch_ids().into_iter().collect();
+        let mut parent_ok = true;
+        for id in &all_ids {
+            if let Some(node) = self.dag.get_node(id) {
+                for parent_id in &node.parent_ids {
+                    if !all_ids.contains(parent_id) {
+                        errors.push(format!(
+                            "patch {} references missing parent {}",
+                            id.to_hex(),
+                            parent_id.to_hex()
+                        ));
+                        parent_ok = false;
+                    }
+                }
+            }
+        }
+        if parent_ok {
+            checks_passed += 1;
+        }
+
+        // 2. Branch integrity: every branch target exists in the DAG
+        let branches = self.dag.list_branches();
+        let mut branch_ok = true;
+        for (name, target_id) in &branches {
+            if !all_ids.contains(target_id) {
+                errors.push(format!(
+                    "branch '{}' targets non-existent patch {}",
+                    name,
+                    target_id.to_hex()
+                ));
+                branch_ok = false;
+            }
+        }
+        if branch_ok {
+            checks_passed += 1;
+        }
+
+        // 3. Blob references: non-empty payloads should reference CAS blobs
+        let mut blob_ok = true;
+        let all_patches = self.all_patches();
+        for patch in &all_patches {
+            if patch.payload.is_empty() {
+                continue;
+            }
+            if let Some(hash) = resolve_payload_to_hash(patch) {
+                if !self.cas().has_blob(&hash) {
+                    warnings.push(format!(
+                        "patch {} references missing blob {}",
+                        patch.id.to_hex(),
+                        hash.to_hex()
+                    ));
+                    blob_ok = false;
+                }
+            } else {
+                warnings.push(format!(
+                    "patch {} has non-UTF-8 payload, cannot verify blob reference",
+                    patch.id.to_hex()
+                ));
+                blob_ok = false;
+            }
+        }
+        if blob_ok {
+            checks_passed += 1;
+        }
+
+        // 4. HEAD consistency: the current HEAD branch exists
+        let mut head_ok = false;
+        match self.head() {
+            Ok((branch_name, _target_id)) => {
+                if branches.iter().any(|(n, _)| n == &branch_name) {
+                    head_ok = true;
+                    checks_passed += 1;
+                } else {
+                    errors.push(format!("HEAD branch '{}' does not exist in branch list", branch_name));
+                }
+            }
+            Err(e) => {
+                errors.push(format!("HEAD is invalid: {}", e));
+            }
+        }
+        if head_ok {
+            checks_passed += 1;
+        }
+
+        Ok(FsckResult {
+            checks_passed,
+            warnings,
+            errors,
+        })
+    }
+
+    // =========================================================================
     // Reflog
     // =========================================================================
 
@@ -2362,6 +2507,24 @@ pub struct ConflictInfo {
     pub their_content_hash: Option<Hash>,
     /// The base version of the file (blob hash from LCA).
     pub base_content_hash: Option<Hash>,
+}
+
+/// Result of a garbage collection pass.
+#[derive(Debug, Clone)]
+pub struct GcResult {
+    /// Number of unreachable patches removed.
+    pub patches_removed: usize,
+}
+
+/// Result of a filesystem check.
+#[derive(Debug, Clone)]
+pub struct FsckResult {
+    /// Number of checks that passed without issues.
+    pub checks_passed: usize,
+    /// Non-fatal warnings encountered.
+    pub warnings: Vec<String>,
+    /// Fatal errors encountered.
+    pub errors: Vec<String>,
 }
 
 /// Line-level three-way merge using diff3 algorithm.

@@ -1,0 +1,11 @@
+[package]
+name = "suture-e2e"
+version = "0.1.0"
+edition = "2024"
+
+[[test]]
+name = "workflow"
+harness = false
+
+[dependencies]
+tempfile = "3"

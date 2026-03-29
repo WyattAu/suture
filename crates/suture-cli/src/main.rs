@@ -236,6 +236,17 @@ enum Commands {
     },
     /// Show version information
     Version,
+    /// Garbage collect unreachable objects
+    Gc,
+    /// Verify repository integrity
+    Fsck,
+    /// Binary search for bug-introducing commit
+    Bisect {
+        /// Known good commit (no bug)
+        good: String,
+        /// Known bad commit (has bug)
+        bad: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -704,6 +715,9 @@ async fn main() {
         Commands::Drivers => cmd_drivers().await,
         Commands::Shortlog { branch, number } => cmd_shortlog(branch.as_deref(), number).await,
         Commands::Notes { action } => cmd_notes(&action).await,
+        Commands::Gc => cmd_gc().await,
+        Commands::Fsck => cmd_fsck().await,
+        Commands::Bisect { good, bad } => cmd_bisect(good.as_str(), bad.as_str()).await,
         Commands::Version => cmd_version().await,
     };
 
@@ -715,6 +729,113 @@ async fn main() {
 
 async fn cmd_version() -> Result<(), Box<dyn std::error::Error>> {
     println!("suture {}", env!("CARGO_PKG_VERSION"));
+    Ok(())
+}
+
+async fn cmd_gc() -> Result<(), Box<dyn std::error::Error>> {
+    let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+    let result = repo.gc()?;
+    println!("Garbage collection complete.");
+    println!("  {} patch(es) removed", result.patches_removed);
+    if result.patches_removed > 0 {
+        println!("  Hint: reopen the repository to fully update the in-memory DAG");
+    }
+    Ok(())
+}
+
+async fn cmd_fsck() -> Result<(), Box<dyn std::error::Error>> {
+    let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+    let result = repo.fsck()?;
+    println!("Repository integrity check complete.");
+    println!("  {} check(s) passed", result.checks_passed);
+    if !result.warnings.is_empty() {
+        println!("\nWarnings:");
+        for w in &result.warnings {
+            println!("  WARNING: {}", w);
+        }
+    }
+    if !result.errors.is_empty() {
+        println!("\nErrors:");
+        for e in &result.errors {
+            println!("  ERROR: {}", e);
+        }
+    }
+    Ok(())
+}
+
+async fn cmd_bisect(good_ref: &str, bad_ref: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+    let all_patches = repo.all_patches();
+
+    let good_patch = resolve_ref(&repo, good_ref, &all_patches)?;
+    let bad_patch = resolve_ref(&repo, bad_ref, &all_patches)?;
+
+    let log = repo.log(None)?;
+
+    let good_idx = log
+        .iter()
+        .position(|p| p.id == good_patch.id)
+        .ok_or_else(|| format!("'{}' not found in history", good_ref))?;
+    let bad_idx = log
+        .iter()
+        .position(|p| p.id == bad_patch.id)
+        .ok_or_else(|| format!("'{}' not found in history", bad_ref))?;
+
+    if good_idx >= bad_idx {
+        return Err("'good' must be an older commit than 'bad'".into());
+    }
+
+    let remaining = bad_idx - good_idx - 1;
+    if remaining == 0 {
+        println!("Only one commit between good and bad:");
+        println!(
+            "  {} {}",
+            &log[bad_idx - 1].id.to_hex()[..8],
+            log[bad_idx - 1].message.lines().next().unwrap_or("")
+        );
+        println!("  This is the first bad commit.");
+        return Ok(());
+    }
+
+    let midpoint_idx = (good_idx + bad_idx) / 2;
+    let midpoint = &log[midpoint_idx];
+
+    println!(
+        "Bisecting: {} commit(s) remaining between good ({}) and bad ({})",
+        remaining,
+        &good_patch.id.to_hex()[..8],
+        &bad_patch.id.to_hex()[..8]
+    );
+    println!();
+    println!("  Step: test commit {}", midpoint.id.to_hex());
+    println!(
+        "  {}",
+        midpoint.message.lines().next().unwrap_or("")
+    );
+    println!();
+    println!("To test this commit:");
+    println!("  suture reset {} --hard", midpoint.id.to_hex());
+    println!();
+    println!("Then mark as:");
+    if midpoint_idx > good_idx + 1 {
+        println!(
+            "  suture bisect {} {}   (if this commit is GOOD)",
+            good_ref,
+            &midpoint.id.to_hex()[..8]
+        );
+    } else {
+        println!("  First bad commit found: {}", midpoint.id.to_hex());
+    }
+    if midpoint_idx < bad_idx - 1 {
+        println!(
+            "  suture bisect {} {}   (if this commit is BAD)",
+            &midpoint.id.to_hex()[..8],
+            bad_ref
+        );
+    } else {
+        println!("  First bad commit found: {}", midpoint.id.to_hex());
+    }
+
     Ok(())
 }
 
@@ -836,6 +957,7 @@ async fn cmd_drivers() -> Result<(), Box<dyn std::error::Error>> {
     use suture_driver_csv::CsvDriver;
     use suture_driver_json::JsonDriver;
     use suture_driver_toml::TomlDriver;
+    use suture_driver_xml::XmlDriver;
     use suture_driver_yaml::YamlDriver;
 
     let mut registry = DriverRegistry::new();
@@ -843,6 +965,7 @@ async fn cmd_drivers() -> Result<(), Box<dyn std::error::Error>> {
     registry.register(Box::new(TomlDriver));
     registry.register(Box::new(CsvDriver));
     registry.register(Box::new(YamlDriver));
+    registry.register(Box::new(XmlDriver));
 
     let drivers = registry.list();
     if drivers.is_empty() {
@@ -1253,11 +1376,15 @@ async fn cmd_diff(from: Option<&str>, to: Option<&str>) -> Result<(), Box<dyn st
     use suture_driver_csv::CsvDriver;
     use suture_driver_json::JsonDriver;
     use suture_driver_toml::TomlDriver;
+    use suture_driver_xml::XmlDriver;
+    use suture_driver_yaml::YamlDriver;
 
     let mut registry = DriverRegistry::new();
     registry.register(Box::new(JsonDriver));
     registry.register(Box::new(TomlDriver));
     registry.register(Box::new(CsvDriver));
+    registry.register(Box::new(YamlDriver));
+    registry.register(Box::new(XmlDriver));
 
     for entry in &entries {
         match &entry.diff_type {
@@ -1395,6 +1522,7 @@ async fn cmd_merge(source: &str) -> Result<(), Box<dyn std::error::Error>> {
         use suture_driver_csv::CsvDriver;
         use suture_driver_json::JsonDriver;
         use suture_driver_toml::TomlDriver;
+        use suture_driver_xml::XmlDriver;
         use suture_driver_yaml::YamlDriver;
 
         let mut registry = DriverRegistry::new();
@@ -1402,6 +1530,7 @@ async fn cmd_merge(source: &str) -> Result<(), Box<dyn std::error::Error>> {
         registry.register(Box::new(TomlDriver));
         registry.register(Box::new(CsvDriver));
         registry.register(Box::new(YamlDriver));
+        registry.register(Box::new(XmlDriver));
 
         for conflict in &conflicts {
             let path = StdPath::new(&conflict.path);

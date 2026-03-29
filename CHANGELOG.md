@@ -1,5 +1,69 @@
 # Changelog
 
+## [0.9.0] - 2026-03-29
+
+### Added
+
+#### `suture gc` (Path A — Git Parity)
+- `gc()` — garbage collection for unreachable patches
+- Walks all branch tips, collects reachable patches via ancestor traversal
+- Deletes unreachable patches from metadata (patches, edges, signatures tables)
+- CLI: `suture gc` — reports count of removed patches
+
+#### `suture fsck` (Path A — Git Parity)
+- `fsck()` — verify repository integrity
+- Checks DAG parent consistency (all parent IDs exist)
+- Checks branch target validity (all branches point to existing patches)
+- Checks blob references (patch payloads resolve to CAS blobs)
+- Checks HEAD consistency (current branch exists)
+- CLI: `suture fsck` — reports passed checks, warnings, and errors
+
+#### `suture bisect` (Path A — Git Parity)
+- Binary search for bug-introducing commit
+- Accepts good and bad refs (commit hashes, branch names, partial hashes)
+- Finds midpoint in linear history, prints guidance for narrowing
+- Reports first bad commit when range is narrowed to one commit
+- CLI: `suture bisect <good> <bad>`
+
+#### XML Semantic Driver (Path B — Semantic Differentiator)
+- New `suture-driver-xml` crate implementing `SutureDriver`
+- Element-level XML diff using `roxmltree` DOM parser
+- XPath-like paths: `/root/child[index]`, `/root/child[index]@attr`, `/root/child[index]#text`
+- Detects Added, Removed, Modified changes for elements, attributes, and text
+- Semantic merge: recursive three-way merge with conflict detection
+- 9 tests: name, extensions, modified text, added element, removed element, attribute change, format diff, merge clean, merge conflict
+
+#### YAML Semantic Merge (Path B — Semantic Differentiator)
+- `YamlDriver::merge()` — three-way merge for YAML files
+- Recursive merge of `serde_yaml::Value` mappings and sequences
+- Auto-merges non-overlapping changes (additions, deletions, modifications to different parts)
+- Detects conflicts when same key/element modified differently by both sides
+- 5 new tests: no-conflict, conflict, both-add-different, both-add-same, nested merge
+
+#### XML/YAML Drivers Wired Into CLI (Path B — Semantic Differentiator)
+- `suture diff` now uses XML driver for `.xml` files automatically
+- `suture diff` now uses YAML driver for `.yaml`/`.yml` files automatically
+- `suture merge` attempts XML semantic merge for conflicting `.xml` files
+- `suture merge` attempts YAML semantic merge for conflicting `.yaml`/`.yml` files
+- `suture drivers` lists all 5 drivers: JSON, TOML, CSV, YAML, XML
+
+#### End-to-End Integration Tests (Path C — Hardening)
+- New `suture-e2e` crate with custom test harness
+- 7 integration tests: init→commit→status, branch→merge, gc, fsck, bisect, tag, stash→pop
+- Tests invoke `suture-cli` binary as subprocess against real repositories
+- Gracefully skips if binaries not built
+
+#### GitHub Release Workflow (Path C — Infrastructure)
+- `.github/workflows/release.yml` — triggered on `v*` tag push
+- Cross-compiles static binaries for Linux, macOS, Windows
+- Creates GitHub Release with attached binaries (tar.gz / zip)
+
+#### Quality
+- Test count: 274 (up from 260 in v0.8.0)
+- 14 new tests (9 XML driver, 5 YAML merge) + 7 e2e integration tests
+- Zero clippy warnings, zero audit findings
+- 14 workspace crates (up from 12)
+
 ## [0.8.0] - 2026-03-29
 
 ### Added

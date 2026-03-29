@@ -100,6 +100,139 @@ impl YamlDriver {
         }
     }
 
+    fn merge_values(
+        base: &Value,
+        ours: &Value,
+        theirs: &Value,
+    ) -> Result<Option<Value>, DriverError> {
+        match (base, ours, theirs) {
+            (Value::Mapping(base_map), Value::Mapping(ours_map), Value::Mapping(theirs_map)) => {
+                let base_keys: std::collections::HashSet<&Value> = base_map.keys().collect();
+                let ours_keys: std::collections::HashSet<&Value> = ours_map.keys().collect();
+                let theirs_keys: std::collections::HashSet<&Value> = theirs_map.keys().collect();
+
+                let all_keys: std::collections::HashSet<&Value> = base_keys
+                    .iter()
+                    .chain(ours_keys.iter())
+                    .chain(theirs_keys.iter())
+                    .copied()
+                    .collect();
+
+                let mut merged = serde_yaml::Mapping::new();
+
+                for key in &all_keys {
+                    let in_base = base_keys.contains(key);
+                    let in_ours = ours_keys.contains(key);
+                    let in_theirs = theirs_keys.contains(key);
+
+                    match (in_base, in_ours, in_theirs) {
+                        (true, true, false) => {
+                            if let Some(val) = ours_map.get(key) {
+                                merged.insert((*key).clone(), val.clone());
+                            }
+                        }
+                        (true, false, true) => {
+                            if let Some(val) = theirs_map.get(key) {
+                                merged.insert((*key).clone(), val.clone());
+                            }
+                        }
+                        (true, true, true) => {
+                            let base_val = &base_map[key];
+                            let ours_val = &ours_map[key];
+                            let theirs_val = &theirs_map[key];
+
+                            if ours_val == theirs_val {
+                                merged.insert((*key).clone(), ours_val.clone());
+                            } else if ours_val == base_val {
+                                merged.insert((*key).clone(), theirs_val.clone());
+                            } else if theirs_val == base_val {
+                                merged.insert((*key).clone(), ours_val.clone());
+                            } else if let Some(m) =
+                                Self::merge_values(base_val, ours_val, theirs_val)?
+                            {
+                                merged.insert((*key).clone(), m);
+                            } else {
+                                return Ok(None);
+                            }
+                        }
+                        (false, true, true) => {
+                            if ours_map[key] == theirs_map[key] {
+                                merged.insert((*key).clone(), ours_map[key].clone());
+                            } else {
+                                return Ok(None);
+                            }
+                        }
+                        (false, true, false) => {
+                            if let Some(val) = ours_map.get(key) {
+                                merged.insert((*key).clone(), val.clone());
+                            }
+                        }
+                        (false, false, true) => {
+                            if let Some(val) = theirs_map.get(key) {
+                                merged.insert((*key).clone(), val.clone());
+                            }
+                        }
+                        (true, false, false) | (false, false, false) => {}
+                    }
+                }
+
+                Ok(Some(Value::Mapping(merged)))
+            }
+            (Value::Sequence(base_arr), Value::Sequence(ours_arr), Value::Sequence(theirs_arr)) => {
+                let max_len = base_arr.len().max(ours_arr.len()).max(theirs_arr.len());
+                let mut merged = Vec::new();
+
+                for i in 0..max_len {
+                    let base_val = base_arr.get(i);
+                    let ours_val = ours_arr.get(i);
+                    let theirs_val = theirs_arr.get(i);
+
+                    match (base_val, ours_val, theirs_val) {
+                        (None, Some(o), None) => merged.push(o.clone()),
+                        (None, None, Some(t)) => merged.push(t.clone()),
+                        (None, Some(o), Some(t)) => {
+                            if o == t {
+                                merged.push(o.clone());
+                            } else {
+                                return Ok(None);
+                            }
+                        }
+                        (None, None, _) => {}
+                        (Some(_), Some(o), None) => merged.push(o.clone()),
+                        (Some(_), None, Some(t)) => merged.push(t.clone()),
+                        (Some(_), None, None) => {}
+                        (Some(b), Some(o), Some(t)) => {
+                            if o == t {
+                                merged.push(o.clone());
+                            } else if o == b {
+                                merged.push(t.clone());
+                            } else if t == b {
+                                merged.push(o.clone());
+                            } else if let Some(m) = Self::merge_values(b, o, t)? {
+                                merged.push(m);
+                            } else {
+                                return Ok(None);
+                            }
+                        }
+                    }
+                }
+
+                Ok(Some(Value::Sequence(merged)))
+            }
+            (base_val, ours_val, theirs_val) => {
+                if ours_val == theirs_val {
+                    Ok(Some(ours_val.clone()))
+                } else if ours_val == base_val {
+                    Ok(Some(theirs_val.clone()))
+                } else if theirs_val == base_val {
+                    Ok(Some(ours_val.clone()))
+                } else {
+                    Ok(None)
+                }
+            }
+        }
+    }
+
     fn format_change(change: &SemanticChange) -> String {
         match change {
             SemanticChange::Added { path, value } => {
@@ -176,6 +309,24 @@ impl SutureDriver for YamlDriver {
 
         let lines: Vec<String> = changes.iter().map(Self::format_change).collect();
         Ok(lines.join("\n"))
+    }
+
+    fn merge(&self, base: &str, ours: &str, theirs: &str) -> Result<Option<String>, DriverError> {
+        let base_val: Value =
+            serde_yaml::from_str(base).map_err(|e| DriverError::ParseError(e.to_string()))?;
+        let ours_val: Value =
+            serde_yaml::from_str(ours).map_err(|e| DriverError::ParseError(e.to_string()))?;
+        let theirs_val: Value =
+            serde_yaml::from_str(theirs).map_err(|e| DriverError::ParseError(e.to_string()))?;
+
+        match Self::merge_values(&base_val, &ours_val, &theirs_val)? {
+            Some(merged) => {
+                Ok(Some(serde_yaml::to_string(&merged).map_err(|e| {
+                    DriverError::SerializationError(e.to_string())
+                })?))
+            }
+            None => Ok(None),
+        }
     }
 }
 
@@ -257,5 +408,71 @@ mod tests {
             old_value: "NYC".to_string(),
             new_value: "San Francisco".to_string(),
         }));
+    }
+
+    #[test]
+    fn test_yaml_merge_no_conflict() {
+        let driver = YamlDriver::new();
+        let base = "a: 1\nb: 2\nc: 3\n";
+        let ours = "a: 10\nb: 2\nc: 3\n";
+        let theirs = "a: 1\nb: 2\nc: 30\n";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged: Value = serde_yaml::from_str(&result.unwrap()).unwrap();
+        assert_eq!(merged["a"], Value::Number(10.into()));
+        assert_eq!(merged["b"], Value::Number(2.into()));
+        assert_eq!(merged["c"], Value::Number(30.into()));
+    }
+
+    #[test]
+    fn test_yaml_merge_conflict() {
+        let driver = YamlDriver::new();
+        let base = "key: original\n";
+        let ours = "key: ours\n";
+        let theirs = "key: theirs\n";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_yaml_merge_both_add_different_keys() {
+        let driver = YamlDriver::new();
+        let base = "shared: true\n";
+        let ours = "shared: true\nadded_by_ours: yes\n";
+        let theirs = "shared: true\nadded_by_theirs: yes\n";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged: Value = serde_yaml::from_str(&result.unwrap()).unwrap();
+        assert_eq!(merged["shared"], Value::Bool(true));
+        assert_eq!(merged["added_by_ours"], Value::String("yes".into()));
+        assert_eq!(merged["added_by_theirs"], Value::String("yes".into()));
+    }
+
+    #[test]
+    fn test_yaml_merge_both_add_same_key() {
+        let driver = YamlDriver::new();
+        let base = "existing: ok\n";
+        let ours = "existing: ok\nnew_key: from_ours\n";
+        let theirs = "existing: ok\nnew_key: from_theirs\n";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_yaml_merge_nested() {
+        let driver = YamlDriver::new();
+        let base = "server:\n  host: localhost\n  port: 8080\n";
+        let ours = "server:\n  host: 0.0.0.0\n  port: 8080\n";
+        let theirs = "server:\n  host: localhost\n  port: 9090\n";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged: Value = serde_yaml::from_str(&result.unwrap()).unwrap();
+        assert_eq!(merged["server"]["host"], Value::String("0.0.0.0".into()));
+        assert_eq!(merged["server"]["port"], Value::Number(9090.into()));
     }
 }
