@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.12.0] - 2026-03-29
+
+### Added
+
+#### Terminal UI (Path C — Interface Evolution)
+- New `suture-tui` crate — interactive terminal UI built with `ratatui` and `crossterm`
+- Launch via `suture tui` subcommand
+- **Status panel**: shows current branch, HEAD patch, staged/unstaged file counts, quick summary
+- **Log view**: ASCII branch topology graph with commit markers (●/◆), branch head labels, author/timestamp
+- **Interactive staging**: split-pane view of staged and unstaged files, toggle with Space/Enter, Tab to switch focus, `a` to stage all
+- **Diff viewer**: line-level diff with +/- prefixes and line numbers, scrollable, color-coded (green/red/cyan)
+- **Help panel**: complete keyboard shortcut reference for all tabs
+- **Commit mode**: inline commit message input (Enter to commit, Esc to cancel)
+- **Tab navigation**: Tab/Shift+Tab to cycle, Alt+1..5 for direct jump
+- **Status bar**: shows branch, staged/unstaged counts, error messages, commit mode input
+- 10 unit tests: tab cycling, timestamp formatting, date conversion, LCS diff computation
+
+#### CLI Integration
+- `suture tui` subcommand — launches the terminal UI for the current repository
+- CLI now has 37 commands total
+
 ## [0.11.0] - 2026-03-29
 
 ### Added

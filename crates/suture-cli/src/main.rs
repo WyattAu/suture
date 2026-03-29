@@ -264,6 +264,8 @@ enum Commands {
         #[arg(short, long)]
         message: Option<String>,
     },
+    /// Launch terminal UI
+    Tui,
 }
 
 #[derive(Subcommand)]
@@ -740,6 +742,7 @@ async fn main() {
         Commands::Bisect { good, bad } => cmd_bisect(good.as_str(), bad.as_str()).await,
         Commands::Squash { count, message } => cmd_squash(count, message.as_deref()).await,
         Commands::Version => cmd_version().await,
+        Commands::Tui => cmd_tui().await,
     };
 
     if let Err(e) = result {
@@ -750,6 +753,12 @@ async fn main() {
 
 async fn cmd_version() -> Result<(), Box<dyn std::error::Error>> {
     println!("suture {}", env!("CARGO_PKG_VERSION"));
+    Ok(())
+}
+
+async fn cmd_tui() -> Result<(), Box<dyn std::error::Error>> {
+    let repo_path = std::path::Path::new(".");
+    suture_tui::run(repo_path)?;
     Ok(())
 }
 
