@@ -383,6 +383,13 @@ impl MetadataStore {
         Ok(result)
     }
 
+    /// Delete a config key.
+    pub fn delete_config(&self, key: &str) -> Result<(), MetaError> {
+        self.conn
+            .execute("DELETE FROM config WHERE key = ?", [key])?;
+        Ok(())
+    }
+
     /// Get a configuration value.
     pub fn get_config(&self, key: &str) -> Result<Option<String>, MetaError> {
         let result = self.conn.query_row(

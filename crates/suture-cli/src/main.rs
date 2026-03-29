@@ -41,6 +41,14 @@ enum Commands {
         #[arg(short, long)]
         all: bool,
     },
+    /// Remove files from the working tree and staging area
+    Rm {
+        /// File paths to remove
+        paths: Vec<String>,
+        /// Only remove from staging area, keep the file on disk
+        #[arg(short, long)]
+        cached: bool,
+    },
     /// Create a commit
     Commit {
         /// Commit message
@@ -81,6 +89,13 @@ enum Commands {
     Checkout {
         /// Branch name to checkout
         branch: String,
+    },
+    /// Move or rename a tracked file
+    Mv {
+        /// Source path
+        source: String,
+        /// Destination path
+        destination: String,
     },
     /// Show differences between commits or branches
     Diff {
@@ -198,6 +213,8 @@ enum Commands {
     },
     /// Show the reference log (HEAD movements)
     Reflog,
+    /// List available semantic drivers
+    Drivers,
 }
 
 #[derive(Subcommand)]
@@ -238,6 +255,11 @@ enum RemoteAction {
     },
     /// List configured remotes
     List,
+    /// Remove a configured remote
+    Remove {
+        /// Remote name
+        name: String,
+    },
 }
 
 // Hub proto types (matching suture-hub/src/types.rs)
@@ -589,6 +611,7 @@ async fn main() {
         Commands::Init { path } => cmd_init(&path).await,
         Commands::Status => cmd_status().await,
         Commands::Add { paths, all } => cmd_add(&paths, all).await,
+        Commands::Rm { paths, cached } => cmd_rm(&paths, cached).await,
         Commands::Commit { message } => cmd_commit(&message).await,
         Commands::Branch {
             name,
@@ -604,6 +627,7 @@ async fn main() {
             grep,
         } => cmd_log(branch.as_deref(), graph, oneline, author.as_deref(), grep.as_deref()).await,
         Commands::Checkout { branch } => cmd_checkout(&branch).await,
+        Commands::Mv { source, destination } => cmd_mv(&source, &destination).await,
         Commands::Diff { from, to } => cmd_diff(from.as_deref(), to.as_deref()).await,
         Commands::Revert { commit, message } => cmd_revert(&commit, message.as_deref()).await,
         Commands::Merge { source } => cmd_merge(&source).await,
@@ -631,6 +655,7 @@ async fn main() {
         }
         Commands::Show { commit } => cmd_show(&commit).await,
         Commands::Reflog => cmd_reflog().await,
+        Commands::Drivers => cmd_drivers().await,
     };
 
     if let Err(e) = result {
@@ -681,6 +706,26 @@ async fn cmd_reflog() -> Result<(), Box<dyn std::error::Error>> {
             head_hash
         };
         println!("{} {}", short_hash, entry);
+    }
+    Ok(())
+}
+
+async fn cmd_drivers() -> Result<(), Box<dyn std::error::Error>> {
+    use suture_driver::DriverRegistry;
+    use suture_driver_json::JsonDriver;
+    use suture_driver_yaml::YamlDriver;
+
+    let mut registry = DriverRegistry::new();
+    registry.register(Box::new(JsonDriver));
+    registry.register(Box::new(YamlDriver));
+
+    let drivers = registry.list();
+    if drivers.is_empty() {
+        println!("No semantic drivers available.");
+    } else {
+        for (name, extensions) in &drivers {
+            println!("{} ({})", name, extensions.join(", "));
+        }
     }
     Ok(())
 }
@@ -857,6 +902,33 @@ async fn cmd_add(paths: &[String], all: bool) -> Result<(), Box<dyn std::error::
             println!("Added {}", path);
         }
     }
+    Ok(())
+}
+
+async fn cmd_rm(paths: &[String], cached: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+    for path in paths {
+        if !cached {
+            let file_path = std::path::Path::new(path);
+            if file_path.exists() {
+                std::fs::remove_file(file_path)?;
+            }
+        }
+        if cached {
+            let repo_path = suture_common::RepoPath::new(path)?;
+            repo.meta().working_set_add(&repo_path, suture_common::FileStatus::Deleted)?;
+        } else {
+            repo.add(path)?;
+        }
+        println!("Removed {}", path);
+    }
+    Ok(())
+}
+
+async fn cmd_mv(source: &str, destination: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+    repo.rename_file(source, destination)?;
+    println!("Renamed {} -> {}", source, destination);
     Ok(())
 }
 
@@ -1280,6 +1352,10 @@ async fn cmd_remote(action: &RemoteAction) -> Result<(), Box<dyn std::error::Err
                     println!("{}\t{}", name, url);
                 }
             }
+        }
+        RemoteAction::Remove { name } => {
+            repo.remove_remote(name)?;
+            println!("Remote '{}' removed", name);
         }
     }
     Ok(())

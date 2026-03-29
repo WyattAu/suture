@@ -48,6 +48,20 @@ pub trait SutureDriver: Send + Sync {
         base_content: Option<&str>,
         new_content: &str,
     ) -> Result<String, DriverError>;
+
+    /// Perform a semantic three-way merge.
+    ///
+    /// Given base, ours, and theirs content, produce a merged result.
+    /// Returns `None` if the merge cannot be resolved automatically (conflict).
+    /// Returns `Some(merged_content)` if the merge is clean.
+    fn merge(
+        &self,
+        _base: &str,
+        _ours: &str,
+        _theirs: &str,
+    ) -> Result<Option<String>, DriverError> {
+        Ok(None)
+    }
 }
 
 /// A single semantic change detected by a driver.

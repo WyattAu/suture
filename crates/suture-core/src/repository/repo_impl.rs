@@ -553,6 +553,10 @@ impl Repository {
         let full_path = self.root.join(path);
 
         if !full_path.exists() {
+            if self.is_tracked(path)? {
+                self.meta.working_set_add(&repo_path, FileStatus::Deleted)?;
+                return Ok(());
+            }
             return Err(RepoError::Io(io::Error::new(
                 io::ErrorKind::NotFound,
                 format!("file not found: {}", path),
@@ -2035,6 +2039,41 @@ impl Repository {
         Ok(remotes)
     }
 
+    /// Remove a configured remote.
+    pub fn remove_remote(&self, name: &str) -> Result<(), RepoError> {
+        let key = format!("remote.{}.url", name);
+        if self.meta.get_config(&key)?.is_none() {
+            return Err(RepoError::Custom(format!("remote '{}' not found", name)));
+        }
+        self.meta.delete_config(&key)?;
+        if let Ok(Some(_)) = self.meta.get_config(&format!("remote.{}.last_pushed", name)) {
+            self.meta.delete_config(&format!("remote.{}.last_pushed", name))?;
+        }
+        Ok(())
+    }
+
+    /// Rename a tracked file. Stages both the deletion of the old path
+    /// and the addition of the new path.
+    pub fn rename_file(&self, old_path: &str, new_path: &str) -> Result<(), RepoError> {
+        let old = self.root.join(old_path);
+        let new = self.root.join(new_path);
+
+        if !old.exists() {
+            return Err(RepoError::Custom(format!("path not found: {}", old_path)));
+        }
+
+        if new.exists() {
+            return Err(RepoError::Custom(format!("path already exists: {}", new_path)));
+        }
+
+        fs::rename(old, new).map_err(|e| RepoError::Custom(format!("rename failed: {}", e)))?;
+
+        self.add(old_path)?;
+        self.add(new_path)?;
+
+        Ok(())
+    }
+
     /// Get the URL for a remote.
     pub fn get_remote_url(&self, name: &str) -> Result<String, RepoError> {
         let key = format!("remote.{}.url", name);
@@ -3350,5 +3389,103 @@ mod tests {
 
         let result = repo.blame("nonexistent.txt");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_rm_file() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir().unwrap();
+        let mut repo = Repository::init(dir.path(), "alice")?;
+
+        fs::write(dir.path().join("test.txt"), "content")?;
+        repo.add("test.txt")?;
+        repo.commit("initial")?;
+
+        fs::remove_file(dir.path().join("test.txt"))?;
+        repo.add("test.txt")?;
+
+        assert!(!dir.path().join("test.txt").exists());
+
+        let ws = repo.meta.working_set()?;
+        assert_eq!(ws.len(), 1);
+        assert_eq!(ws[0].0, "test.txt");
+        assert_eq!(ws[0].1, FileStatus::Deleted);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_rm_cached() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir().unwrap();
+        let mut repo = Repository::init(dir.path(), "alice")?;
+
+        fs::write(dir.path().join("test.txt"), "content")?;
+        repo.add("test.txt")?;
+        repo.commit("initial")?;
+
+        let repo_path = RepoPath::new("test.txt")?;
+        repo.meta.working_set_add(&repo_path, FileStatus::Deleted)?;
+
+        assert!(dir.path().join("test.txt").exists());
+
+        let ws = repo.meta.working_set()?;
+        assert_eq!(ws.len(), 1);
+        assert_eq!(ws[0].0, "test.txt");
+        assert_eq!(ws[0].1, FileStatus::Deleted);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_mv_file() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir().unwrap();
+        let mut repo = Repository::init(dir.path(), "alice")?;
+
+        fs::write(dir.path().join("old.txt"), "content")?;
+        repo.add("old.txt")?;
+        repo.commit("initial")?;
+
+        repo.rename_file("old.txt", "new.txt")?;
+
+        assert!(!dir.path().join("old.txt").exists());
+        assert!(dir.path().join("new.txt").exists());
+
+        let ws = repo.meta.working_set()?;
+        assert!(ws.iter().any(|(p, s)| p == "old.txt" && *s == FileStatus::Deleted));
+        assert!(ws.iter().any(|(p, s)| p == "new.txt" && *s == FileStatus::Added));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_mv_nonexistent() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = Repository::init(dir.path(), "alice").unwrap();
+
+        let result = repo.rename_file("nonexistent.txt", "new.txt");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("path not found"));
+    }
+
+    #[test]
+    fn test_remove_remote() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = Repository::init(dir.path(), "alice")?;
+
+        repo.add_remote("origin", "http://example.com")?;
+
+        let remotes = repo.list_remotes()?;
+        assert_eq!(remotes.len(), 1);
+        assert_eq!(remotes[0].0, "origin");
+
+        repo.remove_remote("origin")?;
+
+        let remotes = repo.list_remotes()?;
+        assert!(remotes.is_empty());
+
+        let result = repo.remove_remote("nonexistent");
+        assert!(result.is_err());
+
+        Ok(())
     }
 }

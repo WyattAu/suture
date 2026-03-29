@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.7.0] - 2026-03-29
+
+### Added
+
+#### `suture rm` (Path A — Git Parity)
+- `suture rm <path> [paths...]` — remove files from working tree and staging area
+- `suture rm --cached <path>` — remove from staging only, keep file on disk
+- `add()` now handles missing tracked files by staging them as `FileStatus::Deleted`
+
+#### `suture mv` (Path A — Git Parity)
+- `suture mv <source> <dest>` — rename/move tracked files
+- Moves file on disk, stages old path as Deleted and new path as Added
+- `rename_file()` core method validates paths before moving
+
+#### `suture remote remove` (Path A — Git Parity)
+- `suture remote remove <name>` — delete a configured remote
+- Cleans up associated `last_pushed` state automatically
+- `delete_config()` method added to `MetadataStore`
+
+#### Semantic Merge (Path B — Semantic Differentiator)
+- `SutureDriver::merge()` trait method — three-way semantic merge
+- Default implementation returns `Ok(None)` (fall back to line-level)
+- `JsonDriver::merge()` — key-level JSON merge: auto-merges non-overlapping changes, detects conflicts
+- 6 tests: no-conflict, conflict, both-add-different, both-add-same, nested, identical
+
+#### YAML Driver (Path B — Semantic Differentiator)
+- New `suture-driver-yaml` crate implementing `SutureDriver`
+- Recursive YAML comparison using `serde_yaml::Value`
+- `format_diff` with YAML-specific paths
+- 5 tests: modified, added, nested, and format diff scenarios
+
+#### `suture drivers` (Path B — CLI)
+- `suture drivers` — lists all registered semantic drivers with their extensions
+- Shows JSON and YAML drivers by default
+
+#### Quality
+- Test count: 248 (up from 232 in v0.6.0)
+- 16 new tests (5 core: rm/mv/remote, 6 JSON merge, 5 YAML driver)
+- Zero clippy warnings, zero audit findings
+- 10 workspace crates (up from 9)
+
 ## [0.6.0] - 2026-03-29
 
 ### Added

@@ -102,6 +102,135 @@ impl JsonDriver {
         changes
     }
 
+    fn merge_values(
+        base: &Value,
+        ours: &Value,
+        theirs: &Value,
+    ) -> Result<Option<Value>, DriverError> {
+        match (base, ours, theirs) {
+            (Value::Object(base_map), Value::Object(ours_map), Value::Object(theirs_map)) => {
+                let base_keys: std::collections::HashSet<&str> =
+                    base_map.keys().map(|s| s.as_str()).collect();
+                let ours_keys: std::collections::HashSet<&str> =
+                    ours_map.keys().map(|s| s.as_str()).collect();
+                let theirs_keys: std::collections::HashSet<&str> =
+                    theirs_map.keys().map(|s| s.as_str()).collect();
+
+                let all_keys: std::collections::HashSet<&str> = base_keys
+                    .iter()
+                    .chain(ours_keys.iter())
+                    .chain(theirs_keys.iter())
+                    .copied()
+                    .collect();
+
+                let mut merged = serde_json::Map::new();
+
+                for key in &all_keys {
+                    let in_base = base_keys.contains(key);
+                    let in_ours = ours_keys.contains(key);
+                    let in_theirs = theirs_keys.contains(key);
+
+                    match (in_base, in_ours, in_theirs) {
+                        (true, true, false) => {
+                            merged.insert((*key).to_string(), ours_map[*key].clone());
+                        }
+                        (true, false, true) => {
+                            merged.insert((*key).to_string(), theirs_map[*key].clone());
+                        }
+                        (true, true, true) => {
+                            let base_val = &base_map[*key];
+                            let ours_val = &ours_map[*key];
+                            let theirs_val = &theirs_map[*key];
+
+                            if ours_val == theirs_val {
+                                merged.insert((*key).to_string(), ours_val.clone());
+                            } else if ours_val == base_val {
+                                merged.insert((*key).to_string(), theirs_val.clone());
+                            } else if theirs_val == base_val {
+                                merged.insert((*key).to_string(), ours_val.clone());
+                            } else if let Some(m) =
+                                Self::merge_values(base_val, ours_val, theirs_val)?
+                            {
+                                merged.insert((*key).to_string(), m);
+                            } else {
+                                return Ok(None);
+                            }
+                        }
+                        (false, true, true) => {
+                            if ours_map[*key] == theirs_map[*key] {
+                                merged.insert((*key).to_string(), ours_map[*key].clone());
+                            } else {
+                                return Ok(None);
+                            }
+                        }
+                        (false, true, false) => {
+                            merged.insert((*key).to_string(), ours_map[*key].clone());
+                        }
+                        (false, false, true) => {
+                            merged.insert((*key).to_string(), theirs_map[*key].clone());
+                        }
+                        (true, false, false) => {}
+                        (false, false, false) => {}
+                    }
+                }
+
+                Ok(Some(Value::Object(merged)))
+            }
+            (Value::Array(base_arr), Value::Array(ours_arr), Value::Array(theirs_arr)) => {
+                let max_len = base_arr.len().max(ours_arr.len()).max(theirs_arr.len());
+                let mut merged = Vec::new();
+
+                for i in 0..max_len {
+                    let base_val = base_arr.get(i);
+                    let ours_val = ours_arr.get(i);
+                    let theirs_val = theirs_arr.get(i);
+
+                    match (base_val, ours_val, theirs_val) {
+                        (None, Some(o), None) => merged.push(o.clone()),
+                        (None, None, Some(t)) => merged.push(t.clone()),
+                        (None, Some(o), Some(t)) => {
+                            if o == t {
+                                merged.push(o.clone());
+                            } else {
+                                return Ok(None);
+                            }
+                        }
+                        (None, None, _) => {}
+                        (Some(_), Some(o), None) => merged.push(o.clone()),
+                        (Some(_), None, Some(t)) => merged.push(t.clone()),
+                        (Some(_), None, None) => {}
+                        (Some(b), Some(o), Some(t)) => {
+                            if o == t {
+                                merged.push(o.clone());
+                            } else if o == b {
+                                merged.push(t.clone());
+                            } else if t == b {
+                                merged.push(o.clone());
+                            } else if let Some(m) = Self::merge_values(b, o, t)? {
+                                merged.push(m);
+                            } else {
+                                return Ok(None);
+                            }
+                        }
+                    }
+                }
+
+                Ok(Some(Value::Array(merged)))
+            }
+            (base_val, ours_val, theirs_val) => {
+                if ours_val == theirs_val {
+                    Ok(Some(ours_val.clone()))
+                } else if ours_val == base_val {
+                    Ok(Some(theirs_val.clone()))
+                } else if theirs_val == base_val {
+                    Ok(Some(ours_val.clone()))
+                } else {
+                    Ok(None)
+                }
+            }
+        }
+    }
+
     fn format_change(change: &SemanticChange) -> String {
         match change {
             SemanticChange::Added { path, value } => {
@@ -178,6 +307,23 @@ impl SutureDriver for JsonDriver {
 
         let lines: Vec<String> = changes.iter().map(Self::format_change).collect();
         Ok(lines.join("\n"))
+    }
+
+    fn merge(&self, base: &str, ours: &str, theirs: &str) -> Result<Option<String>, DriverError> {
+        let base_val: Value =
+            serde_json::from_str(base).map_err(|e| DriverError::ParseError(e.to_string()))?;
+        let ours_val: Value =
+            serde_json::from_str(ours).map_err(|e| DriverError::ParseError(e.to_string()))?;
+        let theirs_val: Value =
+            serde_json::from_str(theirs).map_err(|e| DriverError::ParseError(e.to_string()))?;
+
+        match Self::merge_values(&base_val, &ours_val, &theirs_val)? {
+            Some(merged) => Ok(Some(
+                serde_json::to_string_pretty(&merged)
+                    .map_err(|e| DriverError::SerializationError(e.to_string()))?,
+            )),
+            None => Ok(None),
+        }
     }
 }
 
@@ -333,5 +479,83 @@ mod tests {
             path: "/items/2".to_string(),
             value: "\"d\"".to_string(),
         }));
+    }
+
+    #[test]
+    fn test_merge_no_conflict() {
+        let driver = JsonDriver::new();
+        let base = r#"{"a": 1, "b": 2, "c": 3}"#;
+        let ours = r#"{"a": 10, "b": 2, "c": 3}"#;
+        let theirs = r#"{"a": 1, "b": 2, "c": 30}"#;
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged: Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(merged["a"], 10);
+        assert_eq!(merged["b"], 2);
+        assert_eq!(merged["c"], 30);
+    }
+
+    #[test]
+    fn test_merge_conflict() {
+        let driver = JsonDriver::new();
+        let base = r#"{"key": "original"}"#;
+        let ours = r#"{"key": "ours"}"#;
+        let theirs = r#"{"key": "theirs"}"#;
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_merge_both_add_different_keys() {
+        let driver = JsonDriver::new();
+        let base = r#"{"a": 1}"#;
+        let ours = r#"{"a": 1, "x": 100}"#;
+        let theirs = r#"{"a": 1, "y": 200}"#;
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged: Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(merged["a"], 1);
+        assert_eq!(merged["x"], 100);
+        assert_eq!(merged["y"], 200);
+    }
+
+    #[test]
+    fn test_merge_both_add_same_key() {
+        let driver = JsonDriver::new();
+        let base = r#"{"a": 1}"#;
+        let ours = r#"{"a": 1, "x": 100}"#;
+        let theirs = r#"{"a": 1, "x": 999}"#;
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_merge_nested() {
+        let driver = JsonDriver::new();
+        let base = r#"{"outer": {"inner": "base", "other": "keep"}}"#;
+        let ours = r#"{"outer": {"inner": "ours", "other": "keep"}}"#;
+        let theirs = r#"{"outer": {"inner": "base", "other": "changed"}}"#;
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged: Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(merged["outer"]["inner"], "ours");
+        assert_eq!(merged["outer"]["other"], "changed");
+    }
+
+    #[test]
+    fn test_merge_identical() {
+        let driver = JsonDriver::new();
+        let content = r#"{"a": 1, "b": 2}"#;
+
+        let result = driver.merge(content, content, content).unwrap();
+        assert!(result.is_some());
+        let merged: Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(merged["a"], 1);
+        assert_eq!(merged["b"], 2);
     }
 }
