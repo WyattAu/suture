@@ -1,5 +1,50 @@
 # Changelog
 
+## [0.11.0] - 2026-03-29
+
+### Added
+
+#### OOXML Shared Infrastructure (Path B — Semantic Differentiator)
+- New `suture-ooxml` crate — shared Office Open XML infrastructure
+- `OoxmlDocument::from_bytes()` / `to_bytes()` — read/write OOXML ZIP archives
+- Part navigation: `get_part()`, `main_document_path()`
+- Relationship parsing from `.rels` XML files
+- Content type tracking
+- 4 tests: attr extraction, rels parsing, ZIP roundtrip
+
+#### DOCX Semantic Driver (Path B — Semantic Differentiator)
+- New `suture-driver-docx` crate implementing `SutureDriver`
+- Paragraph-level diff for Word documents (`.docx`)
+- Three-way merge at paragraph granularity: auto-merges non-overlapping changes
+- Parses `word/document.xml`, extracts paragraphs from `<w:p>` elements
+- Full ZIP roundtrip: reads .docx → modifies XML parts → writes .docx
+- 7 tests: name, extensions, diff added/removed/modified, merge clean, merge conflict
+
+#### XLSX Semantic Driver (Path B — Semantic Differentiator)
+- New `suture-driver-xlsx` crate implementing `SutureDriver`
+- Cell-level diff for Excel spreadsheets (`.xlsx`)
+- Addressing: `/{sheet_name}/{row}/{col}` for precise cell identification
+- Parses `xl/worksheets/sheet*.xml` for row/cell data
+- 5 tests: name, extensions, diff cells, merge no-conflict, merge conflict
+
+#### PPTX Semantic Driver (Path B — Semantic Differentiator)
+- New `suture-driver-pptx` crate implementing `SutureDriver`
+- Slide-level diff for PowerPoint presentations (`.pptx`)
+- Parses `ppt/presentation.xml` for `<p:sp>` slide elements
+- Slide ordering preserved through merge
+- 7 tests: name, extensions, diff add/remove/no-change, merge different slides, merge conflict
+
+#### Full Office Driver Wiring
+- All 3 Office drivers (DOCX, XLSX, PPTX) wired into CLI
+- Registered in `cmd_drivers`, `cmd_diff`, and `cmd_merge`
+- `suture drivers` now lists 8 drivers: JSON, TOML, CSV, YAML, XML, DOCX, XLSX, PPTX
+
+#### Quality
+- Test count: 319 (up from 296 in v0.10.0)
+- 23 new tests (4 OOXML, 7 DOCX, 5 XLSX, 7 PPTX)
+- Zero clippy warnings, zero audit findings
+- 17 workspace crates (up from 14)
+
 ## [0.10.0] - 2026-03-29
 
 ### Added
