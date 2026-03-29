@@ -16,6 +16,9 @@ const ANSI_RESET: &str = "\x1b[0m";
     about = "Universal Semantic Version Control System"
 )]
 struct Cli {
+    /// Run as if suture was started in <path>
+    #[arg(short = 'C', global = true)]
+    repo_path: Option<String>,
     #[command(subcommand)]
     command: Commands,
 }
@@ -61,8 +64,18 @@ enum Commands {
     Log {
         /// Branch to show log for (default: HEAD)
         branch: Option<String>,
+        /// Show ASCII graph of branch topology
         #[arg(short, long)]
         graph: bool,
+        /// Show compact one-line format
+        #[arg(long)]
+        oneline: bool,
+        /// Filter by author name
+        #[arg(long)]
+        author: Option<String>,
+        /// Filter by commit message pattern
+        #[arg(long)]
+        grep: Option<String>,
     },
     /// Switch to a different branch
     Checkout {
@@ -90,6 +103,21 @@ enum Commands {
     Merge {
         /// Source branch to merge into HEAD
         source: String,
+    },
+    /// Apply a specific commit onto the current branch
+    CherryPick {
+        /// Commit hash to cherry-pick
+        commit: String,
+    },
+    /// Rebase the current branch onto another branch
+    Rebase {
+        /// Target branch to rebase onto
+        branch: String,
+    },
+    /// Show per-line commit attribution for a file
+    Blame {
+        /// File path to blame
+        path: String,
     },
     /// Tag operations
     Tag {
@@ -497,6 +525,15 @@ fn format_line_diff(path: &str, changes: &[suture_core::engine::merge::LineChang
 async fn main() {
     let cli = Cli::parse();
 
+    if let Some(path) = &cli.repo_path {
+        std::env::set_current_dir(path).map_err(|e| {
+            format!("cannot change to '{}': {}", path, e)
+        }).unwrap_or_else(|e| {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
+        });
+    }
+
     let result = match cli.command {
         Commands::Init { path } => cmd_init(&path).await,
         Commands::Status => cmd_status().await,
@@ -508,11 +545,20 @@ async fn main() {
             delete,
             list,
         } => cmd_branch(name.as_deref(), target.as_deref(), delete, list).await,
-        Commands::Log { branch, graph } => cmd_log(branch.as_deref(), graph).await,
+        Commands::Log {
+            branch,
+            graph,
+            oneline,
+            author,
+            grep,
+        } => cmd_log(branch.as_deref(), graph, oneline, author.as_deref(), grep.as_deref()).await,
         Commands::Checkout { branch } => cmd_checkout(&branch).await,
         Commands::Diff { from, to } => cmd_diff(from.as_deref(), to.as_deref()).await,
         Commands::Revert { commit, message } => cmd_revert(&commit, message.as_deref()).await,
         Commands::Merge { source } => cmd_merge(&source).await,
+        Commands::CherryPick { commit } => cmd_cherry_pick(&commit).await,
+        Commands::Rebase { branch } => cmd_rebase(&branch).await,
+        Commands::Blame { path } => cmd_blame(&path).await,
         Commands::Tag {
             name,
             target,
@@ -538,6 +584,45 @@ async fn main() {
         eprintln!("Error: {e}");
         std::process::exit(1);
     }
+}
+
+async fn cmd_cherry_pick(commit: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let patch_id = suture_common::Hash::from_hex(commit)?;
+    let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+    let new_id = repo.cherry_pick(&patch_id)?;
+    println!("Cherry-picked {} as {}", commit, new_id);
+    Ok(())
+}
+
+async fn cmd_rebase(branch: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+    let result = repo.rebase(branch)?;
+    if result.patches_replayed > 0 {
+        println!(
+            "Rebase onto '{}': {} patch(es) replayed",
+            branch, result.patches_replayed
+        );
+    } else {
+        println!("Already up to date.");
+    }
+    Ok(())
+}
+
+async fn cmd_blame(path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+    let entries = repo.blame(path)?;
+    for entry in &entries {
+        let short_hash = entry.patch_id.to_hex().chars().take(8).collect::<String>();
+        if entry.patch_id == suture_common::Hash::ZERO {
+            println!("{:>4} | {}", entry.line_number, entry.line);
+        } else {
+            println!(
+                "{:>4} | {} ({}) {}",
+                entry.line_number, short_hash, entry.author, entry.line
+            );
+        }
+    }
+    Ok(())
 }
 
 async fn cmd_stash(action: &StashAction) -> Result<(), Box<dyn std::error::Error>> {
@@ -721,14 +806,36 @@ async fn cmd_branch(
     Ok(())
 }
 
-async fn cmd_log(branch: Option<&str>, graph: bool) -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_log(
+    branch: Option<&str>,
+    graph: bool,
+    oneline: bool,
+    author: Option<&str>,
+    grep: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
 
     if !graph {
-        let patches = repo.log(branch)?;
+        let mut patches = repo.log(branch)?;
+
+        if let Some(author_filter) = author {
+            patches.retain(|p| p.author.contains(author_filter));
+        }
+        if let Some(grep_filter) = grep {
+            let grep_lower = grep_filter.to_lowercase();
+            patches.retain(|p| p.message.to_lowercase().contains(&grep_lower));
+        }
 
         if patches.is_empty() {
             println!("No commits.");
+            return Ok(());
+        }
+
+        if oneline {
+            for patch in &patches {
+                let short_hash = patch.id.to_hex().chars().take(8).collect::<String>();
+                println!("{} {}", short_hash, patch.message);
+            }
             return Ok(());
         }
 

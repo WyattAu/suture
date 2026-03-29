@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.5.0] - 2026-03-29
+
+### Added
+
+#### `-C <path>` Global Flag
+- `suture -C <path> <command>` — run any command as if started in a different directory
+- Global flag applies to all subcommands (except `init` and `clone` which take their own path)
+
+#### Cherry-Pick
+- `cherry_pick(&mut self, patch_id)` — apply a specific commit onto current HEAD
+- Creates a new patch with the same content but current HEAD as parent
+- Skips identity, merge, and create patches (not cherry-pickable)
+- CLI: `suture cherry-pick <commit-hash>`
+- Bug fix: capture `old_tree` before branch update for correct working tree sync
+
+#### Rebase
+- `rebase(&mut self, target_branch)` — replay commits from current branch onto target
+- Finds unique commits via LCA (Lowest Common Ancestor)
+- Supports fast-forward when current branch is ancestor of target
+- Returns `RebaseResult` with replay count and new tip ID
+- CLI: `suture rebase <branch>`
+- Bug fix: capture `old_tree` before branch update for correct working tree sync
+
+#### Blame
+- `blame(&self, path)` — per-line commit attribution for a file
+- Walks patch chain tracking line-level modifications via LCS diff
+- Returns `Vec<BlameEntry>` with patch_id, message, author, line content, line number
+- CLI: `suture blame <file>` — displays `line_num | hash (author) content`
+
+#### Log Filtering
+- `suture log --oneline` — compact format (short hash + message)
+- `suture log --author=<name>` — filter commits by author
+- `suture log --grep=<pattern>` — filter commits by message substring (case-insensitive)
+- Filters compose with `--graph` (graph mode falls back to filtered non-graph when filters active)
+
+#### Quality
+- Test count: 222 (up from 216 in v0.4.0)
+- 6 new tests: cherry-pick (2), rebase (2), blame (2)
+- Zero clippy warnings, zero audit findings
+- Bug fixes in cherry-pick and rebase: working tree sync now captures old snapshot before branch update
+
 ## [0.4.0] - 2026-03-28
 
 ### Added

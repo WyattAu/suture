@@ -1641,6 +1641,293 @@ impl Repository {
     }
 
     // =========================================================================
+    // Cherry-pick
+    // =========================================================================
+
+    /// Cherry-pick a patch onto the current HEAD branch.
+    ///
+    /// Creates a new patch with the same changes (operation_type, touch_set,
+    /// target_path, payload) but with the current HEAD as its parent.
+    pub fn cherry_pick(&mut self, patch_id: &PatchId) -> Result<PatchId, RepoError> {
+        let patch = self
+            .dag
+            .get_patch(patch_id)
+            .ok_or_else(|| RepoError::Custom(format!("patch not found: {}", patch_id)))?;
+
+        if patch.operation_type == OperationType::Identity
+            || patch.operation_type == OperationType::Merge
+            || patch.operation_type == OperationType::Create
+        {
+            return Err(RepoError::Custom(format!(
+                "cannot cherry-pick {:?} patches",
+                patch.operation_type
+            )));
+        }
+
+        let (branch_name, head_id) = self.head()?;
+
+        let new_patch = Patch::new(
+            patch.operation_type.clone(),
+            patch.touch_set.clone(),
+            patch.target_path.clone(),
+            patch.payload.clone(),
+            vec![head_id],
+            self.author.clone(),
+            patch.message.clone(),
+        );
+
+        let new_id = self.dag.add_patch(new_patch.clone(), vec![head_id])?;
+        self.meta.store_patch(&new_patch)?;
+
+        let branch = BranchName::new(&branch_name)?;
+        let old_tree = self.snapshot_head().unwrap_or_else(|_| FileTree::empty());
+        self.dag.update_branch(&branch, new_id)?;
+        self.meta.set_branch(&branch, &new_id)?;
+
+        self.invalidate_head_cache();
+
+        self.sync_working_tree(&old_tree)?;
+
+        Ok(new_id)
+    }
+
+    // =========================================================================
+    // Rebase
+    // =========================================================================
+
+    /// Rebase the current branch onto a target branch.
+    ///
+    /// Finds commits unique to the current branch (after the LCA with target),
+    /// then replays them onto the target branch tip. Updates the current
+    /// branch pointer to the new tip.
+    pub fn rebase(&mut self, target_branch: &str) -> Result<RebaseResult, RepoError> {
+        let (head_branch, head_id) = self.head()?;
+        let target_bn = BranchName::new(target_branch)?;
+        let target_tip = self
+            .dag
+            .get_branch(&target_bn)
+            .ok_or_else(|| RepoError::BranchNotFound(target_branch.to_string()))?;
+
+        if head_id == target_tip {
+            return Ok(RebaseResult {
+                patches_replayed: 0,
+                new_tip: head_id,
+            });
+        }
+
+        let lca_id = self
+            .dag
+            .lca(&head_id, &target_tip)
+            .ok_or_else(|| RepoError::Custom("no common ancestor found".to_string()))?;
+
+        if lca_id == head_id {
+            let branch = BranchName::new(&head_branch)?;
+            let old_tree = self.snapshot_head().unwrap_or_else(|_| FileTree::empty());
+            self.dag.update_branch(&branch, target_tip)?;
+            self.meta.set_branch(&branch, &target_tip)?;
+            self.invalidate_head_cache();
+
+            self.sync_working_tree(&old_tree)?;
+
+            return Ok(RebaseResult {
+                patches_replayed: 0,
+                new_tip: target_tip,
+            });
+        }
+
+        let mut head_ancestors = self.dag.ancestors(&lca_id);
+        head_ancestors.insert(lca_id);
+
+        let mut to_replay: Vec<Patch> = Vec::new();
+        let mut visited = HashSet::new();
+        let mut stack = vec![head_id];
+
+        while let Some(id) = stack.pop() {
+            if visited.contains(&id) || head_ancestors.contains(&id) {
+                continue;
+            }
+            visited.insert(id);
+            if let Some(patch) = self.dag.get_patch(&id) {
+                to_replay.push(patch.clone());
+                for parent_id in &patch.parent_ids {
+                    if !visited.contains(parent_id) {
+                        stack.push(*parent_id);
+                    }
+                }
+            }
+        }
+
+        to_replay.sort_by_key(|p| p.timestamp);
+
+        let branch = BranchName::new(&head_branch)?;
+        let old_tree = self.snapshot_head().unwrap_or_else(|_| FileTree::empty());
+        self.dag.update_branch(&branch, target_tip)?;
+        self.meta.set_branch(&branch, &target_tip)?;
+        self.invalidate_head_cache();
+
+        let mut current_parent = target_tip;
+        let mut last_new_id = target_tip;
+        let mut replayed = 0usize;
+
+        for patch in &to_replay {
+            if patch.operation_type == OperationType::Merge
+                || patch.operation_type == OperationType::Identity
+                || patch.operation_type == OperationType::Create
+            {
+                continue;
+            }
+
+            let new_patch = Patch::new(
+                patch.operation_type.clone(),
+                patch.touch_set.clone(),
+                patch.target_path.clone(),
+                patch.payload.clone(),
+                vec![current_parent],
+                self.author.clone(),
+                patch.message.clone(),
+            );
+
+            let new_id = self.dag.add_patch(new_patch.clone(), vec![current_parent])?;
+            self.meta.store_patch(&new_patch)?;
+
+            last_new_id = new_id;
+            current_parent = new_id;
+            replayed += 1;
+        }
+
+        self.dag.update_branch(&branch, last_new_id)?;
+        self.meta.set_branch(&branch, &last_new_id)?;
+        self.invalidate_head_cache();
+
+        self.sync_working_tree(&old_tree)?;
+
+        Ok(RebaseResult {
+            patches_replayed: replayed,
+            new_tip: last_new_id,
+        })
+    }
+
+    // =========================================================================
+    // Blame
+    // =========================================================================
+
+    /// Show per-line commit attribution for a file.
+    ///
+    /// Returns a vector of `BlameEntry` tuples, one per line in the file at HEAD.
+    pub fn blame(&self, path: &str) -> Result<Vec<BlameEntry>, RepoError> {
+        let head_tree = self.snapshot_head()?;
+        let hash = head_tree
+            .get(path)
+            .ok_or_else(|| RepoError::Custom(format!("file not found in HEAD: {}", path)))?;
+
+        let blob = self.cas.get_blob(hash)?;
+        let content = String::from_utf8_lossy(&blob);
+        let lines: Vec<&str> = content.lines().collect();
+
+        let (_, head_id) = self.head()?;
+        let chain = self.dag.patch_chain(&head_id);
+
+        let mut patches: Vec<Patch> = chain
+            .iter()
+            .filter_map(|id| self.dag.get_patch(id).cloned())
+            .collect();
+        patches.reverse();
+
+        let mut line_author: Vec<Option<(PatchId, String, String)>> = vec![None; lines.len()];
+        let mut current_lines: Vec<String> = Vec::new();
+
+        for patch in &patches {
+            let targets_file = patch.target_path.as_deref() == Some(path);
+
+            match patch.operation_type {
+                OperationType::Create | OperationType::Modify if targets_file => {
+                    let new_content = if !patch.payload.is_empty() {
+                        let payload_hex = String::from_utf8_lossy(&patch.payload);
+                        if let Ok(blob_hash) = Hash::from_hex(&payload_hex) {
+                            if let Ok(blob_data) = self.cas.get_blob(&blob_hash) {
+                                String::from_utf8_lossy(&blob_data).to_string()
+                            } else {
+                                continue;
+                            }
+                        } else {
+                            continue;
+                        }
+                    } else {
+                        continue;
+                    };
+
+                    let old_refs: Vec<&str> = current_lines.iter().map(|s| s.as_str()).collect();
+                    let new_refs: Vec<&str> = new_content.lines().collect();
+                    let changes = crate::engine::merge::diff_lines(&old_refs, &new_refs);
+
+                    let mut new_line_author: Vec<Option<(PatchId, String, String)>> = Vec::new();
+                    let mut old_idx = 0usize;
+
+                    for change in &changes {
+                        match change {
+                            crate::engine::merge::LineChange::Unchanged(clines) => {
+                                for i in 0..clines.len() {
+                                    if old_idx + i < line_author.len() {
+                                        new_line_author.push(line_author[old_idx + i].clone());
+                                    } else {
+                                        new_line_author.push(None);
+                                    }
+                                }
+                                old_idx += clines.len();
+                            }
+                            crate::engine::merge::LineChange::Deleted(clines) => {
+                                old_idx += clines.len();
+                            }
+                            crate::engine::merge::LineChange::Inserted(clines) => {
+                                for _ in 0..clines.len() {
+                                    new_line_author.push(Some((
+                                        patch.id,
+                                        patch.message.clone(),
+                                        patch.author.clone(),
+                                    )));
+                                }
+                            }
+                        }
+                    }
+
+                    line_author = new_line_author;
+                    current_lines = new_content.lines().map(|s| s.to_string()).collect();
+                }
+                OperationType::Delete if targets_file => {
+                    line_author.clear();
+                    current_lines.clear();
+                    break;
+                }
+                _ => {}
+            }
+        }
+
+        let mut result = Vec::new();
+        for (i, entry) in line_author.iter().enumerate() {
+            let line_content = lines.get(i).unwrap_or(&"").to_string();
+            if let Some((pid, msg, author)) = entry {
+                result.push(BlameEntry {
+                    patch_id: *pid,
+                    message: msg.clone(),
+                    author: author.clone(),
+                    line: line_content,
+                    line_number: i + 1,
+                });
+            } else {
+                result.push(BlameEntry {
+                    patch_id: Hash::ZERO,
+                    message: String::new(),
+                    author: String::new(),
+                    line: line_content,
+                    line_number: i + 1,
+                });
+            }
+        }
+
+        Ok(result)
+    }
+
+    // =========================================================================
     // Log
     // =========================================================================
 
@@ -1863,6 +2150,30 @@ pub struct StashEntry {
     pub message: String,
     pub branch: String,
     pub head_id: String,
+}
+
+/// A single blame entry for one line of a file.
+#[derive(Debug, Clone)]
+pub struct BlameEntry {
+    /// The patch ID that last modified this line.
+    pub patch_id: PatchId,
+    /// The commit message.
+    pub message: String,
+    /// The author of the commit.
+    pub author: String,
+    /// The line content.
+    pub line: String,
+    /// The 1-based line number.
+    pub line_number: usize,
+}
+
+/// Result of a rebase operation.
+#[derive(Debug, Clone)]
+pub struct RebaseResult {
+    /// Number of patches that were replayed.
+    pub patches_replayed: usize,
+    /// The new tip patch ID after rebase.
+    pub new_tip: PatchId,
 }
 
 /// Repository status information.
@@ -2833,5 +3144,147 @@ mod tests {
         assert!(!tree.contains("file2.txt"));
 
         Ok(())
+    }
+
+    #[test]
+    fn test_cherry_pick() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir().unwrap();
+        let mut repo = Repository::init(dir.path(), "alice")?;
+
+        fs::write(dir.path().join("a.txt"), "content of a")?;
+        repo.add("a.txt")?;
+        repo.commit("add a.txt")?;
+
+        repo.create_branch("feature", None)?;
+
+        fs::write(dir.path().join("b.txt"), "content of b")?;
+        repo.add("b.txt")?;
+        let b_commit = repo.commit("add b.txt")?;
+
+        repo.checkout("feature")?;
+
+        // Add a commit on feature so parent_ids differ from the original b.txt commit
+        fs::write(dir.path().join("c.txt"), "content of c")?;
+        repo.add("c.txt")?;
+        repo.commit("add c.txt on feature")?;
+
+        repo.cherry_pick(&b_commit)?;
+
+        assert!(dir.path().join("b.txt").exists());
+        let content = fs::read_to_string(dir.path().join("b.txt"))?;
+        assert_eq!(content, "content of b");
+
+        let log = repo.log(None)?;
+        assert!(log.iter().any(|p| p.message == "add b.txt"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_cherry_pick_nonexistent() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut repo = Repository::init(dir.path(), "alice").unwrap();
+
+        let fake_hash = Hash::from_data(b"nonexistent");
+        let result = repo.cherry_pick(&fake_hash);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_rebase() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir().unwrap();
+        let mut repo = Repository::init(dir.path(), "alice")?;
+
+        fs::write(dir.path().join("a.txt"), "content of a")?;
+        repo.add("a.txt")?;
+        repo.commit("add a.txt")?;
+
+        repo.create_branch("feature", None)?;
+
+        repo.checkout("feature")?;
+        fs::write(dir.path().join("b.txt"), "content of b")?;
+        repo.add("b.txt")?;
+        repo.commit("add b.txt on feature")?;
+
+        repo.checkout("main")?;
+        fs::write(dir.path().join("c.txt"), "content of c")?;
+        repo.add("c.txt")?;
+        repo.commit("add c.txt on main")?;
+
+        repo.checkout("feature")?;
+
+        let result = repo.rebase("main")?;
+        assert!(result.patches_replayed > 0);
+
+        assert!(dir.path().join("b.txt").exists());
+        assert!(dir.path().join("c.txt").exists());
+
+        let log = repo.log(None)?;
+        assert!(log.iter().any(|p| p.message == "add b.txt on feature"));
+        assert!(log.iter().any(|p| p.message == "add c.txt on main"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_rebase_fast_forward() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir().unwrap();
+        let mut repo = Repository::init(dir.path(), "alice")?;
+
+        fs::write(dir.path().join("a.txt"), "content of a")?;
+        repo.add("a.txt")?;
+        repo.commit("add a.txt")?;
+
+        repo.create_branch("feature", None)?;
+
+        fs::write(dir.path().join("b.txt"), "content of b")?;
+        repo.add("b.txt")?;
+        repo.commit("add b.txt")?;
+
+        repo.checkout("feature")?;
+
+        let result = repo.rebase("main")?;
+        assert_eq!(result.patches_replayed, 0);
+
+        assert!(dir.path().join("b.txt").exists());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_blame() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir().unwrap();
+        let mut repo = Repository::init(dir.path(), "alice")?;
+
+        fs::write(dir.path().join("test.txt"), "line1\nline2\nline3")?;
+        repo.add("test.txt")?;
+        let first_commit = repo.commit("initial content")?;
+
+        fs::write(dir.path().join("test.txt"), "line1\nline2-modified\nline3")?;
+        repo.add("test.txt")?;
+        let second_commit = repo.commit("modify line2")?;
+
+        let blame = repo.blame("test.txt")?;
+
+        assert_eq!(blame.len(), 3);
+        assert_eq!(blame[0].line, "line1");
+        assert_eq!(blame[0].patch_id, first_commit);
+
+        assert_eq!(blame[1].line, "line2-modified");
+        assert_eq!(blame[1].patch_id, second_commit);
+
+        assert_eq!(blame[2].line, "line3");
+        assert_eq!(blame[2].patch_id, first_commit);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_blame_nonexistent_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = Repository::init(dir.path(), "alice").unwrap();
+
+        let result = repo.blame("nonexistent.txt");
+        assert!(result.is_err());
     }
 }
