@@ -1,0 +1,8 @@
+[package]
+name = "suture-driver-json"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+suture-driver = { path = "../suture-driver" }
+serde_json = "1"

@@ -1,5 +1,54 @@
 # Changelog
 
+## [0.6.0] - 2026-03-29
+
+### Added
+
+#### SutureDriver Trait & Registry (Path B — Semantic Differentiator)
+- New `suture-driver` crate with the `SutureDriver` trait
+- `SutureDriver::diff()` — produces `SemanticChange` enum (Added/Removed/Modified/Moved)
+- `SutureDriver::format_diff()` — human-readable semantic diff for a file type
+- `DriverRegistry` — dispatches to drivers by file extension
+- `DriverError`, `VisualDiff`, `DiffHunk`, `DiffSummary` supporting types
+
+#### JSON Semantic Driver (Path B)
+- New `suture-driver-json` crate implementing `SutureDriver`
+- Recursive JSON comparison using RFC 6901 JSON Pointer paths
+- Detects Added, Removed, Modified changes at key level
+- `format_diff` shows semantic operations: `MODIFIED /name: "Alice" → "Bob"`
+- 10 tests covering nested objects, arrays, new files, identical files
+
+#### Semantic Diff in CLI (Path B)
+- `suture diff` now uses JSON driver for `.json` files automatically
+- Falls through to line-level diff for unsupported formats
+- Shows key-level changes instead of raw line noise for JSON files
+
+#### `suture show <ref>` (Path A — Git Parity)
+- Display commit hash, author, timestamp, message, parents, changed files
+- Supports branch names, tag names, full and partial commit hashes
+- `resolve_ref` helper for ref resolution across all command contexts
+
+#### `suture reflog` (Path A — Git Parity)
+- `record_reflog()` tracks HEAD movements in config as JSON entries
+- `reflog_entries()` retrieves history (newest first, capped at 100)
+- Reflog recorded for: commit, checkout, reset, cherry-pick, rebase
+- CLI: `suture reflog` displays `short_hash entry_string` per line
+
+#### CI/CD (Path C — Hardening)
+- `.forgejo/workflows/ci.yml` — Forgejo Actions workflow (build, test, clippy, fmt, audit)
+- Uses `dtolnay/rust-toolchain` action, no Nix dependency in CI
+- Mirrors existing `.github/workflows/ci.yml`
+
+#### Infrastructure (Path C — Hardening)
+- `rust-toolchain.toml` — pins stable channel for non-Nix users
+- `.gitignore` updated: added `.direnv/`, `suture-e2e-*/`, `alice/`
+
+#### Quality
+- Test count: 232 (up from 222 in v0.5.0)
+- 10 new JSON driver tests
+- Zero clippy warnings, zero audit findings
+- 9 workspace crates (up from 7)
+
 ## [0.5.0] - 2026-03-29
 
 ### Added

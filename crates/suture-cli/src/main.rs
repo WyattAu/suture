@@ -191,6 +191,13 @@ enum Commands {
         /// Shell to generate completions for
         shell: clap_complete::Shell,
     },
+    /// Show detailed information about a commit
+    Show {
+        /// Commit hash or branch name
+        commit: String,
+    },
+    /// Show the reference log (HEAD movements)
+    Reflog,
 }
 
 #[derive(Subcommand)]
@@ -521,6 +528,50 @@ fn format_line_diff(path: &str, changes: &[suture_core::engine::merge::LineChang
     }
 }
 
+fn resolve_ref<'a>(
+    repo: &suture_core::repository::Repository,
+    ref_str: &str,
+    all_patches: &'a [suture_core::patch::types::Patch],
+) -> Result<&'a suture_core::patch::types::Patch, Box<dyn std::error::Error>> {
+    {
+        let branches = repo.list_branches();
+        for (name, target_id) in &branches {
+            if name == ref_str {
+                return all_patches
+                    .iter()
+                    .find(|p| p.id == *target_id)
+                    .ok_or_else(|| "branch tip not found in patches".into());
+            }
+        }
+    }
+    if let Ok(Some(target_id)) = repo.resolve_tag(ref_str) {
+        return all_patches
+            .iter()
+            .find(|p| p.id == target_id)
+            .ok_or_else(|| "tag target not found in patches".into());
+    }
+    let matches: Vec<&suture_core::patch::types::Patch> = all_patches
+        .iter()
+        .filter(|p| p.id.to_hex().starts_with(ref_str))
+        .collect();
+    match matches.len() {
+        1 => Ok(matches[0]),
+        0 => Err(format!("unknown ref: {}", ref_str).into()),
+        n => Err(format!("ambiguous ref '{}' matches {} commits", ref_str, n).into()),
+    }
+}
+
+fn format_timestamp(ts: u64) -> String {
+    let days = ts / 86400;
+    let hours = (ts % 86400) / 3600;
+    let minutes = (ts % 3600) / 60;
+    let remaining_secs = ts % 60;
+    format!(
+        "{}d {:02}:{:02}:{:02} (unix: {})",
+        days, hours, minutes, remaining_secs, ts
+    )
+}
+
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
@@ -578,12 +629,60 @@ async fn main() {
             clap_complete::generate(shell, &mut Cli::command(), "suture", &mut std::io::stdout());
             Ok(())
         }
+        Commands::Show { commit } => cmd_show(&commit).await,
+        Commands::Reflog => cmd_reflog().await,
     };
 
     if let Err(e) = result {
         eprintln!("Error: {e}");
         std::process::exit(1);
     }
+}
+
+async fn cmd_show(commit_ref: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+    let patches = repo.all_patches();
+    let target = resolve_ref(&repo, commit_ref, &patches)?;
+
+    println!("commit {}", target.id.to_hex());
+    println!("Author: {}", target.author);
+    println!("Date:    {}", format_timestamp(target.timestamp));
+    println!();
+    println!("    {}", target.message);
+
+    if !target.payload.is_empty()
+        && let Some(path) = &target.target_path
+    {
+        println!("\n  {} {}", target.operation_type, path);
+    }
+
+    if !target.parent_ids.is_empty() {
+        print!("\nParents:");
+        for pid in &target.parent_ids {
+            print!(" {}", pid);
+        }
+        println!();
+    }
+
+    Ok(())
+}
+
+async fn cmd_reflog() -> Result<(), Box<dyn std::error::Error>> {
+    let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+    let entries = repo.reflog_entries()?;
+    if entries.is_empty() {
+        println!("No reflog entries.");
+        return Ok(());
+    }
+    for (head_hash, entry) in entries.iter().rev() {
+        let short_hash = if head_hash.len() >= 8 {
+            &head_hash[..8]
+        } else {
+            head_hash
+        };
+        println!("{} {}", short_hash, entry);
+    }
+    Ok(())
 }
 
 async fn cmd_cherry_pick(commit: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -952,6 +1051,13 @@ async fn cmd_diff(from: Option<&str>, to: Option<&str>) -> Result<(), Box<dyn st
         return Ok(());
     }
 
+    use std::path::Path as StdPath;
+    use suture_driver::DriverRegistry;
+    use suture_driver_json::JsonDriver;
+
+    let mut registry = DriverRegistry::new();
+    registry.register(Box::new(JsonDriver));
+
     for entry in &entries {
         match &entry.diff_type {
             DiffType::Renamed { old_path, new_path } => {
@@ -970,6 +1076,20 @@ async fn cmd_diff(from: Option<&str>, to: Option<&str>) -> Result<(), Box<dyn st
                         continue;
                     };
                     let new_str = String::from_utf8_lossy(&new_blob);
+
+                    if let Ok(driver) = registry.get_for_path(StdPath::new(&entry.path))
+                        && let Ok(semantic) = driver.format_diff(None, &new_str)
+                        && !semantic.is_empty()
+                        && semantic != "no changes"
+                    {
+                        println!(
+                            "\n{ANSI_BOLD_CYAN}--- Semantic diff for {} ---{ANSI_RESET}",
+                            entry.path
+                        );
+                        println!("{semantic}");
+                        continue;
+                    }
+
                     let new_lines: Vec<&str> = new_str.lines().collect();
                     let changes = diff_lines(&[], &new_lines);
                     format_line_diff(&entry.path, &changes);
@@ -1000,6 +1120,21 @@ async fn cmd_diff(from: Option<&str>, to: Option<&str>) -> Result<(), Box<dyn st
                         (Ok(old_blob), Ok(new_blob)) => {
                             let old_str = String::from_utf8_lossy(&old_blob);
                             let new_str = String::from_utf8_lossy(&new_blob);
+
+                            if let Ok(driver) = registry.get_for_path(StdPath::new(&entry.path))
+                                && let Ok(semantic) =
+                                    driver.format_diff(Some(&old_str), &new_str)
+                                && !semantic.is_empty()
+                                && semantic != "no changes"
+                            {
+                                println!(
+                                    "\n{ANSI_BOLD_CYAN}--- Semantic diff for {} ---{ANSI_RESET}",
+                                    entry.path
+                                );
+                                println!("{semantic}");
+                                continue;
+                            }
+
                             let old_lines: Vec<&str> = old_str.lines().collect();
                             let new_lines: Vec<&str> = new_str.lines().collect();
                             let changes = diff_lines(&old_lines, &new_lines);
@@ -1023,7 +1158,7 @@ async fn cmd_diff(from: Option<&str>, to: Option<&str>) -> Result<(), Box<dyn st
 }
 
 async fn cmd_revert(commit: &str, message: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
-    let patch_id = suture_core::Hash::from_hex(commit)?;
+    let patch_id = suture_common::Hash::from_hex(commit)?;
     let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
     let revert_id = repo.revert(&patch_id, message)?;
     println!("Reverted: {}", revert_id);

@@ -1991,6 +1991,8 @@ dependencies = [
  "serde_json",
  "suture-common",
  "suture-core",
+ "suture-driver",
+ "suture-driver-json",
  "tokio",
 ]
 
@@ -2024,6 +2026,25 @@ dependencies = [
 [[package]]
 name = "suture-daemon"
 version = "0.1.0"
+
+[[package]]
+name = "suture-driver"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "suture-common",
+ "suture-core",
+ "thiserror",
+]
+
+[[package]]
+name = "suture-driver-json"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "suture-driver",
+]
 
 [[package]]
 name = "suture-driver-otio"

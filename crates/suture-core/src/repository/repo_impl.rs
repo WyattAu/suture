@@ -620,6 +620,7 @@ impl Repository {
 
     /// Create a commit from the working set.
     pub fn commit(&mut self, message: &str) -> Result<PatchId, RepoError> {
+        let old_head = self.head().map(|(_, id)| id).unwrap_or(Hash::ZERO);
         let working_set = self.meta.working_set()?;
 
         let staged: Vec<_> = working_set
@@ -699,6 +700,8 @@ impl Repository {
         self.meta.set_branch(&branch, &last_patch_id)?;
 
         self.invalidate_head_cache();
+
+        let _ = self.record_reflog(&old_head, &last_patch_id, &format!("commit: {}", message));
 
         // If this was a merge resolution, update merge commit's parent_ids
         if is_merge_resolution {
@@ -1070,6 +1073,8 @@ impl Repository {
     ///
     /// Refuses to checkout if there are uncommitted staged changes.
     pub fn checkout(&mut self, branch_name: &str) -> Result<FileTree, RepoError> {
+        let old_head = self.head().map(|(_, id)| id).unwrap_or(Hash::ZERO);
+        let old_branch = self.head().ok().map(|(n, _)| n);
         let target = BranchName::new(branch_name)?;
 
         let target_id = self
@@ -1132,6 +1137,16 @@ impl Repository {
 
         self.invalidate_head_cache();
 
+        let _ = self.record_reflog(
+            &old_head,
+            &target_id,
+            &format!(
+                "checkout: moving from {} to {}",
+                old_branch.as_deref().unwrap_or("HEAD"),
+                branch_name
+            ),
+        );
+
         if has_changes
             && let Err(e) = self.stash_pop()
         {
@@ -1190,6 +1205,7 @@ impl Repository {
     ///
     /// Returns the resolved target patch ID.
     pub fn reset(&mut self, target: &str, mode: ResetMode) -> Result<PatchId, RepoError> {
+        let old_head = self.head().map(|(_, id)| id).unwrap_or(Hash::ZERO);
         let target_id = if let Ok(hash) = Hash::from_hex(target)
             && self.dag.has_patch(&hash)
         {
@@ -1221,6 +1237,8 @@ impl Repository {
                 }
             }
         }
+
+        let _ = self.record_reflog(&old_head, &target_id, &format!("reset: moving to {}", target));
 
         Ok(target_id)
     }
@@ -1649,6 +1667,7 @@ impl Repository {
     /// Creates a new patch with the same changes (operation_type, touch_set,
     /// target_path, payload) but with the current HEAD as its parent.
     pub fn cherry_pick(&mut self, patch_id: &PatchId) -> Result<PatchId, RepoError> {
+        let old_head = self.head().map(|(_, id)| id).unwrap_or(Hash::ZERO);
         let patch = self
             .dag
             .get_patch(patch_id)
@@ -1686,6 +1705,8 @@ impl Repository {
 
         self.invalidate_head_cache();
 
+        let _ = self.record_reflog(&old_head, &new_id, &format!("cherry-pick: {}", patch_id));
+
         self.sync_working_tree(&old_tree)?;
 
         Ok(new_id)
@@ -1701,6 +1722,7 @@ impl Repository {
     /// then replays them onto the target branch tip. Updates the current
     /// branch pointer to the new tip.
     pub fn rebase(&mut self, target_branch: &str) -> Result<RebaseResult, RepoError> {
+        let old_head = self.head().map(|(_, id)| id).unwrap_or(Hash::ZERO);
         let (head_branch, head_id) = self.head()?;
         let target_bn = BranchName::new(target_branch)?;
         let target_tip = self
@@ -1800,6 +1822,12 @@ impl Repository {
         self.invalidate_head_cache();
 
         self.sync_working_tree(&old_tree)?;
+
+        let _ = self.record_reflog(
+            &old_head,
+            &last_new_id,
+            &format!("rebase onto {}", target_branch),
+        );
 
         Ok(RebaseResult {
             patches_replayed: replayed,
@@ -2023,6 +2051,42 @@ impl Repository {
             .iter()
             .filter_map(|id| self.dag.get_patch(id).cloned())
             .collect()
+    }
+
+    // =========================================================================
+    // Reflog
+    // =========================================================================
+
+    fn record_reflog(
+        &self,
+        old_head: &PatchId,
+        new_head: &PatchId,
+        message: &str,
+    ) -> Result<(), RepoError> {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let entry = format!("{}:{}:{}", ts, old_head.to_hex(), message);
+        let mut entries = self.reflog_entries()?;
+        entries.push((new_head.to_hex(), entry));
+        if entries.len() > 100 {
+            entries = entries.into_iter().rev().take(100).collect();
+            entries.reverse();
+        }
+        let serialized = serde_json::to_string(&entries).unwrap_or_default();
+        self.meta
+            .set_config("reflog", &serialized)
+            .map_err(RepoError::Meta)?;
+        Ok(())
+    }
+
+    /// Get reflog entries as (head_hash, entry_string) pairs.
+    pub fn reflog_entries(&self) -> Result<Vec<(String, String)>, RepoError> {
+        match self.meta.get_config("reflog").map_err(RepoError::Meta)? {
+            Some(json) => Ok(serde_json::from_str(&json).unwrap_or_default()),
+            None => Ok(Vec::new()),
+        }
     }
 }
 
