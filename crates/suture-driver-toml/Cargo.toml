@@ -1,0 +1,8 @@
+[package]
+name = "suture-driver-toml"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+suture-driver = { path = "../suture-driver" }
+toml = "0.8"

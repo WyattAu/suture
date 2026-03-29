@@ -8,6 +8,8 @@ suture-core = { path = "../suture-core" }
 suture-common = { path = "../suture-common" }
 suture-driver = { path = "../suture-driver" }
 suture-driver-json = { path = "../suture-driver-json" }
+suture-driver-toml = { path = "../suture-driver-toml" }
+suture-driver-csv = { path = "../suture-driver-csv" }
 suture-driver-yaml = { path = "../suture-driver-yaml" }
 clap = { version = "4.5", features = ["derive"] }
 clap_complete = "4.6"

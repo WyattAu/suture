@@ -147,6 +147,12 @@ enum Commands {
         /// List tags
         #[arg(short, long)]
         list: bool,
+        /// Create an annotated tag with a message
+        #[arg(short, long)]
+        annotate: bool,
+        /// Tag message (required with --annotate)
+        #[arg(short, long)]
+        message: Option<String>,
     },
     /// Get or set configuration values
     Config {
@@ -215,6 +221,21 @@ enum Commands {
     Reflog,
     /// List available semantic drivers
     Drivers,
+    /// Show compact commit summary grouped by author
+    Shortlog {
+        /// Branch to show log for (default: HEAD)
+        branch: Option<String>,
+        /// Number of commits to show (default: all)
+        #[arg(short = 'n', long)]
+        number: Option<usize>,
+    },
+    /// Manage commit notes
+    Notes {
+        #[command(subcommand)]
+        action: NotesAction,
+    },
+    /// Show version information
+    Version,
 }
 
 #[derive(Subcommand)]
@@ -259,6 +280,29 @@ enum RemoteAction {
     Remove {
         /// Remote name
         name: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum NotesAction {
+    /// Add a note to a commit
+    Add {
+        /// Commit hash
+        commit: String,
+        /// Note message (reads from stdin if not provided)
+        message: Option<String>,
+    },
+    /// List notes for a commit
+    List {
+        /// Commit hash
+        commit: String,
+    },
+    /// Remove a note from a commit
+    Remove {
+        /// Commit hash
+        commit: String,
+        /// Note index (0-based)
+        index: usize,
     },
 }
 
@@ -639,7 +683,9 @@ async fn main() {
             target,
             delete,
             list,
-        } => cmd_tag(name.as_deref(), target.as_deref(), delete, list).await,
+            annotate,
+            message,
+        } => cmd_tag(name.as_deref(), target.as_deref(), delete, list, annotate, message.as_deref()).await,
         Commands::Config { key_value } => cmd_config(&key_value).await,
         Commands::Remote { action } => cmd_remote(&action).await,
         Commands::Push { remote } => cmd_push(&remote).await,
@@ -656,12 +702,87 @@ async fn main() {
         Commands::Show { commit } => cmd_show(&commit).await,
         Commands::Reflog => cmd_reflog().await,
         Commands::Drivers => cmd_drivers().await,
+        Commands::Shortlog { branch, number } => cmd_shortlog(branch.as_deref(), number).await,
+        Commands::Notes { action } => cmd_notes(&action).await,
+        Commands::Version => cmd_version().await,
     };
 
     if let Err(e) = result {
         eprintln!("Error: {e}");
         std::process::exit(1);
     }
+}
+
+async fn cmd_version() -> Result<(), Box<dyn std::error::Error>> {
+    println!("suture {}", env!("CARGO_PKG_VERSION"));
+    Ok(())
+}
+
+async fn cmd_shortlog(branch: Option<&str>, number: Option<usize>) -> Result<(), Box<dyn std::error::Error>> {
+    let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+    let mut patches = repo.log(branch)?;
+
+    if let Some(n) = number {
+        patches.truncate(n);
+    }
+
+    let mut by_author: std::collections::BTreeMap<String, Vec<&suture_core::patch::types::Patch>> =
+        std::collections::BTreeMap::new();
+    for patch in &patches {
+        by_author.entry(patch.author.clone()).or_default().push(patch);
+    }
+
+    for (author, commits) in &by_author {
+        let count = commits.len();
+        let short_hash = commits
+            .last()
+            .map(|p| p.id.to_hex().chars().take(8).collect::<String>())
+            .unwrap_or_default();
+        let first_msg = commits
+            .first()
+            .map(|p| p.message.trim().lines().next().unwrap_or(""))
+            .unwrap_or("");
+        println!("{} ({}) {} {}", short_hash, count, author, first_msg);
+    }
+
+    Ok(())
+}
+
+async fn cmd_notes(action: &NotesAction) -> Result<(), Box<dyn std::error::Error>> {
+    let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+    match action {
+        NotesAction::Add { commit, message } => {
+            let patch_id = suture_common::Hash::from_hex(commit)?;
+            let msg = message
+                .as_deref()
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| {
+                    eprintln!("Enter note (Ctrl+D to finish):");
+                    let mut buf = String::new();
+                    std::io::stdin().read_line(&mut buf).unwrap_or_default();
+                    buf.trim_end().to_string()
+                });
+            repo.add_note(&patch_id, &msg)?;
+            println!("Note added to {}", commit);
+        }
+        NotesAction::List { commit } => {
+            let patch_id = suture_common::Hash::from_hex(commit)?;
+            let notes = repo.list_notes(&patch_id)?;
+            if notes.is_empty() {
+                println!("No notes for commit {}.", commit);
+            } else {
+                for (i, note) in notes.iter().enumerate() {
+                    println!("Note {}: {}", i, note);
+                }
+            }
+        }
+        NotesAction::Remove { commit, index } => {
+            let patch_id = suture_common::Hash::from_hex(commit)?;
+            repo.remove_note(&patch_id, *index)?;
+            println!("Removed note {} from {}", index, commit);
+        }
+    }
+    Ok(())
 }
 
 async fn cmd_show(commit_ref: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -712,11 +833,15 @@ async fn cmd_reflog() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn cmd_drivers() -> Result<(), Box<dyn std::error::Error>> {
     use suture_driver::DriverRegistry;
+    use suture_driver_csv::CsvDriver;
     use suture_driver_json::JsonDriver;
+    use suture_driver_toml::TomlDriver;
     use suture_driver_yaml::YamlDriver;
 
     let mut registry = DriverRegistry::new();
     registry.register(Box::new(JsonDriver));
+    registry.register(Box::new(TomlDriver));
+    registry.register(Box::new(CsvDriver));
     registry.register(Box::new(YamlDriver));
 
     let drivers = registry.list();
@@ -1125,10 +1250,14 @@ async fn cmd_diff(from: Option<&str>, to: Option<&str>) -> Result<(), Box<dyn st
 
     use std::path::Path as StdPath;
     use suture_driver::DriverRegistry;
+    use suture_driver_csv::CsvDriver;
     use suture_driver_json::JsonDriver;
+    use suture_driver_toml::TomlDriver;
 
     let mut registry = DriverRegistry::new();
     registry.register(Box::new(JsonDriver));
+    registry.register(Box::new(TomlDriver));
+    registry.register(Box::new(CsvDriver));
 
     for entry in &entries {
         match &entry.diff_type {
@@ -1238,6 +1367,9 @@ async fn cmd_revert(commit: &str, message: Option<&str>) -> Result<(), Box<dyn s
 }
 
 async fn cmd_merge(source: &str) -> Result<(), Box<dyn std::error::Error>> {
+    use suture_core::repository::ConflictInfo;
+    use std::path::Path as StdPath;
+
     let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
     let result = repo.execute_merge(source)?;
 
@@ -1251,12 +1383,96 @@ async fn cmd_merge(source: &str) -> Result<(), Box<dyn std::error::Error>> {
                 result.patches_applied, source
             );
         }
+        return Ok(());
+    }
+
+    let conflicts = result.unresolved_conflicts;
+    let mut remaining: Vec<ConflictInfo> = Vec::new();
+    let mut resolved_count = 0usize;
+
+    {
+        use suture_driver::DriverRegistry;
+        use suture_driver_csv::CsvDriver;
+        use suture_driver_json::JsonDriver;
+        use suture_driver_toml::TomlDriver;
+        use suture_driver_yaml::YamlDriver;
+
+        let mut registry = DriverRegistry::new();
+        registry.register(Box::new(JsonDriver));
+        registry.register(Box::new(TomlDriver));
+        registry.register(Box::new(CsvDriver));
+        registry.register(Box::new(YamlDriver));
+
+        for conflict in &conflicts {
+            let path = StdPath::new(&conflict.path);
+            let Ok(driver) = registry.get_for_path(path) else {
+                remaining.push(conflict.clone());
+                continue;
+            };
+
+            let base_content = conflict
+                .base_content_hash
+                .and_then(|h| repo.cas().get_blob(&h).ok())
+                .map(|b| String::from_utf8_lossy(&b).to_string());
+            let ours_content = conflict
+                .our_content_hash
+                .and_then(|h| repo.cas().get_blob(&h).ok())
+                .map(|b| String::from_utf8_lossy(&b).to_string());
+            let theirs_content = conflict
+                .their_content_hash
+                .and_then(|h| repo.cas().get_blob(&h).ok())
+                .map(|b| String::from_utf8_lossy(&b).to_string());
+
+            let base_str = base_content.as_deref().unwrap_or("");
+            let Some(ours_str) = ours_content.as_deref() else {
+                remaining.push(conflict.clone());
+                continue;
+            };
+            let Some(theirs_str) = theirs_content.as_deref() else {
+                remaining.push(conflict.clone());
+                continue;
+            };
+
+            let Ok(merged) = driver.merge(base_str, ours_str, theirs_str) else {
+                remaining.push(conflict.clone());
+                continue;
+            };
+            let Some(content) = merged else {
+                remaining.push(conflict.clone());
+                continue;
+            };
+
+            if let Err(e) = std::fs::write(&conflict.path, &content) {
+                eprintln!("Warning: could not write resolved file '{}': {e}", conflict.path);
+                remaining.push(conflict.clone());
+                continue;
+            }
+
+            if let Err(e) = repo.add(&conflict.path) {
+                eprintln!("Warning: could not stage resolved file '{}': {e}", conflict.path);
+                remaining.push(conflict.clone());
+                continue;
+            }
+
+            resolved_count += 1;
+        }
+    }
+
+    if resolved_count > 0 {
+        println!(
+            "Resolved {resolved_count} conflict(s) via semantic drivers"
+        );
+    }
+
+    if remaining.is_empty() {
+        println!("All conflicts resolved via semantic drivers.");
+        println!("Run `suture commit` to finalize the merge.");
     } else {
         println!(
             "Merge has {} conflict(s):",
-            result.unresolved_conflicts.len()
+            remaining.len()
         );
-        for conflict in &result.unresolved_conflicts {
+        for conflict in &remaining {
             println!(
                 "  CONFLICT in '{}': edit the file, then commit to resolve",
                 conflict.path
@@ -1273,6 +1489,8 @@ async fn cmd_tag(
     target: Option<&str>,
     delete: bool,
     list: bool,
+    annotate: bool,
+    message: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
 
@@ -1282,7 +1500,11 @@ async fn cmd_tag(
             println!("No tags.");
         } else {
             for (tname, target_id) in &tags {
-                println!("{}  {}", tname, target_id);
+                if let Some(msg) = repo.get_config(&format!("tag.{}.message", tname))? {
+                    println!("{} (annotated)  {}  {}", tname, target_id, msg);
+                } else {
+                    println!("{}  {}", tname, target_id);
+                }
             }
         }
         return Ok(());
@@ -1291,11 +1513,22 @@ async fn cmd_tag(
     let name = name.unwrap();
     if delete {
         repo.delete_tag(name)?;
+        let msg_key = format!("tag.{}.message", name);
+        let _ = repo.meta().delete_config(&msg_key);
         println!("Deleted tag '{}'", name);
     } else {
         repo.create_tag(name, target)?;
         let target_id = repo.resolve_tag(name)?.unwrap();
-        println!("Tag '{}' -> {}", name, target_id);
+        if annotate {
+            let msg = message.ok_or_else(|| {
+                eprintln!("Error: --annotate requires a message (-m)");
+                std::process::exit(1);
+            })?;
+            repo.set_config(&format!("tag.{}.message", name), msg)?;
+            println!("Tag '{}' (annotated) -> {}", name, target_id);
+        } else {
+            println!("Tag '{}' -> {}", name, target_id);
+        }
     }
     Ok(())
 }

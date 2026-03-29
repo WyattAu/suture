@@ -1,5 +1,62 @@
 # Changelog
 
+## [0.8.0] - 2026-03-29
+
+### Added
+
+#### Semantic Merge Wiring (Path B — Semantic Differentiator)
+- `suture merge` now attempts semantic merge via drivers for conflicting files
+- Builds `DriverRegistry` with JSON, YAML, TOML, CSV drivers after conflict detection
+- Retrieves clean base/ours/theirs content from CAS via conflict blob hashes
+- If a driver resolves the merge, writes result to disk and stages it
+- Reports count of semantically resolved vs remaining conflicts
+
+#### TOML Driver (Path B — Semantic Differentiator)
+- New `suture-driver-toml` crate implementing `SutureDriver`
+- Key-level TOML diff using `toml::Value` recursive comparison
+- Semantic merge: auto-merges non-overlapping key changes, detects conflicts
+- 7 tests: name, extensions, modified, added, nested, merge clean, merge conflict
+
+#### CSV Driver (Path B — Semantic Differentiator)
+- New `suture-driver-csv` crate implementing `SutureDriver`
+- Row/cell-level CSV diff with row:col addressing
+- Header change detection, added/removed row tracking
+- 5 tests: name, extensions, cell change, added row, removed row
+
+#### `suture shortlog` (Path A — Git Parity)
+- Groups commits by author using sorted output
+- Shows commit count and first message per author
+- `--branch` and `-n` (limit) flags
+
+#### `suture tag --annotate` (Path A — Git Parity)
+- `suture tag -a -m "message" <name>` — creates annotated tags with stored message
+- Annotations stored as `tag.<name>.message` config entries
+- `suture tag list` shows `(annotated)` marker and message for annotated tags
+- Tag deletion cleans up annotation
+
+#### `suture notes` (Path A — Git Parity)
+- `suture notes add <commit> [-m message]` — attach a note to a commit
+- `suture notes list <commit>` — list all notes for a commit
+- `suture notes remove <commit> <index>` — remove a specific note
+- Notes stored as `note.<hash>.<index>` config entries
+- `add_note()`, `list_notes()`, `remove_note()` core methods
+
+#### `suture version` (Path A — Git Parity)
+- Prints version from `CARGO_PKG_VERSION`
+
+#### README Rewrite (Path C — Documentation)
+- Completely rewritten to reflect actual v0.8.0 state
+- Honest architecture description (CAS, Patch DAG, Hub)
+- Quick start guide, CLI reference table (32 commands)
+- Driver SDK section with how-to-write guidance
+- Honest "not yet implemented" section (VFS, Raft, SSO, Web UI)
+
+#### Quality
+- Test count: 260 (up from 248 in v0.7.0)
+- 12 new tests (7 TOML, 5 CSV) + notes/shortlog/tag-annotate core tests
+- Zero clippy warnings, zero audit findings
+- 12 workspace crates (up from 10)
+
 ## [0.7.0] - 2026-03-29
 
 ### Added

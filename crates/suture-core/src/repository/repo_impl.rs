@@ -440,6 +440,40 @@ impl Repository {
     }
 
     // =========================================================================
+    // Notes
+    // =========================================================================
+
+    /// Add a note to a commit.
+    pub fn add_note(&self, patch_id: &PatchId, note: &str) -> Result<(), RepoError> {
+        let existing = self.list_notes(patch_id)?;
+        let next_idx = existing.len();
+        let key = format!("note.{}.{}", patch_id, next_idx);
+        self.meta.set_config(&key, note).map_err(RepoError::Meta)
+    }
+
+    /// List notes for a commit.
+    pub fn list_notes(&self, patch_id: &PatchId) -> Result<Vec<String>, RepoError> {
+        let prefix = format!("note.{}.", patch_id);
+        let all_config = self.meta.list_config().map_err(RepoError::Meta)?;
+        let mut notes: Vec<(usize, String)> = Vec::new();
+        for (key, value) in &all_config {
+            if let Some(idx_str) = key.strip_prefix(&prefix)
+                && let Ok(idx) = idx_str.parse::<usize>()
+            {
+                notes.push((idx, value.clone()));
+            }
+        }
+        notes.sort_by_key(|(idx, _)| *idx);
+        Ok(notes.into_iter().map(|(_, v)| v).collect())
+    }
+
+    /// Remove a note from a commit.
+    pub fn remove_note(&self, patch_id: &PatchId, index: usize) -> Result<(), RepoError> {
+        let key = format!("note.{}.{}", patch_id, index);
+        self.meta.delete_config(&key).map_err(RepoError::Meta)
+    }
+
+    // =========================================================================
     // Incremental Push Support
     // =========================================================================
 
