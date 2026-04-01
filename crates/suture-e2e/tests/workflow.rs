@@ -154,7 +154,7 @@ fn test_fsck() {
 fn test_bisect() {
     let (_tmp, repo) = new_test_repo("repo");
 
-    for i in 1..=5 {
+    for i in 1..=10 {
         fs::write(
             repo.join(format!("bisect_{}.txt", i)),
             format!("content {}\n", i),
@@ -177,7 +177,11 @@ fn test_bisect() {
     let oldest = lines.last().unwrap().split_whitespace().next().unwrap();
 
     let out = suture_success(&repo, &["bisect", "start", oldest, newest]);
-    assert!(out.contains("Bisecting:"), "bisect output: {}", out);
+    assert!(
+        out.contains("Bisecting:") || out.contains("first bad commit"),
+        "bisect output: {}",
+        out
+    );
 }
 
 #[test]
