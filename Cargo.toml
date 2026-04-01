@@ -8,6 +8,17 @@ exclude = [
     "crates/suture-daemon",
 ]
 
+[workspace.package]
+name = "suture"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/WyattAu/suture"
+description = "A patch-based version control system with semantic merge and format-aware drivers"
+readme = "README.md"
+homepage = "https://github.com/WyattAu/suture"
+keywords = ["vcs", "version-control", "patch", "semantic-merge", "dvcs"]
+
 [profile.release]
 lto = true
 codegen-units = 1

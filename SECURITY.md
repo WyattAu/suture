@@ -8,7 +8,7 @@ Only the latest release is supported. Older versions do not receive security upd
 If you discover a security vulnerability in Suture, please report it responsibly:
 
 1. **Do not** open a public GitHub issue.
-2. Email security vulnerabilities to: [REPLACE WITH ACTUAL EMAIL]
+2. Email security vulnerabilities to: security@suture.dev
 3. Include as much information as possible:
    - Description of the vulnerability
    - Steps to reproduce

@@ -58,7 +58,9 @@ impl Hash {
 
     /// Convert to a blake3::Hash reference.
     pub fn as_blake3(&self) -> &Blake3Hash {
-        // SAFETY: blake3::Hash is a newtype around [u8; 32] with repr(transparent)
+        // SAFETY: blake3::Hash is a newtype around [u8; 32] with repr(transparent),
+        // so the pointer cast is sound. The layout is verified at compile time
+        // by the repr(transparent) attribute.
         unsafe { &*(&self.0 as *const [u8; 32] as *const Blake3Hash) }
     }
 }

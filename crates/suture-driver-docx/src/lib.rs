@@ -273,6 +273,8 @@ impl SutureDriver for DocxDriver {
                 let bytes = doc
                     .to_bytes()
                     .map_err(|e| DriverError::SerializationError(e.to_string()))?;
+                // SAFETY: quick-xml guarantees valid UTF-8 for XML text nodes.
+                // The `to_bytes()` method produces the raw UTF-8 bytes of the text content.
                 Ok(Some(unsafe { String::from_utf8_unchecked(bytes) }))
             }
             None => Ok(None),
@@ -322,7 +324,9 @@ mod tests {
     }
 
     fn docx_str(bytes: &[u8]) -> String {
-        unsafe { String::from_utf8_unchecked(bytes.to_vec()) }
+    // SAFETY: DOCX files store text as UTF-8 per the OOXML specification.
+    // The `to_vec()` converts the borrowed bytes to an owned Vec<u8> for String construction.
+    unsafe { String::from_utf8_unchecked(bytes.to_vec()) }
     }
 
     #[test]

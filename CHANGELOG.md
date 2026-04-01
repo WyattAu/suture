@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.1.0-alpha.2] - 2026-04-01
+
+### Fixed
+
+#### Release Infrastructure
+- Fixed binary name in GitHub release workflow: `suture-cli`/`suture-hub` → `suture` in tar/zip artifacts
+- Added ARM build targets: `aarch64-unknown-linux-gnu` and `aarch64-apple-darwin`
+
+#### CLI Hardening
+- Fixed 3 `unwrap()` calls in branch/tag commands — replaced with proper error messages
+- Fixed `suture log` to show all commits by default (uses `reachable_patches()` instead of first-parent-only `patch_chain()`)
+- Fixed `suture diff` to fall back to disk read when working tree files aren't in CAS
+- Fixed `suture checkout -b` to accept optional branch name
+- Fixed `suture commit -a` to stage all files before committing
+- Fixed HEAD/HEAD~N ref resolution in `show`, `revert`, `cherry-pick`, and `reset`
+- Fixed `suture bisect` to use subcommand syntax (`bisect good/bad/reset`)
+- Fixed `suture notes show` subcommand routing
+
+#### Safety & Quality
+- Added SAFETY comments to 3 `unsafe` blocks in production code (`suture-common` blake3 transmute, `suture-driver-docx` from_utf8_unchecked)
+- Replaced `SECURITY.md` placeholder with `security@suture.dev` contact
+
+#### Supply Chain
+- Fixed `suture-core` missing `toml` and `dirs` crate dependencies
+- Wired `global_config` module into `metadata/mod.rs`
+- Reduced Nix flake dependencies (removed unnecessary packages)
+
+### Changed
+- `suture-cli` version bumped to `0.1.0-alpha.2`
+- Root `Cargo.toml` now includes `[workspace.package]` metadata (description, license, repository, homepage, keywords)
+
 ## [0.12.0] - 2026-03-29
 
 ### Added

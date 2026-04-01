@@ -24,11 +24,8 @@
             openssl
             sqlite
             protobuf    # For gRPC/Tonic
+          ] ++ lib.optional stdenv.isLinux [
             fuse3       # For Linux VFS
-            libiconv    # For macOS compatibility
-          ] ++ lib.optional stdenv.isDarwin [
-            darwin.apple_sdk.frameworks.Security
-            darwin.apple_sdk.frameworks.SystemConfiguration
           ];
 
           shellHook = ''

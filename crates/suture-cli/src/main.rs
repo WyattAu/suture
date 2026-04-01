@@ -1420,7 +1420,7 @@ async fn cmd_branch(
         return Ok(());
     }
 
-    let name = name.unwrap();
+    let name = name.ok_or_else(|| "branch name required (use --list to show branches)".to_string())?;
     if delete {
         repo.delete_branch(name)?;
         println!("Deleted branch '{}'", name);
@@ -2012,7 +2012,7 @@ async fn cmd_tag(
         return Ok(());
     }
 
-    let name = name.unwrap();
+    let name = name.ok_or_else(|| "branch name required (use --list to show branches)".to_string())?;
     if delete {
         repo.delete_tag(name)?;
         let msg_key = format!("tag.{}.message", name);
@@ -2020,7 +2020,8 @@ async fn cmd_tag(
         println!("Deleted tag '{}'", name);
     } else {
         repo.create_tag(name, target)?;
-        let target_id = repo.resolve_tag(name)?.unwrap();
+        let target_id = repo.resolve_tag(name)?
+            .ok_or_else(|| format!("created tag '{}', but could not resolve it", name))?;
         if annotate {
             let msg = message.ok_or_else(|| {
                 eprintln!("Error: --annotate requires a message (-m)");

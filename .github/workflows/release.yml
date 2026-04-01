@@ -17,10 +17,18 @@ jobs:
             os: ubuntu-latest
             artifact_name: suture
             asset_suffix: x86_64-linux
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            artifact_name: suture
+            asset_suffix: aarch64-linux
           - target: x86_64-apple-darwin
             os: macos-latest
             artifact_name: suture
             asset_suffix: x86_64-macos
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            artifact_name: suture
+            asset_suffix: aarch64-macos
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             artifact_name: suture
@@ -43,14 +51,14 @@ jobs:
         if: matrix.os != 'windows-latest'
         run: |
           cd target/${{ matrix.target }}/release
-          tar czf ../../../suture-${{ matrix.asset_suffix }}.tar.gz suture-cli suture-hub
+          tar czf ../../../suture-${{ matrix.asset_suffix }}.tar.gz suture
 
       - name: Package (Windows)
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
           cd target/${{ matrix.target }}/release
-          Compress-Archive -Path suture-cli.exe,suture-hub.exe -DestinationPath ../../../suture-${{ matrix.asset_suffix }}.zip
+          Compress-Archive -Path suture.exe -DestinationPath ../../../suture-${{ matrix.asset_suffix }}.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
