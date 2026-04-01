@@ -11,16 +11,13 @@ permissions:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             artifact_name: suture
             asset_suffix: x86_64-linux
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-            artifact_name: suture
-            asset_suffix: aarch64-linux
           - target: x86_64-apple-darwin
             os: macos-latest
             artifact_name: suture
@@ -38,10 +35,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install cross-compiler (ARM Linux)
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
