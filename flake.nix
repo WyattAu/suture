@@ -24,6 +24,7 @@
             openssl
             sqlite
             protobuf    # For gRPC/Tonic
+            cargo-audit # For security scanning in CI
           ] ++ lib.optional stdenv.isLinux [
             fuse3       # For Linux VFS
           ];
