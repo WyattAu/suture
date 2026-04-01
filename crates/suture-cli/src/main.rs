@@ -708,6 +708,28 @@ fn resolve_ref<'a>(
     ref_str: &str,
     all_patches: &'a [suture_core::patch::types::Patch],
 ) -> Result<&'a suture_core::patch::types::Patch, Box<dyn std::error::Error>> {
+    if ref_str == "HEAD" || ref_str.starts_with("HEAD~") {
+        let (_branch_name, head_id) = repo.head().map_err(|e| e.to_string())?;
+        let mut target_id = head_id;
+        if let Some(n_str) = ref_str.strip_prefix("HEAD~") {
+            let n: usize = n_str.parse().map_err(|_| format!("invalid HEAD~N: {}", n_str))?;
+            for _ in 0..n {
+                let patch = all_patches
+                    .iter()
+                    .find(|p| p.id == target_id)
+                    .ok_or_else(|| String::from("HEAD ancestor not found in patches"))?;
+                target_id = *patch
+                    .parent_ids
+                    .first()
+                    .ok_or_else(|| String::from("HEAD has no parent"))?;
+            }
+        }
+        return all_patches
+            .iter()
+            .find(|p| p.id == target_id)
+            .ok_or_else(|| "HEAD not found in patches".into());
+    }
+
     {
         let branches = repo.list_branches();
         for (name, target_id) in &branches {
@@ -1102,8 +1124,10 @@ async fn cmd_drivers() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn cmd_cherry_pick(commit: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let patch_id = suture_common::Hash::from_hex(commit)?;
     let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+    let patches = repo.all_patches();
+    let target = resolve_ref(&repo, commit, &patches)?;
+    let patch_id = target.id;
     let new_id = repo.cherry_pick(&patch_id)?;
     println!("Cherry-picked {} as {}", commit, new_id);
     Ok(())
@@ -1180,7 +1204,7 @@ async fn cmd_init(path: &str) -> Result<(), Box<dyn std::error::Error>> {
         "Initialized empty Suture repository in {}",
         repo_path.display()
     );
-    println!("Hint: run `suture config user.name \"Your Name\"` to set your identity");
+    println!("Hint: run `suture config user.name=\"Your Name\"` to set your identity");
     drop(repo);
     Ok(())
 }
@@ -1675,8 +1699,10 @@ async fn cmd_diff(from: Option<&str>, to: Option<&str>) -> Result<(), Box<dyn st
 }
 
 async fn cmd_revert(commit: &str, message: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
-    let patch_id = suture_common::Hash::from_hex(commit)?;
     let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+    let patches = repo.all_patches();
+    let target = resolve_ref(&repo, commit, &patches)?;
+    let patch_id = target.id;
     let revert_id = repo.revert(&patch_id, message)?;
     println!("Reverted: {}", revert_id);
     Ok(())

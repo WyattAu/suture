@@ -1244,7 +1244,22 @@ impl Repository {
     /// Returns the resolved target patch ID.
     pub fn reset(&mut self, target: &str, mode: ResetMode) -> Result<PatchId, RepoError> {
         let old_head = self.head().map(|(_, id)| id).unwrap_or(Hash::ZERO);
-        let target_id = if let Ok(hash) = Hash::from_hex(target)
+        let target_id = if target == "HEAD" {
+            let (_, id) = self.head()?;
+            id
+        } else if let Some(rest) = target.strip_prefix("HEAD~") {
+            let n: usize = rest.parse().map_err(|_| RepoError::Custom(format!("invalid HEAD~N: {}", target)))?;
+            let (_, head_id) = self.head()?;
+            let mut current = head_id;
+            for _ in 0..n {
+                let patch = self.dag.get_patch(&current)
+                    .ok_or_else(|| RepoError::Custom("HEAD ancestor not found".to_string()))?;
+                current = patch.parent_ids.first()
+                    .ok_or_else(|| RepoError::Custom("HEAD has no parent".to_string()))?
+                    .to_owned();
+            }
+            current
+        } else if let Ok(hash) = Hash::from_hex(target)
             && self.dag.has_patch(&hash)
         {
             hash

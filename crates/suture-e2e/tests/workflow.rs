@@ -17,7 +17,7 @@ fn cli_bin() -> PathBuf {
     workspace_root()
         .join("target")
         .join("debug")
-        .join("suture-cli")
+        .join("suture")
 }
 
 fn suture(dir: &Path, args: &[&str]) -> std::process::Output {
