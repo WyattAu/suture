@@ -53,6 +53,9 @@ enum Commands {
     Commit {
         /// Commit message
         message: String,
+        /// Auto-stage all modified/deleted files before committing
+        #[arg(short, long)]
+        all: bool,
     },
     /// Branch operations
     Branch {
@@ -99,8 +102,11 @@ enum Commands {
     },
     /// Switch to a different branch
     Checkout {
-        /// Branch name to checkout
-        branch: String,
+        /// Branch name to checkout (defaults to HEAD when -b is used)
+        branch: Option<String>,
+        /// Create a new branch before switching
+        #[arg(short = 'b', long)]
+        new_branch: Option<String>,
     },
     /// Move or rename a tracked file
     Mv {
@@ -813,7 +819,7 @@ async fn main() {
         Commands::Status => cmd_status().await,
         Commands::Add { paths, all } => cmd_add(&paths, all).await,
         Commands::Rm { paths, cached } => cmd_rm(&paths, cached).await,
-        Commands::Commit { message } => cmd_commit(&message).await,
+        Commands::Commit { message, all } => cmd_commit(&message, all).await,
         Commands::Branch {
             name,
             target,
@@ -831,7 +837,7 @@ async fn main() {
             since,
             until,
         } => cmd_log(branch.as_deref(), graph, first_parent, oneline, author.as_deref(), grep.as_deref(), all, since.as_deref(), until.as_deref()).await,
-        Commands::Checkout { branch } => cmd_checkout(&branch).await,
+        Commands::Checkout { branch, new_branch } => cmd_checkout(branch.as_deref(), new_branch.as_deref()).await,
         Commands::Mv { source, destination } => cmd_mv(&source, &destination).await,
         Commands::Diff { from, to, cached } => cmd_diff(from.as_deref(), to.as_deref(), cached).await,
         Commands::Revert { commit, message } => cmd_revert(&commit, message.as_deref()).await,
@@ -1374,8 +1380,14 @@ async fn cmd_mv(source: &str, destination: &str) -> Result<(), Box<dyn std::erro
     Ok(())
 }
 
-async fn cmd_commit(message: &str) -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_commit(message: &str, all: bool) -> Result<(), Box<dyn std::error::Error>> {
     let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+    if all {
+        let count = repo.add_all()?;
+        if count > 0 {
+            println!("Staged {} file(s)", count);
+        }
+    }
     let patch_id = repo.commit(message)?;
     println!("Committed: {}", patch_id);
     Ok(())
@@ -1553,7 +1565,7 @@ async fn cmd_log(
             }
             patches
         } else {
-            repo.log(branch)?
+            repo.log_all(branch)?
         };
 
         if let Some(since) = since_ts {
@@ -1677,10 +1689,18 @@ async fn cmd_log(
     Ok(())
 }
 
-async fn cmd_checkout(branch: &str) -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_checkout(branch: Option<&str>, new_branch: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
     let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
-    repo.checkout(branch)?;
-    println!("Switched to branch '{}'", branch);
+    if let Some(name) = new_branch {
+        let source = branch.filter(|b| *b != "HEAD");
+        repo.create_branch(name, source)?;
+        repo.checkout(name)?;
+        println!("Created and switched to branch '{}'", name);
+    } else {
+        let target = branch.ok_or("no branch specified (use -b to create one)")?;
+        repo.checkout(target)?;
+        println!("Switched to branch '{}'", target);
+    }
     Ok(())
 }
 
@@ -1732,7 +1752,11 @@ async fn cmd_diff(from: Option<&str>, to: Option<&str>, cached: bool) -> Result<
             }
             DiffType::Added => {
                 if let Some(new_hash) = &entry.new_hash {
-                    let Ok(new_blob) = repo.cas().get_blob(new_hash) else {
+                    let new_blob = repo.cas().get_blob(new_hash).ok()
+                        .or_else(|| {
+                            std::fs::read(repo.root().join(&entry.path)).ok()
+                        });
+                    let Some(new_blob) = new_blob else {
                         println!(
                             "{ANSI_BOLD_CYAN}added {} (binary){ANSI_RESET}",
                             entry.path
@@ -1780,8 +1804,13 @@ async fn cmd_diff(from: Option<&str>, to: Option<&str>, cached: bool) -> Result<
             }
             DiffType::Modified => {
                 if let (Some(old_hash), Some(new_hash)) = (&entry.old_hash, &entry.new_hash) {
-                    match (repo.cas().get_blob(old_hash), repo.cas().get_blob(new_hash)) {
-                        (Ok(old_blob), Ok(new_blob)) => {
+                    let old_blob = repo.cas().get_blob(old_hash).ok();
+                    let new_blob = repo.cas().get_blob(new_hash).ok()
+                        .or_else(|| {
+                            std::fs::read(repo.root().join(&entry.path)).ok()
+                        });
+                    match (old_blob, new_blob) {
+                        (Some(old_blob), Some(new_blob)) => {
                             let old_str = String::from_utf8_lossy(&old_blob);
                             let new_str = String::from_utf8_lossy(&new_blob);
 

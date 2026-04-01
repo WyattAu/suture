@@ -2174,7 +2174,7 @@ impl Repository {
     // Log
     // =========================================================================
 
-    /// Get the patch history (log) for a branch.
+    /// Get the patch history (log) for a branch (first-parent chain only).
     pub fn log(&self, branch: Option<&str>) -> Result<Vec<Patch>, RepoError> {
         let target_id = match branch {
             Some(name) => {
@@ -2196,6 +2196,27 @@ impl Repository {
                 patches.push(node.patch.clone());
             }
         }
+        Ok(patches)
+    }
+
+    /// Get the full patch history for a branch, including all reachable commits
+    /// (not just the first-parent chain). Merged branch commits are included.
+    pub fn log_all(&self, branch: Option<&str>) -> Result<Vec<Patch>, RepoError> {
+        let target_id = match branch {
+            Some(name) => {
+                let bn = BranchName::new(name)?;
+                self.dag
+                    .get_branch(&bn)
+                    .ok_or_else(|| RepoError::BranchNotFound(name.to_string()))?
+            }
+            None => {
+                let (_, id) = self.head()?;
+                id
+            }
+        };
+
+        let mut patches = self.dag.reachable_patches(&target_id);
+        patches.sort_by(|a, b| b.timestamp.cmp(&a.timestamp).then_with(|| a.id.cmp(&b.id)));
         Ok(patches)
     }
 
