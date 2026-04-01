@@ -15,7 +15,7 @@ jobs:
       - run: nix develop --command cargo build --workspace
       - run: nix develop --command cargo test --workspace
       - run: nix develop --command cargo clippy --workspace -- -D warnings
-      - run: nix develop --command cargo fmt --workspace -- --check
+      - run: nix develop --command cargo fmt --all -- --check
 
   security:
     runs-on: ubuntu-latest
