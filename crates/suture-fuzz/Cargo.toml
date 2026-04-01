@@ -1,0 +1,12 @@
+[package]
+name = "suture-fuzz"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+suture-core = { path = "../suture-core" }
+suture-common = { path = "../suture-common" }
+suture-driver-json = { path = "../suture-driver-json" }
+suture-driver = { path = "../suture-driver" }
+serde_json = "1"
+proptest = "1.6"

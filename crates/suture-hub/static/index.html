@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Suture Hub</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header>
+        <h1>Suture Hub</h1>
+        <div id="repo-selector">
+            <select id="repo-select">
+                <option value="">Select repository...</option>
+            </select>
+        </div>
+    </header>
+
+    <main id="main-content">
+        <div id="repo-info" class="hidden">
+            <div id="branches-panel" class="panel">
+                <h2>Branches</h2>
+                <ul id="branch-list"></ul>
+            </div>
+
+            <div id="log-panel" class="panel">
+                <h2>Commit Log</h2>
+                <div id="commit-log"></div>
+            </div>
+
+            <div id="detail-panel" class="panel">
+                <h2 id="detail-title">Commit Details</h2>
+                <div id="commit-detail"></div>
+            </div>
+        </div>
+
+        <div id="empty-state">
+            <p>Select a repository to view its contents.</p>
+        </div>
+    </main>
+
+    <footer>
+        <p>Suture Hub &mdash; Patch-based version control</p>
+    </footer>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

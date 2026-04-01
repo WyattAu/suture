@@ -1,0 +1,48 @@
+{"synthetic": false,
+ "schemaVersion": "2025-09-10",
+ "outputs":
+ {"o": ["18ab285dac10983d.olean"],
+  "i": "d55e0bba6dd07535.ilean",
+  "c": "129f7fea05313818.c"},
+ "log":
+ [{"message":
+   ".> LEAN_PATH=/home/wyatt/dev/src/github.com/WyattAu/suture/.specs/02_architecture/proofs/.lake/packages/Cli/.lake/build/lib/lean:/home/wyatt/dev/src/github.com/WyattAu/suture/.specs/02_architecture/proofs/.lake/packages/batteries/.lake/build/lib/lean:/home/wyatt/dev/src/github.com/WyattAu/suture/.specs/02_architecture/proofs/.lake/packages/Qq/.lake/build/lib/lean:/home/wyatt/dev/src/github.com/WyattAu/suture/.specs/02_architecture/proofs/.lake/packages/aesop/.lake/build/lib/lean:/home/wyatt/dev/src/github.com/WyattAu/suture/.specs/02_architecture/proofs/.lake/packages/proofwidgets/.lake/build/lib/lean:/home/wyatt/dev/src/github.com/WyattAu/suture/.specs/02_architecture/proofs/.lake/packages/importGraph/.lake/build/lib/lean:/home/wyatt/dev/src/github.com/WyattAu/suture/.specs/02_architecture/proofs/.lake/packages/LeanSearchClient/.lake/build/lib/lean:/home/wyatt/dev/src/github.com/WyattAu/suture/.specs/02_architecture/proofs/.lake/packages/plausible/.lake/build/lib/lean:/home/wyatt/dev/src/github.com/WyattAu/suture/.specs/02_architecture/proofs/.lake/packages/mathlib/.lake/build/lib/lean:/home/wyatt/dev/src/github.com/WyattAu/suture/.specs/02_architecture/proofs/.lake/build/lib/lean /home/wyatt/.elan/toolchains/leanprover--lean4---v4.29.0/bin/lean /home/wyatt/dev/src/github.com/WyattAu/suture/.specs/02_architecture/proofs/SutureProofs/DAG.lean -o /home/wyatt/dev/src/github.com/WyattAu/suture/.specs/02_architecture/proofs/.lake/build/lib/lean/SutureProofs/DAG.olean -i /home/wyatt/dev/src/github.com/WyattAu/suture/.specs/02_architecture/proofs/.lake/build/lib/lean/SutureProofs/DAG.ilean -c /home/wyatt/dev/src/github.com/WyattAu/suture/.specs/02_architecture/proofs/.lake/build/ir/SutureProofs/DAG.c --setup /home/wyatt/dev/src/github.com/WyattAu/suture/.specs/02_architecture/proofs/.lake/build/ir/SutureProofs/DAG.setup.json --json",
+   "level": "trace"},
+  {"message": "SutureProofs/DAG.lean:36:8: declaration uses `sorry`",
+   "level": "warning"},
+  {"message":
+   "SutureProofs/DAG.lean:53:29: unused variable `g`\n\nNote: This linter can be disabled with `set_option linter.unusedVariables false`",
+   "level": "warning"},
+  {"message":
+   "SutureProofs/DAG.lean:53:44: unused variable `parent`\n\nNote: This linter can be disabled with `set_option linter.unusedVariables false`",
+   "level": "warning"},
+  {"message":
+   "SutureProofs/DAG.lean:53:51: unused variable `child`\n\nNote: This linter can be disabled with `set_option linter.unusedVariables false`",
+   "level": "warning"}],
+ "inputs":
+ [["SutureProofs.DAG:deps",
+   [["deps",
+     [["«suture-proofs»/SutureProofs:extraDep",
+       [["@«suture-proofs»:extraDep", "00000000000006bb"]]],
+      ["imports",
+       [["SutureProofs.Foundations transitive imports (legacy)",
+         "38734e9a6c2d9037"],
+        ["SutureProofs.Foundations:importAllArts", "34b8657bea793eed"],
+        ["Mathlib.Data.Finset.Basic transitive imports (legacy)",
+         "0c1acbba3d03a399"],
+        ["Mathlib.Data.Finset.Basic:importAllArts", "5471e419b721ddee"]]]]],
+    ["libs",
+     [["import dynlibs", "00000000000006bb"],
+      ["package external libraries", "00000000000006bb"],
+      ["module dynlibs", "00000000000006bb"],
+      ["module plugins", "00000000000006bb"]]]]],
+  ["Lean 4.29.0, commit 98dc76e3c0a9b856c9b98726b713fb04fab16740",
+   "60bb08ef22408c8a"],
+  ["/home/wyatt/dev/src/github.com/WyattAu/suture/.specs/02_architecture/proofs/SutureProofs/DAG.lean",
+   "aaf3d4d0996399f4"],
+  ["options", [["-DautoImplicit=false", "4a85acb881fd49d0"]]],
+  ["isModule: false", "feefd2a0d3a1847e"],
+  ["Module.name: SutureProofs.DAG", "d62dad19a0b8a22a"],
+  ["Package.id?: (some suture-proofs)", "a7edcbb518c46e16"],
+  ["Module.leanArgs: #[]", "00000000000006bb"]],
+ "depHash": "ac44f51e60543032"}

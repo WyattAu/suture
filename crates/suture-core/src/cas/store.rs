@@ -13,6 +13,7 @@
 
 use crate::cas::compressor::{self, is_zstd_compressed};
 use crate::cas::hasher;
+use crate::cas::pack::{PackCache, PackError, PackFile, PackIndex};
 use std::fs;
 use std::io;
 use std::path::PathBuf;
@@ -45,6 +46,9 @@ pub enum CasError {
 
     #[error("invalid path: {0}")]
     InvalidPath(String),
+
+    #[error("pack error: {0}")]
+    Pack(#[from] PackError),
 }
 
 /// The Content Addressable Storage blob store.
@@ -162,35 +166,36 @@ impl BlobStore {
 
     /// Retrieve a blob by its BLAKE3 hash.
     ///
+    /// Tries loose objects first, then pack files.
     /// Decompresses if necessary and verifies the hash of the result.
     pub fn get_blob(&self, hash: &Hash) -> Result<Vec<u8>, CasError> {
+        // Try loose blob first
         let blob_path = self.blob_path(hash);
-        let raw = fs::read(&blob_path).map_err(|e| {
-            if e.kind() == io::ErrorKind::NotFound {
-                CasError::BlobNotFound(hash.to_hex())
+        if blob_path.exists() {
+            let raw = fs::read(&blob_path)?;
+            let data = if is_zstd_compressed(&raw) {
+                compressor::decompress(&raw)?
             } else {
-                CasError::Io(e)
-            }
-        })?;
+                raw
+            };
+            hasher::verify_hash(&data, hash)?;
+            return Ok(data);
+        }
 
-        // Decompress if necessary
-        let data = if is_zstd_compressed(&raw) {
-            compressor::decompress(&raw)?
-        } else {
-            raw
-        };
+        // Fall back to pack files
+        if let Ok(data) = self.get_blob_packed(hash) {
+            return Ok(data);
+        }
 
-        // Verify integrity
-        hasher::verify_hash(&data, hash)?;
-
-        Ok(data)
+        Err(CasError::BlobNotFound(hash.to_hex()))
     }
 
     /// Check if a blob exists in the store.
     ///
+    /// Checks loose objects first, then pack files.
     /// This does NOT verify the blob's integrity — it only checks for existence.
     pub fn has_blob(&self, hash: &Hash) -> bool {
-        self.blob_path(hash).exists()
+        self.blob_path(hash).exists() || self.has_blob_packed(hash)
     }
 
     /// Delete a blob from the store.
@@ -215,6 +220,10 @@ impl BlobStore {
             for entry in fs::read_dir(&objects_dir)? {
                 let entry = entry?;
                 if entry.file_type()?.is_dir() {
+                    let dir_name = entry.file_name();
+                    if dir_name == "pack" {
+                        continue;
+                    }
                     for sub_entry in fs::read_dir(entry.path())? {
                         let sub_entry = sub_entry?;
                         if sub_entry.file_type()?.is_file() {
@@ -235,6 +244,10 @@ impl BlobStore {
             for entry in fs::read_dir(&objects_dir)? {
                 let entry = entry?;
                 if entry.file_type()?.is_dir() {
+                    let dir_name = entry.file_name();
+                    if dir_name == "pack" {
+                        continue;
+                    }
                     for sub_entry in fs::read_dir(entry.path())? {
                         let sub_entry = sub_entry?;
                         if sub_entry.file_type()?.is_file() {
@@ -257,7 +270,11 @@ impl BlobStore {
         for entry in fs::read_dir(&objects_dir)? {
             let entry = entry?;
             if entry.file_type()?.is_dir() {
-                let prefix = entry.file_name().to_string_lossy().to_string();
+                let dir_name = entry.file_name();
+                if dir_name == "pack" {
+                    continue;
+                }
+                let prefix = dir_name.to_string_lossy().to_string();
                 for sub_entry in fs::read_dir(entry.path())? {
                     let sub_entry = sub_entry?;
                     if sub_entry.file_type()?.is_file() {
@@ -271,6 +288,78 @@ impl BlobStore {
             }
         }
         Ok(hashes)
+    }
+
+    /// Get the path to the objects directory.
+    pub fn objects_dir(&self) -> PathBuf {
+        self.root.join("objects")
+    }
+
+    /// Get the path to the pack directory.
+    pub fn pack_dir(&self) -> PathBuf {
+        self.root.join("objects").join("pack")
+    }
+
+    /// Load pack indices from the pack directory.
+    fn load_pack_cache(&self) -> Result<PackCache, CasError> {
+        PackCache::load_all(&self.pack_dir()).map_err(CasError::Pack)
+    }
+
+    /// Retrieve a blob from pack files only (not loose objects).
+    pub fn get_blob_packed(&self, hash: &Hash) -> Result<Vec<u8>, CasError> {
+        let cache = self.load_pack_cache()?;
+        let (pack_path, _offset) = cache
+            .find(hash)
+            .ok_or_else(|| CasError::BlobNotFound(hash.to_hex()))?;
+        let pack_path = pack_path.clone();
+        drop(cache);
+
+        let idx_path = pack_path.with_extension("idx");
+        let index = PackIndex::load(&idx_path).map_err(CasError::Pack)?;
+        let data = PackFile::read_blob(&pack_path, &index, hash).map_err(CasError::Pack)?;
+        Ok(data)
+    }
+
+    /// Check if a blob exists in any pack file.
+    pub fn has_blob_packed(&self, hash: &Hash) -> bool {
+        if let Ok(cache) = self.load_pack_cache() {
+            cache.find(hash).is_some()
+        } else {
+            false
+        }
+    }
+
+    /// List all blob hashes stored in pack files.
+    pub fn list_blobs_packed(&self) -> Result<Vec<Hash>, CasError> {
+        let cache = self.load_pack_cache()?;
+        Ok(cache.all_hashes())
+    }
+
+    /// Repack loose blobs into a pack file if the count exceeds the threshold.
+    ///
+    /// Returns the number of blobs that were packed. If the loose blob count
+    /// is at or below the threshold, no packing occurs and 0 is returned.
+    /// After successful packing, the loose blobs are removed.
+    pub fn repack(&self, threshold: usize) -> Result<usize, CasError> {
+        let loose_hashes = self.list_blobs()?;
+        if loose_hashes.len() <= threshold {
+            return Ok(0);
+        }
+
+        let mut objects = Vec::with_capacity(loose_hashes.len());
+        for hash in &loose_hashes {
+            let data = self.get_blob(hash)?;
+            objects.push((*hash, data));
+        }
+
+        let (pack_path, _idx_path) = PackFile::create(&self.pack_dir(), &objects)?;
+        let _ = pack_path;
+
+        for hash in &loose_hashes {
+            let _ = self.delete_blob(hash);
+        }
+
+        Ok(loose_hashes.len())
     }
 
     /// Get the on-disk path for a given hash.
@@ -460,6 +549,146 @@ mod tests {
                 prop_assert_eq!(hash1, hash2);
                 prop_assert_eq!(store.blob_count().unwrap(), 1);
             }
+        }
+    }
+
+    mod pack_tests {
+        use super::*;
+
+        #[test]
+        fn test_get_blob_from_pack() {
+            let dir = tempfile::tempdir().unwrap();
+            let store = BlobStore::new_uncompressed(dir.path()).unwrap();
+
+            let hash1 = store.put_blob(b"packed blob one").unwrap();
+            let hash2 = store.put_blob(b"packed blob two").unwrap();
+
+            let packed = store.repack(0).unwrap();
+            assert_eq!(packed, 2);
+
+            assert_eq!(store.blob_count().unwrap(), 0);
+
+            let data1 = store.get_blob(&hash1).unwrap();
+            assert_eq!(data1, b"packed blob one".to_vec());
+
+            let data2 = store.get_blob(&hash2).unwrap();
+            assert_eq!(data2, b"packed blob two".to_vec());
+        }
+
+        #[test]
+        fn test_has_blob_checks_packs() {
+            let dir = tempfile::tempdir().unwrap();
+            let store = BlobStore::new_uncompressed(dir.path()).unwrap();
+
+            let hash = store.put_blob(b"check me in packs").unwrap();
+            store.repack(0).unwrap();
+
+            assert!(store.has_blob(&hash));
+            assert!(!store.has_blob(&Hash::from_hex(&"c".repeat(64)).unwrap()));
+        }
+
+        #[test]
+        fn test_get_blob_packed_not_found() {
+            let dir = tempfile::tempdir().unwrap();
+            let store = BlobStore::new_uncompressed(dir.path()).unwrap();
+
+            let missing = Hash::from_hex(&"d".repeat(64)).unwrap();
+            let result = store.get_blob_packed(&missing);
+            assert!(matches!(result, Err(CasError::BlobNotFound(_))));
+        }
+
+        #[test]
+        fn test_list_blobs_packed() {
+            let dir = tempfile::tempdir().unwrap();
+            let store = BlobStore::new_uncompressed(dir.path()).unwrap();
+
+            store.put_blob(b"alpha").unwrap();
+            store.put_blob(b"beta").unwrap();
+            store.repack(0).unwrap();
+
+            let packed = store.list_blobs_packed().unwrap();
+            assert_eq!(packed.len(), 2);
+        }
+
+        #[test]
+        fn test_repack_below_threshold() {
+            let dir = tempfile::tempdir().unwrap();
+            let store = BlobStore::new_uncompressed(dir.path()).unwrap();
+
+            store.put_blob(b"only one").unwrap();
+
+            let packed = store.repack(10).unwrap();
+            assert_eq!(packed, 0);
+            assert_eq!(store.blob_count().unwrap(), 1);
+        }
+
+        #[test]
+        fn test_repack_at_threshold() {
+            let dir = tempfile::tempdir().unwrap();
+            let store = BlobStore::new_uncompressed(dir.path()).unwrap();
+
+            store.put_blob(b"one").unwrap();
+            store.put_blob(b"two").unwrap();
+
+            let packed = store.repack(2).unwrap();
+            assert_eq!(packed, 0);
+            assert_eq!(store.blob_count().unwrap(), 2);
+
+            let packed = store.repack(1).unwrap();
+            assert_eq!(packed, 2);
+            assert_eq!(store.blob_count().unwrap(), 0);
+        }
+
+        #[test]
+        fn test_loose_priority_over_packed() {
+            let dir = tempfile::tempdir().unwrap();
+            let store = BlobStore::new_uncompressed(dir.path()).unwrap();
+
+            let hash = store.put_blob(b"original data").unwrap();
+            store.repack(0).unwrap();
+
+            // Re-store the same hash as a loose blob
+            let blob_path = store.blob_path(&hash);
+            if let Some(parent) = blob_path.parent() {
+                fs::create_dir_all(parent).unwrap();
+            }
+            fs::write(&blob_path, b"original data").unwrap();
+
+            let data = store.get_blob(&hash).unwrap();
+            assert_eq!(data, b"original data".to_vec());
+
+            // Delete the loose blob; should still find in pack
+            store.delete_blob(&hash).unwrap();
+            let data = store.get_blob(&hash).unwrap();
+            assert_eq!(data, b"original data".to_vec());
+        }
+
+        #[test]
+        fn test_has_blob_packed() {
+            let dir = tempfile::tempdir().unwrap();
+            let store = BlobStore::new_uncompressed(dir.path()).unwrap();
+
+            let hash = store.put_blob(b"packed check").unwrap();
+            assert!(!store.has_blob_packed(&hash));
+
+            store.repack(0).unwrap();
+            assert!(store.has_blob_packed(&hash));
+        }
+
+        #[test]
+        fn test_repack_multiple_times() {
+            let dir = tempfile::tempdir().unwrap();
+            let store = BlobStore::new_uncompressed(dir.path()).unwrap();
+
+            store.put_blob(b"first batch one").unwrap();
+            store.put_blob(b"first batch two").unwrap();
+            store.repack(0).unwrap();
+
+            store.put_blob(b"second batch").unwrap();
+            store.repack(0).unwrap();
+
+            let all = store.list_blobs_packed().unwrap();
+            assert_eq!(all.len(), 3);
         }
     }
 }

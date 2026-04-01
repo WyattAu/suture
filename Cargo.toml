@@ -3,6 +3,10 @@ resolver = "2"
 members = [
     "crates/*",
 ]
+exclude = [
+    "crates/suture-py",
+    "crates/suture-daemon",
+]
 
 [profile.release]
 lto = true

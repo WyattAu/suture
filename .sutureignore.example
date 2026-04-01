@@ -1,0 +1,32 @@
+# Suture ignore patterns
+# Lines starting with # are comments
+# Patterns follow gitignore-style glob syntax
+
+# Build artifacts
+target/
+build/
+dist/
+*.o
+*.so
+*.dylib
+*.dll
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Dependencies
+node_modules/
+vendor/
+.lock
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Suture internal
+.suture/

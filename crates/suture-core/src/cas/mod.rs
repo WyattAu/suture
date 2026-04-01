@@ -22,6 +22,7 @@
 
 pub mod compressor;
 pub mod hasher;
+pub mod pack;
 pub mod store;
 
 pub use store::{BlobStore, CasError};

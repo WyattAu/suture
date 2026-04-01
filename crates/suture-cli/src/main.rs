@@ -190,6 +190,9 @@ enum Commands {
         /// Remote name (default: "origin")
         #[arg(default_value = "origin")]
         remote: String,
+        /// Limit fetch to the last N commits
+        #[arg(long, help = "Limit fetch to the last N commits")]
+        depth: Option<u32>,
     },
     /// Clone a repository from a remote Hub
     Clone {
@@ -311,6 +314,22 @@ enum RemoteAction {
         /// Remote name
         name: String,
     },
+    /// Authenticate with a remote Hub and store a token
+    Login {
+        /// Remote name (default: "origin")
+        #[arg(default_value = "origin")]
+        name: String,
+    },
+    /// Mirror a remote repository locally
+    Mirror {
+        /// Upstream Hub URL
+        url: String,
+        /// Repository name on upstream Hub
+        repo: String,
+        /// Local name for the mirrored repo
+        #[arg(long, default_value = None)]
+        name: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -390,6 +409,8 @@ struct PushResponse {
 struct PullRequest {
     repo_id: String,
     known_branches: Vec<BranchProto>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    max_depth: Option<u32>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -526,6 +547,64 @@ fn sign_push_request(
     req.signature = Some(signature.to_bytes().to_vec());
 
     Ok(req)
+}
+
+fn get_remote_token(
+    repo: &suture_core::repository::Repository,
+    remote: &str,
+) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    let key = format!("remote.{}.token", remote);
+    Ok(repo.get_config(&key)?)
+}
+
+fn derive_repo_id(url: &str, remote_name: &str) -> String {
+    let trimmed = url.trim_end_matches('/');
+    let after_scheme = if let Some(idx) = trimmed.find("://") {
+        &trimmed[idx + 3..]
+    } else {
+        trimmed
+    };
+    if let Some(path_start) = after_scheme.find('/') {
+        let path = &after_scheme[path_start + 1..];
+        if let Some(name) = path.rsplit('/').next()
+            && !name.is_empty()
+        {
+            return name.to_string();
+        }
+    }
+    remote_name.to_string()
+}
+
+async fn check_handshake(url: &str) -> Result<(), Box<dyn std::error::Error>> {
+    const PROTOCOL_VERSION: u32 = 1;
+
+    #[derive(serde::Deserialize)]
+    struct HandshakeResponse {
+        server_version: u32,
+        compatible: bool,
+    }
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(format!("{}/handshake", url))
+        .send()
+        .await?;
+
+    if !resp.status().is_success() {
+        return Err(format!("handshake failed: server returned {}", resp.status()).into());
+    }
+
+    let hs: HandshakeResponse = resp.json().await?;
+    if !hs.compatible {
+        return Err(format!(
+            "protocol version mismatch: client={}, server={}",
+            PROTOCOL_VERSION,
+            hs.server_version
+        )
+        .into());
+    }
+
+    Ok(())
 }
 
 fn walk_repo_files(dir: &std::path::Path) -> Vec<String> {
@@ -723,7 +802,7 @@ async fn main() {
         Commands::Remote { action } => cmd_remote(&action).await,
         Commands::Push { remote } => cmd_push(&remote).await,
         Commands::Pull { remote } => cmd_pull(&remote).await,
-        Commands::Fetch { remote } => cmd_fetch(&remote).await,
+        Commands::Fetch { remote, depth } => cmd_fetch(&remote, depth).await,
         Commands::Clone { url, dir } => cmd_clone(&url, dir.as_deref()).await,
         Commands::Reset { target, mode } => cmd_reset(&target, &mode).await,
         Commands::Key { action } => cmd_key(&action).await,
@@ -1815,7 +1894,7 @@ async fn cmd_config(key_value: &[String]) -> Result<(), Box<dyn std::error::Erro
 }
 
 async fn cmd_remote(action: &RemoteAction) -> Result<(), Box<dyn std::error::Error>> {
-    let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+    let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
     match action {
         RemoteAction::Add { name, url } => {
             repo.add_remote(name, url)?;
@@ -1835,6 +1914,98 @@ async fn cmd_remote(action: &RemoteAction) -> Result<(), Box<dyn std::error::Err
             repo.remove_remote(name)?;
             println!("Remote '{}' removed", name);
         }
+        RemoteAction::Login { name } => {
+            let remote_url = repo.get_remote_url(name)?;
+
+            eprintln!("Authenticating with {}...", remote_url);
+
+            let client = reqwest::Client::new();
+            let response = client
+                .post(format!("{}/auth/token", remote_url))
+                .send()
+                .await?;
+
+            if !response.status().is_success() {
+                let status = response.status();
+                let body = response.text().await.unwrap_or_default();
+                return Err(format!("login failed (HTTP {}): {}", status, body).into());
+            }
+
+            let body: serde_json::Value = response.json().await?;
+            let token = body["token"]
+                .as_str()
+                .ok_or("invalid response from server")?;
+
+            repo.set_config(&format!("remote.{}.token", name), token)?;
+
+            eprintln!("Authentication successful. Token stored in config.");
+        }
+        RemoteAction::Mirror { url, repo: upstream_repo, name: local_name } => {
+            let local_repo_name = local_name.as_deref().unwrap_or(upstream_repo);
+
+            #[derive(serde::Serialize)]
+            struct MirrorSetupReq {
+                repo_name: String,
+                upstream_url: String,
+                upstream_repo: String,
+            }
+            #[derive(serde::Deserialize)]
+            struct MirrorSetupResp {
+                success: bool,
+                error: Option<String>,
+                mirror_id: Option<i64>,
+            }
+            #[derive(serde::Serialize)]
+            struct MirrorSyncReq {
+                mirror_id: i64,
+            }
+            #[derive(serde::Deserialize)]
+            struct MirrorSyncResp {
+                success: bool,
+                error: Option<String>,
+                patches_synced: u64,
+                branches_synced: u64,
+            }
+
+            let client = reqwest::Client::new();
+
+            let setup_body = MirrorSetupReq {
+                repo_name: local_repo_name.to_string(),
+                upstream_url: url.clone(),
+                upstream_repo: upstream_repo.clone(),
+            };
+
+            let hub_url = repo.get_remote_url("origin").unwrap_or_else(|_| url.clone());
+            let setup_resp = client
+                .post(format!("{}/mirror/setup", hub_url))
+                .json(&setup_body)
+                .send()
+                .await?;
+
+            let setup_result: MirrorSetupResp = setup_resp.json().await?;
+            if !setup_result.success {
+                return Err(setup_result.error.unwrap_or_else(|| "mirror setup failed".to_string()).into());
+            }
+
+            let mirror_id = setup_result.mirror_id.ok_or("no mirror id returned")?;
+            println!("Mirror registered (id: {mirror_id}), syncing...");
+
+            let sync_resp = client
+                .post(format!("{}/mirror/sync", hub_url))
+                .json(&MirrorSyncReq { mirror_id })
+                .send()
+                .await?;
+
+            let sync_result: MirrorSyncResp = sync_resp.json().await?;
+            if !sync_result.success {
+                return Err(sync_result.error.unwrap_or_else(|| "mirror sync failed".to_string()).into());
+            }
+
+            println!(
+                "Mirror sync complete: {} patch(es), {} branch(es)",
+                sync_result.patches_synced, sync_result.branches_synced
+            );
+        }
     }
     Ok(())
 }
@@ -1842,6 +2013,8 @@ async fn cmd_remote(action: &RemoteAction) -> Result<(), Box<dyn std::error::Err
 async fn cmd_push(remote: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
     let url = repo.get_remote_url(remote)?;
+
+    check_handshake(&url).await?;
 
     let push_state_key = format!("remote.{}.last_pushed", remote);
     let patches = if let Some(last_pushed_hex) = repo.get_config(&push_state_key)? {
@@ -1876,7 +2049,7 @@ async fn cmd_push(remote: &str) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let push_body = PushRequest {
-        repo_id: "default".to_string(),
+        repo_id: derive_repo_id(&url, remote),
         patches: patches.iter().map(patch_to_proto).collect(),
         branches: branches
             .iter()
@@ -1918,8 +2091,11 @@ async fn cmd_push(remote: &str) -> Result<(), Box<dyn std::error::Error>> {
 async fn do_fetch(
     repo: &mut suture_core::repository::Repository,
     remote: &str,
+    depth: Option<u32>,
 ) -> Result<usize, Box<dyn std::error::Error>> {
     let url = repo.get_remote_url(remote)?;
+
+    check_handshake(&url).await?;
 
     let known_branches = repo
         .list_branches()
@@ -1931,16 +2107,21 @@ async fn do_fetch(
         .collect();
 
     let pull_body = PullRequest {
-        repo_id: "default".to_string(),
+        repo_id: derive_repo_id(&url, remote),
         known_branches,
+        max_depth: depth,
     };
 
     let client = reqwest::Client::new();
-    let resp = client
+    let mut req_builder = client
         .post(format!("{}/pull", url))
-        .json(&pull_body)
-        .send()
-        .await?;
+        .json(&pull_body);
+
+    if let Some(token) = get_remote_token(repo, remote)? {
+        req_builder = req_builder.bearer_auth(&token);
+    }
+
+    let resp = req_builder.send().await?;
 
     if !resp.status().is_success() {
         let text = resp.text().await?;
@@ -1999,7 +2180,7 @@ async fn do_pull(
     let old_tree = repo
         .snapshot_head()
         .unwrap_or_else(|_| suture_core::engine::tree::FileTree::empty());
-    let new_patches = do_fetch(repo, remote).await?;
+    let new_patches = do_fetch(repo, remote, None).await?;
     repo.sync_working_tree(&old_tree)?;
     Ok(new_patches)
 }
@@ -2011,9 +2192,9 @@ async fn cmd_pull(remote: &str) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn cmd_fetch(remote: &str) -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_fetch(remote: &str, depth: Option<u32>) -> Result<(), Box<dyn std::error::Error>> {
     let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
-    let new_patches = do_fetch(&mut repo, remote).await?;
+    let new_patches = do_fetch(&mut repo, remote, depth).await?;
     println!("Fetch successful: {} new patch(es)", new_patches);
     Ok(())
 }
@@ -2077,6 +2258,13 @@ async fn cmd_key(action: &KeyAction) -> Result<(), Box<dyn std::error::Error>> {
 
             let priv_path = keys_dir.join(format!("{name}.ed25519"));
             std::fs::write(&priv_path, keypair.private_key_bytes())?;
+
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&priv_path, std::fs::Permissions::from_mode(0o600))
+                    .map_err(|e| format!("failed to set key permissions: {}", e))?;
+            }
 
             let pub_hex = hex::encode(keypair.public_key_bytes());
             repo.set_config(&format!("key.public.{name}"), &pub_hex)?;

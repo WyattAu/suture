@@ -1,0 +1,10 @@
+[package]
+name = "suture-git-bridge"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+suture-core = { path = "../suture-core" }
+suture-common = { path = "../suture-common" }
+thiserror = "2"
+tracing = "0.1"

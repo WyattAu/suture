@@ -1,0 +1,71 @@
+{
+  "name": "suture",
+  "displayName": "Suture",
+  "description": "Suture version control integration for VS Code",
+  "version": "0.1.0",
+  "publisher": "wyattau",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "SCM Providers",
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:suture.blame",
+    "onCommand:suture.log",
+    "onCommand:suture.init"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "suture.blame",
+        "title": "Suture: Blame File"
+      },
+      {
+        "command": "suture.log",
+        "title": "Suture: Show Log"
+      },
+      {
+        "command": "suture.init",
+        "title": "Suture: Initialize Repository"
+      }
+    ],
+    "configuration": {
+      "title": "Suture",
+      "properties": {
+        "suture.path": {
+          "type": "string",
+          "default": "suture",
+          "description": "Path to the suture binary"
+        }
+      }
+    },
+    "languages": [
+      {
+        "id": "suture-conflict",
+        "extensions": [],
+        "firstLine": "^<<<<<<< ",
+        "filenamePatterns": []
+      }
+    ],
+    "grammars": [
+      {
+        "language": "suture-conflict",
+        "scopeName": "source.suture-conflict",
+        "path": "./syntaxes/suture-conflicts.tmLanguage.json"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0"
+  }
+}

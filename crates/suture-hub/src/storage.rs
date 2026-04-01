@@ -32,6 +32,12 @@ pub struct HubStorage {
     conn: Connection,
 }
 
+/// Mirror row from DB: (repo_name, upstream_url, upstream_repo, last_sync, status)
+type MirrorRow = (String, String, String, Option<i64>, String);
+
+/// Mirror list row from DB: (id, repo_name, upstream_url, upstream_repo, last_sync, status)
+type MirrorListRow = (i64, String, String, String, Option<i64>, String);
+
 impl HubStorage {
     /// Open or create the hub database at the given path.
     pub fn open(path: &Path) -> Result<Self, StorageError> {
@@ -95,9 +101,25 @@ impl HubStorage {
                 added_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
 
+            CREATE TABLE IF NOT EXISTS tokens (
+                token TEXT PRIMARY KEY,
+                created_at INTEGER NOT NULL,
+                description TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS mirrors (
+                id INTEGER PRIMARY KEY,
+                repo_name TEXT NOT NULL,
+                upstream_url TEXT NOT NULL,
+                upstream_repo TEXT NOT NULL,
+                last_sync INTEGER,
+                status TEXT DEFAULT 'idle'
+            );
+
             CREATE INDEX IF NOT EXISTS idx_patches_repo ON patches(repo_id);
             CREATE INDEX IF NOT EXISTS idx_branches_repo ON branches(repo_id);
             CREATE INDEX IF NOT EXISTS idx_blobs_repo ON blobs(repo_id);
+            CREATE INDEX IF NOT EXISTS idx_mirrors_repo ON mirrors(repo_name);
             ",
         )?;
         Ok(())
@@ -405,6 +427,121 @@ impl HubStorage {
             self.conn
                 .query_row("SELECT COUNT(*) FROM authorized_keys", [], |row| row.get(0))?;
         Ok(count > 0)
+    }
+
+    // === Tokens ===
+
+    pub fn store_token(
+        &self,
+        token: &str,
+        created_at: u64,
+        description: &str,
+    ) -> Result<(), StorageError> {
+        self.conn.execute(
+            "INSERT INTO tokens (token, created_at, description) VALUES (?1, ?2, ?3)",
+            params![token, created_at as i64, description],
+        )?;
+        Ok(())
+    }
+
+    pub fn verify_token(&self, token: &str) -> Result<bool, StorageError> {
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM tokens WHERE token = ?1",
+            params![token],
+            |row| row.get(0),
+        )?;
+        Ok(count > 0)
+    }
+
+    pub fn has_tokens(&self) -> Result<bool, StorageError> {
+        let count: i64 = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM tokens", [], |row| row.get(0))?;
+        Ok(count > 0)
+    }
+
+    // === Mirrors ===
+
+    pub fn add_mirror(
+        &self,
+        repo_name: &str,
+        upstream_url: &str,
+        upstream_repo: &str,
+    ) -> Result<i64, StorageError> {
+        self.conn.execute(
+            "INSERT INTO mirrors (repo_name, upstream_url, upstream_repo, last_sync, status)
+             VALUES (?1, ?2, ?3, NULL, 'idle')",
+            params![repo_name, upstream_url, upstream_repo],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    pub fn get_mirror(&self, mirror_id: i64) -> Result<Option<MirrorRow>, StorageError> {
+        let result = self.conn.query_row(
+            "SELECT repo_name, upstream_url, upstream_repo, last_sync, status FROM mirrors WHERE id = ?1",
+            params![mirror_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<i64>>(3)?,
+                    row.get::<_, String>(4)?,
+                ))
+            },
+        );
+        match result {
+            Ok(row) => Ok(Some(row)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(StorageError::Database(e)),
+        }
+    }
+
+    pub fn update_mirror_status(
+        &self,
+        mirror_id: i64,
+        status: &str,
+        last_sync: Option<i64>,
+    ) -> Result<(), StorageError> {
+        self.conn.execute(
+            "UPDATE mirrors SET status = ?1, last_sync = COALESCE(?2, last_sync) WHERE id = ?3",
+            params![status, last_sync, mirror_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_mirrors(&self) -> Result<Vec<MirrorListRow>, StorageError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, repo_name, upstream_url, upstream_repo, last_sync, status FROM mirrors ORDER BY id",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, Option<i64>>(4)?,
+                row.get::<_, String>(5)?,
+            ))
+        })?;
+        let mut mirrors = Vec::new();
+        for row in rows {
+            mirrors.push(row?);
+        }
+        Ok(mirrors)
+    }
+
+    pub fn get_mirror_by_repo(&self, repo_name: &str) -> Result<Option<i64>, StorageError> {
+        let result = self.conn.query_row(
+            "SELECT id FROM mirrors WHERE repo_name = ?1",
+            params![repo_name],
+            |row| row.get::<_, i64>(0),
+        );
+        match result {
+            Ok(id) => Ok(Some(id)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(StorageError::Database(e)),
+        }
     }
 }
 

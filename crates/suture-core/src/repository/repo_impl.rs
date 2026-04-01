@@ -156,7 +156,7 @@ impl Repository {
         meta.store_patch(&root_patch)?;
 
         // Create default branch
-        let main_branch = BranchName::new("main").unwrap();
+        let main_branch = BranchName::new("main").expect("hardcoded 'main' is always valid");
         dag.create_branch(main_branch.clone(), root_id)?;
         meta.set_branch(&main_branch, &root_id)?;
 
@@ -538,7 +538,7 @@ impl Repository {
             sorted_ids.push(id);
             if let Some(kids) = children.get(&id) {
                 for &child in kids {
-                    let deg = in_degree.get_mut(&child).unwrap();
+                    let deg = in_degree.get_mut(&child).expect("in-degree entry exists for child in topo sort");
                     *deg -= 1;
                     if *deg == 0 {
                         queue.push_back(child);
@@ -876,7 +876,7 @@ impl Repository {
         if stashes.is_empty() {
             return Err(RepoError::Custom("No stashes found".to_string()));
         }
-        let highest = stashes.iter().map(|s| s.index).max().unwrap();
+        let highest = stashes.iter().map(|s| s.index).max().expect("stash list is non-empty (checked above)");
         self.stash_apply(highest)?;
         self.stash_drop(highest)?;
         Ok(())

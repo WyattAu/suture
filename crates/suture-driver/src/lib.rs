@@ -5,10 +5,12 @@
 //! *which bytes changed*.
 
 pub mod error;
+pub mod plugin;
 pub mod registry;
 pub mod types;
 
 pub use error::DriverError;
+pub use plugin::{BuiltinDriverPlugin, DriverPlugin, PluginRegistry};
 pub use registry::DriverRegistry;
 pub use types::{DiffHunk, DiffHunkType, DiffSummary, VisualDiff};
 

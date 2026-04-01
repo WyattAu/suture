@@ -1,7 +1,9 @@
-//! SQLite Metadata Store — persistent storage for DAG, branches, and working set.
+//! Metadata — persistent storage and global configuration.
 //!
 //! Uses SQLite in WAL mode for concurrent read access. The metadata store
 //! is the persistent backing for the in-memory PatchDag.
+
+pub mod global_config;
 
 use crate::patch::types::{Patch, PatchId, TouchSet};
 use rusqlite::{params, Connection};

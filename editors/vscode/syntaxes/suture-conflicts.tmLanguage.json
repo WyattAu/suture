@@ -1,0 +1,35 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Suture Conflict Markers",
+  "scopeName": "source.suture-conflict",
+  "patterns": [
+    {
+      "match": "^(<{7})\\s+(.+)$",
+      "name": "markup.deleted.git-conflict.begin.suture",
+      "captures": {
+        "1": { "name": "punctuation.definition.begin.suture" },
+        "2": { "name": "entity.name.label.suture" }
+      }
+    },
+    {
+      "match": "^(\\|{7})\\s+(.+)$",
+      "name": "markup.ignored.git-conflict.base.suture",
+      "captures": {
+        "1": { "name": "punctuation.definition.base.suture" },
+        "2": { "name": "comment.suture" }
+      }
+    },
+    {
+      "match": "^(={7})$",
+      "name": "punctuation.section.separator.git-conflict.middle.suture"
+    },
+    {
+      "match": "^(>{7})\\s+(.+)$",
+      "name": "markup.inserted.git-conflict.end.suture",
+      "captures": {
+        "1": { "name": "punctuation.definition.end.suture" },
+        "2": { "name": "entity.name.label.suture" }
+      }
+    }
+  ]
+}
