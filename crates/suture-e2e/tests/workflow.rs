@@ -176,7 +176,7 @@ fn test_bisect() {
     let newest = lines[0].split_whitespace().next().unwrap();
     let oldest = lines.last().unwrap().split_whitespace().next().unwrap();
 
-    let out = suture_success(&repo, &["bisect", newest, oldest]);
+    let out = suture_success(&repo, &["bisect", "start", oldest, newest]);
     assert!(out.contains("Bisecting:"), "bisect output: {}", out);
 }
 

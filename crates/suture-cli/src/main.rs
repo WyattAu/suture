@@ -75,6 +75,9 @@ enum Commands {
         /// Show ASCII graph of branch topology
         #[arg(short, long)]
         graph: bool,
+        /// Show only the first-parent chain (skip merge parents)
+        #[arg(long)]
+        first_parent: bool,
         /// Show compact one-line format
         #[arg(long)]
         oneline: bool,
@@ -108,12 +111,15 @@ enum Commands {
     },
     /// Show differences between commits or branches
     Diff {
-        /// From ref (commit hash or branch name). Omit for empty tree.
+        /// From ref (commit hash or branch name). Omit for HEAD.
         #[arg(short, long)]
         from: Option<String>,
-        /// To ref (commit hash or branch name). Omit for HEAD.
+        /// To ref (commit hash or branch name). Omit for working tree.
         #[arg(short, long)]
         to: Option<String>,
+        /// Show staged changes (diff of staging area vs HEAD)
+        #[arg(long)]
+        cached: bool,
     },
     /// Revert a commit
     Revert {
@@ -200,6 +206,9 @@ enum Commands {
         url: String,
         /// Target directory (default: repo name extracted from URL)
         dir: Option<String>,
+        /// Shallow clone: fetch only the last N patches
+        #[arg(short, long)]
+        depth: Option<u32>,
     },
     /// Reset HEAD to a specific commit
     Reset {
@@ -254,10 +263,8 @@ enum Commands {
     Fsck,
     /// Binary search for bug-introducing commit
     Bisect {
-        /// Known good commit (no bug)
-        good: String,
-        /// Known bad commit (has bug)
-        bad: String,
+        #[command(subcommand)]
+        action: BisectAction,
     },
     /// Squash N commits into one
     Squash {
@@ -338,11 +345,17 @@ enum NotesAction {
     Add {
         /// Commit hash
         commit: String,
-        /// Note message (reads from stdin if not provided)
+        /// Note message
+        #[arg(short, long)]
         message: Option<String>,
     },
     /// List notes for a commit
     List {
+        /// Commit hash
+        commit: String,
+    },
+    /// Show notes for a commit (alias for list)
+    Show {
         /// Commit hash
         commit: String,
     },
@@ -353,6 +366,19 @@ enum NotesAction {
         /// Note index (0-based)
         index: usize,
     },
+}
+
+#[derive(Subcommand)]
+enum BisectAction {
+    /// Start a bisect session
+    Start {
+        /// Known good commit (no bug)
+        good: String,
+        /// Known bad commit (has bug)
+        bad: String,
+    },
+    /// Reset/cancel a bisect session
+    Reset,
 }
 
 // Hub proto types (matching suture-hub/src/types.rs)
@@ -797,16 +823,17 @@ async fn main() {
         Commands::Log {
             branch,
             graph,
+            first_parent,
             oneline,
             author,
             grep,
             all,
             since,
             until,
-        } => cmd_log(branch.as_deref(), graph, oneline, author.as_deref(), grep.as_deref(), all, since.as_deref(), until.as_deref()).await,
+        } => cmd_log(branch.as_deref(), graph, first_parent, oneline, author.as_deref(), grep.as_deref(), all, since.as_deref(), until.as_deref()).await,
         Commands::Checkout { branch } => cmd_checkout(&branch).await,
         Commands::Mv { source, destination } => cmd_mv(&source, &destination).await,
-        Commands::Diff { from, to } => cmd_diff(from.as_deref(), to.as_deref()).await,
+        Commands::Diff { from, to, cached } => cmd_diff(from.as_deref(), to.as_deref(), cached).await,
         Commands::Revert { commit, message } => cmd_revert(&commit, message.as_deref()).await,
         Commands::Merge { source } => cmd_merge(&source).await,
         Commands::CherryPick { commit } => cmd_cherry_pick(&commit).await,
@@ -825,7 +852,7 @@ async fn main() {
         Commands::Push { remote } => cmd_push(&remote).await,
         Commands::Pull { remote } => cmd_pull(&remote).await,
         Commands::Fetch { remote, depth } => cmd_fetch(&remote, depth).await,
-        Commands::Clone { url, dir } => cmd_clone(&url, dir.as_deref()).await,
+        Commands::Clone { url, dir, depth } => cmd_clone(&url, dir.as_deref(), depth).await,
         Commands::Reset { target, mode } => cmd_reset(&target, &mode).await,
         Commands::Key { action } => cmd_key(&action).await,
         Commands::Stash { action } => cmd_stash(&action).await,
@@ -840,7 +867,7 @@ async fn main() {
         Commands::Notes { action } => cmd_notes(&action).await,
         Commands::Gc => cmd_gc().await,
         Commands::Fsck => cmd_fsck().await,
-        Commands::Bisect { good, bad } => cmd_bisect(good.as_str(), bad.as_str()).await,
+        Commands::Bisect { action } => cmd_bisect(&action).await,
         Commands::Squash { count, message } => cmd_squash(count, message.as_deref()).await,
         Commands::Version => cmd_version().await,
         Commands::Tui => cmd_tui().await,
@@ -902,77 +929,94 @@ async fn cmd_fsck() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn cmd_bisect(good_ref: &str, bad_ref: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
-    let all_patches = repo.all_patches();
+async fn cmd_bisect(action: &BisectAction) -> Result<(), Box<dyn std::error::Error>> {
+    match action {
+        BisectAction::Start { good: good_ref, bad: bad_ref } => {
+            let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+            let all_patches = repo.all_patches();
 
-    let good_patch = resolve_ref(&repo, good_ref, &all_patches)?;
-    let bad_patch = resolve_ref(&repo, bad_ref, &all_patches)?;
+            let good_patch = resolve_ref(&repo, good_ref, &all_patches)?;
+            let bad_patch = resolve_ref(&repo, bad_ref, &all_patches)?;
 
-    let log = repo.log(None)?;
+            let log = repo.log(None)?;
 
-    let good_idx = log
-        .iter()
-        .position(|p| p.id == good_patch.id)
-        .ok_or_else(|| format!("'{}' not found in history", good_ref))?;
-    let bad_idx = log
-        .iter()
-        .position(|p| p.id == bad_patch.id)
-        .ok_or_else(|| format!("'{}' not found in history", bad_ref))?;
+            let good_idx = log
+                .iter()
+                .position(|p| p.id == good_patch.id)
+                .ok_or_else(|| format!("'{}' not found in history", good_ref))?;
+            let bad_idx = log
+                .iter()
+                .position(|p| p.id == bad_patch.id)
+                .ok_or_else(|| format!("'{}' not found in history", bad_ref))?;
 
-    if good_idx >= bad_idx {
-        return Err("'good' must be an older commit than 'bad'".into());
-    }
+            let bad_ancestors = repo.dag().ancestors(&bad_patch.id);
+            if !bad_ancestors.contains(&good_patch.id) && good_patch.id != bad_patch.id {
+                return Err("'good' must be an ancestor of 'bad'".into());
+            }
 
-    let remaining = bad_idx - good_idx - 1;
-    if remaining == 0 {
-        println!("Only one commit between good and bad:");
-        println!(
-            "  {} {}",
-            &log[bad_idx - 1].id.to_hex()[..8],
-            log[bad_idx - 1].message.lines().next().unwrap_or("")
-        );
-        println!("  This is the first bad commit.");
-        return Ok(());
-    }
+            // log returns newest first, so good_idx > bad_idx when good is older
+            let (older_idx, newer_idx) = if good_idx > bad_idx {
+                (bad_idx, good_idx)
+            } else {
+                (good_idx, bad_idx)
+            };
 
-    let midpoint_idx = (good_idx + bad_idx) / 2;
-    let midpoint = &log[midpoint_idx];
+            let remaining = newer_idx - older_idx - 1;
+            if remaining == 0 {
+                println!("Only one commit between good and bad:");
+                println!(
+                    "  {} {}",
+                    &log[newer_idx - 1].id.to_hex()[..8],
+                    log[newer_idx - 1].message.lines().next().unwrap_or("")
+                );
+                println!("  This is the first bad commit.");
+                return Ok(());
+            }
 
-    println!(
-        "Bisecting: {} commit(s) remaining between good ({}) and bad ({})",
-        remaining,
-        &good_patch.id.to_hex()[..8],
-        &bad_patch.id.to_hex()[..8]
-    );
-    println!();
-    println!("  Step: test commit {}", midpoint.id.to_hex());
-    println!(
-        "  {}",
-        midpoint.message.lines().next().unwrap_or("")
-    );
-    println!();
-    println!("To test this commit:");
-    println!("  suture reset {} --hard", midpoint.id.to_hex());
-    println!();
-    println!("Then mark as:");
-    if midpoint_idx > good_idx + 1 {
-        println!(
-            "  suture bisect {} {}   (if this commit is GOOD)",
-            good_ref,
-            &midpoint.id.to_hex()[..8]
-        );
-    } else {
-        println!("  First bad commit found: {}", midpoint.id.to_hex());
-    }
-    if midpoint_idx < bad_idx - 1 {
-        println!(
-            "  suture bisect {} {}   (if this commit is BAD)",
-            &midpoint.id.to_hex()[..8],
-            bad_ref
-        );
-    } else {
-        println!("  First bad commit found: {}", midpoint.id.to_hex());
+            let midpoint_idx = (older_idx + newer_idx) / 2;
+            let midpoint = &log[midpoint_idx];
+
+            println!(
+                "Bisecting: {} commit(s) remaining between good ({}) and bad ({})",
+                remaining,
+                &good_patch.id.to_hex()[..8],
+                &bad_patch.id.to_hex()[..8]
+            );
+            println!();
+            println!("  Step: test commit {}", midpoint.id.to_hex());
+            println!(
+                "  {}",
+                midpoint.message.lines().next().unwrap_or("")
+            );
+            println!();
+            println!("To test this commit:");
+            println!("  suture reset {} --hard", midpoint.id.to_hex());
+            println!();
+            println!("Then mark as:");
+            if midpoint_idx > older_idx + 1 {
+                println!(
+                    "  suture bisect start {} {}   (if this commit is GOOD)",
+                    good_ref,
+                    &midpoint.id.to_hex()[..8]
+                );
+            } else {
+                println!("  First bad commit found: {}", midpoint.id.to_hex());
+            }
+            if midpoint_idx < newer_idx - 1 {
+                println!(
+                    "  suture bisect start {} {}   (if this commit is BAD)",
+                    &midpoint.id.to_hex()[..8],
+                    bad_ref
+                );
+            } else {
+                println!("  First bad commit found: {}", midpoint.id.to_hex());
+            }
+        }
+        BisectAction::Reset => {
+            let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+            let (branch_name, _) = repo.head().map_err(|e| e.to_string())?;
+            println!("Bisect reset. You are on branch '{}'.", branch_name);
+        }
     }
 
     Ok(())
@@ -1010,12 +1054,13 @@ async fn cmd_shortlog(branch: Option<&str>, number: Option<usize>) -> Result<(),
 
 async fn cmd_notes(action: &NotesAction) -> Result<(), Box<dyn std::error::Error>> {
     let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+    let patches = repo.all_patches();
     match action {
         NotesAction::Add { commit, message } => {
-            let patch_id = suture_common::Hash::from_hex(commit)?;
+            let target = resolve_ref(&repo, commit, &patches)?;
+            let patch_id = target.id;
             let msg = message
-                .as_deref()
-                .map(|s| s.to_string())
+                .clone()
                 .unwrap_or_else(|| {
                     eprintln!("Enter note (Ctrl+D to finish):");
                     let mut buf = String::new();
@@ -1025,8 +1070,9 @@ async fn cmd_notes(action: &NotesAction) -> Result<(), Box<dyn std::error::Error
             repo.add_note(&patch_id, &msg)?;
             println!("Note added to {}", commit);
         }
-        NotesAction::List { commit } => {
-            let patch_id = suture_common::Hash::from_hex(commit)?;
+        NotesAction::List { commit } | NotesAction::Show { commit } => {
+            let target = resolve_ref(&repo, commit, &patches)?;
+            let patch_id = target.id;
             let notes = repo.list_notes(&patch_id)?;
             if notes.is_empty() {
                 println!("No notes for commit {}.", commit);
@@ -1037,7 +1083,8 @@ async fn cmd_notes(action: &NotesAction) -> Result<(), Box<dyn std::error::Error
             }
         }
         NotesAction::Remove { commit, index } => {
-            let patch_id = suture_common::Hash::from_hex(commit)?;
+            let target = resolve_ref(&repo, commit, &patches)?;
+            let patch_id = target.id;
             repo.remove_note(&patch_id, *index)?;
             println!("Removed note {} from {}", index, commit);
         }
@@ -1396,13 +1443,63 @@ fn parse_time_filter(s: &str) -> Result<u64, String> {
         }
     }
 
+    // Try parsing as a date string (YYYY-MM-DD)
+    let date_str = s.trim();
+    let parts: Vec<&str> = date_str.split('-').collect();
+    if parts.len() == 3
+        && let (Ok(year), Ok(month), Ok(day)) = (
+            parts[0].parse::<u64>(),
+            parts[1].parse::<u64>(),
+            parts[2].parse::<u64>(),
+        )
+        && (1970..=2100).contains(&year)
+        && (1..=12).contains(&month)
+        && (1..=31).contains(&day)
+    {
+        // Estimate Unix timestamp from date
+        let mut ts: u64 = 0;
+        let mut y = 1970;
+        while y < year {
+            let days_in_year =
+                if y.is_multiple_of(4) && (!y.is_multiple_of(100) || y.is_multiple_of(400)) {
+                    366
+                } else {
+                    365
+                };
+            ts += days_in_year * 86400;
+            y += 1;
+        }
+        for m in 1..month {
+            ts += days_in_month(year, m) * 86400;
+        }
+        ts += (day - 1) * 86400;
+        return Ok(ts);
+    }
+
     Err(format!("invalid time filter: {}", s))
+}
+
+fn days_in_month(_year: u64, month: u64) -> u64 {
+    match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 => {
+            let year = _year;
+            if year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400)) {
+                29
+            } else {
+                28
+            }
+        }
+        _ => 30,
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
 async fn cmd_log(
     branch: Option<&str>,
     graph: bool,
+    first_parent: bool,
     oneline: bool,
     author: Option<&str>,
     grep: Option<&str>,
@@ -1434,6 +1531,27 @@ async fn cmd_log(
             }
             all_patches.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
             all_patches
+        } else if first_parent {
+            use suture_common::Hash;
+            let _branch_name = branch.unwrap_or("HEAD");
+            let (_head_branch, head_id) = repo.head().unwrap_or_else(|_| ("main".to_string(), Hash::ZERO));
+            let mut chain = Vec::new();
+            let mut current = head_id;
+            while current != Hash::ZERO {
+                chain.push(current);
+                if let Some(patch) = repo.dag().get_patch(&current) {
+                    current = patch.parent_ids.first().copied().unwrap_or(Hash::ZERO);
+                } else {
+                    break;
+                }
+            }
+            let mut patches = Vec::new();
+            for pid in &chain {
+                if let Some(patch) = repo.dag().get_patch(pid) {
+                    patches.push(patch.clone());
+                }
+            }
+            patches
         } else {
             repo.log(branch)?
         };
@@ -1566,12 +1684,17 @@ async fn cmd_checkout(branch: &str) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn cmd_diff(from: Option<&str>, to: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_diff(from: Option<&str>, to: Option<&str>, cached: bool) -> Result<(), Box<dyn std::error::Error>> {
     use suture_core::engine::diff::DiffType;
     use suture_core::engine::merge::diff_lines;
 
     let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
-    let entries = repo.diff(from, to)?;
+
+    let entries = if cached {
+        repo.diff_staged()?
+    } else {
+        repo.diff(from, to)?
+    };
 
     if entries.is_empty() {
         println!("No differences.");
@@ -2203,10 +2326,18 @@ async fn do_pull(
     repo: &mut suture_core::repository::Repository,
     remote: &str,
 ) -> Result<usize, Box<dyn std::error::Error>> {
+    do_pull_with_depth(repo, remote, None).await
+}
+
+async fn do_pull_with_depth(
+    repo: &mut suture_core::repository::Repository,
+    remote: &str,
+    max_depth: Option<u32>,
+) -> Result<usize, Box<dyn std::error::Error>> {
     let old_tree = repo
         .snapshot_head()
         .unwrap_or_else(|_| suture_core::engine::tree::FileTree::empty());
-    let new_patches = do_fetch(repo, remote, None).await?;
+    let new_patches = do_fetch(repo, remote, max_depth).await?;
     repo.sync_working_tree(&old_tree)?;
     Ok(new_patches)
 }
@@ -2225,7 +2356,7 @@ async fn cmd_fetch(remote: &str, depth: Option<u32>) -> Result<(), Box<dyn std::
     Ok(())
 }
 
-async fn cmd_clone(url: &str, dir: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_clone(url: &str, dir: Option<&str>, depth: Option<u32>) -> Result<(), Box<dyn std::error::Error>> {
     let repo_name = dir.unwrap_or_else(|| {
         url.trim_end_matches('/')
             .rsplit('/')
@@ -2242,7 +2373,7 @@ async fn cmd_clone(url: &str, dir: Option<&str>) -> Result<(), Box<dyn std::erro
     let mut repo = suture_core::repository::Repository::init(&repo_path, "unknown")?;
     repo.add_remote("origin", url)?;
 
-    let new_patches = do_pull(&mut repo, "origin").await?;
+    let new_patches = do_pull_with_depth(&mut repo, "origin", depth).await?;
 
     println!("Cloned into '{}'", repo_name);
     if new_patches > 0 {

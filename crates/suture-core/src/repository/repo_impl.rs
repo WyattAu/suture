@@ -1203,6 +1203,21 @@ impl Repository {
     /// If `from` is None, compares the empty tree to `to`.
     pub fn diff(&self, from: Option<&str>, to: Option<&str>) -> Result<Vec<DiffEntry>, RepoError> {
         let resolve_id = |name: &str| -> Result<PatchId, RepoError> {
+            if name == "HEAD" || name.starts_with("HEAD~") {
+                let (_, head_id) = self.head()?;
+                let mut target_id = head_id;
+                if let Some(n_str) = name.strip_prefix("HEAD~") {
+                    let n: usize = n_str.parse().map_err(|_| RepoError::Custom(format!("invalid HEAD~N: {}", name)))?;
+                    for _ in 0..n {
+                        let patch = self.dag.get_patch(&target_id)
+                            .ok_or_else(|| RepoError::Custom("HEAD ancestor not found".to_string()))?;
+                        target_id = patch.parent_ids.first()
+                            .ok_or_else(|| RepoError::Custom("HEAD has no parent".to_string()))?
+                            .to_owned();
+                    }
+                }
+                return Ok(target_id);
+            }
             // Try hex hash first (patch IDs are 64-char hex strings that
             // also happen to pass BranchName validation, so we must try
             // hex before branch name to avoid false branch lookups).
@@ -1211,12 +1226,24 @@ impl Repository {
             {
                 return Ok(hash);
             }
+            // Try tag
+            if let Ok(Some(tag_id)) = self.resolve_tag(name) {
+                return Ok(tag_id);
+            }
             // Fall back to branch name
             let bn = BranchName::new(name)?;
             self.dag
                 .get_branch(&bn)
                 .ok_or_else(|| RepoError::BranchNotFound(name.to_string()))
         };
+
+        // When both from and to are None, diff HEAD vs working tree
+        // to show all uncommitted changes.
+        if from.is_none() && to.is_none() {
+            let head_tree = self.snapshot_head()?;
+            let working_tree = self.build_working_tree()?;
+            return Ok(diff_trees(&head_tree, &working_tree));
+        }
 
         let old_tree = match from {
             Some(f) => self.snapshot(&resolve_id(f)?)?,
@@ -1229,6 +1256,42 @@ impl Repository {
         };
 
         Ok(diff_trees(&old_tree, &new_tree))
+    }
+
+    /// Build a FileTree from the current working directory files.
+    fn build_working_tree(&self) -> Result<FileTree, RepoError> {
+        let mut tree = FileTree::empty();
+        let entries = walk_dir(&self.root, &self.ignore_patterns)?;
+        for entry in &entries {
+            if let Ok(data) = fs::read(&entry.full_path) {
+                let hash = Hash::from_data(&data);
+                tree.insert(entry.relative.clone(), hash);
+            }
+        }
+        Ok(tree)
+    }
+
+    /// Show staged changes (diff of staged files vs HEAD).
+    pub fn diff_staged(&self) -> Result<Vec<DiffEntry>, RepoError> {
+        let head_tree = self.snapshot_head()?;
+        let mut staged_tree = FileTree::empty();
+        let working_set = self.meta.working_set()?;
+        for (path, status) in &working_set {
+            match status {
+                FileStatus::Added | FileStatus::Modified => {
+                    let full_path = self.root.join(path);
+                    if let Ok(data) = fs::read(&full_path) {
+                        let hash = Hash::from_data(&data);
+                        staged_tree.insert(path.clone(), hash);
+                    }
+                }
+                FileStatus::Deleted => {
+                    // File is staged for deletion — it exists in HEAD but not in staged tree
+                }
+                _ => {}
+            }
+        }
+        Ok(diff_trees(&head_tree, &staged_tree))
     }
 
     // =========================================================================
@@ -1279,7 +1342,28 @@ impl Repository {
         self.invalidate_head_cache();
 
         match mode {
-            ResetMode::Soft => {}
+            ResetMode::Soft => {
+                let new_tree = self.snapshot_head().unwrap_or_else(|_| FileTree::empty());
+                let diffs = diff_trees(&new_tree, &old_tree);
+                for entry in &diffs {
+                    match &entry.diff_type {
+                        DiffType::Added | DiffType::Modified => {
+                            let repo_path = RepoPath::new(entry.path.clone())?;
+                            self.meta.working_set_add(&repo_path, FileStatus::Modified)?;
+                        }
+                        DiffType::Deleted => {
+                            let repo_path = RepoPath::new(entry.path.clone())?;
+                            self.meta.working_set_add(&repo_path, FileStatus::Deleted)?;
+                        }
+                        DiffType::Renamed { old_path, .. } => {
+                            let repo_path = RepoPath::new(old_path.clone())?;
+                            self.meta.working_set_add(&repo_path, FileStatus::Deleted)?;
+                            let repo_path = RepoPath::new(entry.path.clone())?;
+                            self.meta.working_set_add(&repo_path, FileStatus::Added)?;
+                        }
+                    }
+                }
+            }
             ResetMode::Mixed | ResetMode::Hard => {
                 self.meta
                     .conn()
@@ -1813,7 +1897,20 @@ impl Repository {
             patch.message.clone(),
         );
 
-        let new_id = self.dag.add_patch(new_patch.clone(), vec![head_id])?;
+        let new_id = match self.dag.add_patch(new_patch.clone(), vec![head_id]) {
+            Ok(id) => id,
+            Err(DagError::DuplicatePatch(_)) => {
+                let head_ancestors = self.dag.ancestors(&head_id);
+                let new_patch_id = new_patch.id;
+                if head_ancestors.contains(&new_patch_id) {
+                    return Ok(new_patch_id);
+                }
+                return Err(RepoError::Custom(
+                    "patch already exists in DAG and is not reachable from HEAD".to_string(),
+                ));
+            }
+            Err(e) => return Err(RepoError::Dag(e)),
+        };
         self.meta.store_patch(&new_patch)?;
 
         let branch = BranchName::new(&branch_name)?;
