@@ -196,6 +196,9 @@ enum Commands {
         /// Remote name (default: "origin")
         #[arg(default_value = "origin")]
         remote: String,
+        /// Rebase local commits on top of fetched remote history
+        #[arg(long)]
+        rebase: bool,
     },
     /// Fetch patches from a remote Hub without merging
     Fetch {
@@ -389,6 +392,16 @@ enum BisectAction {
         good: String,
         /// Known bad commit (has bug)
         bad: String,
+    },
+    /// Automatically bisect using a test command
+    Run {
+        /// Known good commit (no bug)
+        good: String,
+        /// Known bad commit (has bug)
+        bad: String,
+        /// Test command to run at each step (exit 0 = good, non-zero = bad)
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        cmd: Vec<String>,
     },
     /// Reset/cancel a bisect session
     Reset,
@@ -899,7 +912,7 @@ async fn main() {
         Commands::Config { key_value } => cmd_config(&key_value).await,
         Commands::Remote { action } => cmd_remote(&action).await,
         Commands::Push { remote } => cmd_push(&remote).await,
-        Commands::Pull { remote } => cmd_pull(&remote).await,
+        Commands::Pull { remote, rebase } => cmd_pull(&remote, rebase).await,
         Commands::Fetch { remote, depth } => cmd_fetch(&remote, depth).await,
         Commands::Clone { url, dir, depth } => cmd_clone(&url, dir.as_deref(), depth).await,
         Commands::Reset { target, mode } => cmd_reset(&target, &mode).await,
@@ -1006,20 +1019,20 @@ async fn cmd_bisect(action: &BisectAction) -> Result<(), Box<dyn std::error::Err
                 return Err("'good' must be an ancestor of 'bad'".into());
             }
 
-            // log returns newest first, so good_idx > bad_idx when good is older
+            // log returns newest first, so higher index = older commit
             let (older_idx, newer_idx) = if good_idx > bad_idx {
-                (bad_idx, good_idx)
+                (good_idx, bad_idx) // good is older (higher idx), bad is newer (lower idx)
             } else {
-                (good_idx, bad_idx)
+                (bad_idx, good_idx) // bad is older, good is newer
             };
 
-            let remaining = newer_idx - older_idx - 1;
+            let remaining = older_idx - newer_idx - 1;
             if remaining == 0 {
                 println!("Only one commit between good and bad:");
                 println!(
                     "  {} {}",
-                    &log[newer_idx - 1].id.to_hex()[..8],
-                    log[newer_idx - 1].message.lines().next().unwrap_or("")
+                    &log[newer_idx + 1].id.to_hex()[..8],
+                    log[newer_idx + 1].message.lines().next().unwrap_or("")
                 );
                 println!("  This is the first bad commit.");
                 return Ok(());
@@ -1042,7 +1055,7 @@ async fn cmd_bisect(action: &BisectAction) -> Result<(), Box<dyn std::error::Err
             println!("  suture reset {} --hard", midpoint.id.to_hex());
             println!();
             println!("Then mark as:");
-            if midpoint_idx > older_idx + 1 {
+            if midpoint_idx > newer_idx + 1 {
                 println!(
                     "  suture bisect start {} {}   (if this commit is GOOD)",
                     good_ref,
@@ -1051,7 +1064,7 @@ async fn cmd_bisect(action: &BisectAction) -> Result<(), Box<dyn std::error::Err
             } else {
                 println!("  First bad commit found: {}", midpoint.id.to_hex());
             }
-            if midpoint_idx < newer_idx - 1 {
+            if midpoint_idx < older_idx - 1 {
                 println!(
                     "  suture bisect start {} {}   (if this commit is BAD)",
                     &midpoint.id.to_hex()[..8],
@@ -1065,6 +1078,152 @@ async fn cmd_bisect(action: &BisectAction) -> Result<(), Box<dyn std::error::Err
             let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
             let (branch_name, _) = repo.head().map_err(|e| e.to_string())?;
             println!("Bisect reset. You are on branch '{}'.", branch_name);
+        }
+        BisectAction::Run {
+            good: good_ref,
+            bad: bad_ref,
+            cmd,
+        } => {
+            if cmd.is_empty() {
+                return Err("bisect run requires a command to execute".into());
+            }
+
+            let repo_path = std::path::Path::new(".");
+
+            // Save the branch name for restoration
+            let (original_branch, original_head) = {
+                let repo = suture_core::repository::Repository::open(repo_path)?;
+                repo.head()?
+            };
+
+            // Resolve refs and get the full ordered log BEFORE any modifications
+            // Use patch_chain (first-parent) for deterministic ordering
+            let (ordered_log, good_idx, bad_idx) = {
+                let repo = suture_core::repository::Repository::open(repo_path)?;
+                let all_patches = repo.all_patches();
+
+                let good_patch = resolve_ref(&repo, good_ref, &all_patches)?;
+                let bad_patch = resolve_ref(&repo, bad_ref, &all_patches)?;
+
+                // Use log (first-parent chain) for deterministic ordering by ancestry
+                let log = repo.log(None)?;
+
+                let good_idx = log
+                    .iter()
+                    .position(|p| p.id == good_patch.id)
+                    .ok_or_else(|| format!("'{}' not found in history", good_ref))?;
+                let bad_idx = log
+                    .iter()
+                    .position(|p| p.id == bad_patch.id)
+                    .ok_or_else(|| format!("'{}' not found in history", bad_ref))?;
+
+                // Verify ancestry
+                let bad_ancestors = repo.dag().ancestors(&bad_patch.id);
+                if !bad_ancestors.contains(&good_patch.id) && good_patch.id != bad_patch.id {
+                    return Err("'good' must be an ancestor of 'bad'".into());
+                }
+
+                (log, good_idx, bad_idx)
+            };
+
+            // Determine older/newer indices (log is newest first, so higher index = older)
+            let (older_idx, newer_idx) = if good_idx > bad_idx {
+                (good_idx, bad_idx) // good is older (higher idx), bad is newer (lower idx)
+            } else {
+                (bad_idx, good_idx) // bad is older, good is newer
+            };
+
+            // Extract the program and arguments
+            let program = &cmd[0];
+            let args = &cmd[1..];
+
+            println!(
+                "bisect run '{}' with good={} bad={}",
+                cmd.join(" "),
+                &ordered_log[older_idx].id.to_hex()[..8],
+                &ordered_log[newer_idx].id.to_hex()[..8]
+            );
+            println!();
+
+            let mut current_good = older_idx;
+            let mut current_bad = newer_idx;
+            let mut step = 0u32;
+
+            loop {
+                step += 1;
+                // current_good > current_bad (higher index = older commit)
+                let remaining = current_good.saturating_sub(current_bad + 1);
+
+                if remaining == 0 {
+                    // Only one commit between good and bad — that's the first bad commit
+                    // The first bad is one step newer than the last known good
+                    let first_bad = &ordered_log[current_good - 1];
+                    println!("✓ First bad commit found after {} step(s):", step);
+                    println!(
+                        "  {} {}",
+                        first_bad.id.to_hex(),
+                        first_bad.message.lines().next().unwrap_or("(no message)")
+                    );
+                    break;
+                }
+
+                let midpoint_idx = (current_good + current_bad) / 2;
+                let midpoint = &ordered_log[midpoint_idx];
+
+                // Reset to the midpoint commit
+                {
+                    let mut repo = suture_core::repository::Repository::open(repo_path)?;
+                    repo.reset(
+                        &midpoint.id.to_hex(),
+                        suture_core::repository::ResetMode::Hard,
+                    )?;
+                }
+
+                println!(
+                    "[step {}] Testing {} ({} remaining)...",
+                    step,
+                    &midpoint.id.to_hex()[..8],
+                    remaining
+                );
+
+                // Run the test command
+                let result = std::process::Command::new(program)
+                    .args(args)
+                    .current_dir(repo_path)
+                    .stdout(std::process::Stdio::inherit())
+                    .stderr(std::process::Stdio::inherit())
+                    .status();
+
+                match result {
+                    Ok(status) => {
+                        let is_good = status.success();
+                        if is_good {
+                            println!("  → GOOD (exit 0)");
+                            // Midpoint is good; bad commit must be newer (lower index)
+                            current_good = midpoint_idx - 1;
+                        } else {
+                            let code = status.code().unwrap_or(1);
+                            println!("  → BAD (exit {})", code);
+                            // Midpoint is bad; good commit must be older (higher index)
+                            current_bad = midpoint_idx + 1;
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("  → Command failed to execute: {}", e);
+                        eprintln!("  Aborting bisect run.");
+                        break;
+                    }
+                }
+                println!();
+            }
+
+            // Restore the original branch to its original state
+            let mut repo = suture_core::repository::Repository::open(repo_path)?;
+            repo.reset(
+                &original_head.to_hex(),
+                suture_core::repository::ResetMode::Hard,
+            )?;
+            let _ = repo.checkout(&original_branch);
         }
     }
 
@@ -2444,10 +2603,53 @@ async fn do_pull_with_depth(
     Ok(new_patches)
 }
 
-async fn cmd_pull(remote: &str) -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_pull(remote: &str, rebase: bool) -> Result<(), Box<dyn std::error::Error>> {
     let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
-    let new_patches = do_pull(&mut repo, remote).await?;
-    println!("Pull successful: {} new patch(es)", new_patches);
+
+    if rebase {
+        // Save current branch for later
+        let (head_branch, head_id) = repo.head()?;
+        let current_branch = head_branch.clone();
+
+        // Fetch new patches from remote (no working tree update)
+        let new_patches = do_fetch(&mut repo, remote, None).await?;
+
+        if new_patches == 0 {
+            println!("Already up to date.");
+            return Ok(());
+        }
+
+        // Rebase current branch onto main (which now has remote patches)
+        let (_, new_head_id) = repo.head()?;
+        if new_head_id == head_id {
+            // Fetch didn't move our branch — rebase onto main
+            let result = repo.rebase("main")?;
+            if result.patches_replayed == 0 && result.new_tip != head_id {
+                println!(
+                    "Fast-forward pull successful ({} new patch(es))",
+                    new_patches
+                );
+            } else if result.patches_replayed > 0 {
+                println!(
+                    "Pull with rebase successful: {} new remote patch(es), {} local patch(es) rebased",
+                    new_patches, result.patches_replayed
+                );
+            } else {
+                println!("Already up to date.");
+            }
+        } else {
+            println!("Pull successful: {} new patch(es)", new_patches);
+        }
+
+        // Ensure we're on the correct branch
+        let (final_branch, _) = repo.head()?;
+        if final_branch != current_branch {
+            repo.checkout(&current_branch)?;
+        }
+    } else {
+        let new_patches = do_pull(&mut repo, remote).await?;
+        println!("Pull successful: {} new patch(es)", new_patches);
+    }
     Ok(())
 }
 

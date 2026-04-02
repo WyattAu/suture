@@ -1,6 +1,6 @@
 [package]
 name = "suture-cli"
-version = "0.1.0-alpha.2"
+version = "0.1.0-beta.1"
 edition = "2024"
 
 [[bin]]
@@ -23,7 +23,7 @@ suture-driver-pptx = { path = "../suture-driver-pptx" }
 suture-tui = { path = "../suture-tui" }
 clap = { version = "4.5", features = ["derive"] }
 clap_complete = "4.6"
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 tokio = { version = "1", features = ["full"] }
 base64 = "0.22"
 serde = { version = "1", features = ["derive"] }

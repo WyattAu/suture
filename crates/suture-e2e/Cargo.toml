@@ -10,4 +10,4 @@ tempfile = "3"
 suture-hub = { path = "../suture-hub" }
 tokio = { version = "1", features = ["full"] }
 axum = "0.8"
-reqwest = "0.12"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }

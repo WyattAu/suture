@@ -18,6 +18,10 @@ jobs:
             os: ubuntu-latest
             artifact_name: suture
             asset_suffix: x86_64-linux
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            artifact_name: suture
+            asset_suffix: aarch64-linux
           - target: x86_64-apple-darwin
             os: macos-latest
             artifact_name: suture

@@ -21,7 +21,6 @@
           buildInputs = with pkgs; [
             rustToolchain
             pkg-config
-            openssl
             sqlite
             protobuf    # For gRPC/Tonic
             cargo-audit # For security scanning in CI

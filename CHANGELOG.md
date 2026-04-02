@@ -1,5 +1,47 @@
 # Changelog
 
+## [0.1.0-beta.1] - 2026-04-02
+
+### Added
+
+#### `suture pull --rebase`
+- New `--rebase` flag on `suture pull` — fetches remote patches then rebases local commits on top
+- Replaces merge-based pull with rebase workflow for cleaner linear history
+- Automatically fast-forwards when possible, reports replayed commit count
+
+#### `suture bisect run`
+- New `bisect run <good> <bad> -- <command>` — fully automated binary search for bug-introducing commit
+- Runs the given test command at each bisection step (exit 0 = good, non-zero = bad)
+- Reports first bad commit after narrowing the range
+- Restores original branch state after completion
+- Fixed bisect index ordering bug: commits are now correctly ordered newest-to-oldest
+
+#### Per-Repo Config File
+- New `.suture/config` TOML file support — repo-level configuration checked before SQLite config
+- Supports `[user]`, `[signing]`, `[core]`, `[push]`, `[pull]` sections
+- Config lookup priority: `.suture/config` → SQLite config → global `~/.config/suture/config.toml`
+- 3 new unit tests for repo config parsing
+
+#### ARM Linux Binary
+- Re-enabled `aarch64-unknown-linux-gnu` target in release workflow (previously blocked by native-tls)
+
+### Changed
+
+#### TLS: native-tls → rustls
+- Migrated all reqwest usage from `native-tls` to `rustls-tls` (pure Rust TLS)
+- Removes dependency on system OpenSSL — enables cross-compilation without C toolchain
+- Affects `suture-cli`, `suture-hub`, and `suture-e2e` crates
+- Removed `openssl` from Nix flake dependencies
+
+### Fixed
+- Fixed bisect ordering: `older_idx`/`newer_idx` were swapped — good commit (older, higher index) and bad commit (newer, lower index) are now correctly identified
+- Bisect midpoint narrowing now correctly adjusts bounds based on test results
+
+### Quality
+- Test count: 385 (up from 382 in v0.1.0-alpha.2)
+- 3 new tests (repo config parsing)
+- Zero clippy warnings, zero audit findings
+
 ## [0.1.0-alpha.2] - 2026-04-01
 
 ### Fixed

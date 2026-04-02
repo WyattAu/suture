@@ -118,6 +118,8 @@ pub struct Repository {
     cached_head_snapshot: RefCell<Option<FileTree>>,
     /// The patch ID that the cached snapshot corresponds to.
     cached_head_id: RefCell<Option<PatchId>>,
+    /// Per-repo configuration loaded from `.suture/config`.
+    repo_config: crate::metadata::repo_config::RepoConfig,
 }
 
 impl Repository {
@@ -177,10 +179,9 @@ impl Repository {
             pending_merge_parents: Vec::new(),
             cached_head_snapshot: RefCell::new(None),
             cached_head_id: RefCell::new(None),
+            repo_config: crate::metadata::repo_config::RepoConfig::default(),
         })
     }
-
-    /// Open an existing Suture repository.
     ///
     /// Reconstructs the full DAG from the metadata database by loading
     /// all stored patches and their edges.
@@ -264,6 +265,9 @@ impl Repository {
         // Load ignore patterns
         let ignore_patterns = load_ignore_patterns(path);
 
+        // Load per-repo config from .suture/config
+        let repo_config = crate::metadata::repo_config::RepoConfig::load(path);
+
         Ok(Self {
             root: path.to_path_buf(),
             suture_dir,
@@ -275,6 +279,7 @@ impl Repository {
             pending_merge_parents: restored_parents,
             cached_head_snapshot: RefCell::new(None),
             cached_head_id: RefCell::new(None),
+            repo_config,
         })
     }
 
@@ -362,8 +367,23 @@ impl Repository {
     // =========================================================================
 
     /// Get a configuration value.
+    ///
+    /// Lookup order:
+    /// 1. `.suture/config` file (repo-level TOML config)
+    /// 2. SQLite config table (set via `suture config key=value`)
+    /// 3. Global config `~/.config/suture/config.toml`
     pub fn get_config(&self, key: &str) -> Result<Option<String>, RepoError> {
-        self.meta.get_config(key).map_err(RepoError::from)
+        // 1. Check repo-level config file
+        if let Some(val) = self.repo_config.get(key) {
+            return Ok(Some(val));
+        }
+        // 2. Check SQLite config
+        if let Some(val) = self.meta.get_config(key).map_err(RepoError::from)? {
+            return Ok(Some(val));
+        }
+        // 3. Check global config
+        let global = crate::metadata::global_config::GlobalConfig::load();
+        Ok(global.get(key))
     }
 
     /// Set a configuration value.

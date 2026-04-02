@@ -4,6 +4,7 @@
 //! is the persistent backing for the in-memory PatchDag.
 
 pub mod global_config;
+pub mod repo_config;
 
 use crate::patch::types::{Patch, PatchId, TouchSet};
 use rusqlite::{Connection, params};
