@@ -14,18 +14,18 @@ use app::App;
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use event::Event;
-use ratatui::prelude::CrosstermBackend;
 use ratatui::Terminal;
+use ratatui::prelude::CrosstermBackend;
 use suture_core::repository::Repository;
 
 /// Run the Suture TUI for the repository at the given path.
 pub fn run(repo_path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
     // Open the repository
-    let repo = Repository::open(repo_path)
-        .map_err(|e| -> Box<dyn std::error::Error> { Box::new(e) })?;
+    let repo =
+        Repository::open(repo_path).map_err(|e| -> Box<dyn std::error::Error> { Box::new(e) })?;
 
     // Setup terminal
     enable_raw_mode()?;

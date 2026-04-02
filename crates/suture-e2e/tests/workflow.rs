@@ -14,10 +14,7 @@ fn workspace_root() -> PathBuf {
 }
 
 fn cli_bin() -> PathBuf {
-    workspace_root()
-        .join("target")
-        .join("debug")
-        .join("suture")
+    workspace_root().join("target").join("debug").join("suture")
 }
 
 fn suture(dir: &Path, args: &[&str]) -> std::process::Output {
@@ -66,11 +63,7 @@ fn test_init_commit_status() {
     let (_tmp, repo) = new_test_repo("repo");
 
     let out = suture_success(&repo, &["status"]);
-    assert!(
-        out.contains("On branch main"),
-        "status after init: {}",
-        out
-    );
+    assert!(out.contains("On branch main"), "status after init: {}", out);
     assert!(
         !out.contains("Unstaged changes:"),
         "status should be clean: {}",
@@ -268,9 +261,7 @@ async fn start_test_hub() -> String {
         )
         .with_state(hub);
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     let url = format!("http://127.0.0.1:{}", port);
 
@@ -328,11 +319,7 @@ async fn test_push_pull_roundtrip() {
     suture_success(&clone_dir, &["commit", "change"]);
 
     let out = suture_success(&clone_dir, &["push", "origin"]);
-    assert!(
-        out.contains("Push successful"),
-        "push from clone: {}",
-        out
-    );
+    assert!(out.contains("Push successful"), "push from clone: {}", out);
 
     let out = suture_success(&repo_dir, &["pull", "origin"]);
     assert!(out.contains("Pull successful"), "pull output: {}", out);

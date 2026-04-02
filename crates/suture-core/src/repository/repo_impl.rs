@@ -23,8 +23,8 @@
 
 use crate::cas::store::{BlobStore, CasError};
 use crate::dag::graph::{DagError, PatchDag};
-use crate::engine::apply::{apply_patch_chain, resolve_payload_to_hash, ApplyError};
-use crate::engine::diff::{diff_trees, DiffEntry, DiffType};
+use crate::engine::apply::{ApplyError, apply_patch_chain, resolve_payload_to_hash};
+use crate::engine::diff::{DiffEntry, DiffType, diff_trees};
 use crate::engine::tree::FileTree;
 use crate::metadata::MetaError;
 use crate::patch::conflict::Conflict;
@@ -488,12 +488,7 @@ impl Repository {
 
         // Walk from all branch tips, collect patches not in `known`
         let mut new_ids: HashSet<PatchId> = HashSet::new();
-        let mut stack: Vec<PatchId> = self
-            .dag
-            .list_branches()
-            .iter()
-            .map(|(_, id)| *id)
-            .collect();
+        let mut stack: Vec<PatchId> = self.dag.list_branches().iter().map(|(_, id)| *id).collect();
 
         while let Some(id) = stack.pop() {
             if !known.contains(&id)
@@ -538,7 +533,9 @@ impl Repository {
             sorted_ids.push(id);
             if let Some(kids) = children.get(&id) {
                 for &child in kids {
-                    let deg = in_degree.get_mut(&child).expect("in-degree entry exists for child in topo sort");
+                    let deg = in_degree
+                        .get_mut(&child)
+                        .expect("in-degree entry exists for child in topo sort");
                     *deg -= 1;
                     if *deg == 0 {
                         queue.push_back(child);
@@ -688,10 +685,7 @@ impl Repository {
         let _ = self
             .meta
             .conn()
-            .execute(
-                "DELETE FROM config WHERE key = 'pending_merge_parents'",
-                [],
-            );
+            .execute("DELETE FROM config WHERE key = 'pending_merge_parents'", []);
 
         let mut last_patch_id = head_id;
 
@@ -841,13 +835,13 @@ impl Repository {
 
         self.set_config(&format!("stash.{}.message", index), &msg)?;
         self.set_config(&format!("stash.{}.head_branch", index), &branch_name)?;
-        self.set_config(
-            &format!("stash.{}.head_id", index),
-            &head_id.to_hex(),
-        )?;
+        self.set_config(&format!("stash.{}.head_id", index), &head_id.to_hex())?;
         self.set_config(&format!("stash.{}.files", index), &files_json)?;
 
-        self.meta.conn().execute("DELETE FROM working_set", []).map_err(|e| RepoError::Meta(crate::metadata::MetaError::Database(e)))?;
+        self.meta
+            .conn()
+            .execute("DELETE FROM working_set", [])
+            .map_err(|e| RepoError::Meta(crate::metadata::MetaError::Database(e)))?;
 
         if let Ok(head_tree) = self.snapshot_head() {
             let current_tree = head_tree;
@@ -876,7 +870,11 @@ impl Repository {
         if stashes.is_empty() {
             return Err(RepoError::Custom("No stashes found".to_string()));
         }
-        let highest = stashes.iter().map(|s| s.index).max().expect("stash list is non-empty (checked above)");
+        let highest = stashes
+            .iter()
+            .map(|s| s.index)
+            .max()
+            .expect("stash list is non-empty (checked above)");
         self.stash_apply(highest)?;
         self.stash_drop(highest)?;
         Ok(())
@@ -890,10 +888,7 @@ impl Repository {
             .ok_or_else(|| RepoError::Custom(format!("stash@{{{}}} not found", index)))?;
 
         let head_id_key = format!("stash.{}.head_id", index);
-        let stash_head_id = self
-            .meta
-            .get_config(&head_id_key)?
-            .unwrap_or_default();
+        let stash_head_id = self.meta.get_config(&head_id_key)?.unwrap_or_default();
 
         if let Ok((_, current_head_id)) = self.head()
             && current_head_id.to_hex() != stash_head_id
@@ -911,9 +906,8 @@ impl Repository {
             let full_path = self.root.join(path);
             match hash_opt {
                 Some(hex_hash) => {
-                    let hash = Hash::from_hex(hex_hash).map_err(|e| {
-                        RepoError::Custom(format!("invalid hash in stash: {}", e))
-                    })?;
+                    let hash = Hash::from_hex(hex_hash)
+                        .map_err(|e| RepoError::Custom(format!("invalid hash in stash: {}", e)))?;
                     let blob = self.cas.get_blob(&hash)?;
                     if let Some(parent) = full_path.parent() {
                         fs::create_dir_all(parent)?;
@@ -928,8 +922,7 @@ impl Repository {
                         fs::remove_file(&full_path)?;
                     }
                     let repo_path = RepoPath::new(path.clone())?;
-                    self.meta
-                        .working_set_add(&repo_path, FileStatus::Deleted)?;
+                    self.meta.working_set_add(&repo_path, FileStatus::Deleted)?;
                 }
             }
         }
@@ -948,14 +941,8 @@ impl Repository {
             {
                 let branch_key = format!("stash.{}.head_branch", idx);
                 let head_id_key = format!("stash.{}.head_id", idx);
-                let branch = self
-                    .meta
-                    .get_config(&branch_key)?
-                    .unwrap_or_default();
-                let head_id = self
-                    .meta
-                    .get_config(&head_id_key)?
-                    .unwrap_or_default();
+                let branch = self.meta.get_config(&branch_key)?.unwrap_or_default();
+                let head_id = self.meta.get_config(&head_id_key)?.unwrap_or_default();
                 entries.push(StashEntry {
                     index: idx,
                     message: value.clone(),
@@ -979,17 +966,14 @@ impl Repository {
             .collect();
 
         if keys_to_delete.is_empty() {
-            return Err(RepoError::Custom(format!(
-                "stash@{{{}}} not found",
-                index
-            )));
+            return Err(RepoError::Custom(format!("stash@{{{}}} not found", index)));
         }
 
         for key in &keys_to_delete {
-            self.meta.conn().execute(
-                "DELETE FROM config WHERE key = ?1",
-                rusqlite::params![key],
-            ).map_err(|e| RepoError::Meta(crate::metadata::MetaError::Database(e)))?;
+            self.meta
+                .conn()
+                .execute("DELETE FROM config WHERE key = ?1", rusqlite::params![key])
+                .map_err(|e| RepoError::Meta(crate::metadata::MetaError::Database(e)))?;
         }
 
         Ok(())
@@ -1185,9 +1169,7 @@ impl Repository {
             ),
         );
 
-        if has_changes
-            && let Err(e) = self.stash_pop()
-        {
+        if has_changes && let Err(e) = self.stash_pop() {
             eprintln!("Warning: could not restore stashed changes: {}", e);
         }
 
@@ -1207,11 +1189,16 @@ impl Repository {
                 let (_, head_id) = self.head()?;
                 let mut target_id = head_id;
                 if let Some(n_str) = name.strip_prefix("HEAD~") {
-                    let n: usize = n_str.parse().map_err(|_| RepoError::Custom(format!("invalid HEAD~N: {}", name)))?;
+                    let n: usize = n_str
+                        .parse()
+                        .map_err(|_| RepoError::Custom(format!("invalid HEAD~N: {}", name)))?;
                     for _ in 0..n {
-                        let patch = self.dag.get_patch(&target_id)
-                            .ok_or_else(|| RepoError::Custom("HEAD ancestor not found".to_string()))?;
-                        target_id = patch.parent_ids.first()
+                        let patch = self.dag.get_patch(&target_id).ok_or_else(|| {
+                            RepoError::Custom("HEAD ancestor not found".to_string())
+                        })?;
+                        target_id = patch
+                            .parent_ids
+                            .first()
                             .ok_or_else(|| RepoError::Custom("HEAD has no parent".to_string()))?
                             .to_owned();
                     }
@@ -1311,13 +1298,19 @@ impl Repository {
             let (_, id) = self.head()?;
             id
         } else if let Some(rest) = target.strip_prefix("HEAD~") {
-            let n: usize = rest.parse().map_err(|_| RepoError::Custom(format!("invalid HEAD~N: {}", target)))?;
+            let n: usize = rest
+                .parse()
+                .map_err(|_| RepoError::Custom(format!("invalid HEAD~N: {}", target)))?;
             let (_, head_id) = self.head()?;
             let mut current = head_id;
             for _ in 0..n {
-                let patch = self.dag.get_patch(&current)
+                let patch = self
+                    .dag
+                    .get_patch(&current)
                     .ok_or_else(|| RepoError::Custom("HEAD ancestor not found".to_string()))?;
-                current = patch.parent_ids.first()
+                current = patch
+                    .parent_ids
+                    .first()
                     .ok_or_else(|| RepoError::Custom("HEAD has no parent".to_string()))?
                     .to_owned();
             }
@@ -1349,7 +1342,8 @@ impl Repository {
                     match &entry.diff_type {
                         DiffType::Added | DiffType::Modified => {
                             let repo_path = RepoPath::new(entry.path.clone())?;
-                            self.meta.working_set_add(&repo_path, FileStatus::Modified)?;
+                            self.meta
+                                .working_set_add(&repo_path, FileStatus::Modified)?;
                         }
                         DiffType::Deleted => {
                             let repo_path = RepoPath::new(entry.path.clone())?;
@@ -1375,7 +1369,11 @@ impl Repository {
             }
         }
 
-        let _ = self.record_reflog(&old_head, &target_id, &format!("reset: moving to {}", target));
+        let _ = self.record_reflog(
+            &old_head,
+            &target_id,
+            &format!("reset: moving to {}", target),
+        );
 
         Ok(target_id)
     }
@@ -1446,8 +1444,7 @@ impl Repository {
                             msg,
                         );
 
-                        let revert_id =
-                            self.dag.add_patch(revert_patch.clone(), vec![head_id])?;
+                        let revert_id = self.dag.add_patch(revert_patch.clone(), vec![head_id])?;
                         self.meta.store_patch(&revert_patch)?;
 
                         let branch = BranchName::new(&branch_name)?;
@@ -1480,7 +1477,9 @@ impl Repository {
     /// Returns the new tip patch ID.
     pub fn squash(&mut self, count: usize, message: &str) -> Result<PatchId, RepoError> {
         if count < 2 {
-            return Err(RepoError::Custom("need at least 2 patches to squash".into()));
+            return Err(RepoError::Custom(
+                "need at least 2 patches to squash".into(),
+            ));
         }
 
         let (branch_name, tip_id) = self.head()?;
@@ -1511,17 +1510,15 @@ impl Repository {
             .first()
             .ok_or_else(|| RepoError::Custom("cannot squash root patch".into()))?;
 
-        let result =
-            crate::patch::compose::compose_chain(&to_squash, &self.author, message)
-                .map_err(|e| RepoError::Custom(e.to_string()))?;
+        let result = crate::patch::compose::compose_chain(&to_squash, &self.author, message)
+            .map_err(|e| RepoError::Custom(e.to_string()))?;
 
         let new_id = self
             .dag_mut()
             .add_patch(result.patch.clone(), vec![parent_of_first])?;
         self.meta().store_patch(&result.patch)?;
 
-        let branch = BranchName::new(&branch_name)
-            .map_err(|e| RepoError::Custom(e.to_string()))?;
+        let branch = BranchName::new(&branch_name).map_err(|e| RepoError::Custom(e.to_string()))?;
         self.dag_mut().update_branch(&branch, new_id)?;
         self.meta().set_branch(&branch, &new_id)?;
 
@@ -1778,8 +1775,7 @@ impl Repository {
         self.pending_merge_parents = vec![*head_id, *source_tip];
 
         // Persist merge state so it survives repo reopen
-        let parents_json =
-            serde_json::to_string(&self.pending_merge_parents).unwrap_or_default();
+        let parents_json = serde_json::to_string(&self.pending_merge_parents).unwrap_or_default();
         let _ = self.meta.set_config("pending_merge_parents", &parents_json);
 
         Ok(MergeExecutionResult {
@@ -1841,11 +1837,7 @@ impl Repository {
             None => None,
         };
 
-        let merged = three_way_merge(
-            base_content.as_deref(),
-            &our_content,
-            &their_content,
-        );
+        let merged = three_way_merge(base_content.as_deref(), &our_content, &their_content);
 
         match merged {
             Ok(content) => Ok(content),
@@ -2024,7 +2016,9 @@ impl Repository {
                 patch.message.clone(),
             );
 
-            let new_id = self.dag.add_patch(new_patch.clone(), vec![current_parent])?;
+            let new_id = self
+                .dag
+                .add_patch(new_patch.clone(), vec![current_parent])?;
             self.meta.store_patch(&new_patch)?;
 
             last_new_id = new_id;
@@ -2264,7 +2258,10 @@ impl Repository {
     pub fn list_remotes(&self) -> Result<Vec<(String, String)>, RepoError> {
         let mut remotes = Vec::new();
         for (key, value) in self.meta.list_config()? {
-            if let Some(name) = key.strip_prefix("remote.").and_then(|n| n.strip_suffix(".url")) {
+            if let Some(name) = key
+                .strip_prefix("remote.")
+                .and_then(|n| n.strip_suffix(".url"))
+            {
                 remotes.push((name.to_string(), value));
             }
         }
@@ -2278,8 +2275,12 @@ impl Repository {
             return Err(RepoError::Custom(format!("remote '{}' not found", name)));
         }
         self.meta.delete_config(&key)?;
-        if let Ok(Some(_)) = self.meta.get_config(&format!("remote.{}.last_pushed", name)) {
-            self.meta.delete_config(&format!("remote.{}.last_pushed", name))?;
+        if let Ok(Some(_)) = self
+            .meta
+            .get_config(&format!("remote.{}.last_pushed", name))
+        {
+            self.meta
+                .delete_config(&format!("remote.{}.last_pushed", name))?;
         }
         Ok(())
     }
@@ -2295,7 +2296,10 @@ impl Repository {
         }
 
         if new.exists() {
-            return Err(RepoError::Custom(format!("path already exists: {}", new_path)));
+            return Err(RepoError::Custom(format!(
+                "path already exists: {}",
+                new_path
+            )));
         }
 
         fs::rename(old, new).map_err(|e| RepoError::Custom(format!("rename failed: {}", e)))?;
@@ -2345,15 +2349,24 @@ impl Repository {
             }
         }
 
-        let unreachable: Vec<&PatchId> = all_ids.iter().filter(|id| !reachable.contains(id)).collect();
+        let unreachable: Vec<&PatchId> = all_ids
+            .iter()
+            .filter(|id| !reachable.contains(id))
+            .collect();
         let conn = self.meta().conn();
 
         for id in &unreachable {
             let hex = id.to_hex();
-            conn.execute("DELETE FROM signatures WHERE patch_id = ?1", rusqlite::params![hex])
-                .map_err(|e| RepoError::Custom(e.to_string()))?;
-            conn.execute("DELETE FROM edges WHERE parent_id = ?1 OR child_id = ?1", rusqlite::params![hex])
-                .map_err(|e| RepoError::Custom(e.to_string()))?;
+            conn.execute(
+                "DELETE FROM signatures WHERE patch_id = ?1",
+                rusqlite::params![hex],
+            )
+            .map_err(|e| RepoError::Custom(e.to_string()))?;
+            conn.execute(
+                "DELETE FROM edges WHERE parent_id = ?1 OR child_id = ?1",
+                rusqlite::params![hex],
+            )
+            .map_err(|e| RepoError::Custom(e.to_string()))?;
             conn.execute("DELETE FROM patches WHERE id = ?1", rusqlite::params![hex])
                 .map_err(|e| RepoError::Custom(e.to_string()))?;
         }
@@ -2451,7 +2464,10 @@ impl Repository {
                     head_ok = true;
                     checks_passed += 1;
                 } else {
-                    errors.push(format!("HEAD branch '{}' does not exist in branch list", branch_name));
+                    errors.push(format!(
+                        "HEAD branch '{}' does not exist in branch list",
+                        branch_name
+                    ));
                 }
             }
             Err(e) => {
@@ -2610,9 +2626,7 @@ fn walk_dir_recursive(
 }
 
 /// Restore pending merge parents from config (persisted across repo reopens).
-fn restore_pending_merge_parents(
-    meta: &crate::metadata::MetadataStore,
-) -> Vec<PatchId> {
+fn restore_pending_merge_parents(meta: &crate::metadata::MetadataStore) -> Vec<PatchId> {
     let Ok(Some(json)) = meta.get_config("pending_merge_parents") else {
         return Vec::new();
     };
@@ -2728,18 +2742,20 @@ pub struct FsckResult {
 /// Line-level three-way merge using diff3 algorithm.
 ///
 /// Returns `Ok(merged_content)` if clean, `Err(conflict_marker_lines)` if conflicts.
-fn three_way_merge(
-    base: Option<&str>,
-    ours: &str,
-    theirs: &str,
-) -> Result<String, Vec<String>> {
+fn three_way_merge(base: Option<&str>, ours: &str, theirs: &str) -> Result<String, Vec<String>> {
     use crate::engine::merge::three_way_merge_lines;
 
     let base_lines: Vec<&str> = base.map(|s| s.lines().collect()).unwrap_or_default();
     let ours_lines: Vec<&str> = ours.lines().collect();
     let theirs_lines: Vec<&str> = theirs.lines().collect();
 
-    let result = three_way_merge_lines(&base_lines, &ours_lines, &theirs_lines, "ours (HEAD)", "theirs");
+    let result = three_way_merge_lines(
+        &base_lines,
+        &ours_lines,
+        &theirs_lines,
+        "ours (HEAD)",
+        "theirs",
+    );
 
     if result.is_clean {
         Ok(result.lines.join("\n"))
@@ -2971,7 +2987,10 @@ mod tests {
 
         let tree = repo.snapshot_head().unwrap();
         assert!(!tree.contains("test.txt"));
-        assert!(!test_file.exists(), "revert should remove the file from the working tree");
+        assert!(
+            !test_file.exists(),
+            "revert should remove the file from the working tree"
+        );
     }
 
     #[test]
@@ -3091,7 +3110,9 @@ mod tests {
         assert!(dir.path().join("base.txt").exists());
 
         let log = repo.log(None).unwrap();
-        let merge_patch = log.iter().find(|p| p.operation_type == OperationType::Merge);
+        let merge_patch = log
+            .iter()
+            .find(|p| p.operation_type == OperationType::Merge);
         assert!(merge_patch.is_some());
         assert_eq!(merge_patch.unwrap().parent_ids.len(), 2);
     }
@@ -3225,7 +3246,11 @@ mod tests {
         // List config (filters internal keys)
         let config = repo.list_config()?;
         assert!(config.iter().any(|(k, v)| k == "user.name" && v == "Alice"));
-        assert!(config.iter().any(|(k, v)| k == "user.email" && v == "alice@example.com"));
+        assert!(
+            config
+                .iter()
+                .any(|(k, v)| k == "user.email" && v == "alice@example.com")
+        );
         // Internal keys should be present in raw list
         assert!(config.iter().any(|(k, _)| k == "author"));
 
@@ -3845,8 +3870,14 @@ mod tests {
         assert!(dir.path().join("new.txt").exists());
 
         let ws = repo.meta.working_set()?;
-        assert!(ws.iter().any(|(p, s)| p == "old.txt" && *s == FileStatus::Deleted));
-        assert!(ws.iter().any(|(p, s)| p == "new.txt" && *s == FileStatus::Added));
+        assert!(
+            ws.iter()
+                .any(|(p, s)| p == "old.txt" && *s == FileStatus::Deleted)
+        );
+        assert!(
+            ws.iter()
+                .any(|(p, s)| p == "new.txt" && *s == FileStatus::Added)
+        );
 
         Ok(())
     }

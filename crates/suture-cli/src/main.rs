@@ -304,11 +304,18 @@ enum KeyAction {
 
 #[derive(Subcommand)]
 enum StashAction {
-    Push { #[arg(short, long)] message: Option<String> },
+    Push {
+        #[arg(short, long)]
+        message: Option<String>,
+    },
     Pop,
-    Apply { index: usize },
+    Apply {
+        index: usize,
+    },
     List,
-    Drop { index: usize },
+    Drop {
+        index: usize,
+    },
 }
 
 #[derive(Subcommand)]
@@ -478,9 +485,11 @@ fn patch_to_proto(patch: &suture_core::patch::types::Patch) -> PatchProto {
     }
 }
 
-fn proto_to_patch(proto: &PatchProto) -> Result<suture_core::patch::types::Patch, Box<dyn std::error::Error>> {
-    use suture_core::patch::types::{OperationType, Patch, PatchId, TouchSet};
+fn proto_to_patch(
+    proto: &PatchProto,
+) -> Result<suture_core::patch::types::Patch, Box<dyn std::error::Error>> {
     use suture_common::Hash;
+    use suture_core::patch::types::{OperationType, Patch, PatchId, TouchSet};
 
     let id = Hash::from_hex(&proto.id.value)?;
     let parent_ids: Vec<PatchId> = proto
@@ -617,10 +626,7 @@ async fn check_handshake(url: &str) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let client = reqwest::Client::new();
-    let resp = client
-        .get(format!("{}/handshake", url))
-        .send()
-        .await?;
+    let resp = client.get(format!("{}/handshake", url)).send().await?;
 
     if !resp.status().is_success() {
         return Err(format!("handshake failed: server returned {}", resp.status()).into());
@@ -630,8 +636,7 @@ async fn check_handshake(url: &str) -> Result<(), Box<dyn std::error::Error>> {
     if !hs.compatible {
         return Err(format!(
             "protocol version mismatch: client={}, server={}",
-            PROTOCOL_VERSION,
-            hs.server_version
+            PROTOCOL_VERSION, hs.server_version
         )
         .into());
     }
@@ -645,7 +650,11 @@ fn walk_repo_files(dir: &std::path::Path) -> Vec<String> {
     files
 }
 
-fn walk_repo_files_inner(root: &std::path::Path, current: &std::path::Path, files: &mut Vec<String>) {
+fn walk_repo_files_inner(
+    root: &std::path::Path,
+    current: &std::path::Path,
+    files: &mut Vec<String>,
+) {
     let Ok(entries) = std::fs::read_dir(current) else {
         return;
     };
@@ -671,7 +680,9 @@ fn walk_repo_files_inner(root: &std::path::Path, current: &std::path::Path, file
 fn format_line_diff(path: &str, changes: &[suture_core::engine::merge::LineChange]) {
     use suture_core::engine::merge::LineChange;
 
-    let has_changes = changes.iter().any(|c| !matches!(c, LineChange::Unchanged(_)));
+    let has_changes = changes
+        .iter()
+        .any(|c| !matches!(c, LineChange::Unchanged(_)));
     if !has_changes {
         return;
     }
@@ -744,7 +755,9 @@ fn resolve_ref<'a>(
         let (_branch_name, head_id) = repo.head().map_err(|e| e.to_string())?;
         let mut target_id = head_id;
         if let Some(n_str) = ref_str.strip_prefix("HEAD~") {
-            let n: usize = n_str.parse().map_err(|_| format!("invalid HEAD~N: {}", n_str))?;
+            let n: usize = n_str
+                .parse()
+                .map_err(|_| format!("invalid HEAD~N: {}", n_str))?;
             for _ in 0..n {
                 let patch = all_patches
                     .iter()
@@ -806,12 +819,12 @@ async fn main() {
     let cli = Cli::parse();
 
     if let Some(path) = &cli.repo_path {
-        std::env::set_current_dir(path).map_err(|e| {
-            format!("cannot change to '{}': {}", path, e)
-        }).unwrap_or_else(|e| {
-            eprintln!("Error: {e}");
-            std::process::exit(1);
-        });
+        std::env::set_current_dir(path)
+            .map_err(|e| format!("cannot change to '{}': {}", path, e))
+            .unwrap_or_else(|e| {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            });
     }
 
     let result = match cli.command {
@@ -836,10 +849,30 @@ async fn main() {
             all,
             since,
             until,
-        } => cmd_log(branch.as_deref(), graph, first_parent, oneline, author.as_deref(), grep.as_deref(), all, since.as_deref(), until.as_deref()).await,
-        Commands::Checkout { branch, new_branch } => cmd_checkout(branch.as_deref(), new_branch.as_deref()).await,
-        Commands::Mv { source, destination } => cmd_mv(&source, &destination).await,
-        Commands::Diff { from, to, cached } => cmd_diff(from.as_deref(), to.as_deref(), cached).await,
+        } => {
+            cmd_log(
+                branch.as_deref(),
+                graph,
+                first_parent,
+                oneline,
+                author.as_deref(),
+                grep.as_deref(),
+                all,
+                since.as_deref(),
+                until.as_deref(),
+            )
+            .await
+        }
+        Commands::Checkout { branch, new_branch } => {
+            cmd_checkout(branch.as_deref(), new_branch.as_deref()).await
+        }
+        Commands::Mv {
+            source,
+            destination,
+        } => cmd_mv(&source, &destination).await,
+        Commands::Diff { from, to, cached } => {
+            cmd_diff(from.as_deref(), to.as_deref(), cached).await
+        }
         Commands::Revert { commit, message } => cmd_revert(&commit, message.as_deref()).await,
         Commands::Merge { source } => cmd_merge(&source).await,
         Commands::CherryPick { commit } => cmd_cherry_pick(&commit).await,
@@ -852,7 +885,17 @@ async fn main() {
             list,
             annotate,
             message,
-        } => cmd_tag(name.as_deref(), target.as_deref(), delete, list, annotate, message.as_deref()).await,
+        } => {
+            cmd_tag(
+                name.as_deref(),
+                target.as_deref(),
+                delete,
+                list,
+                annotate,
+                message.as_deref(),
+            )
+            .await
+        }
         Commands::Config { key_value } => cmd_config(&key_value).await,
         Commands::Remote { action } => cmd_remote(&action).await,
         Commands::Push { remote } => cmd_push(&remote).await,
@@ -937,7 +980,10 @@ async fn cmd_fsck() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn cmd_bisect(action: &BisectAction) -> Result<(), Box<dyn std::error::Error>> {
     match action {
-        BisectAction::Start { good: good_ref, bad: bad_ref } => {
+        BisectAction::Start {
+            good: good_ref,
+            bad: bad_ref,
+        } => {
             let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
             let all_patches = repo.all_patches();
 
@@ -990,10 +1036,7 @@ async fn cmd_bisect(action: &BisectAction) -> Result<(), Box<dyn std::error::Err
             );
             println!();
             println!("  Step: test commit {}", midpoint.id.to_hex());
-            println!(
-                "  {}",
-                midpoint.message.lines().next().unwrap_or("")
-            );
+            println!("  {}", midpoint.message.lines().next().unwrap_or(""));
             println!();
             println!("To test this commit:");
             println!("  suture reset {} --hard", midpoint.id.to_hex());
@@ -1028,7 +1071,10 @@ async fn cmd_bisect(action: &BisectAction) -> Result<(), Box<dyn std::error::Err
     Ok(())
 }
 
-async fn cmd_shortlog(branch: Option<&str>, number: Option<usize>) -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_shortlog(
+    branch: Option<&str>,
+    number: Option<usize>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
     let mut patches = repo.log(branch)?;
 
@@ -1039,7 +1085,10 @@ async fn cmd_shortlog(branch: Option<&str>, number: Option<usize>) -> Result<(),
     let mut by_author: std::collections::BTreeMap<String, Vec<&suture_core::patch::types::Patch>> =
         std::collections::BTreeMap::new();
     for patch in &patches {
-        by_author.entry(patch.author.clone()).or_default().push(patch);
+        by_author
+            .entry(patch.author.clone())
+            .or_default()
+            .push(patch);
     }
 
     for (author, commits) in &by_author {
@@ -1065,14 +1114,12 @@ async fn cmd_notes(action: &NotesAction) -> Result<(), Box<dyn std::error::Error
         NotesAction::Add { commit, message } => {
             let target = resolve_ref(&repo, commit, &patches)?;
             let patch_id = target.id;
-            let msg = message
-                .clone()
-                .unwrap_or_else(|| {
-                    eprintln!("Enter note (Ctrl+D to finish):");
-                    let mut buf = String::new();
-                    std::io::stdin().read_line(&mut buf).unwrap_or_default();
-                    buf.trim_end().to_string()
-                });
+            let msg = message.clone().unwrap_or_else(|| {
+                eprintln!("Enter note (Ctrl+D to finish):");
+                let mut buf = String::new();
+                std::io::stdin().read_line(&mut buf).unwrap_or_default();
+                buf.trim_end().to_string()
+            });
             repo.add_note(&patch_id, &msg)?;
             println!("Note added to {}", commit);
         }
@@ -1288,8 +1335,11 @@ async fn cmd_status() -> Result<(), Box<dyn std::error::Error>> {
     let head_tree = repo
         .snapshot_head()
         .unwrap_or_else(|_| suture_core::engine::tree::FileTree::empty());
-    let staged_paths: std::collections::HashSet<&str> =
-        status.staged_files.iter().map(|(p, _)| p.as_str()).collect();
+    let staged_paths: std::collections::HashSet<&str> = status
+        .staged_files
+        .iter()
+        .map(|(p, _)| p.as_str())
+        .collect();
 
     let mut unstaged_modified: Vec<String> = Vec::new();
     let mut unstaged_deleted: Vec<String> = Vec::new();
@@ -1364,7 +1414,8 @@ async fn cmd_rm(paths: &[String], cached: bool) -> Result<(), Box<dyn std::error
         }
         if cached {
             let repo_path = suture_common::RepoPath::new(path)?;
-            repo.meta().working_set_add(&repo_path, suture_common::FileStatus::Deleted)?;
+            repo.meta()
+                .working_set_add(&repo_path, suture_common::FileStatus::Deleted)?;
         } else {
             repo.add(path)?;
         }
@@ -1420,7 +1471,8 @@ async fn cmd_branch(
         return Ok(());
     }
 
-    let name = name.ok_or_else(|| "branch name required (use --list to show branches)".to_string())?;
+    let name =
+        name.ok_or_else(|| "branch name required (use --list to show branches)".to_string())?;
     if delete {
         repo.delete_branch(name)?;
         println!("Deleted branch '{}'", name);
@@ -1546,7 +1598,9 @@ async fn cmd_log(
         } else if first_parent {
             use suture_common::Hash;
             let _branch_name = branch.unwrap_or("HEAD");
-            let (_head_branch, head_id) = repo.head().unwrap_or_else(|_| ("main".to_string(), Hash::ZERO));
+            let (_head_branch, head_id) = repo
+                .head()
+                .unwrap_or_else(|_| ("main".to_string(), Hash::ZERO));
             let mut chain = Vec::new();
             let mut current = head_id;
             while current != Hash::ZERO {
@@ -1614,7 +1668,8 @@ async fn cmd_log(
 
     let all_patches = repo.all_patches();
     let mut commit_groups: Vec<(Vec<suture_core::patch::types::PatchId>, String, u64)> = Vec::new();
-    let mut seen_messages: std::collections::HashMap<(String, u64), usize> = std::collections::HashMap::new();
+    let mut seen_messages: std::collections::HashMap<(String, u64), usize> =
+        std::collections::HashMap::new();
 
     for patch in &all_patches {
         let key = (patch.message.clone(), patch.timestamp);
@@ -1628,13 +1683,12 @@ async fn cmd_log(
 
     commit_groups.sort_by(|a, b| b.2.cmp(&a.2));
 
-    let branch_tips: std::collections::HashSet<suture_core::patch::types::PatchId> = branches
-        .iter()
-        .map(|(_, id)| *id)
-        .collect();
+    let branch_tips: std::collections::HashSet<suture_core::patch::types::PatchId> =
+        branches.iter().map(|(_, id)| *id).collect();
 
     let tip_list: Vec<_> = branches.iter().collect();
-    let mut col_assign: std::collections::HashMap<suture_core::patch::types::PatchId, usize> = std::collections::HashMap::new();
+    let mut col_assign: std::collections::HashMap<suture_core::patch::types::PatchId, usize> =
+        std::collections::HashMap::new();
     for (i, (_, id)) in tip_list.iter().enumerate() {
         col_assign.insert(*id, i);
     }
@@ -1689,7 +1743,10 @@ async fn cmd_log(
     Ok(())
 }
 
-async fn cmd_checkout(branch: Option<&str>, new_branch: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_checkout(
+    branch: Option<&str>,
+    new_branch: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
     if let Some(name) = new_branch {
         let source = branch.filter(|b| *b != "HEAD");
@@ -1704,7 +1761,11 @@ async fn cmd_checkout(branch: Option<&str>, new_branch: Option<&str>) -> Result<
     Ok(())
 }
 
-async fn cmd_diff(from: Option<&str>, to: Option<&str>, cached: bool) -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_diff(
+    from: Option<&str>,
+    to: Option<&str>,
+    cached: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     use suture_core::engine::diff::DiffType;
     use suture_core::engine::merge::diff_lines;
 
@@ -1752,15 +1813,13 @@ async fn cmd_diff(from: Option<&str>, to: Option<&str>, cached: bool) -> Result<
             }
             DiffType::Added => {
                 if let Some(new_hash) = &entry.new_hash {
-                    let new_blob = repo.cas().get_blob(new_hash).ok()
-                        .or_else(|| {
-                            std::fs::read(repo.root().join(&entry.path)).ok()
-                        });
+                    let new_blob = repo
+                        .cas()
+                        .get_blob(new_hash)
+                        .ok()
+                        .or_else(|| std::fs::read(repo.root().join(&entry.path)).ok());
                     let Some(new_blob) = new_blob else {
-                        println!(
-                            "{ANSI_BOLD_CYAN}added {} (binary){ANSI_RESET}",
-                            entry.path
-                        );
+                        println!("{ANSI_BOLD_CYAN}added {} (binary){ANSI_RESET}", entry.path);
                         continue;
                     };
                     let new_str = String::from_utf8_lossy(&new_blob);
@@ -1805,18 +1864,18 @@ async fn cmd_diff(from: Option<&str>, to: Option<&str>, cached: bool) -> Result<
             DiffType::Modified => {
                 if let (Some(old_hash), Some(new_hash)) = (&entry.old_hash, &entry.new_hash) {
                     let old_blob = repo.cas().get_blob(old_hash).ok();
-                    let new_blob = repo.cas().get_blob(new_hash).ok()
-                        .or_else(|| {
-                            std::fs::read(repo.root().join(&entry.path)).ok()
-                        });
+                    let new_blob = repo
+                        .cas()
+                        .get_blob(new_hash)
+                        .ok()
+                        .or_else(|| std::fs::read(repo.root().join(&entry.path)).ok());
                     match (old_blob, new_blob) {
                         (Some(old_blob), Some(new_blob)) => {
                             let old_str = String::from_utf8_lossy(&old_blob);
                             let new_str = String::from_utf8_lossy(&new_blob);
 
                             if let Ok(driver) = registry.get_for_path(StdPath::new(&entry.path))
-                                && let Ok(semantic) =
-                                    driver.format_diff(Some(&old_str), &new_str)
+                                && let Ok(semantic) = driver.format_diff(Some(&old_str), &new_str)
                                 && !semantic.is_empty()
                                 && semantic != "no changes"
                             {
@@ -1861,8 +1920,8 @@ async fn cmd_revert(commit: &str, message: Option<&str>) -> Result<(), Box<dyn s
 }
 
 async fn cmd_merge(source: &str) -> Result<(), Box<dyn std::error::Error>> {
-    use suture_core::repository::ConflictInfo;
     use std::path::Path as StdPath;
+    use suture_core::repository::ConflictInfo;
 
     let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
     let result = repo.execute_merge(source)?;
@@ -1945,13 +2004,19 @@ async fn cmd_merge(source: &str) -> Result<(), Box<dyn std::error::Error>> {
             };
 
             if let Err(e) = std::fs::write(&conflict.path, &content) {
-                eprintln!("Warning: could not write resolved file '{}': {e}", conflict.path);
+                eprintln!(
+                    "Warning: could not write resolved file '{}': {e}",
+                    conflict.path
+                );
                 remaining.push(conflict.clone());
                 continue;
             }
 
             if let Err(e) = repo.add(&conflict.path) {
-                eprintln!("Warning: could not stage resolved file '{}': {e}", conflict.path);
+                eprintln!(
+                    "Warning: could not stage resolved file '{}': {e}",
+                    conflict.path
+                );
                 remaining.push(conflict.clone());
                 continue;
             }
@@ -1961,19 +2026,14 @@ async fn cmd_merge(source: &str) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if resolved_count > 0 {
-        println!(
-            "Resolved {resolved_count} conflict(s) via semantic drivers"
-        );
+        println!("Resolved {resolved_count} conflict(s) via semantic drivers");
     }
 
     if remaining.is_empty() {
         println!("All conflicts resolved via semantic drivers.");
         println!("Run `suture commit` to finalize the merge.");
     } else {
-        println!(
-            "Merge has {} conflict(s):",
-            remaining.len()
-        );
+        println!("Merge has {} conflict(s):", remaining.len());
         for conflict in &remaining {
             println!(
                 "  CONFLICT in '{}': edit the file, then commit to resolve",
@@ -2012,7 +2072,8 @@ async fn cmd_tag(
         return Ok(());
     }
 
-    let name = name.ok_or_else(|| "branch name required (use --list to show branches)".to_string())?;
+    let name =
+        name.ok_or_else(|| "branch name required (use --list to show branches)".to_string())?;
     if delete {
         repo.delete_tag(name)?;
         let msg_key = format!("tag.{}.message", name);
@@ -2020,7 +2081,8 @@ async fn cmd_tag(
         println!("Deleted tag '{}'", name);
     } else {
         repo.create_tag(name, target)?;
-        let target_id = repo.resolve_tag(name)?
+        let target_id = repo
+            .resolve_tag(name)?
             .ok_or_else(|| format!("created tag '{}', but could not resolve it", name))?;
         if annotate {
             let msg = message.ok_or_else(|| {
@@ -2119,7 +2181,11 @@ async fn cmd_remote(action: &RemoteAction) -> Result<(), Box<dyn std::error::Err
 
             eprintln!("Authentication successful. Token stored in config.");
         }
-        RemoteAction::Mirror { url, repo: upstream_repo, name: local_name } => {
+        RemoteAction::Mirror {
+            url,
+            repo: upstream_repo,
+            name: local_name,
+        } => {
             let local_repo_name = local_name.as_deref().unwrap_or(upstream_repo);
 
             #[derive(serde::Serialize)]
@@ -2154,7 +2220,9 @@ async fn cmd_remote(action: &RemoteAction) -> Result<(), Box<dyn std::error::Err
                 upstream_repo: upstream_repo.clone(),
             };
 
-            let hub_url = repo.get_remote_url("origin").unwrap_or_else(|_| url.clone());
+            let hub_url = repo
+                .get_remote_url("origin")
+                .unwrap_or_else(|_| url.clone());
             let setup_resp = client
                 .post(format!("{}/mirror/setup", hub_url))
                 .json(&setup_body)
@@ -2163,7 +2231,10 @@ async fn cmd_remote(action: &RemoteAction) -> Result<(), Box<dyn std::error::Err
 
             let setup_result: MirrorSetupResp = setup_resp.json().await?;
             if !setup_result.success {
-                return Err(setup_result.error.unwrap_or_else(|| "mirror setup failed".to_string()).into());
+                return Err(setup_result
+                    .error
+                    .unwrap_or_else(|| "mirror setup failed".to_string())
+                    .into());
             }
 
             let mirror_id = setup_result.mirror_id.ok_or("no mirror id returned")?;
@@ -2177,7 +2248,10 @@ async fn cmd_remote(action: &RemoteAction) -> Result<(), Box<dyn std::error::Err
 
             let sync_result: MirrorSyncResp = sync_resp.json().await?;
             if !sync_result.success {
-                return Err(sync_result.error.unwrap_or_else(|| "mirror sync failed".to_string()).into());
+                return Err(sync_result
+                    .error
+                    .unwrap_or_else(|| "mirror sync failed".to_string())
+                    .into());
             }
 
             println!(
@@ -2292,9 +2366,7 @@ async fn do_fetch(
     };
 
     let client = reqwest::Client::new();
-    let mut req_builder = client
-        .post(format!("{}/pull", url))
-        .json(&pull_body);
+    let mut req_builder = client.post(format!("{}/pull", url)).json(&pull_body);
 
     if let Some(token) = get_remote_token(repo, remote)? {
         req_builder = req_builder.bearer_auth(&token);
@@ -2386,7 +2458,11 @@ async fn cmd_fetch(remote: &str, depth: Option<u32>) -> Result<(), Box<dyn std::
     Ok(())
 }
 
-async fn cmd_clone(url: &str, dir: Option<&str>, depth: Option<u32>) -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_clone(
+    url: &str,
+    dir: Option<&str>,
+    depth: Option<u32>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let repo_name = dir.unwrap_or_else(|| {
         url.trim_end_matches('/')
             .rsplit('/')

@@ -3,7 +3,7 @@
 //! Stores repositories, patches, branches, blobs, and authorized public keys
 //! in a single SQLite database. This replaces the in-memory HashMap approach.
 
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use std::path::Path;
 use thiserror::Error;
 

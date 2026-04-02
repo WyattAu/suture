@@ -6,7 +6,7 @@
 pub mod global_config;
 
 use crate::patch::types::{Patch, PatchId, TouchSet};
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use std::path::Path;
 use suture_common::{BranchName, FileStatus, Hash, RepoPath};
 use thiserror::Error;

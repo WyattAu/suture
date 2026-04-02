@@ -106,7 +106,7 @@ impl GlobalConfig {
                 "core" => match parts[1] {
                     "compression" => return self.core.compression.map(|v| v.to_string()),
                     "compression_level" => {
-                        return self.core.compression_level.map(|v| v.to_string())
+                        return self.core.compression_level.map(|v| v.to_string());
                     }
                     _ => {}
                 },

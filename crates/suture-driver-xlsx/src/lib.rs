@@ -137,11 +137,7 @@ impl XlsxDriver {
     }
 
     #[allow(dead_code)]
-    fn merge_cells(
-        base: &[Cell],
-        ours: &[Cell],
-        theirs: &[Cell],
-    ) -> Option<Vec<Cell>> {
+    fn merge_cells(base: &[Cell], ours: &[Cell], theirs: &[Cell]) -> Option<Vec<Cell>> {
         let base_map: std::collections::HashMap<(usize, usize), &String> =
             base.iter().map(|(r, c, v)| ((*r, *c), v)).collect();
         let ours_map: std::collections::HashMap<(usize, usize), &String> =
@@ -300,12 +296,16 @@ mod tests {
             (1, 0, "C".to_string()),
         ];
         let changes = XlsxDriver::diff_cells(&base, &new, "Sheet1");
-        assert!(changes
-            .iter()
-            .any(|c| matches!(c, SemanticChange::Modified { .. })));
-        assert!(changes
-            .iter()
-            .any(|c| matches!(c, SemanticChange::Added { value, .. } if value == "C")));
+        assert!(
+            changes
+                .iter()
+                .any(|c| matches!(c, SemanticChange::Modified { .. }))
+        );
+        assert!(
+            changes
+                .iter()
+                .any(|c| matches!(c, SemanticChange::Added { value, .. } if value == "C"))
+        );
     }
 
     #[test]

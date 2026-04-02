@@ -281,16 +281,16 @@ impl App {
         if let KeyCode::Char(c) = key.code
             && key.modifiers.contains(KeyModifiers::ALT)
         {
-                match c {
-                    '1' => self.current_tab = Tab::Status,
-                    '2' => self.current_tab = Tab::Log,
-                    '3' => self.current_tab = Tab::Staging,
-                    '4' => self.current_tab = Tab::Diff,
-                    '5' => self.current_tab = Tab::Help,
-                    _ => {}
-                }
-                self.status_message = format!("Switched to {}", self.current_tab.title());
-                return false;
+            match c {
+                '1' => self.current_tab = Tab::Status,
+                '2' => self.current_tab = Tab::Log,
+                '3' => self.current_tab = Tab::Staging,
+                '4' => self.current_tab = Tab::Diff,
+                '5' => self.current_tab = Tab::Help,
+                _ => {}
+            }
+            self.status_message = format!("Switched to {}", self.current_tab.title());
+            return false;
         }
 
         // Tab-specific keys

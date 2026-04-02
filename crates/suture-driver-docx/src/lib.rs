@@ -324,9 +324,9 @@ mod tests {
     }
 
     fn docx_str(bytes: &[u8]) -> String {
-    // SAFETY: DOCX files store text as UTF-8 per the OOXML specification.
-    // The `to_vec()` converts the borrowed bytes to an owned Vec<u8> for String construction.
-    unsafe { String::from_utf8_unchecked(bytes.to_vec()) }
+        // SAFETY: DOCX files store text as UTF-8 per the OOXML specification.
+        // The `to_vec()` converts the borrowed bytes to an owned Vec<u8> for String construction.
+        unsafe { String::from_utf8_unchecked(bytes.to_vec()) }
     }
 
     #[test]

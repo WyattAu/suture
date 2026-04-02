@@ -7,7 +7,5 @@ async fn main() {
     let stdout = tokio::io::stdout();
 
     let (service, socket) = LspService::new(SutureLsp::new);
-    Server::new(stdin, stdout, socket)
-        .serve(service)
-        .await;
+    Server::new(stdin, stdout, socket).serve(service).await;
 }

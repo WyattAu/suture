@@ -1,8 +1,8 @@
 use axum::{
+    Json,
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
     response::{Html, IntoResponse},
-    Json,
 };
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use std::collections::HashSet;
@@ -85,9 +85,7 @@ impl SutureHubServer {
             }
         } else if !self.no_auth {
             let store = self.storage.lock().await;
-            if store.has_authorized_keys().unwrap_or(false)
-                || store.has_tokens().unwrap_or(false)
-            {
+            if store.has_authorized_keys().unwrap_or(false) || store.has_tokens().unwrap_or(false) {
                 return Err((
                     StatusCode::FORBIDDEN,
                     PushResponse {
@@ -578,10 +576,7 @@ fn collect_new_patches(
         .collect();
 
     let mut reachable: HashSet<String> = HashSet::new();
-    let mut stack: Vec<String> = all_patches
-        .iter()
-        .map(|p| hash_to_hex(&p.id))
-        .collect();
+    let mut stack: Vec<String> = all_patches.iter().map(|p| hash_to_hex(&p.id)).collect();
 
     while let Some(id_hex) = stack.pop() {
         if reachable.insert(id_hex.clone())
@@ -608,9 +603,7 @@ fn collect_new_patches(
         {
             for parent in &patch.parent_ids {
                 let parent_hex = hash_to_hex(parent);
-                if !client_ancestors.contains(&parent_hex)
-                    && !new_ids.contains(&parent_hex)
-                {
+                if !client_ancestors.contains(&parent_hex) && !new_ids.contains(&parent_hex) {
                     stack.push(parent_hex);
                 }
             }
@@ -643,10 +636,7 @@ fn topological_sort(patches: &mut Vec<PatchProto>) {
         }
     }
 
-    let sorted: Vec<PatchProto> = order
-        .into_iter()
-        .map(|i| patches[i].clone())
-        .collect();
+    let sorted: Vec<PatchProto> = order.into_iter().map(|i| patches[i].clone()).collect();
     *patches = sorted;
 }
 
@@ -670,10 +660,7 @@ fn dfs(
     order.push(idx);
 }
 
-async fn check_auth(
-    hub: &SutureHubServer,
-    headers: &HeaderMap,
-) -> Result<(), StatusCode> {
+async fn check_auth(hub: &SutureHubServer, headers: &HeaderMap) -> Result<(), StatusCode> {
     if hub.no_auth {
         return Ok(());
     }
@@ -799,7 +786,10 @@ pub async fn create_token_handler(
         .as_secs();
 
     let store = hub.storage.lock().await;
-    if store.store_token(&token, created_at, "cli-generated").is_err() {
+    if store
+        .store_token(&token, created_at, "cli-generated")
+        .is_err()
+    {
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(TokenResponse {
@@ -900,7 +890,9 @@ async fn serve_index() -> Html<&'static str> {
     Html(include_str!("../static/index.html"))
 }
 
-async fn serve_static_file(axum::extract::Path(path): axum::extract::Path<String>) -> impl IntoResponse {
+async fn serve_static_file(
+    axum::extract::Path(path): axum::extract::Path<String>,
+) -> impl IntoResponse {
     let content_type = if path.ends_with(".css") {
         "text/css"
     } else if path.ends_with(".js") {
@@ -938,15 +930,24 @@ async fn serve_static_file(axum::extract::Path(path): axum::extract::Path<String
     }
 }
 
-pub async fn run_server(hub: SutureHubServer, addr: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn run_server(
+    hub: SutureHubServer,
+    addr: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let app = axum::Router::new()
         .route("/", axum::routing::get(serve_index))
         .route("/push", axum::routing::post(push_handler))
         .route("/pull", axum::routing::post(pull_handler))
         .route("/repos", axum::routing::get(list_repos_handler))
         .route("/repo/{repo_id}", axum::routing::get(repo_info_handler))
-        .route("/repos/{repo_id}/branches", axum::routing::get(repo_branches_handler))
-        .route("/repos/{repo_id}/patches", axum::routing::get(repo_patches_handler))
+        .route(
+            "/repos/{repo_id}/branches",
+            axum::routing::get(repo_branches_handler),
+        )
+        .route(
+            "/repos/{repo_id}/patches",
+            axum::routing::get(repo_patches_handler),
+        )
         .route("/handshake", axum::routing::get(handshake_handler))
         .route("/handshake", axum::routing::post(handshake_handler))
         .route("/auth/token", axum::routing::post(create_token_handler))
@@ -975,12 +976,7 @@ mod tests {
         }
     }
 
-    pub fn make_patch(
-        id_hex: &str,
-        op: &str,
-        parents: &[&str],
-        author: &str,
-    ) -> PatchProto {
+    pub fn make_patch(id_hex: &str, op: &str, parents: &[&str], author: &str) -> PatchProto {
         PatchProto {
             id: make_hash_proto(id_hex),
             operation_type: op.to_string(),

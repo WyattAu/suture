@@ -218,10 +218,16 @@ impl OtioDriver {
         Ok(())
     }
 
-    fn collect_elements(&mut self, node: OtioNode, parent_id: Option<String>, index: usize) -> Result<()> {
+    fn collect_elements(
+        &mut self,
+        node: OtioNode,
+        parent_id: Option<String>,
+        index: usize,
+    ) -> Result<()> {
         match &node {
             OtioNode::Timeline(tl) => {
-                let element_id = Self::element_id("timeline", &tl.name, index, parent_id.as_deref());
+                let element_id =
+                    Self::element_id("timeline", &tl.name, index, parent_id.as_deref());
                 self.elements.push(TimelineElement::Timeline {
                     id: element_id.clone(),
                     name: tl.name.clone(),
@@ -263,7 +269,8 @@ impl OtioDriver {
                 });
             }
             OtioNode::Transition(tr) => {
-                let element_id = Self::element_id("transition", &tr.name, index, parent_id.as_deref());
+                let element_id =
+                    Self::element_id("transition", &tr.name, index, parent_id.as_deref());
                 self.elements.push(TimelineElement::Transition {
                     id: element_id,
                     name: tr.name.clone(),
@@ -513,7 +520,9 @@ mod tests {
         let tl = driver.find_element("0:timeline:TestTimeline").unwrap();
         assert_eq!(tl.name(), "TestTimeline");
 
-        let clip = driver.find_element("0:timeline:TestTimeline/0:track:Video/0:clip:Intro").unwrap();
+        let clip = driver
+            .find_element("0:timeline:TestTimeline/0:track:Video/0:clip:Intro")
+            .unwrap();
         assert_eq!(clip.name(), "Intro");
 
         assert!(driver.find_element("nonexistent").is_none());
@@ -535,9 +544,17 @@ mod tests {
         let touch_set = driver.compute_touch_set(&changes);
 
         assert!(touch_set.contains(&track_id.to_string()));
-        assert!(touch_set.contains(&"0:timeline:TestTimeline/0:track:Video/0:clip:Intro".to_string()));
-        assert!(touch_set.contains(&"0:timeline:TestTimeline/0:track:Video/1:transition:Dissolve".to_string()));
-        assert!(touch_set.contains(&"0:timeline:TestTimeline/0:track:Video/2:clip:Main".to_string()));
+        assert!(
+            touch_set.contains(&"0:timeline:TestTimeline/0:track:Video/0:clip:Intro".to_string())
+        );
+        assert!(
+            touch_set.contains(
+                &"0:timeline:TestTimeline/0:track:Video/1:transition:Dissolve".to_string()
+            )
+        );
+        assert!(
+            touch_set.contains(&"0:timeline:TestTimeline/0:track:Video/2:clip:Main".to_string())
+        );
     }
 
     #[test]

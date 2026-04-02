@@ -19,8 +19,8 @@ pub mod conflict;
 pub mod merge;
 pub mod types;
 
-pub use commute::{commute, CommuteResult};
-pub use compose::{compose, compose_chain, ComposeError, ComposeResult};
+pub use commute::{CommuteResult, commute};
+pub use compose::{ComposeError, ComposeResult, compose, compose_chain};
 pub use conflict::{Conflict, ConflictClass, ConflictNode};
-pub use merge::{merge, MergeError, MergeResult};
+pub use merge::{MergeError, MergeResult, merge};
 pub use types::{Operation, OperationType, Patch, PatchId, TouchSet};
