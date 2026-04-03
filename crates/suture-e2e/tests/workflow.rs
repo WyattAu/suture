@@ -327,3 +327,185 @@ async fn test_push_pull_roundtrip() {
     let content = fs::read_to_string(repo_dir.join("file.txt")).unwrap();
     assert_eq!(content, "world");
 }
+
+// =========================================================================
+// Hook system integration tests
+// =========================================================================
+
+#[test]
+fn test_hook_pre_commit_passes() {
+    let (_tmp, repo) = new_test_repo("hook_pass");
+
+    // Create a pre-commit hook that succeeds
+    let hooks_dir = repo.join(".suture").join("hooks");
+    fs::create_dir_all(&hooks_dir).unwrap();
+    let hook = hooks_dir.join("pre-commit");
+    fs::write(&hook, "#!/bin/sh\necho 'pre-commit ran' >&2\nexit 0").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    fs::write(repo.join("test.txt"), "content").unwrap();
+    suture_success(&repo, &["add", "test.txt"]);
+    let out = suture_success(&repo, &["commit", "with hook"]);
+    assert!(out.contains("Committed:"), "commit should succeed: {}", out);
+}
+
+#[test]
+fn test_hook_pre_commit_blocks() {
+    let (_tmp, repo) = new_test_repo("hook_block");
+
+    // Create a pre-commit hook that fails
+    let hooks_dir = repo.join(".suture").join("hooks");
+    fs::create_dir_all(&hooks_dir).unwrap();
+    let hook = hooks_dir.join("pre-commit");
+    fs::write(&hook, "#!/bin/sh\necho 'lint failed!' >&2\nexit 1").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    fs::write(repo.join("test.txt"), "content").unwrap();
+    suture_success(&repo, &["add", "test.txt"]);
+    let output = suture(&repo, &["commit", "should fail"]);
+    assert!(!output.status.success(), "commit should be blocked by hook");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("lint failed!") || stderr.contains("Hook 'pre-commit' failed"),
+        "hook stderr should contain error: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_hook_post_commit_runs() {
+    let (_tmp, repo) = new_test_repo("hook_post");
+
+    // Create a post-commit hook that writes a sentinel file
+    let hooks_dir = repo.join(".suture").join("hooks");
+    fs::create_dir_all(&hooks_dir).unwrap();
+    let sentinel = repo.join(".post_commit_ran");
+    let hook_script = format!("#!/bin/sh\ntouch {}\nexit 0", sentinel.display());
+    let hook = hooks_dir.join("post-commit");
+    fs::write(&hook, hook_script).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    fs::write(repo.join("test.txt"), "content").unwrap();
+    suture_success(&repo, &["add", "test.txt"]);
+    suture_success(&repo, &["commit", "with post hook"]);
+
+    assert!(
+        sentinel.exists(),
+        "post-commit hook should have created sentinel file"
+    );
+}
+
+#[test]
+fn test_hook_env_vars() {
+    let (_tmp, repo) = new_test_repo("hook_env");
+
+    // Create a pre-commit hook that records env vars to a file
+    let hooks_dir = repo.join(".suture").join("hooks");
+    fs::create_dir_all(&hooks_dir).unwrap();
+    let env_file = repo.join(".hook_env");
+    let hook_script = format!(
+        "#!/bin/sh\necho \"BRANCH=$SUTURE_BRANCH\" > {}\n\
+         echo \"HOOK=$SUTURE_HOOK\" >> {}\n\
+         echo \"REPO=$SUTURE_REPO\" >> {}\n\
+         exit 0",
+        env_file.display(),
+        env_file.display(),
+        env_file.display(),
+    );
+    let hook = hooks_dir.join("pre-commit");
+    fs::write(&hook, hook_script).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    fs::write(repo.join("test.txt"), "content").unwrap();
+    suture_success(&repo, &["add", "test.txt"]);
+    suture_success(&repo, &["commit", "env test"]);
+
+    assert!(env_file.exists(), "hook should have written env file");
+    let env_contents = fs::read_to_string(&env_file).unwrap();
+    assert!(
+        env_contents.contains("BRANCH=main"),
+        "env should contain BRANCH=main: {}",
+        env_contents
+    );
+    assert!(
+        env_contents.contains("HOOK=pre-commit"),
+        "env should contain HOOK=pre-commit: {}",
+        env_contents
+    );
+    assert!(
+        env_contents.contains("REPO="),
+        "env should contain REPO=: {}",
+        env_contents
+    );
+}
+
+#[test]
+fn test_hook_not_executable_skipped() {
+    let (_tmp, repo) = new_test_repo("hook_not_exec");
+
+    // Create a non-executable pre-commit hook
+    let hooks_dir = repo.join(".suture").join("hooks");
+    fs::create_dir_all(&hooks_dir).unwrap();
+    let hook = hooks_dir.join("pre-commit");
+    fs::write(&hook, "#!/bin/sh\nexit 1").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&hook, fs::Permissions::from_mode(0o644)).unwrap();
+    }
+
+    fs::write(repo.join("test.txt"), "content").unwrap();
+    suture_success(&repo, &["add", "test.txt"]);
+    // Should succeed because non-executable hook is skipped
+    let out = suture_success(&repo, &["commit", "non-exec hook"]);
+    assert!(
+        out.contains("Committed:"),
+        "commit should succeed with non-exec hook: {}",
+        out
+    );
+}
+
+#[test]
+fn test_hook_pre_commit_d_directory() {
+    let (_tmp, repo) = new_test_repo("hook_d_dir");
+
+    // Create hooks in pre-commit.d/ directory
+    let hook_d = repo.join(".suture").join("hooks").join("pre-commit.d");
+    fs::create_dir_all(&hook_d).unwrap();
+
+    let hook1 = hook_d.join("01-check");
+    fs::write(&hook1, "#!/bin/sh\necho 'check passed' >&2\nexit 0").unwrap();
+    let hook2 = hook_d.join("02-lint");
+    fs::write(&hook2, "#!/bin/sh\necho 'lint passed' >&2\nexit 0").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&hook1, fs::Permissions::from_mode(0o755)).unwrap();
+        fs::set_permissions(&hook2, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    fs::write(repo.join("test.txt"), "content").unwrap();
+    suture_success(&repo, &["add", "test.txt"]);
+    let out = suture_success(&repo, &["commit", "with hook dir"]);
+    assert!(
+        out.contains("Committed:"),
+        "commit should succeed with hook.d: {}",
+        out
+    );
+}

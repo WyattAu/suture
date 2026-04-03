@@ -35,6 +35,7 @@
 pub mod cas;
 pub mod dag;
 pub mod engine;
+pub mod hooks;
 pub mod metadata;
 pub mod patch;
 pub mod repository;

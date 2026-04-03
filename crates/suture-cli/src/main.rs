@@ -9,6 +9,64 @@ const ANSI_GREEN: &str = "\x1b[32m";
 const ANSI_BOLD_CYAN: &str = "\x1b[1;36m";
 const ANSI_RESET: &str = "\x1b[0m";
 
+/// Run a hook if it exists. Returns Ok(()) if the hook doesn't exist or succeeds.
+/// Returns Err with a descriptive message if the hook fails.
+///
+/// Callers should pass `SUTURE_BRANCH`, `SUTURE_HEAD`, and optionally
+/// `SUTURE_AUTHOR` via `extra_env`.
+fn run_hook_if_exists(
+    repo_root: &std::path::Path,
+    hook_name: &str,
+    extra_env: std::collections::HashMap<String, String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let author = extra_env.get("SUTURE_AUTHOR").cloned();
+    let branch = extra_env.get("SUTURE_BRANCH").cloned();
+    let head = extra_env.get("SUTURE_HEAD").cloned();
+
+    let env = suture_core::hooks::build_env(
+        repo_root,
+        hook_name,
+        author.as_deref(),
+        branch.as_deref(),
+        head.as_deref(),
+        extra_env,
+    );
+
+    match suture_core::hooks::run_hooks(repo_root, hook_name, &env) {
+        Ok(results) => {
+            for result in &results {
+                // Print hook stdout to the user
+                if !result.stdout.is_empty() {
+                    print!("{}", result.stdout);
+                }
+                if !result.success() {
+                    let msg = format!(
+                        "{}{} {}",
+                        ANSI_RED,
+                        suture_core::hooks::format_hook_result(result),
+                        ANSI_RESET
+                    );
+                    eprintln!("{}", msg);
+                    if !result.stderr.is_empty() {
+                        eprintln!("{}", result.stderr);
+                    }
+                    return Err(format!(
+                        "Hook '{}' failed (exit code {:?}). Aborting.",
+                        hook_name, result.exit_code
+                    )
+                    .into());
+                }
+            }
+            Ok(())
+        }
+        Err(suture_core::hooks::HookError::NotFound(_)) => {
+            // No hook configured — this is fine, silently continue
+            Ok(())
+        }
+        Err(e) => Err(format!("Hook '{}' error: {}", hook_name, e).into()),
+    }
+}
+
 #[derive(Parser)]
 #[command(
     name = "suture",
@@ -1387,6 +1445,17 @@ async fn cmd_cherry_pick(commit: &str) -> Result<(), Box<dyn std::error::Error>>
     let patches = repo.all_patches();
     let target = resolve_ref(&repo, commit, &patches)?;
     let patch_id = target.id;
+
+    // Run pre-cherry-pick hook
+    let (branch, head_id) = repo
+        .head()
+        .unwrap_or_else(|_| ("main".to_string(), suture_common::Hash::ZERO));
+    let mut extra = std::collections::HashMap::new();
+    extra.insert("SUTURE_BRANCH".to_string(), branch);
+    extra.insert("SUTURE_HEAD".to_string(), head_id.to_hex());
+    extra.insert("SUTURE_CHERRY_PICK_TARGET".to_string(), patch_id.to_hex());
+    run_hook_if_exists(repo.root(), "pre-cherry-pick", extra)?;
+
     let new_id = repo.cherry_pick(&patch_id)?;
     println!("Cherry-picked {} as {}", commit, new_id);
     Ok(())
@@ -1394,6 +1463,17 @@ async fn cmd_cherry_pick(commit: &str) -> Result<(), Box<dyn std::error::Error>>
 
 async fn cmd_rebase(branch: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+
+    // Run pre-rebase hook
+    let (current_branch, head_id) = repo
+        .head()
+        .unwrap_or_else(|_| ("main".to_string(), suture_common::Hash::ZERO));
+    let mut pre_extra = std::collections::HashMap::new();
+    pre_extra.insert("SUTURE_BRANCH".to_string(), current_branch.clone());
+    pre_extra.insert("SUTURE_HEAD".to_string(), head_id.to_hex());
+    pre_extra.insert("SUTURE_REBASE_ONTO".to_string(), branch.to_string());
+    run_hook_if_exists(repo.root(), "pre-rebase", pre_extra)?;
+
     let result = repo.rebase(branch)?;
     if result.patches_replayed > 0 {
         println!(
@@ -1403,6 +1483,15 @@ async fn cmd_rebase(branch: &str) -> Result<(), Box<dyn std::error::Error>> {
     } else {
         println!("Already up to date.");
     }
+
+    // Run post-rebase hook
+    let (branch_after, head_after) = repo.head()?;
+    let mut post_extra = std::collections::HashMap::new();
+    post_extra.insert("SUTURE_BRANCH".to_string(), branch_after);
+    post_extra.insert("SUTURE_HEAD".to_string(), head_after.to_hex());
+    post_extra.insert("SUTURE_REBASE_ONTO".to_string(), branch.to_string());
+    run_hook_if_exists(repo.root(), "post-rebase", post_extra)?;
+
     Ok(())
 }
 
@@ -1598,8 +1687,37 @@ async fn cmd_commit(message: &str, all: bool) -> Result<(), Box<dyn std::error::
             println!("Staged {} file(s)", count);
         }
     }
+
+    // Run pre-commit hook
+    let (branch, head_id) = repo
+        .head()
+        .unwrap_or_else(|_| ("main".to_string(), suture_common::Hash::ZERO));
+    let author = repo
+        .get_config("user.name")
+        .unwrap_or(None)
+        .unwrap_or_default();
+    let mut extra = std::collections::HashMap::new();
+    extra.insert("SUTURE_AUTHOR".to_string(), author);
+    extra.insert("SUTURE_BRANCH".to_string(), branch.clone());
+    extra.insert("SUTURE_HEAD".to_string(), head_id.to_hex());
+    run_hook_if_exists(repo.root(), "pre-commit", extra)?;
+
     let patch_id = repo.commit(message)?;
     println!("Committed: {}", patch_id);
+
+    // Run post-commit hook
+    let (branch, head_id) = repo.head()?;
+    let author = repo
+        .get_config("user.name")
+        .unwrap_or(None)
+        .unwrap_or_default();
+    let mut extra = std::collections::HashMap::new();
+    extra.insert("SUTURE_AUTHOR".to_string(), author);
+    extra.insert("SUTURE_BRANCH".to_string(), branch);
+    extra.insert("SUTURE_HEAD".to_string(), head_id.to_hex());
+    extra.insert("SUTURE_COMMIT".to_string(), patch_id.to_hex());
+    run_hook_if_exists(repo.root(), "post-commit", extra)?;
+
     Ok(())
 }
 
@@ -2073,6 +2191,17 @@ async fn cmd_revert(commit: &str, message: Option<&str>) -> Result<(), Box<dyn s
     let patches = repo.all_patches();
     let target = resolve_ref(&repo, commit, &patches)?;
     let patch_id = target.id;
+
+    // Run pre-revert hook
+    let (branch, head_id) = repo
+        .head()
+        .unwrap_or_else(|_| ("main".to_string(), suture_common::Hash::ZERO));
+    let mut extra = std::collections::HashMap::new();
+    extra.insert("SUTURE_BRANCH".to_string(), branch);
+    extra.insert("SUTURE_HEAD".to_string(), head_id.to_hex());
+    extra.insert("SUTURE_REVERT_TARGET".to_string(), patch_id.to_hex());
+    run_hook_if_exists(repo.root(), "pre-revert", extra)?;
+
     let revert_id = repo.revert(&patch_id, message)?;
     println!("Reverted: {}", revert_id);
     Ok(())
@@ -2083,6 +2212,17 @@ async fn cmd_merge(source: &str) -> Result<(), Box<dyn std::error::Error>> {
     use suture_core::repository::ConflictInfo;
 
     let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+
+    // Run pre-merge hook
+    let (branch, head_id) = repo
+        .head()
+        .unwrap_or_else(|_| ("main".to_string(), suture_common::Hash::ZERO));
+    let mut pre_extra = std::collections::HashMap::new();
+    pre_extra.insert("SUTURE_BRANCH".to_string(), branch.clone());
+    pre_extra.insert("SUTURE_HEAD".to_string(), head_id.to_hex());
+    pre_extra.insert("SUTURE_MERGE_SOURCE".to_string(), source.to_string());
+    run_hook_if_exists(repo.root(), "pre-merge", pre_extra)?;
+
     let result = repo.execute_merge(source)?;
 
     if result.is_clean {
@@ -2095,6 +2235,14 @@ async fn cmd_merge(source: &str) -> Result<(), Box<dyn std::error::Error>> {
                 result.patches_applied, source
             );
         }
+        // Run post-merge hook (only on clean merge)
+        let (branch, head_id) = repo.head()?;
+        let mut post_extra = std::collections::HashMap::new();
+        post_extra.insert("SUTURE_BRANCH".to_string(), branch);
+        post_extra.insert("SUTURE_HEAD".to_string(), head_id.to_hex());
+        post_extra.insert("SUTURE_MERGE_SOURCE".to_string(), source.to_string());
+        run_hook_if_exists(repo.root(), "post-merge", post_extra)?;
+
         return Ok(());
     }
 
@@ -2476,6 +2624,17 @@ async fn cmd_push(remote: &str) -> Result<(), Box<dyn std::error::Error>> {
 
     let push_body = sign_push_request(&repo, push_body)?;
 
+    // Run pre-push hook
+    let (branch, head_id) = repo
+        .head()
+        .unwrap_or_else(|_| ("main".to_string(), suture_common::Hash::ZERO));
+    let mut pre_extra = std::collections::HashMap::new();
+    pre_extra.insert("SUTURE_BRANCH".to_string(), branch);
+    pre_extra.insert("SUTURE_HEAD".to_string(), head_id.to_hex());
+    pre_extra.insert("SUTURE_PUSH_REMOTE".to_string(), remote.to_string());
+    pre_extra.insert("SUTURE_PUSH_PATCHES".to_string(), patches.len().to_string());
+    run_hook_if_exists(repo.root(), "pre-push", pre_extra)?;
+
     let client = reqwest::Client::new();
     let resp = client
         .post(format!("{}/push", url))
@@ -2489,6 +2648,15 @@ async fn cmd_push(remote: &str) -> Result<(), Box<dyn std::error::Error>> {
             let (_, head_id) = repo.head()?;
             repo.set_config(&push_state_key, &head_id.to_hex())?;
             println!("Push successful ({} patch(es))", patches.len());
+
+            // Run post-push hook
+            let (branch, head_id) = repo.head()?;
+            let mut post_extra = std::collections::HashMap::new();
+            post_extra.insert("SUTURE_BRANCH".to_string(), branch);
+            post_extra.insert("SUTURE_HEAD".to_string(), head_id.to_hex());
+            post_extra.insert("SUTURE_PUSH_REMOTE".to_string(), remote.to_string());
+            post_extra.insert("SUTURE_PUSH_PATCHES".to_string(), patches.len().to_string());
+            run_hook_if_exists(repo.root(), "post-push", post_extra)?;
         } else {
             eprintln!("Push failed: {:?}", result.error);
         }

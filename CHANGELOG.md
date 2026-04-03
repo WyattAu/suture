@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.1.0-beta.2] - 2026-04-03
+
+### Added
+
+#### Hook System
+- New `suture-core::hooks` module — full git-compatible hook execution framework
+- Supported hooks: `pre-commit`, `post-commit`, `pre-push`, `post-push`, `pre-merge`, `post-merge`, `pre-rebase`, `post-rebase`, `pre-cherry-pick`, `pre-revert`
+- Hooks directory: `.suture/hooks/` (overridable via `core.hooksPath` in `.suture/config`)
+- Supports `hook.d/` directories for multiple ordered scripts per hook type (e.g., `pre-commit.d/01-lint`, `pre-commit.d/02-test`)
+- Non-executable hooks are silently skipped (Unix permission bit check)
+- Missing hooks are silently skipped — zero friction for repos without hooks
+- Hook failure (non-zero exit) aborts the operation and prints stderr to the user
+- Hook stdout is printed to the user for feedback
+- Standard environment variables passed to all hooks: `SUTURE_HOOK`, `SUTURE_REPO`, `SUTURE_HOOK_DIR`, `SUTURE_OPERATION`, `SUTURE_AUTHOR`, `SUTURE_BRANCH`, `SUTURE_HEAD`
+- Operation-specific env vars: `SUTURE_PUSH_REMOTE`, `SUTURE_PUSH_PATCHES` (pre/post-push), `SUTURE_MERGE_SOURCE` (pre/post-merge), `SUTURE_REBASE_ONTO` (pre/post-rebase), `SUTURE_CHERRY_PICK_TARGET` (pre-cherry-pick), `SUTURE_REVERT_TARGET` (pre-revert), `SUTURE_COMMIT` (post-commit)
+
+#### Hook Integration Points
+- `suture commit`: runs `pre-commit` before finalizing, `post-commit` after success
+- `suture push`: runs `pre-push` before HTTP POST, `post-push` after successful push
+- `suture merge`: runs `pre-merge` before merge execution, `post-merge` after clean merge
+- `suture revert`: runs `pre-revert` before revert execution
+- `suture cherry-pick`: runs `pre-cherry-pick` before applying patch
+- `suture rebase`: runs `pre-rebase` before replaying patches, `post-rebase` after completion
+
+### Quality
+- Test count: 415 (up from 385 in v0.1.0-beta.1)
+- 16 new unit tests (hooks module: find, run, build_env, format, directory support)
+- 6 new integration tests (pre-commit pass/block, post-commit, env vars, non-executable, hook.d/)
+- Zero clippy warnings, zero audit findings
+
+### Deferred
+- `add -p` (partial/hunk staging) deferred to beta.3 — requires staging model changes
+
 ## [0.1.0-beta.1] - 2026-04-02
 
 ### Added
