@@ -1,5 +1,80 @@
 # Changelog
 
+## [0.1.0] - 2026-04-03
+
+Suture v0.1.0 — the first stable release of a patch-based, semantically-aware version control system.
+
+### Core
+
+- **BLAKE3 content-addressable storage** with Zstd compression
+- **Patch DAG** — commits as patches in a directed acyclic graph, not linear snapshots
+- **Touch set commutativity** — conflict detection via logical address intersection
+- **SQLite metadata** — branches, config, working set, reflog (WAL mode)
+- **Ed25519 commit signing** with key management
+- **Per-repo configuration** (`.suture/config` TOML with cascading lookup)
+
+### Semantic Merge
+
+- **9 format-aware drivers:** JSON (RFC 6901), YAML, TOML, CSV, XML, DOCX, XLSX, PPTX, OTIO
+- **Automatic driver dispatch** — `suture diff` and `suture merge` use semantic drivers when available
+- **Conflict auto-resolution** for Office documents during merge
+
+### CLI (37 commands)
+
+**Repository:** init, status, show, reflog, fsck, gc, config
+**Staging:** add (--all), rm (--cached), commit (--all), stash (push/pop/apply/list/drop)
+**History:** log (--graph/--oneline/--author/--grep/--since/--all), shortlog, blame, diff (--from/--to/--cached)
+**Branching:** branch (create/delete/list/-t), checkout (-b), merge, cherry-pick, revert, reset
+**Rebase:** rebase (--interactive/--abort), squash
+**Remote:** push, pull (--rebase), fetch (--depth), clone (--depth), remote (add/list/remove/login/mirror)
+**Search:** bisect (start/good/bad/run/reset)
+**Tags:** tag (create/annotate/delete/list)
+**Notes:** notes (add/list/show/remove)
+**Signing:** key (generate/list/public)
+**Utilities:** mv, drivers, completions, tui, version
+
+### Hook System
+
+- 10 hook types: pre/post-commit, pre/post-push, pre/post-merge, pre/post-rebase, pre-cherry-pick, pre-revert
+- `.suture/hooks/` directory with `core.hooksPath` config override
+- `hook.d/` directory support for multiple ordered scripts per hook
+- Standard environment variables (`SUTURE_HOOK`, `SUTURE_REPO`, `SUTURE_BRANCH`, `SUTURE_HEAD`, `SUTURE_AUTHOR`, etc.)
+- Operation-specific env vars for push, merge, rebase, cherry-pick, revert
+
+### Interactive Rebase
+
+- `suture rebase -i <base>` with editor-based TODO file (git-compatible format)
+- Actions: pick, reword, edit, squash, drop
+- `--abort` to cancel, state persisted in SQLite for crash recovery
+
+### Bisect
+
+- Manual: `suture bisect start <good> <bad>`, then `suture bisect good` / `suture bisect bad`
+- Automated: `suture bisect run <good> <bad> -- <test-command>`
+- Reports first bad commit automatically
+
+### Remote
+
+- HTTP/JSON Hub server with Ed25519 push signing
+- rustls TLS (pure Rust, no OpenSSL dependency)
+- Shallow clone (`--depth`)
+- Pull with rebase (`--rebase`)
+- ARM Linux binary (aarch64-unknown-linux-gnu)
+
+### Platforms
+
+- Linux x86_64, Linux aarch64
+- macOS x86_64, macOS aarch64
+- Windows x86_64
+
+### Quality
+
+- 419 tests (0 failures)
+- 18 end-to-end integration tests
+- 0 clippy warnings
+- 0 cargo-audit findings
+- CI: Nix-based build + test + clippy + fmt + audit
+
 ## [0.1.0-rc.1] - 2026-04-03
 
 ### Changed
