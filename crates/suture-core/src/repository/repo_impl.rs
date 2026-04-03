@@ -30,6 +30,7 @@ use crate::metadata::MetaError;
 use crate::patch::conflict::Conflict;
 use crate::patch::merge::MergeResult;
 use crate::patch::types::{OperationType, Patch, PatchId, TouchSet};
+use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
@@ -2065,6 +2066,385 @@ impl Repository {
     }
 
     // =========================================================================
+    // Interactive Rebase
+    // =========================================================================
+
+    /// Group a patch chain into logical commits.
+    ///
+    /// A "logical commit" is a contiguous chain of per-file patches that share
+    /// the same message. Returns groups in oldest-first order (root to tip).
+    pub fn commit_groups(&self, patches: &[Patch]) -> Vec<Vec<Patch>> {
+        if patches.is_empty() {
+            return Vec::new();
+        }
+
+        // Sort oldest first
+        let mut sorted: Vec<Patch> = patches.to_vec();
+        sorted.sort_by_key(|p| p.timestamp);
+
+        let mut groups: Vec<Vec<Patch>> = Vec::new();
+        let mut current_group: Vec<Patch> = Vec::new();
+        let mut current_message: Option<String> = None;
+
+        for patch in &sorted {
+            // Skip structural patches (same as the rebase skip logic)
+            if patch.operation_type == OperationType::Merge
+                || patch.operation_type == OperationType::Identity
+                || patch.operation_type == OperationType::Create
+            {
+                continue;
+            }
+
+            match &current_message {
+                None => {
+                    current_message = Some(patch.message.clone());
+                    current_group.push(patch.clone());
+                }
+                Some(msg) if msg == &patch.message => {
+                    // Same message — same logical commit
+                    current_group.push(patch.clone());
+                }
+                Some(_) => {
+                    // Different message — new logical commit
+                    if !current_group.is_empty() {
+                        groups.push(std::mem::take(&mut current_group));
+                    }
+                    current_message = Some(patch.message.clone());
+                    current_group.push(patch.clone());
+                }
+            }
+        }
+
+        if !current_group.is_empty() {
+            groups.push(current_group);
+        }
+
+        groups
+    }
+
+    /// Get patches between a base commit and HEAD (exclusive of base).
+    ///
+    /// Walks the first-parent chain from HEAD back to `base`, collecting
+    /// all patches that are NOT ancestors of `base`.
+    pub fn patches_since_base(&self, base: &PatchId) -> Vec<Patch> {
+        let base_ancestors = self.dag.ancestors(base);
+        let mut exclusion = base_ancestors;
+        exclusion.insert(*base);
+
+        let (_, head_id) = self
+            .head()
+            .unwrap_or_else(|_| ("main".to_string(), Hash::ZERO));
+        let chain = self.dag.patch_chain(&head_id);
+
+        chain
+            .into_iter()
+            .filter(|id| !exclusion.contains(id))
+            .filter_map(|id| self.dag.get_patch(&id).cloned())
+            .collect()
+    }
+
+    /// Generate a TODO file for interactive rebase.
+    ///
+    /// Returns the TODO file content as a string.
+    pub fn generate_rebase_todo(&self, base: &PatchId) -> Result<String, RepoError> {
+        let patches = self.patches_since_base(base);
+        let groups = self.commit_groups(&patches);
+
+        let mut lines = vec![
+            String::new(),
+            "# Interactive Rebase TODO".to_string(),
+            "#".to_string(),
+            "# Commands:".to_string(),
+            "#  pick   = use commit".to_string(),
+            "#  reword = use commit, but edit the commit message".to_string(),
+            "#  edit   = use commit, but stop for amending".to_string(),
+            "#  squash = use commit, but meld into previous commit".to_string(),
+            "#  drop   = remove commit".to_string(),
+            String::new(),
+        ];
+
+        for group in &groups {
+            if let Some(patch) = group.first() {
+                let short_hash = patch.id.to_hex().chars().take(8).collect::<String>();
+                lines.push(format!("pick {} {}", short_hash, patch.message));
+            }
+        }
+
+        lines.push(String::new());
+        Ok(lines.join("\n"))
+    }
+
+    /// Parse a TODO file into a rebase plan.
+    pub fn parse_rebase_todo(
+        &self,
+        todo_content: &str,
+        base: &PatchId,
+    ) -> Result<RebasePlan, RepoError> {
+        let patches = self.patches_since_base(base);
+        let groups = self.commit_groups(&patches);
+
+        // Build a map from short hash -> commit group
+        let mut group_map: HashMap<String, (String, Vec<PatchId>)> = HashMap::new();
+        for group in &groups {
+            if let Some(first) = group.first() {
+                let short_hash = first.id.to_hex().chars().take(8).collect::<String>();
+                let patch_ids: Vec<PatchId> = group.iter().map(|p| p.id).collect();
+                group_map.insert(short_hash, (first.message.clone(), patch_ids));
+            }
+        }
+
+        let mut entries = Vec::new();
+
+        for line in todo_content.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+
+            let mut parts = line.splitn(3, ' ');
+            let action_str = match parts.next() {
+                Some(a) => a,
+                None => continue,
+            };
+            let short_hash = match parts.next() {
+                Some(h) => h,
+                None => continue,
+            };
+            let message = parts.next().unwrap_or("").to_string();
+
+            let action = match action_str {
+                "pick" | "p" => RebaseAction::Pick,
+                "reword" | "r" => RebaseAction::Reword,
+                "edit" | "e" => RebaseAction::Edit,
+                "squash" | "s" => RebaseAction::Squash,
+                "drop" | "d" => RebaseAction::Drop,
+                _ => continue, // Skip unknown actions
+            };
+
+            // Look up the commit group by short hash
+            let (group_message, patch_ids) = group_map
+                .get(short_hash)
+                .cloned()
+                .unwrap_or_else(|| (message.clone(), Vec::new()));
+
+            // Use the message from the TODO if the user changed it (for reword)
+            let effective_message = if action == RebaseAction::Reword {
+                message
+            } else {
+                group_message
+            };
+
+            let commit_tip = patch_ids.last().copied().unwrap_or(Hash::ZERO);
+
+            entries.push(RebasePlanEntry {
+                action,
+                commit_tip,
+                message: effective_message,
+                patch_ids,
+            });
+        }
+
+        Ok(RebasePlan { entries })
+    }
+
+    /// Execute an interactive rebase plan.
+    ///
+    /// Replays commits according to the plan, handling pick/reword/edit/squash/drop.
+    /// Returns the new tip patch ID.
+    pub fn rebase_interactive(
+        &mut self,
+        plan: &RebasePlan,
+        onto: &PatchId,
+    ) -> Result<PatchId, RepoError> {
+        let old_head = self.head().map(|(_, id)| id).unwrap_or(Hash::ZERO);
+        let (head_branch, _head_id) = self.head()?;
+
+        // Detach HEAD to point at the onto target
+        let branch = BranchName::new(&head_branch)?;
+        let old_tree = self.snapshot_head().unwrap_or_else(|_| FileTree::empty());
+        self.dag.update_branch(&branch, *onto)?;
+        self.meta.set_branch(&branch, onto)?;
+        self.invalidate_head_cache();
+
+        let mut current_parent = *onto;
+        let mut last_new_id = *onto;
+        let mut squash_message_acc: Option<String> = None;
+
+        for entry in &plan.entries {
+            match entry.action {
+                RebaseAction::Drop => {
+                    // Skip this commit entirely
+                    continue;
+                }
+                RebaseAction::Pick
+                | RebaseAction::Reword
+                | RebaseAction::Edit
+                | RebaseAction::Squash => {
+                    // Get the original patches for this commit group
+                    let patches: Vec<Patch> = entry
+                        .patch_ids
+                        .iter()
+                        .filter_map(|id| self.dag.get_patch(id).cloned())
+                        .collect();
+
+                    if patches.is_empty() {
+                        continue;
+                    }
+
+                    // Determine the message to use
+                    let message = if entry.action == RebaseAction::Squash {
+                        // For squash, we accumulate messages and use them later
+                        let mut msg = squash_message_acc.take().unwrap_or_default();
+                        if !msg.is_empty() {
+                            msg.push('\n');
+                        }
+                        msg.push_str(&entry.message);
+                        squash_message_acc = Some(msg);
+                        continue; // Don't create patches yet — wait for next pick/edit/reword
+                    } else {
+                        // For pick/reword/edit: use accumulated squash message if any
+                        if let Some(sq_msg) = squash_message_acc.take() {
+                            let mut combined = sq_msg;
+                            if !combined.is_empty() && !entry.message.is_empty() {
+                                combined.push('\n');
+                            }
+                            combined.push_str(&entry.message);
+                            combined
+                        } else {
+                            entry.message.clone()
+                        }
+                    };
+
+                    // Replay each patch in the commit group
+                    for patch in &patches {
+                        if patch.operation_type == OperationType::Merge
+                            || patch.operation_type == OperationType::Identity
+                            || patch.operation_type == OperationType::Create
+                        {
+                            continue;
+                        }
+
+                        let new_patch = Patch::new(
+                            patch.operation_type.clone(),
+                            patch.touch_set.clone(),
+                            patch.target_path.clone(),
+                            patch.payload.clone(),
+                            vec![current_parent],
+                            self.author.clone(),
+                            message.clone(),
+                        );
+
+                        let new_id = self
+                            .dag
+                            .add_patch(new_patch.clone(), vec![current_parent])?;
+                        self.meta.store_patch(&new_patch)?;
+
+                        last_new_id = new_id;
+                        current_parent = new_id;
+                    }
+
+                    // Handle edit: save state and return
+                    if entry.action == RebaseAction::Edit {
+                        let state = RebaseState {
+                            original_head: old_head,
+                            original_branch: head_branch.clone(),
+                            onto: *onto,
+                            next_entry: 0, // Will be set by caller
+                            current_parent,
+                            squash_message: None,
+                            plan: Vec::new(), // Will be set by caller
+                        };
+                        let _ = self.save_rebase_state(&state);
+                        // Point branch to current state so user can amend
+                        self.dag.update_branch(&branch, last_new_id)?;
+                        self.meta.set_branch(&branch, &last_new_id)?;
+                        self.invalidate_head_cache();
+                        self.sync_working_tree(&old_tree)?;
+                        return Ok(last_new_id);
+                    }
+                }
+            }
+        }
+
+        // If there's an unflushed squash message, apply it to the last commit
+        // (This shouldn't normally happen — squash should be followed by another action)
+
+        // Point branch to new tip and sync working tree
+        self.dag.update_branch(&branch, last_new_id)?;
+        self.meta.set_branch(&branch, &last_new_id)?;
+        self.invalidate_head_cache();
+        self.sync_working_tree(&old_tree)?;
+
+        let _ = self.record_reflog(&old_head, &last_new_id, "interactive rebase");
+
+        // Clean up rebase state
+        let _ = self.clear_rebase_state();
+
+        Ok(last_new_id)
+    }
+
+    /// Save interactive rebase state for --continue / --abort.
+    fn save_rebase_state(&self, state: &RebaseState) -> Result<(), RepoError> {
+        let serialized = serde_json::to_string(state)
+            .map_err(|e| RepoError::Custom(format!("failed to serialize rebase state: {}", e)))?;
+        self.meta
+            .set_config("rebase_state", &serialized)
+            .map_err(RepoError::Meta)?;
+        Ok(())
+    }
+
+    /// Load interactive rebase state.
+    pub fn load_rebase_state(&self) -> Result<Option<RebaseState>, RepoError> {
+        match self
+            .meta
+            .get_config("rebase_state")
+            .map_err(RepoError::Meta)?
+        {
+            Some(json) => {
+                let state: RebaseState = serde_json::from_str(&json).map_err(|e| {
+                    RepoError::Custom(format!("failed to parse rebase state: {}", e))
+                })?;
+                Ok(Some(state))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Clear interactive rebase state.
+    fn clear_rebase_state(&self) -> Result<(), RepoError> {
+        let _ = self
+            .meta
+            .conn()
+            .execute("DELETE FROM config WHERE key = 'rebase_state'", []);
+        Ok(())
+    }
+
+    /// Abort an in-progress interactive rebase.
+    ///
+    /// Restores the branch to its original position before rebase started.
+    pub fn rebase_abort(&mut self) -> Result<(), RepoError> {
+        let state = self
+            .load_rebase_state()?
+            .ok_or_else(|| RepoError::Custom("no rebase in progress".to_string()))?;
+
+        let branch = BranchName::new(&state.original_branch)?;
+        let old_tree = self.snapshot_head().unwrap_or_else(|_| FileTree::empty());
+        self.dag.update_branch(&branch, state.original_head)?;
+        self.meta.set_branch(&branch, &state.original_head)?;
+        self.invalidate_head_cache();
+        self.sync_working_tree(&old_tree)?;
+
+        let _ = self.record_reflog(
+            &state.current_parent,
+            &state.original_head,
+            "rebase --abort",
+        );
+
+        self.clear_rebase_state()?;
+        Ok(())
+    }
+
+    // =========================================================================
     // Blame
     // =========================================================================
 
@@ -2688,6 +3068,68 @@ pub struct RebaseResult {
     pub patches_replayed: usize,
     /// The new tip patch ID after rebase.
     pub new_tip: PatchId,
+}
+
+/// Actions available during interactive rebase.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RebaseAction {
+    /// Apply the commit as-is.
+    Pick,
+    /// Apply the commit but edit the message.
+    Reword,
+    /// Apply the commit and pause for amending.
+    Edit,
+    /// Combine with the previous commit.
+    Squash,
+    /// Skip this commit entirely.
+    Drop,
+}
+
+/// A single entry in the interactive rebase plan.
+#[derive(Debug, Clone)]
+pub struct RebasePlanEntry {
+    /// The action to perform.
+    pub action: RebaseAction,
+    /// The tip patch ID of the logical commit (last patch in the per-file chain).
+    pub commit_tip: PatchId,
+    /// The commit message (for display and reword).
+    pub message: String,
+    /// All patch IDs in this logical commit's chain.
+    pub patch_ids: Vec<PatchId>,
+}
+
+/// A complete interactive rebase plan.
+#[derive(Debug, Clone)]
+pub struct RebasePlan {
+    pub entries: Vec<RebasePlanEntry>,
+}
+
+/// State persisted during an interactive rebase for --continue / --abort.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RebaseState {
+    /// Original HEAD before rebase started.
+    pub original_head: PatchId,
+    /// Original branch name.
+    pub original_branch: String,
+    /// Target we're rebasing onto.
+    pub onto: PatchId,
+    /// Index of the next entry to process.
+    pub next_entry: usize,
+    /// The plan entries remaining.
+    pub plan: Vec<RebasePlanEntrySerialized>,
+    /// Current parent for chaining new patches.
+    pub current_parent: PatchId,
+    /// Accumulated squash messages (for combining with squash action).
+    pub squash_message: Option<String>,
+}
+
+/// Serialized form of a plan entry (for state persistence).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RebasePlanEntrySerialized {
+    pub action: String,
+    pub commit_tip: String,
+    pub message: String,
+    pub patch_ids: Vec<String>,
 }
 
 /// Repository status information.

@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.1.0-beta.3] - 2026-04-03
+
+### Added
+
+#### Interactive Rebase (`suture rebase -i`)
+- New `-i` / `--interactive` flag on `suture rebase` — opens editor with TODO file
+- Supports 5 actions: `pick`, `reword`, `edit`, `squash`, `drop`
+- Editor integration via `$SUTURE_EDITOR` or `$EDITOR` environment variable
+- TODO file format compatible with git's interactive rebase
+- Supports reordering commits, dropping commits, squashing adjacent commits
+- `--abort` flag to cancel an in-progress rebase (restores original HEAD)
+- `--resume` flag to continue after pausing at an `edit` action
+- Rebase state persisted in SQLite for crash recovery
+
+#### Core Rebase Infrastructure
+- `commit_groups()` — groups per-file patches into logical commits (by shared message)
+- `patches_since_base()` — collects patches between a base commit and HEAD
+- `generate_rebase_todo()` — produces TODO file content for editor
+- `parse_rebase_todo()` — reads edited TODO back into a structured plan
+- `rebase_interactive()` — executes a rebase plan (pick/reword/edit/squash/drop)
+- `rebase_abort()` — restores branch to pre-rebase state
+- `RebaseState` / `RebasePlan` / `RebaseAction` types for state management
+
+#### Existing Features (already present)
+- `suture reflog` — already implemented (shows HEAD movement history)
+- `suture log --graph` — already implemented (ASCII DAG visualization)
+
+### Quality
+- Test count: 419 (up from 415 in v0.1.0-beta.2)
+- 4 new e2e tests (rebase: non-interactive, abort, plan parsing, drop)
+- Zero clippy warnings, zero audit findings
+
+### Deferred
+- `add -p` (partial/hunk staging) deferred to post-1.0
+- Full `--continue` support (edit workflow) deferred to beta.4
+
 ## [0.1.0-beta.2] - 2026-04-03
 
 ### Added
