@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.1.0-rc.1] - 2026-04-03
+
+### Changed
+
+#### README Overhaul
+- Complete rewrite of README.md with:
+  - Binary release installation instructions
+  - Comprehensive CLI reference (37 commands organized by category)
+  - Feature documentation (hooks, interactive rebase, bisect, semantic merge)
+  - Updated semantic driver table (9 drivers: JSON, YAML, TOML, CSV, XML, DOCX, XLSX, PPTX, OTIO)
+  - Architecture overview with all 22 workspace crates
+  - Repository layout documentation
+
+### Quality
+- All 37 CLI commands have consistent help text
+- 419 tests, 0 failures, 0 clippy warnings
+- Zero audit findings
+
 ## [0.1.0-beta.3] - 2026-04-03
 
 ### Added

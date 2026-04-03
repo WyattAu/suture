@@ -2376,7 +2376,7 @@ dependencies = [
 
 [[package]]
 name = "suture-cli"
-version = "0.1.0-beta.2"
+version = "0.1.0-beta.3"
 dependencies = [
  "base64",
  "clap",
