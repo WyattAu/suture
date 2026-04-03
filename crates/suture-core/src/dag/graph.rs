@@ -7,6 +7,7 @@
 //! - Acyclicity enforcement
 
 use crate::patch::types::{Patch, PatchId};
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use suture_common::BranchName;
 use thiserror::Error;
@@ -54,6 +55,9 @@ pub struct DagNode {
     pub parent_ids: Vec<PatchId>,
     /// Child patch IDs.
     pub child_ids: Vec<PatchId>,
+    /// Generation number: max(parent generations) + 1, or 0 for root.
+    /// Used for O(1) depth comparisons in LCA computation.
+    pub generation: u64,
 }
 
 /// The Patch-DAG — a directed acyclic graph of patches.
@@ -61,11 +65,17 @@ pub struct DagNode {
 /// Internally stores:
 /// - A HashMap of PatchId -> DagNode
 /// - A HashMap of branch name -> target PatchId
+/// - An ancestor cache (lazy, stable across mutations since adding new nodes
+///   never changes existing nodes' ancestor sets)
 pub struct PatchDag {
     /// All nodes in the DAG, indexed by patch ID.
     pub(crate) nodes: HashMap<PatchId, DagNode>,
     /// Named branch pointers.
     pub(crate) branches: HashMap<String, PatchId>,
+    /// Cache of ancestor sets, keyed by patch ID.
+    /// Populated lazily by `ancestors()`; stable because `add_patch()` only
+    /// creates new nodes (existing nodes' ancestor sets never change).
+    ancestor_cache: RefCell<HashMap<PatchId, HashSet<PatchId>>>,
 }
 
 impl Default for PatchDag {
@@ -80,6 +90,7 @@ impl PatchDag {
         Self {
             nodes: HashMap::new(),
             branches: HashMap::new(),
+            ancestor_cache: RefCell::new(HashMap::new()),
         }
     }
 
@@ -121,11 +132,24 @@ impl PatchDag {
             // for branch operations.)
         }
 
+        // Compute generation number: max(parent generations) + 1, or 0 for root
+        let generation = if parent_ids.is_empty() {
+            0
+        } else {
+            parent_ids
+                .iter()
+                .map(|pid| self.nodes.get(pid).map(|n| n.generation).unwrap_or(0))
+                .max()
+                .unwrap_or(0)
+                + 1
+        };
+
         // Create the node
         let node = DagNode {
             patch,
             parent_ids: parent_ids.clone(),
             child_ids: Vec::new(),
+            generation,
         };
 
         // Add edges from parents to this node
@@ -156,8 +180,18 @@ impl PatchDag {
 
     /// Get all transitive ancestors of a patch (excluding the patch itself).
     ///
-    /// Uses BFS traversal. Returns ancestors in no particular order.
+    /// Uses BFS traversal. Results are cached: the first call for a given patch
+    /// ID computes the ancestor set via BFS; subsequent calls return the cached
+    /// result in O(1). The cache is safe without invalidation because
+    /// `add_patch()` only creates new nodes — existing nodes' ancestor sets
+    /// never change.
     pub fn ancestors(&self, id: &PatchId) -> HashSet<PatchId> {
+        // Check cache first
+        if let Some(cached) = self.ancestor_cache.borrow().get(id) {
+            return cached.clone();
+        }
+
+        // BFS to compute ancestor set
         let mut ancestors = HashSet::new();
         let mut queue: VecDeque<PatchId> = VecDeque::new();
 
@@ -180,6 +214,10 @@ impl PatchDag {
             }
         }
 
+        // Store in cache
+        self.ancestor_cache
+            .borrow_mut()
+            .insert(*id, ancestors.clone());
         ancestors
     }
 
@@ -187,6 +225,9 @@ impl PatchDag {
     ///
     /// The LCA is the most recent patch that is an ancestor of both.
     /// Returns `None` if no common ancestor exists.
+    ///
+    /// Uses generation numbers for O(1) depth comparison instead of BFS-based
+    /// `ancestor_depth()`, reducing complexity from O(n²) to O(n).
     pub fn lca(&self, a: &PatchId, b: &PatchId) -> Option<PatchId> {
         if a == b {
             return Some(*a);
@@ -211,15 +252,15 @@ impl PatchDag {
             return None;
         }
 
-        // Find the most recent common ancestor (the one with the longest
-        // path from root, i.e., the deepest in the DAG).
+        // Find the most recent common ancestor (highest generation number).
+        // Uses precomputed generation field — O(1) per lookup instead of BFS.
         let mut best: Option<PatchId> = None;
-        let mut best_depth: usize = 0;
+        let mut best_gen: u64 = 0;
 
         for candidate in &common {
-            let depth = self.ancestor_depth(candidate);
-            if depth >= best_depth {
-                best_depth = depth;
+            let candidate_gen = self.nodes.get(candidate).map(|n| n.generation).unwrap_or(0);
+            if candidate_gen >= best_gen {
+                best_gen = candidate_gen;
                 best = Some(*candidate);
             }
         }
@@ -227,9 +268,17 @@ impl PatchDag {
         best
     }
 
-    /// Compute the "depth" of a patch (number of ancestors).
+    /// Compute the "depth" of a patch using its precomputed generation number.
+    ///
+    /// For a linear chain, this equals the number of ancestors.
+    /// For DAGs with merges, the generation is the length of the longest
+    /// path from root to this node.
+    #[allow(dead_code)]
     fn ancestor_depth(&self, id: &PatchId) -> usize {
-        self.ancestors(id).len()
+        self.nodes
+            .get(id)
+            .map(|n| n.generation as usize)
+            .unwrap_or(0)
     }
 
     /// Create a new branch pointing to a patch.
@@ -587,6 +636,130 @@ mod tests {
         assert_eq!(chain[0], id2); // Most recent first
         assert_eq!(chain[1], id1);
         assert_eq!(chain[2], id0);
+    }
+
+    #[test]
+    fn test_generation_numbers_linear() {
+        let mut dag = PatchDag::new();
+        let p0 = make_patch("p0");
+        let id0 = dag.add_patch(p0, vec![]).unwrap();
+        assert_eq!(dag.get_node(&id0).unwrap().generation, 0);
+
+        let p1 = make_patch("p1");
+        let id1 = dag.add_patch(p1, vec![id0]).unwrap();
+        assert_eq!(dag.get_node(&id1).unwrap().generation, 1);
+
+        let p2 = make_patch("p2");
+        let id2 = dag.add_patch(p2, vec![id1]).unwrap();
+        assert_eq!(dag.get_node(&id2).unwrap().generation, 2);
+    }
+
+    #[test]
+    fn test_generation_numbers_diamond() {
+        let mut dag = PatchDag::new();
+        let root = make_patch("root");
+        let root_id = dag.add_patch(root, vec![]).unwrap();
+
+        let left = make_patch("left");
+        let left_id = dag.add_patch(left, vec![root_id]).unwrap();
+
+        let right = make_patch("right");
+        let right_id = dag.add_patch(right, vec![root_id]).unwrap();
+
+        let merge = make_patch("merge");
+        let merge_id = dag.add_patch(merge, vec![left_id, right_id]).unwrap();
+
+        assert_eq!(dag.get_node(&root_id).unwrap().generation, 0);
+        assert_eq!(dag.get_node(&left_id).unwrap().generation, 1);
+        assert_eq!(dag.get_node(&right_id).unwrap().generation, 1);
+        // Merge's generation = max(left.gen, right.gen) + 1 = 2
+        assert_eq!(dag.get_node(&merge_id).unwrap().generation, 2);
+    }
+
+    #[test]
+    fn test_generation_numbers_uneven_branches() {
+        let mut dag = PatchDag::new();
+        let root = make_patch("root");
+        let root_id = dag.add_patch(root, vec![]).unwrap();
+
+        // Short branch: root -> a
+        let a = make_patch("a");
+        let a_id = dag.add_patch(a, vec![root_id]).unwrap();
+
+        // Long branch: root -> b -> c -> d
+        let b = make_patch("b");
+        let b_id = dag.add_patch(b, vec![root_id]).unwrap();
+        let c = make_patch("c");
+        let c_id = dag.add_patch(c, vec![b_id]).unwrap();
+        let d = make_patch("d");
+        let d_id = dag.add_patch(d, vec![c_id]).unwrap();
+
+        // Merge short and long branches
+        let merge = make_patch("merge");
+        let merge_id = dag.add_patch(merge, vec![a_id, d_id]).unwrap();
+
+        assert_eq!(dag.get_node(&a_id).unwrap().generation, 1);
+        assert_eq!(dag.get_node(&d_id).unwrap().generation, 3);
+        // Merge gen = max(1, 3) + 1 = 4
+        assert_eq!(dag.get_node(&merge_id).unwrap().generation, 4);
+    }
+
+    #[test]
+    fn test_ancestor_cache() {
+        let mut dag = PatchDag::new();
+        let p0 = make_patch("p0");
+        let id0 = dag.add_patch(p0, vec![]).unwrap();
+        let p1 = make_patch("p1");
+        let id1 = dag.add_patch(p1, vec![id0]).unwrap();
+        let p2 = make_patch("p2");
+        let id2 = dag.add_patch(p2, vec![id1]).unwrap();
+
+        // First call: computes via BFS, caches result
+        let anc1 = dag.ancestors(&id2);
+        assert_eq!(anc1.len(), 2);
+
+        // Second call: should return cached result (same values)
+        let anc2 = dag.ancestors(&id2);
+        assert_eq!(anc2.len(), 2);
+        assert_eq!(anc1, anc2);
+
+        // Cache should have entries for id2
+        assert!(dag.ancestor_cache.borrow().contains_key(&id2));
+    }
+
+    #[test]
+    fn test_lca_uneven_branches() {
+        let mut dag = PatchDag::new();
+        let root = make_patch("root");
+        let root_id = dag.add_patch(root, vec![]).unwrap();
+
+        // Branch A: root -> a1 -> a2
+        let a1 = make_patch("a1");
+        let a1_id = dag.add_patch(a1, vec![root_id]).unwrap();
+        let a2 = make_patch("a2");
+        let a2_id = dag.add_patch(a2, vec![a1_id]).unwrap();
+
+        // Branch B: root -> b1
+        let b1 = make_patch("b1");
+        let b1_id = dag.add_patch(b1, vec![root_id]).unwrap();
+
+        // LCA(a2, b1) should be root
+        assert_eq!(dag.lca(&a2_id, &b1_id), Some(root_id));
+        // LCA(a1, b1) should be root
+        assert_eq!(dag.lca(&a1_id, &b1_id), Some(root_id));
+    }
+
+    #[test]
+    fn test_lca_no_common_ancestor() {
+        let mut dag = PatchDag::new();
+        // Two disconnected trees
+        let r1 = make_patch("root1");
+        let r1_id = dag.add_patch(r1, vec![]).unwrap();
+        let r2 = make_patch("root2");
+        let r2_id = dag.add_patch(r2, vec![]).unwrap();
+
+        // No common ancestor
+        assert_eq!(dag.lca(&r1_id, &r2_id), None);
     }
 
     mod proptests {

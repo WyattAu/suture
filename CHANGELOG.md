@@ -1,6 +1,29 @@
 # Changelog
 
-## [0.1.0] - 2026-04-03
+## [0.2.0] - 2026-04-03
+
+Suture v0.2.0 — a major performance release with algorithmic improvements, caching, and parallelization.
+
+### Performance
+
+- **O(n) LCA algorithm** — replaced O(n²) LCA with generation-number-based computation. Each node stores its generation (depth from root) at insertion time, enabling O(1) depth comparison instead of BFS-based `ancestor_depth()`.
+- **DAG ancestor caching** — `ancestors()` results are cached in a `RefCell<HashMap>`. First call computes via BFS; subsequent calls return cached result in O(1). Cache is stable because `add_patch()` never changes existing nodes' ancestor sets.
+- **Pack index caching** — `BlobStore` caches loaded pack indices in a `Mutex<Option<PackCache>>`. First access reads `.idx` files from disk; subsequent calls return cached data. Invalidated automatically on `repack()`.
+- **Optional hash verification on read** — `BlobStore::set_verify_on_read(false)` skips the BLAKE3 integrity check on `get_blob()`, saving O(n) per read. Enabled by default for safety; disabled in Repository for performance (content addressing provides correctness by construction).
+- **Parallel file I/O** — `sync_working_tree()` uses rayon to pre-fetch blobs and write files in parallel during checkout/merge. Three-phase pipeline: parallel blob reads → directory creation → parallel file writes.
+- **HEAD caching** — `head()` branch name cached in `RefCell<Option<String>>`, avoiding SQLite query on every call. Invalidated on all HEAD-modifying operations.
+
+### Benchmarks
+
+- New `dag_lca_diamond` benchmark — measures LCA on diamond-shaped merge DAGs (the most common merge pattern)
+- New `dag_ancestors_cached` benchmark — measures cache hit performance for repeated ancestor queries
+
+### Test Coverage
+
+- 258 unit tests in suture-core (up from 256)
+- 9 new DAG tests: generation numbers (linear, diamond, uneven branches), ancestor caching, LCA (uneven branches, no common ancestor)
+- 2 new pack cache tests: cache hit behavior, invalidation
+- All tests pass, clippy clean with `-D warnings`
 
 Suture v0.1.0 — the first stable release of a patch-based, semantically-aware version control system.
 

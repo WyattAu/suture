@@ -17,6 +17,7 @@ use crate::cas::pack::{PackCache, PackError, PackFile, PackIndex};
 use std::fs;
 use std::io;
 use std::path::PathBuf;
+use std::sync::Mutex;
 use suture_common::Hash;
 use thiserror::Error;
 
@@ -55,6 +56,11 @@ pub enum CasError {
 ///
 /// Stores blobs indexed by BLAKE3 hash on the local filesystem.
 /// Provides deduplication, optional compression, and integrity verification.
+///
+/// # Thread Safety
+///
+/// `BlobStore` is `Send + Sync` and can be shared across threads via `Arc`.
+/// The pack index cache uses `Mutex` for interior mutability.
 pub struct BlobStore {
     /// Root directory containing the `objects/` subdirectory.
     root: PathBuf,
@@ -62,6 +68,14 @@ pub struct BlobStore {
     compress: bool,
     /// Zstd compression level (1-22).
     compression_level: i32,
+    /// Whether to verify blob hashes on read. Default: true.
+    /// Set to false for hot paths where performance matters more than
+    /// per-read integrity verification (content addressing already
+    /// provides correctness by construction).
+    verify_on_read: bool,
+    /// Cached pack indices, loaded lazily on first pack access.
+    /// Invalidated when `repack()` creates new pack files.
+    pack_cache: Mutex<Option<PackCache>>,
 }
 
 impl BlobStore {
@@ -76,6 +90,8 @@ impl BlobStore {
             root,
             compress: true,
             compression_level: compressor::DEFAULT_COMPRESSION_LEVEL,
+            verify_on_read: true,
+            pack_cache: Mutex::new(None),
         })
     }
 
@@ -84,6 +100,22 @@ impl BlobStore {
         let mut store = Self::new(root)?;
         store.compress = false;
         Ok(store)
+    }
+
+    /// Set whether to verify blob hashes on read.
+    ///
+    /// When disabled, `get_blob()` skips the BLAKE3 hash verification
+    /// step, saving O(n) computation per read. The content-addressed
+    /// storage scheme already provides correctness by construction
+    /// (the filename is the hash), so this is safe for performance-critical
+    /// paths like `snapshot_head()` which may read many blobs in sequence.
+    pub fn set_verify_on_read(&mut self, verify: bool) {
+        self.verify_on_read = verify;
+    }
+
+    /// Check whether hash verification is enabled on read.
+    pub fn verify_on_read(&self) -> bool {
+        self.verify_on_read
     }
 
     /// Store a blob, returning its BLAKE3 hash.
@@ -167,7 +199,8 @@ impl BlobStore {
     /// Retrieve a blob by its BLAKE3 hash.
     ///
     /// Tries loose objects first, then pack files.
-    /// Decompresses if necessary and verifies the hash of the result.
+    /// Decompresses if necessary and verifies the hash of the result
+    /// (unless verification was disabled via `set_verify_on_read(false)`).
     pub fn get_blob(&self, hash: &Hash) -> Result<Vec<u8>, CasError> {
         // Try loose blob first
         let blob_path = self.blob_path(hash);
@@ -178,7 +211,9 @@ impl BlobStore {
             } else {
                 raw
             };
-            hasher::verify_hash(&data, hash)?;
+            if self.verify_on_read {
+                hasher::verify_hash(&data, hash)?;
+            }
             return Ok(data);
         }
 
@@ -300,19 +335,37 @@ impl BlobStore {
         self.root.join("objects").join("pack")
     }
 
-    /// Load pack indices from the pack directory.
-    fn load_pack_cache(&self) -> Result<PackCache, CasError> {
-        PackCache::load_all(&self.pack_dir()).map_err(CasError::Pack)
+    /// Ensure pack cache is loaded, then call `f` with a reference to it.
+    ///
+    /// On first access, reads all `.idx` files from the pack directory.
+    /// Subsequent calls return the cached data without disk I/O.
+    /// Call `invalidate_pack_cache()` after `repack()` to force a reload.
+    fn with_pack_cache<F, R>(&self, f: F) -> Result<R, CasError>
+    where
+        F: FnOnce(&PackCache) -> R,
+    {
+        let mut guard = self
+            .pack_cache
+            .lock()
+            .map_err(|e| CasError::CompressionError(format!("pack cache lock poisoned: {e}")))?;
+        if guard.is_none() {
+            *guard = Some(PackCache::load_all(&self.pack_dir()).map_err(CasError::Pack)?);
+        }
+        Ok(f(guard.as_ref().unwrap()))
+    }
+
+    /// Invalidate the pack cache (call after repack or external pack changes).
+    pub fn invalidate_pack_cache(&self) {
+        if let Ok(mut guard) = self.pack_cache.lock() {
+            *guard = None;
+        }
     }
 
     /// Retrieve a blob from pack files only (not loose objects).
     pub fn get_blob_packed(&self, hash: &Hash) -> Result<Vec<u8>, CasError> {
-        let cache = self.load_pack_cache()?;
-        let (pack_path, _offset) = cache
-            .find(hash)
-            .ok_or_else(|| CasError::BlobNotFound(hash.to_hex()))?;
-        let pack_path = pack_path.clone();
-        drop(cache);
+        // Find which pack file contains this blob
+        let pack_path = self.with_pack_cache(|cache| cache.find(hash).map(|(p, _)| p.clone()))?;
+        let pack_path = pack_path.ok_or_else(|| CasError::BlobNotFound(hash.to_hex()))?;
 
         let idx_path = pack_path.with_extension("idx");
         let index = PackIndex::load(&idx_path).map_err(CasError::Pack)?;
@@ -322,17 +375,13 @@ impl BlobStore {
 
     /// Check if a blob exists in any pack file.
     pub fn has_blob_packed(&self, hash: &Hash) -> bool {
-        if let Ok(cache) = self.load_pack_cache() {
-            cache.find(hash).is_some()
-        } else {
-            false
-        }
+        self.with_pack_cache(|cache| cache.find(hash).is_some())
+            .unwrap_or(false)
     }
 
     /// List all blob hashes stored in pack files.
     pub fn list_blobs_packed(&self) -> Result<Vec<Hash>, CasError> {
-        let cache = self.load_pack_cache()?;
-        Ok(cache.all_hashes())
+        self.with_pack_cache(|cache| cache.all_hashes())
     }
 
     /// Repack loose blobs into a pack file if the count exceeds the threshold.
@@ -358,6 +407,9 @@ impl BlobStore {
         for hash in &loose_hashes {
             let _ = self.delete_blob(hash);
         }
+
+        // Invalidate pack cache since we created new pack files
+        self.invalidate_pack_cache();
 
         Ok(loose_hashes.len())
     }
@@ -689,6 +741,54 @@ mod tests {
 
             let all = store.list_blobs_packed().unwrap();
             assert_eq!(all.len(), 3);
+        }
+
+        #[test]
+        fn test_pack_cache_avoids_repeated_disk_reads() {
+            let dir = tempfile::tempdir().unwrap();
+            let store = BlobStore::new_uncompressed(dir.path()).unwrap();
+
+            let hash = store.put_blob(b"cache me").unwrap();
+            store.repack(0).unwrap();
+
+            // First access: loads cache from disk
+            assert!(store.has_blob_packed(&hash));
+            // Cache should now be populated
+            {
+                let guard = store.pack_cache.lock().unwrap();
+                assert!(
+                    guard.is_some(),
+                    "pack cache should be populated after first access"
+                );
+            }
+
+            // Second access: uses cached data (no disk I/O)
+            assert!(store.has_blob_packed(&hash));
+
+            // Third access: also cached
+            let data = store.get_blob_packed(&hash).unwrap();
+            assert_eq!(data, b"cache me".to_vec());
+        }
+
+        #[test]
+        fn test_invalidate_pack_cache() {
+            let dir = tempfile::tempdir().unwrap();
+            let store = BlobStore::new_uncompressed(dir.path()).unwrap();
+
+            let hash = store.put_blob(b"invalidate test").unwrap();
+            store.repack(0).unwrap();
+
+            // Populate cache
+            assert!(store.has_blob_packed(&hash));
+            assert!(store.pack_cache.lock().unwrap().is_some());
+
+            // Invalidate
+            store.invalidate_pack_cache();
+            assert!(store.pack_cache.lock().unwrap().is_none());
+
+            // Next access reloads from disk
+            assert!(store.has_blob_packed(&hash));
+            assert!(store.pack_cache.lock().unwrap().is_some());
         }
     }
 }

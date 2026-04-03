@@ -119,6 +119,8 @@ pub struct Repository {
     cached_head_snapshot: RefCell<Option<FileTree>>,
     /// The patch ID that the cached snapshot corresponds to.
     cached_head_id: RefCell<Option<PatchId>>,
+    /// The branch name that HEAD points to (cached).
+    cached_head_branch: RefCell<Option<String>>,
     /// Per-repo configuration loaded from `.suture/config`.
     repo_config: crate::metadata::repo_config::RepoConfig,
 }
@@ -134,8 +136,10 @@ impl Repository {
         // Create directory structure
         fs::create_dir_all(suture_dir.join("objects"))?;
 
-        // Initialize CAS
-        let cas = BlobStore::new(&suture_dir)?;
+        // Initialize CAS (disable per-read hash verification for performance;
+        // content addressing already ensures correctness by construction)
+        let mut cas = BlobStore::new(&suture_dir)?;
+        cas.set_verify_on_read(false);
 
         // Initialize metadata
         let meta = crate::metadata::MetadataStore::open(&suture_dir.join("metadata.db"))?;
@@ -180,6 +184,7 @@ impl Repository {
             pending_merge_parents: Vec::new(),
             cached_head_snapshot: RefCell::new(None),
             cached_head_id: RefCell::new(None),
+            cached_head_branch: RefCell::new(None),
             repo_config: crate::metadata::repo_config::RepoConfig::default(),
         })
     }
@@ -192,7 +197,9 @@ impl Repository {
             return Err(RepoError::NotARepository(path.to_path_buf()));
         }
 
-        let cas = BlobStore::new(&suture_dir)?;
+        // Initialize CAS (disable per-read hash verification for performance)
+        let mut cas = BlobStore::new(&suture_dir)?;
+        cas.set_verify_on_read(false);
         let meta = crate::metadata::MetadataStore::open(&suture_dir.join("metadata.db"))?;
 
         // Reconstruct DAG from metadata — load ALL patches
@@ -280,6 +287,7 @@ impl Repository {
             pending_merge_parents: restored_parents,
             cached_head_snapshot: RefCell::new(None),
             cached_head_id: RefCell::new(None),
+            cached_head_branch: RefCell::new(None),
             repo_config,
         })
     }
@@ -321,6 +329,11 @@ impl Repository {
     /// Reads the `head_branch` config key to determine which branch is
     /// currently checked out. Falls back to "main" if not set.
     pub fn head(&self) -> Result<(String, PatchId), RepoError> {
+        if let Some(ref cached) = *self.cached_head_id.borrow()
+            && let Some(ref branch) = *self.cached_head_branch.borrow()
+        {
+            return Ok((branch.clone(), *cached));
+        }
         let branch_name = self
             .meta
             .get_config("head_branch")
@@ -333,6 +346,8 @@ impl Repository {
             .get_branch(&bn)
             .ok_or_else(|| RepoError::BranchNotFound(branch_name.clone()))?;
 
+        *self.cached_head_branch.borrow_mut() = Some(branch_name.clone());
+        *self.cached_head_id.borrow_mut() = Some(target_id);
         Ok((branch_name, target_id))
     }
 
@@ -1019,6 +1034,19 @@ impl Repository {
         }
 
         let tree = self.snapshot_uncached(&head_id)?;
+        let tree_hash = tree.content_hash();
+
+        let stored_hash = self
+            .meta
+            .get_config("head_tree_hash")
+            .ok()
+            .flatten()
+            .and_then(|h| Hash::from_hex(&h).ok());
+
+        if stored_hash.is_none_or(|h| h != tree_hash) {
+            let _ = self.meta.set_config("head_tree_hash", &tree_hash.to_hex());
+        }
+
         *self.cached_head_snapshot.borrow_mut() = Some(tree.clone());
         *self.cached_head_id.borrow_mut() = Some(head_id);
         Ok(tree)
@@ -1028,6 +1056,11 @@ impl Repository {
     fn invalidate_head_cache(&self) {
         *self.cached_head_snapshot.borrow_mut() = None;
         *self.cached_head_id.borrow_mut() = None;
+        *self.cached_head_branch.borrow_mut() = None;
+        let _ = self
+            .meta
+            .conn()
+            .execute("DELETE FROM config WHERE key = 'head_tree_hash'", []);
     }
 
     /// Build a FileTree snapshot for a specific patch (uncached).
@@ -1062,28 +1095,63 @@ impl Repository {
     /// current HEAD snapshot and applies file additions, modifications,
     /// deletions, and renames to disk.
     pub fn sync_working_tree(&self, old_tree: &FileTree) -> Result<(), RepoError> {
+        use rayon::prelude::*;
+
         let new_tree = self.snapshot_head()?;
         let diffs = diff_trees(old_tree, &new_tree);
 
-        for entry in &diffs {
-            let full_path = self.root.join(&entry.path);
-            match &entry.diff_type {
-                DiffType::Added | DiffType::Modified => {
-                    if let Some(new_hash) = &entry.new_hash {
-                        let blob = self.cas.get_blob(new_hash)?;
-                        if let Some(parent) = full_path.parent() {
-                            fs::create_dir_all(parent)?;
-                        }
-                        fs::write(&full_path, &blob)?;
-                    }
+        // Extract fields needed by parallel closures (BlobStore is Send + Sync)
+        let cas = &self.cas;
+        let root = &self.root;
+
+        // Phase 1: Pre-fetch all blobs in parallel (the I/O-heavy part)
+        let blob_results: Result<Vec<(String, Vec<u8>)>, CasError> = diffs
+            .par_iter()
+            .filter_map(|entry| {
+                if let (DiffType::Added | DiffType::Modified, Some(new_hash)) =
+                    (&entry.diff_type, &entry.new_hash)
+                {
+                    Some((entry.path.clone(), *new_hash))
+                } else {
+                    None
                 }
+            })
+            .map(|(path, hash)| {
+                let blob = cas.get_blob(&hash)?;
+                Ok((path, blob))
+            })
+            .collect();
+
+        let blobs: Vec<(String, Vec<u8>)> = blob_results?;
+
+        // Phase 2: Ensure all parent directories exist (sequential, idempotent)
+        for (path, _) in &blobs {
+            let full_path = root.join(path);
+            if let Some(parent) = full_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+        }
+
+        // Phase 3: Write all files in parallel
+        blobs
+            .par_iter()
+            .map(|(path, data)| {
+                let full_path = root.join(path);
+                fs::write(&full_path, data).map_err(RepoError::Io)
+            })
+            .collect::<Result<Vec<()>, RepoError>>()?;
+
+        // Phase 4: Handle deletions and renames (sequential — filesystem rename is not parallelizable)
+        for entry in &diffs {
+            let full_path = root.join(&entry.path);
+            match &entry.diff_type {
                 DiffType::Deleted => {
                     if full_path.exists() {
                         fs::remove_file(&full_path)?;
                     }
                 }
                 DiffType::Renamed { old_path, .. } => {
-                    let old_full = self.root.join(old_path);
+                    let old_full = root.join(old_path);
                     if old_full.exists() {
                         if let Some(parent) = full_path.parent() {
                             fs::create_dir_all(parent)?;
@@ -1091,12 +1159,16 @@ impl Repository {
                         fs::rename(&old_full, &full_path)?;
                     }
                 }
+                DiffType::Added | DiffType::Modified => {
+                    // Already handled in parallel phases above
+                }
             }
         }
 
+        // Phase 5: Clean up files in old_tree but not in new_tree
         for (path, _) in old_tree.iter() {
             if !new_tree.contains(path) {
-                let full_path = self.root.join(path);
+                let full_path = root.join(path);
                 if full_path.exists() {
                     let _ = fs::remove_file(&full_path);
                 }

@@ -1,4 +1,4 @@
-use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use suture_common::Hash;
 use tempfile::TempDir;
 
@@ -112,6 +112,80 @@ fn bench_dag_lca(c: &mut Criterion) {
             });
         });
     }
+    group.finish();
+}
+
+/// Benchmark LCA on a diamond-shaped DAG (the most common merge pattern).
+/// Tests the generation-number optimization and ancestor caching.
+fn bench_dag_lca_diamond(c: &mut Criterion) {
+    let mut group = c.benchmark_group("dag_lca_diamond");
+
+    for depth in [5usize, 20, 50] {
+        group.bench_with_input(
+            BenchmarkId::new("diamond_merge", depth),
+            &depth,
+            |b, &depth| {
+                b.iter_with_setup(
+                    || {
+                        // Build a diamond DAG: root -> (left + right) -> merge, repeated `depth` times
+                        let mut dag = PatchDag::new();
+                        let root = make_patch(0);
+                        let root_id = dag.add_patch(root, vec![]).unwrap();
+
+                        let mut tip = root_id;
+                        for d in 1..=depth {
+                            let left = make_patch(d * 2);
+                            let right = make_patch(d * 2 + 1);
+                            let left_id = dag.add_patch(left, vec![tip]).unwrap();
+                            let right_id = dag.add_patch(right, vec![tip]).unwrap();
+                            let merge_p = make_patch(d * 2 + 1000);
+                            let merge_id = dag.add_patch(merge_p, vec![left_id, right_id]).unwrap();
+                            tip = merge_id;
+                        }
+                        (dag, tip)
+                    },
+                    |(dag, tip)| {
+                        // LCA between two nodes at the same depth (both children of root)
+                        // This exercises ancestor caching heavily
+                        let root = dag.get_node(&dag.patch_ids()[0]).unwrap();
+                        let root_id = root.patch.id;
+                        let result = black_box(dag.lca(&tip, &root_id));
+                        assert!(result.is_some());
+                    },
+                );
+            },
+        );
+    }
+    group.finish();
+}
+
+/// Benchmark ancestors() with caching — second call should be O(1).
+fn bench_dag_ancestors_cached(c: &mut Criterion) {
+    let mut group = c.benchmark_group("dag_ancestors_cached");
+
+    group.bench_function("ancestors_1k_cached", |b| {
+        b.iter_with_setup(
+            || {
+                let mut dag = PatchDag::new();
+                let mut last_id = None;
+                for i in 0..1000 {
+                    let patch = make_patch(i);
+                    let parents = last_id.map(|id| vec![id]).unwrap_or_default();
+                    let id = dag.add_patch(patch, parents).unwrap();
+                    last_id = Some(id);
+                }
+                dag
+            },
+            |dag| {
+                let tip = dag.patch_ids().last().unwrap();
+                // First call: BFS computation (cached)
+                let _ = black_box(dag.ancestors(&tip));
+                // Second call: cache hit
+                let _ = black_box(dag.ancestors(&tip));
+            },
+        );
+    });
+
     group.finish();
 }
 
@@ -284,6 +358,8 @@ criterion_group!(
     bench_hashing,
     bench_dag_insertion,
     bench_dag_lca,
+    bench_dag_lca_diamond,
+    bench_dag_ancestors_cached,
     bench_patch_chain,
     bench_filetree_diff,
     bench_dag_large,
