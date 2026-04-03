@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.3.0] - 2026-04-04
+
+Suture v0.3.0 — a scalability release with persistent snapshots, eliminating O(n) patch replay on cold start.
+
+### Scale
+
+- **Persistent FileTree in SQLite** — new `file_trees` table stores `(patch_id, path, blob_hash)` entries. `snapshot_head()` and `snapshot()` load from SQLite in O(1) instead of replaying all patches O(n). Trees are persisted after every commit.
+- **SQLite reflog** — new `reflog` table replaces the legacy config-based approach. O(1) append writes instead of O(n) full-rewrite. Automatic migration from legacy format on first read.
+- **Schema migration v2** — automatic migration adds `file_trees` and `reflog` tables to existing repositories.
+
+### Bug Fixes
+
+- **Fixed stale HEAD cache** — `snapshot_head()` now always reads the fresh branch target from the DAG, bypassing stale cached IDs. This fixes a bug where `clone` and `pull` (via `do_fetch`) could return outdated snapshots.
+- **Fixed `is_tracked()` cold path** — now queries the SQLite `file_trees` table before falling back to the expensive DAG walk.
+- **Made `invalidate_head_cache()` public** — CLI operations like `do_fetch()` that update branch pointers externally can now properly invalidate the cache.
+
+### Test Coverage
+
+- 264 unit tests in suture-core (up from 258)
+- 28 metadata tests (up from 22) — 6 new tests for file_trees and reflog persistence
+- 18 e2e tests (including `test_push_pull_roundtrip`, previously failing)
+- All tests pass, clippy clean with `-D warnings`
+
 ## [0.2.0] - 2026-04-03
 
 Suture v0.2.0 — a major performance release with algorithmic improvements, caching, and parallelization.

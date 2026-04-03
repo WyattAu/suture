@@ -6,8 +6,10 @@
 pub mod global_config;
 pub mod repo_config;
 
+use crate::engine::tree::FileTree;
 use crate::patch::types::{Patch, PatchId, TouchSet};
-use rusqlite::{Connection, params};
+use rusqlite::{params, Connection};
+use std::collections::BTreeMap;
 use std::path::Path;
 use suture_common::{BranchName, FileStatus, Hash, RepoPath};
 use thiserror::Error;
@@ -43,7 +45,8 @@ pub struct MetadataStore {
 }
 
 /// Current schema version.
-const SCHEMA_VERSION: i32 = 1;
+#[allow(dead_code)]
+const SCHEMA_VERSION: i32 = 2;
 
 impl MetadataStore {
     /// Open or create a metadata database at the given path.
@@ -148,7 +151,37 @@ impl MetadataStore {
 
             self.conn.execute(
                 "INSERT INTO schema_version (version) VALUES (?)",
-                params![SCHEMA_VERSION],
+                params![1],
+            )?;
+        }
+
+        if current_version < 2 {
+            self.conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS file_trees (
+                    patch_id TEXT NOT NULL,
+                    path TEXT NOT NULL,
+                    blob_hash TEXT NOT NULL,
+                    PRIMARY KEY (patch_id, path)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_file_trees_patch ON file_trees(patch_id);
+                CREATE INDEX IF NOT EXISTS idx_file_trees_path ON file_trees(path);
+
+                CREATE TABLE IF NOT EXISTS reflog (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    old_head TEXT NOT NULL,
+                    new_head TEXT NOT NULL,
+                    message TEXT NOT NULL,
+                    timestamp INTEGER NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_reflog_timestamp ON reflog(timestamp);
+                ",
+            )?;
+
+            self.conn.execute(
+                "INSERT INTO schema_version (version) VALUES (?)",
+                params![2],
             )?;
         }
 
@@ -461,6 +494,121 @@ impl MetadataStore {
             Err(e) => Err(MetaError::Custom(e.to_string())),
         }
     }
+
+    // =========================================================================
+    // File Trees (persistent snapshot storage)
+    // =========================================================================
+
+    /// Store a FileTree for a given patch ID.
+    ///
+    /// Replaces all existing entries for that patch_id (DELETE + INSERT in transaction).
+    pub fn store_file_tree(&self, patch_id: &PatchId, tree: &FileTree) -> Result<(), MetaError> {
+        let hex = patch_id.to_hex();
+        self.conn
+            .execute("DELETE FROM file_trees WHERE patch_id = ?1", params![hex])?;
+
+        let tx = self.conn.unchecked_transaction()?;
+        for (path, hash) in tree.iter() {
+            tx.execute(
+                "INSERT INTO file_trees (patch_id, path, blob_hash) VALUES (?1, ?2, ?3)",
+                params![hex, path.as_str(), hash.to_hex()],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Load a FileTree for a given patch ID from the database.
+    ///
+    /// Returns `None` if no entries exist for that patch_id.
+    pub fn load_file_tree(&self, patch_id: &PatchId) -> Result<Option<FileTree>, MetaError> {
+        let hex = patch_id.to_hex();
+        let mut stmt = self
+            .conn
+            .prepare("SELECT path, blob_hash FROM file_trees WHERE patch_id = ?1 ORDER BY path")?;
+
+        let entries: BTreeMap<String, Hash> = stmt
+            .query_map(params![hex], |row| {
+                let path: String = row.get(0)?;
+                let hash_hex: String = row.get(1)?;
+                Ok((path, hash_hex))
+            })?
+            .filter_map(|r| {
+                r.ok().and_then(|(path, hash_hex)| {
+                    Hash::from_hex(&hash_hex).ok().map(|hash| (path, hash))
+                })
+            })
+            .collect();
+
+        if entries.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(FileTree::from_map(entries)))
+        }
+    }
+
+    /// Check if a path exists in the file tree for a given patch ID.
+    pub fn file_tree_contains(&self, patch_id: &PatchId, path: &str) -> Result<bool, MetaError> {
+        let hex = patch_id.to_hex();
+        let result: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM file_trees WHERE patch_id = ?1 AND path = ?2",
+            params![hex, path],
+            |row| row.get(0),
+        )?;
+        Ok(result > 0)
+    }
+
+    // =========================================================================
+    // Reflog (persistent operation log)
+    // =========================================================================
+
+    /// Append an entry to the reflog.
+    pub fn reflog_push(
+        &self,
+        old_head: &PatchId,
+        new_head: &PatchId,
+        message: &str,
+    ) -> Result<(), MetaError> {
+        self.conn.execute(
+            "INSERT INTO reflog (old_head, new_head, message, timestamp) VALUES (?1, ?2, ?3, ?4)",
+            params![
+                old_head.to_hex(),
+                new_head.to_hex(),
+                message,
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or(0),
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Get the full reflog (newest first).
+    pub fn reflog_list(&self) -> Result<Vec<(String, String, String)>, MetaError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT old_head, new_head, message FROM reflog ORDER BY id DESC")?;
+
+        let entries = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(entries)
+    }
+
+    /// Clear the entire reflog.
+    pub fn reflog_clear(&self) -> Result<usize, MetaError> {
+        let deleted = self.conn.execute("DELETE FROM reflog", [])?;
+        Ok(deleted)
+    }
 }
 
 #[cfg(test)]
@@ -580,5 +728,104 @@ mod tests {
         let (_, children) = store.get_edges(&parent.id).unwrap();
         assert_eq!(children.len(), 1);
         assert_eq!(children[0], child.id);
+    }
+
+    #[test]
+    fn test_store_and_load_file_tree() {
+        let store = MetadataStore::open_in_memory().unwrap();
+        let patch = make_test_patch("root");
+        let patch_id = patch.id;
+
+        let mut tree = FileTree::empty();
+        tree.insert("src/main.rs".to_string(), Hash::from_data(b"main"));
+        tree.insert("src/lib.rs".to_string(), Hash::from_data(b"lib"));
+
+        store.store_file_tree(&patch_id, &tree).unwrap();
+
+        let loaded = store.load_file_tree(&patch_id).unwrap().unwrap();
+        assert_eq!(loaded.len(), 2);
+        assert!(loaded.contains("src/main.rs"));
+        assert!(loaded.contains("src/lib.rs"));
+        assert_eq!(loaded.get("src/main.rs"), Some(&Hash::from_data(b"main")));
+    }
+
+    #[test]
+    fn test_file_tree_replace() {
+        let store = MetadataStore::open_in_memory().unwrap();
+        let patch = make_test_patch("root");
+        let patch_id = patch.id;
+
+        let mut tree1 = FileTree::empty();
+        tree1.insert("a.txt".to_string(), Hash::from_data(b"a"));
+
+        store.store_file_tree(&patch_id, &tree1).unwrap();
+
+        let mut tree2 = FileTree::empty();
+        tree2.insert("b.txt".to_string(), Hash::from_data(b"b"));
+
+        // Replacing should remove old entries
+        store.store_file_tree(&patch_id, &tree2).unwrap();
+
+        let loaded = store.load_file_tree(&patch_id).unwrap().unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert!(!loaded.contains("a.txt"));
+        assert!(loaded.contains("b.txt"));
+    }
+
+    #[test]
+    fn test_file_tree_contains() {
+        let store = MetadataStore::open_in_memory().unwrap();
+        let patch = make_test_patch("root");
+        let patch_id = patch.id;
+
+        let mut tree = FileTree::empty();
+        tree.insert("tracked.txt".to_string(), Hash::from_data(b"data"));
+
+        store.store_file_tree(&patch_id, &tree).unwrap();
+
+        assert!(store.file_tree_contains(&patch_id, "tracked.txt").unwrap());
+        assert!(!store.file_tree_contains(&patch_id, "missing.txt").unwrap());
+    }
+
+    #[test]
+    fn test_load_file_tree_empty() {
+        let store = MetadataStore::open_in_memory().unwrap();
+        let patch = make_test_patch("root");
+        let patch_id = patch.id;
+
+        let result = store.load_file_tree(&patch_id).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_reflog_push_and_list() {
+        let store = MetadataStore::open_in_memory().unwrap();
+        let old = Hash::from_data(b"old");
+        let new = Hash::from_data(b"new");
+
+        store.reflog_push(&old, &new, "commit: test").unwrap();
+        store
+            .reflog_push(&new, &Hash::from_data(b"newer"), "checkout: feature")
+            .unwrap();
+
+        let log = store.reflog_list().unwrap();
+        assert_eq!(log.len(), 2);
+        // Newest first
+        assert!(log[0].2.contains("checkout"));
+        assert!(log[1].2.contains("commit"));
+    }
+
+    #[test]
+    fn test_reflog_clear() {
+        let store = MetadataStore::open_in_memory().unwrap();
+        let old = Hash::from_data(b"old");
+        let new = Hash::from_data(b"new");
+
+        store.reflog_push(&old, &new, "test").unwrap();
+        assert_eq!(store.reflog_list().unwrap().len(), 1);
+
+        let deleted = store.reflog_clear().unwrap();
+        assert_eq!(deleted, 1);
+        assert!(store.reflog_list().unwrap().is_empty());
     }
 }

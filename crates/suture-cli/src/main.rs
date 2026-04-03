@@ -2902,6 +2902,9 @@ async fn do_fetch(
         repo.meta().set_branch(&branch_name, &target_id)?;
     }
 
+    // Invalidate HEAD cache since branch pointers changed
+    repo.invalidate_head_cache();
+
     Ok(new_patches)
 }
 

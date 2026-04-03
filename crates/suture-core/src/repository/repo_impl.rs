@@ -675,10 +675,21 @@ impl Repository {
     }
 
     /// Check if a path is tracked.
+    ///
+    /// Uses the SQLite file_trees table for O(1) lookups when HEAD is cached,
+    /// falling back to the in-memory DAG walk only on cold start.
     fn is_tracked(&self, path: &str) -> Result<bool, RepoError> {
+        // Fast path: use in-memory cache if available
         if let Some(ref tree) = *self.cached_head_snapshot.borrow() {
             return Ok(tree.contains(path));
         }
+        // Medium path: use SQLite file_trees table
+        if let Ok((_, head_id)) = self.head()
+            && let Ok(result) = self.meta.file_tree_contains(&head_id, path)
+        {
+            return Ok(result);
+        }
+        // Slow path: walk the DAG (shouldn't happen after first commit)
         for id in self.dag.patch_ids() {
             if let Some(node) = self.dag.get_node(&id)
                 && node.patch.target_path.as_deref() == Some(path)
@@ -766,6 +777,14 @@ impl Repository {
         let branch = BranchName::new(&branch_name)?;
         self.dag.update_branch(&branch, last_patch_id)?;
         self.meta.set_branch(&branch, &last_patch_id)?;
+
+        // Persist the file tree for this commit tip (enables O(1) cold-load later).
+        // Build the tree directly from patches (not from the stale cache).
+        if let Ok(tree) = self.snapshot_uncached(&last_patch_id) {
+            let tree_hash = tree.content_hash();
+            let _ = self.meta.set_config("head_tree_hash", &tree_hash.to_hex());
+            let _ = self.meta.store_file_tree(&last_patch_id, &tree);
+        }
 
         self.invalidate_head_cache();
 
@@ -1024,36 +1043,76 @@ impl Repository {
     /// Returns a cached snapshot if the HEAD has not changed since the last
     /// call, making this O(1) instead of O(n) where n = total patches.
     pub fn snapshot_head(&self) -> Result<FileTree, RepoError> {
-        let (_, head_id) = self.head()?;
+        // Always get the fresh head_id from the DAG (branch pointers may have
+        // been updated externally, e.g., by do_fetch). Only use the in-memory
+        // cache if the IDs match.
+        let (branch_name, head_id) = {
+            let branch_name = self
+                .meta
+                .get_config("head_branch")
+                .map_err(RepoError::Meta)?
+                .unwrap_or_else(|| "main".to_string());
+            let bn = BranchName::new(&branch_name)?;
+            let target_id = self
+                .dag
+                .get_branch(&bn)
+                .ok_or_else(|| RepoError::BranchNotFound(branch_name.clone()))?;
+            (branch_name, target_id)
+        };
 
-        if let Some(cached_id) = *self.cached_head_id.borrow()
-            && cached_id == head_id
-            && let Some(ref tree) = *self.cached_head_snapshot.borrow()
-        {
+        // Update head caches
+        *self.cached_head_branch.borrow_mut() = Some(branch_name.clone());
+        *self.cached_head_id.borrow_mut() = Some(head_id);
+
+        if let Some(ref tree) = *self.cached_head_snapshot.borrow() {
             return Ok(tree.clone());
         }
 
+        // Try loading from SQLite (O(1) — no patch replay needed)
+        if let Some(tree) = self
+            .meta
+            .load_file_tree(&head_id)
+            .map_err(RepoError::Meta)?
+        {
+            // Verify the stored tree matches the expected hash
+            let tree_hash = tree.content_hash();
+            let stored_hash = self
+                .meta
+                .get_config("head_tree_hash")
+                .ok()
+                .flatten()
+                .and_then(|h| Hash::from_hex(&h).ok());
+
+            if stored_hash.is_none_or(|h| h == tree_hash) {
+                // Update stored hash if needed
+                if stored_hash.is_none() {
+                    let _ = self.meta.set_config("head_tree_hash", &tree_hash.to_hex());
+                }
+
+                *self.cached_head_snapshot.borrow_mut() = Some(tree.clone());
+                return Ok(tree);
+            }
+            // Hash mismatch — fall through to recompute
+        }
+
+        // Cold path: replay all patches (expensive, but correct)
         let tree = self.snapshot_uncached(&head_id)?;
         let tree_hash = tree.content_hash();
 
-        let stored_hash = self
-            .meta
-            .get_config("head_tree_hash")
-            .ok()
-            .flatten()
-            .and_then(|h| Hash::from_hex(&h).ok());
+        let _ = self.meta.set_config("head_tree_hash", &tree_hash.to_hex());
 
-        if stored_hash.is_none_or(|h| h != tree_hash) {
-            let _ = self.meta.set_config("head_tree_hash", &tree_hash.to_hex());
-        }
+        // Persist the tree for next cold start
+        let _ = self.meta.store_file_tree(&head_id, &tree);
 
         *self.cached_head_snapshot.borrow_mut() = Some(tree.clone());
-        *self.cached_head_id.borrow_mut() = Some(head_id);
         Ok(tree)
     }
 
-    /// Invalidate the cached HEAD snapshot.
-    fn invalidate_head_cache(&self) {
+    /// Invalidate the cached HEAD snapshot and branch name.
+    ///
+    /// Must be called after any operation that changes the HEAD pointer,
+    /// including branch updates from external sources (e.g., fetch/pull).
+    pub fn invalidate_head_cache(&self) {
         *self.cached_head_snapshot.borrow_mut() = None;
         *self.cached_head_id.borrow_mut() = None;
         *self.cached_head_branch.borrow_mut() = None;
@@ -1079,9 +1138,20 @@ impl Repository {
 
     /// Build a FileTree snapshot for a specific patch.
     ///
-    /// Applies all patches from root to the given patch ID.
+    /// Tries loading from SQLite first (O(1)), falls back to patch replay (O(n)).
     pub fn snapshot(&self, patch_id: &PatchId) -> Result<FileTree, RepoError> {
-        self.snapshot_uncached(patch_id)
+        // Try SQLite first
+        if let Some(tree) = self
+            .meta
+            .load_file_tree(patch_id)
+            .map_err(RepoError::Meta)?
+        {
+            return Ok(tree);
+        }
+        // Fall back to patch replay, then persist
+        let tree = self.snapshot_uncached(patch_id)?;
+        let _ = self.meta.store_file_tree(patch_id, &tree);
+        Ok(tree)
     }
 
     /// Sync the working tree to match the current HEAD snapshot.
@@ -2967,28 +3037,62 @@ impl Repository {
         new_head: &PatchId,
         message: &str,
     ) -> Result<(), RepoError> {
-        let ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-        let entry = format!("{}:{}:{}", ts, old_head.to_hex(), message);
-        let mut entries = self.reflog_entries()?;
-        entries.push((new_head.to_hex(), entry));
-        if entries.len() > 100 {
-            entries = entries.into_iter().rev().take(100).collect();
-            entries.reverse();
-        }
-        let serialized = serde_json::to_string(&entries).unwrap_or_default();
+        // Use the SQLite reflog table (O(1) append, no full-rewrite)
         self.meta
-            .set_config("reflog", &serialized)
+            .reflog_push(old_head, new_head, message)
             .map_err(RepoError::Meta)?;
         Ok(())
     }
 
     /// Get reflog entries as (head_hash, entry_string) pairs.
     pub fn reflog_entries(&self) -> Result<Vec<(String, String)>, RepoError> {
+        // Try the SQLite reflog table first
+        let sqlite_entries = self.meta.reflog_list().map_err(RepoError::Meta)?;
+
+        if !sqlite_entries.is_empty() {
+            // Convert (old_head, new_head, message) → (new_head, formatted_entry)
+            let entries: Vec<(String, String)> = sqlite_entries
+                .into_iter()
+                .map(|(old_head, new_head, message)| {
+                    let ts = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs();
+                    (new_head, format!("{}:{}:{}", ts, old_head, message))
+                })
+                .collect();
+            return Ok(entries);
+        }
+
+        // Fallback: migrate from legacy config-based reflog
         match self.meta.get_config("reflog").map_err(RepoError::Meta)? {
-            Some(json) => Ok(serde_json::from_str(&json).unwrap_or_default()),
+            Some(json) => {
+                let legacy: Vec<(String, String)> = serde_json::from_str(&json).unwrap_or_default();
+                // Migrate legacy entries to SQLite
+                for (new_head, entry) in &legacy {
+                    let parts: Vec<&str> = entry.splitn(3, ':').collect();
+                    if parts.len() >= 3 {
+                        let old_head = parts[1];
+                        let msg = parts[2];
+                        if let (Ok(old), Ok(new)) =
+                            (Hash::from_hex(old_head), Hash::from_hex(new_head))
+                        {
+                            let _ = self.meta.reflog_push(&old, &new, msg);
+                        }
+                    }
+                }
+                // Clear legacy config after migration
+                let _ = self.meta.delete_config("reflog");
+                // Reload from SQLite
+                let sqlite_entries = self.meta.reflog_list().map_err(RepoError::Meta)?;
+                let entries: Vec<(String, String)> = sqlite_entries
+                    .into_iter()
+                    .map(|(old_head, new_head, message)| {
+                        (new_head, format!("{}:{}:{}", 0, old_head, message))
+                    })
+                    .collect();
+                Ok(entries)
+            }
             None => Ok(Vec::new()),
         }
     }
