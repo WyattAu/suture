@@ -3,8 +3,55 @@ pub(crate) async fn cmd_branch(
     target: Option<&str>,
     delete: bool,
     list: bool,
+    protect: bool,
+    unprotect: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+
+    if protect || unprotect {
+        let branch_name = name.ok_or("--protect/--unprotect requires a branch name")?;
+        let config_key = format!("branch.{}.protected", branch_name);
+        if protect {
+            repo.set_config(&config_key, "true")?;
+        } else {
+            let _ = repo.meta().delete_config(&config_key);
+        }
+
+        if let Ok(url) = repo.get_remote_url("origin") {
+            let repo_id = crate::remote_proto::derive_repo_id(&url, "origin");
+            let client = reqwest::Client::new();
+            let endpoint = if protect { "protect" } else { "unprotect" };
+            let resp = client
+                .post(format!(
+                    "{}/repos/{}/{}",
+                    url.trim_end_matches('/'),
+                    repo_id,
+                    endpoint
+                ))
+                .send()
+                .await?;
+            if resp.status().is_success() {
+                println!(
+                    "Branch '{}' {} on remote",
+                    branch_name,
+                    if protect { "protected" } else { "unprotected" }
+                );
+            } else {
+                eprintln!(
+                    "Warning: could not {} branch on remote: {}",
+                    if protect { "protect" } else { "unprotect" },
+                    resp.status()
+                );
+            }
+        }
+
+        println!(
+            "Branch '{}' {}",
+            branch_name,
+            if protect { "protected" } else { "unprotected" }
+        );
+        return Ok(());
+    }
 
     if list || name.is_none() {
         let branches = repo.list_branches();
@@ -19,7 +66,11 @@ pub(crate) async fn cmd_branch(
                 } else {
                     "  "
                 };
-                println!("{}{}", marker, bname);
+                let protected = repo
+                    .get_config(&format!("branch.{}.protected", bname))?
+                    .is_some_and(|v| v == "true");
+                let lock = if protected { " [protected]" } else { "" };
+                println!("{}{}{}", marker, bname, lock);
             }
         }
         return Ok(());

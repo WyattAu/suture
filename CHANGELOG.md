@@ -1,5 +1,49 @@
 # Changelog
 
+## [0.6.0] - 2026-04-04
+
+Suture v0.6.0 — Collaboration features including Hub fast-forward validation, selective blob transfer, max_depth support, force push, branch protection, and worktree support.
+
+### Hub Fast-Forward Validation
+
+- **Push validation** — `handle_push` now checks `known_branches` against the server's current branch state using `is_ancestor()` parent chain walk. Non-fast-forward pushes are rejected with HTTP 409 unless `force: true`.
+- **Force push** — `suture push --force` bypasses fast-forward validation. Added `force: bool` (with `#[serde(default)]`) to `suture-protocol::PushRequest`.
+- **Per-branch push** — `suture push <branch>` pushes only the specified branch and its patches.
+
+### Selective Blob Transfer
+
+- **Blob pruning on pull** — `handle_pull` now collects payload hashes from new patches and returns only the referenced blobs via `get_blobs(repo_id, hashes)`, instead of returning all blobs in the repo.
+- **Payload format handling** — payloads may be raw hex (from tests/internal use) or base64-encoded (from CLI). The pull handler detects format by checking if all characters are hex digits before attempting base64 decode.
+
+### Max Depth Support
+
+- **`max_depth` on pull** — `handle_pull` now respects the `max_depth` field from `PullRequest`, truncating the new patches list after computing the delta.
+
+### Branch Protection
+
+- **Protection table** — added `branch_protection` table to HubStorage schema with `protect_branch`, `unprotect_branch`, and `is_branch_protected` methods.
+- **Protection endpoints** — `POST /repos/{repo_id}/protect/{branch}` and `POST /repos/{repo_id}/unprotect/{branch}`.
+- **Push enforcement** — protected branches reject pushes from non-owners with HTTP 403.
+- **CLI support** — `suture branch --protect <name>` and `suture branch --unprotect <name>`. Branch listing shows `[protected]` marker.
+
+### Worktree Support
+
+- **Core implementation** — symlink-based worktrees sharing `.suture/metadata.db`, `objects/`, and `keys/`. Per-worktree HEAD via `.suture/HEAD` file. Worktree detection via `.suture/worktree` marker file.
+- **CLI commands** — `suture worktree add <path> [-b <branch>]`, `suture worktree list`, `suture worktree remove <name>`.
+- **Unix-only** — worktrees use `std::os::unix::fs::symlink`. Added `Unsupported` variant to `RepoError`.
+
+### Protocol Fixes
+
+- **Eliminated protocol type duplication** — CLI now depends on `suture-protocol` crate instead of redefining all types in `remote_proto.rs`.
+- **`known_branches` field** — added to CLI's `PushRequest`, included in canonical push bytes for signature verification.
+
+### Test Coverage
+
+- 264 unit tests in suture-core
+- 19 hub tests (including `test_blobs_roundtrip`)
+- 18 e2e tests (including `test_push_pull_roundtrip`)
+- All 483 workspace tests pass, clippy clean with `-D warnings`
+
 ## [0.5.0] - 2026-04-04
 
 Suture v0.5.0 — Semantic Merge 2.0 with XLSX/PPTX merge support, merge abort, strategy resolution, branch-name conflict markers, a Markdown driver, and standalone merge-file.

@@ -107,6 +107,12 @@ impl HubStorage {
                 description TEXT
             );
 
+            CREATE TABLE IF NOT EXISTS branch_protection (
+                repo_id TEXT NOT NULL,
+                branch_name TEXT NOT NULL,
+                PRIMARY KEY (repo_id, branch_name)
+            );
+
             CREATE TABLE IF NOT EXISTS mirrors (
                 id INTEGER PRIMARY KEY,
                 repo_name TEXT NOT NULL,
@@ -164,15 +170,15 @@ impl HubStorage {
     /// Store a patch if it doesn't already exist. Returns true if newly inserted.
     pub fn insert_patch(&self, repo_id: &str, patch: &PatchProto) -> Result<bool, StorageError> {
         let id_hex = hash_to_hex(&patch.id);
+        let touch_set_json = serde_json::to_string(&patch.touch_set).unwrap_or_default();
         let parent_ids_json = serde_json::to_string(
             &patch
                 .parent_ids
                 .iter()
-                .map(|h| h.value.clone())
+                .map(|h| &h.value)
                 .collect::<Vec<_>>(),
         )
         .unwrap_or_default();
-        let touch_set_json = serde_json::to_string(&patch.touch_set).unwrap_or_default();
 
         self.conn.execute(
             "INSERT OR IGNORE INTO patches (repo_id, patch_id, operation_type, touch_set, target_path, payload, parent_ids, author, message, timestamp)
@@ -389,6 +395,133 @@ impl HubStorage {
             });
         }
         Ok(blobs)
+    }
+
+    /// Get specific blobs by hash set.
+    pub fn get_blobs(
+        &self,
+        repo_id: &str,
+        hashes: &std::collections::HashSet<String>,
+    ) -> Result<Vec<BlobRef>, StorageError> {
+        if hashes.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let placeholders: Vec<String> = hashes.iter().map(|_| "?".to_string()).collect();
+        let sql = format!(
+            "SELECT blob_hash, data FROM blobs WHERE repo_id = ?1 AND blob_hash IN ({})",
+            placeholders.join(",")
+        );
+
+        let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        params_vec.push(Box::new(repo_id.to_string()));
+        for h in hashes {
+            params_vec.push(Box::new(h.clone()));
+        }
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params_vec.iter().map(|p| p.as_ref()).collect();
+
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(param_refs.as_slice(), |row| {
+            let hash_hex: String = row.get(0)?;
+            let data: Vec<u8> = row.get(1)?;
+            Ok((hash_hex, data))
+        })?;
+
+        let mut blobs = Vec::new();
+        for row in rows {
+            let (hash_hex, data) = row?;
+            blobs.push(BlobRef {
+                hash: HashProto { value: hash_hex },
+                data: base64_encode(&data),
+            });
+        }
+        Ok(blobs)
+    }
+
+    /// Get the target patch ID for a specific branch, if it exists.
+    pub fn get_branch_target(
+        &self,
+        repo_id: &str,
+        branch_name: &str,
+    ) -> Result<Option<String>, StorageError> {
+        let result = self.conn.query_row(
+            "SELECT target_patch_id FROM branches WHERE repo_id = ?1 AND name = ?2",
+            params![repo_id, branch_name],
+            |row| row.get::<_, String>(0),
+        );
+        match result {
+            Ok(hex) => Ok(Some(hex)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(StorageError::Database(e)),
+        }
+    }
+
+    /// Check if `ancestor_id` is an ancestor of `descendant_id` by walking the parent chain.
+    pub fn is_ancestor(
+        &self,
+        repo_id: &str,
+        ancestor_id: &str,
+        descendant_id: &str,
+    ) -> Result<bool, StorageError> {
+        if ancestor_id == descendant_id {
+            return Ok(true);
+        }
+
+        let mut current = descendant_id.to_string();
+        let mut visited = std::collections::HashSet::new();
+
+        while !visited.contains(&current) {
+            visited.insert(current.clone());
+            let patch = match self.get_patch(repo_id, &current)? {
+                Some(p) => p,
+                None => return Ok(false),
+            };
+            if patch.parent_ids.is_empty() {
+                return Ok(false);
+            }
+            for parent in &patch.parent_ids {
+                let parent_hex = hash_to_hex(parent);
+                if parent_hex == ancestor_id {
+                    return Ok(true);
+                }
+                if !visited.contains(&parent_hex) {
+                    current = parent_hex;
+                }
+            }
+        }
+        Ok(false)
+    }
+
+    // === Branch Protection ===
+
+    pub fn protect_branch(&self, repo_id: &str, branch_name: &str) -> Result<(), StorageError> {
+        self.conn.execute(
+            "INSERT OR IGNORE INTO branch_protection (repo_id, branch_name) VALUES (?1, ?2)",
+            params![repo_id, branch_name],
+        )?;
+        Ok(())
+    }
+
+    pub fn unprotect_branch(&self, repo_id: &str, branch_name: &str) -> Result<(), StorageError> {
+        self.conn.execute(
+            "DELETE FROM branch_protection WHERE repo_id = ?1 AND branch_name = ?2",
+            params![repo_id, branch_name],
+        )?;
+        Ok(())
+    }
+
+    pub fn is_branch_protected(
+        &self,
+        repo_id: &str,
+        branch_name: &str,
+    ) -> Result<bool, StorageError> {
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM branch_protection WHERE repo_id = ?1 AND branch_name = ?2",
+            params![repo_id, branch_name],
+            |row| row.get(0),
+        )?;
+        Ok(count > 0)
     }
 
     // === Authorized Keys ===

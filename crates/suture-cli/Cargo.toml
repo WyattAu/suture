@@ -1,6 +1,6 @@
 [package]
 name = "suture-cli"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 
 [[bin]]
@@ -10,6 +10,7 @@ path = "src/main.rs"
 [dependencies]
 suture-core = { path = "../suture-core" }
 suture-common = { path = "../suture-common" }
+suture-protocol = { path = "../suture-protocol" }
 suture-driver = { path = "../suture-driver" }
 suture-driver-json = { path = "../suture-driver-json" }
 suture-driver-toml = { path = "../suture-driver-toml" }

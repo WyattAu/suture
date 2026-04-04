@@ -40,6 +40,10 @@ pub(crate) struct PushRequest {
     pub blobs: Vec<BlobRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signature: Option<Vec<u8>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub known_branches: Vec<BranchProto>,
+    #[serde(default)]
+    pub force: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -157,6 +161,16 @@ pub(crate) fn canonical_push_bytes(req: &PushRequest) -> Vec<u8> {
         buf.extend_from_slice(branch.target_id.value.as_bytes());
         buf.push(0);
     }
+
+    buf.extend_from_slice(&(req.known_branches.len() as u64).to_le_bytes());
+    for branch in &req.known_branches {
+        buf.extend_from_slice(branch.name.as_bytes());
+        buf.push(0);
+        buf.extend_from_slice(branch.target_id.value.as_bytes());
+        buf.push(0);
+    }
+
+    buf.push(if req.force { 1 } else { 0 });
 
     buf
 }

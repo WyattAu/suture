@@ -35,3 +35,4 @@ pub mod status;
 pub mod tag;
 pub mod tui;
 pub mod version;
+pub mod worktree;

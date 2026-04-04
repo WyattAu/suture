@@ -159,6 +159,56 @@ impl SutureHubServer {
 
         for branch in &req.branches {
             let target_hex = hash_to_hex(&branch.target_id);
+
+            if !req.force
+                && let Some(ref known) = req.known_branches
+                && let Some(known_branch) = known.iter().find(|kb| kb.name == branch.name)
+            {
+                let known_target = hash_to_hex(&known_branch.target_id);
+                if known_target != target_hex
+                    && let Ok(Some(current_target)) =
+                        store.get_branch_target(&req.repo_id, &branch.name)
+                    && !store
+                        .is_ancestor(&req.repo_id, &current_target, &target_hex)
+                        .unwrap_or(false)
+                {
+                    return Err((
+                        StatusCode::CONFLICT,
+                        PushResponse {
+                            success: false,
+                            error: Some(format!(
+                                "branch '{}' rejected: non-fast-forward push (use --force to override)",
+                                branch.name
+                            )),
+                            existing_patches: vec![],
+                        },
+                    ));
+                }
+            }
+
+            if store
+                .is_branch_protected(&req.repo_id, &branch.name)
+                .unwrap_or(false)
+            {
+                let push_authors: std::collections::HashSet<&str> =
+                    req.patches.iter().map(|p| p.author.as_str()).collect();
+                let is_owner =
+                    push_authors.len() == 1 && push_authors.contains(branch.name.as_str());
+                if !is_owner {
+                    return Err((
+                        StatusCode::FORBIDDEN,
+                        PushResponse {
+                            success: false,
+                            error: Some(format!(
+                                "branch '{}' is protected and can only be updated by its owner",
+                                branch.name
+                            )),
+                            existing_patches: vec![],
+                        },
+                    ));
+                }
+            }
+
             if let Err(e) = store.set_branch(&req.repo_id, &branch.name, &target_hex) {
                 return Err((
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -193,10 +243,33 @@ impl SutureHubServer {
 
         let all_patches = store.get_all_patches(&req.repo_id).unwrap_or_default();
         let client_ancestors = collect_ancestors(&all_patches, &req.known_branches);
-        let new_patches = collect_new_patches(&all_patches, &client_ancestors);
+        let mut new_patches = collect_new_patches(&all_patches, &client_ancestors);
+
+        if let Some(depth) = req.max_depth {
+            new_patches.truncate(depth as usize);
+        }
 
         let branches = store.get_branches(&req.repo_id).unwrap_or_default();
-        let blobs = store.get_all_blobs(&req.repo_id).unwrap_or_default();
+
+        let mut needed_hashes: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for patch in &new_patches {
+            if !patch.payload.is_empty() {
+                // Payload may be raw hex (from tests) or base64-encoded (from CLI).
+                // Try raw hex first — if it looks like a hex hash, use it directly.
+                // Otherwise try base64 decode.
+                let hex = if patch.payload.chars().all(|c| c.is_ascii_hexdigit()) {
+                    patch.payload.clone()
+                } else if let Ok(decoded) = base64_decode(&patch.payload) {
+                    String::from_utf8_lossy(&decoded).to_string()
+                } else {
+                    patch.payload.clone()
+                };
+                needed_hashes.insert(hex);
+            }
+        }
+        let blobs = store
+            .get_blobs(&req.repo_id, &needed_hashes)
+            .unwrap_or_default();
 
         PullResponse {
             success: true,
@@ -886,6 +959,34 @@ pub async fn repo_patches_handler(
     (StatusCode::OK, Json(patches))
 }
 
+pub async fn protect_branch_handler(
+    State(hub): State<Arc<SutureHubServer>>,
+    Path((repo_id, branch)): Path<(String, String)>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    let store = hub.storage.lock().await;
+    match store.protect_branch(&repo_id, &branch) {
+        Ok(()) => (StatusCode::OK, Json(serde_json::json!({"success": true}))),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"success": false, "error": e.to_string()})),
+        ),
+    }
+}
+
+pub async fn unprotect_branch_handler(
+    State(hub): State<Arc<SutureHubServer>>,
+    Path((repo_id, branch)): Path<(String, String)>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    let store = hub.storage.lock().await;
+    match store.unprotect_branch(&repo_id, &branch) {
+        Ok(()) => (StatusCode::OK, Json(serde_json::json!({"success": true}))),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"success": false, "error": e.to_string()})),
+        ),
+    }
+}
+
 async fn serve_index() -> Html<&'static str> {
     Html(include_str!("../static/index.html"))
 }
@@ -956,6 +1057,14 @@ pub async fn run_server(
         .route("/mirror/sync", axum::routing::post(mirror_sync_handler))
         .route("/mirror/status", axum::routing::get(mirror_status_handler))
         .route("/mirror/status", axum::routing::post(mirror_status_handler))
+        .route(
+            "/repos/{repo_id}/protect/{branch}",
+            axum::routing::post(protect_branch_handler),
+        )
+        .route(
+            "/repos/{repo_id}/unprotect/{branch}",
+            axum::routing::post(unprotect_branch_handler),
+        )
         .route("/static/{*path}", axum::routing::get(serve_static_file))
         .with_state(Arc::new(hub));
 
@@ -1013,6 +1122,7 @@ mod tests {
             blobs: vec![],
             signature: None,
             known_branches: None,
+            force: false,
         };
 
         let resp = hub.handle_push(push_req).await.unwrap();
@@ -1051,6 +1161,7 @@ mod tests {
             blobs: vec![],
             signature: None,
             known_branches: None,
+            force: false,
         };
         hub.handle_push(push).await.unwrap();
 
@@ -1079,6 +1190,7 @@ mod tests {
             blobs: vec![],
             signature: None,
             known_branches: None,
+            force: false,
         };
         let resp1 = hub.handle_push(push1).await.unwrap();
         assert!(resp1.success);
@@ -1091,6 +1203,7 @@ mod tests {
             blobs: vec![],
             signature: None,
             known_branches: None,
+            force: false,
         };
         let resp2 = hub.handle_push(push2).await.unwrap();
         assert!(resp2.success);
@@ -1108,6 +1221,7 @@ mod tests {
             blobs: vec![],
             signature: None,
             known_branches: None,
+            force: false,
         };
         hub.handle_push(push).await.unwrap();
 
@@ -1118,6 +1232,7 @@ mod tests {
             blobs: vec![],
             signature: None,
             known_branches: None,
+            force: false,
         };
         hub.handle_push(push).await.unwrap();
 
@@ -1137,6 +1252,7 @@ mod tests {
             blobs: vec![],
             signature: None,
             known_branches: None,
+            force: false,
         };
         hub.handle_push(push).await.unwrap();
 
@@ -1166,17 +1282,30 @@ mod tests {
     async fn test_blobs_roundtrip() {
         let hub = SutureHubServer::new();
         let blob_data = b"hello world";
+        let blob_hash = "deadbeef".repeat(8);
+        let a_hex = "a".repeat(64);
 
         let push = PushRequest {
             repo_id: "blob-repo".to_string(),
-            patches: vec![],
-            branches: vec![],
+            patches: vec![PatchProto {
+                id: make_hash_proto(&a_hex),
+                operation_type: "Create".to_string(),
+                touch_set: vec!["file_a".to_string()],
+                target_path: Some("file_a".to_string()),
+                payload: blob_hash.clone(),
+                parent_ids: vec![],
+                author: "alice".to_string(),
+                message: "patch a".to_string(),
+                timestamp: 0,
+            }],
+            branches: vec![make_branch("main", &a_hex)],
             blobs: vec![BlobRef {
-                hash: make_hash_proto(&"deadbeef".repeat(8)),
+                hash: make_hash_proto(&blob_hash),
                 data: base64_encode(blob_data),
             }],
             signature: None,
             known_branches: None,
+            force: false,
         };
         hub.handle_push(push).await.unwrap();
 
@@ -1226,6 +1355,7 @@ mod tests {
             blobs: vec![],
             signature: None,
             known_branches: None,
+            force: false,
         };
         let resp = hub.handle_push(push).await;
         assert!(resp.is_err());
@@ -1251,6 +1381,7 @@ mod tests {
             blobs: vec![],
             signature: None,
             known_branches: None,
+            force: false,
         };
 
         let canonical = canonical_push_bytes(&push_req);
@@ -1275,6 +1406,7 @@ mod tests {
             blobs: vec![],
             signature: None,
             known_branches: None,
+            force: false,
         };
         let resp = hub.handle_push(push).await;
         assert!(resp.is_ok());

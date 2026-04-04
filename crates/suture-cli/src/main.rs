@@ -84,7 +84,9 @@ EXAMPLES:
     suture branch --list       # List branches (explicit)
     suture branch feature      # Create branch 'feature'
     suture branch feature main # Create from specific target
-    suture branch -d old-branch  # Delete a branch")]
+    suture branch -d old-branch  # Delete a branch
+    suture branch --protect main   # Protect 'main' from force-push
+    suture branch --unprotect main # Unprotect 'main'")]
     Branch {
         /// Branch name
         name: Option<String>,
@@ -97,6 +99,12 @@ EXAMPLES:
         /// List branches
         #[arg(short, long)]
         list: bool,
+        /// Protect a branch from force-push/deletion
+        #[arg(long)]
+        protect: bool,
+        /// Unprotect a branch
+        #[arg(long)]
+        unprotect: bool,
     },
     /// Show commit history
     #[command(after_long_help = "\
@@ -297,12 +305,18 @@ EXAMPLES:
     /// Push patches to a remote Hub
     #[command(after_long_help = "\
 EXAMPLES:
-    suture push                # Push to default remote (origin)
-    suture push upstream       # Push to a specific remote")]
+    suture push                # Push all branches to origin
+    suture push --force        # Force push (skip fast-forward check)
+    suture push origin feature # Push only 'feature' branch to 'origin'")]
     Push {
-        /// Remote name (default: "origin")
+        /// Remote name (default: \"origin\")
         #[arg(default_value = "origin")]
         remote: String,
+        /// Force push even if not fast-forward
+        #[arg(long)]
+        force: bool,
+        /// Specific branch to push (default: all branches)
+        branch: Option<String>,
     },
     /// Pull patches from a remote Hub
     #[command(after_long_help = "\
@@ -406,6 +420,17 @@ EXAMPLES:
     Notes {
         #[command(subcommand)]
         action: NotesAction,
+    },
+    /// Manage working trees
+    #[command(after_long_help = "\
+EXAMPLES:
+    suture worktree add ../feature   # Create worktree at ../feature
+    suture worktree add hotfix -b fix   # Create 'hotfix' on new branch 'fix'
+    suture worktree list             # List all worktrees
+    suture worktree remove feature   # Remove worktree 'feature'")]
+    Worktree {
+        #[command(subcommand)]
+        action: WorktreeAction,
     },
     /// Show version information
     Version,
@@ -563,6 +588,27 @@ pub(crate) enum NotesAction {
 }
 
 #[derive(Subcommand)]
+pub(crate) enum WorktreeAction {
+    /// Create a new worktree
+    Add {
+        /// Path for the new worktree
+        path: String,
+        /// Branch to checkout (default: main)
+        branch: Option<String>,
+        /// Create a new branch with this name
+        #[arg(short, long)]
+        b: Option<String>,
+    },
+    /// List all worktrees
+    List,
+    /// Remove a worktree
+    Remove {
+        /// Worktree name
+        name: String,
+    },
+}
+
+#[derive(Subcommand)]
 pub(crate) enum BisectAction {
     /// Start a bisect session
     #[command(
@@ -615,7 +661,19 @@ async fn main() {
             target,
             delete,
             list,
-        } => cmd::branch::cmd_branch(name.as_deref(), target.as_deref(), delete, list).await,
+            protect,
+            unprotect,
+        } => {
+            cmd::branch::cmd_branch(
+                name.as_deref(),
+                target.as_deref(),
+                delete,
+                list,
+                protect,
+                unprotect,
+            )
+            .await
+        }
         Commands::Log {
             branch,
             graph,
@@ -698,7 +756,11 @@ async fn main() {
         }
         Commands::Config { key_value } => cmd::config::cmd_config(&key_value).await,
         Commands::Remote { action } => cmd::remote::cmd_remote(&action).await,
-        Commands::Push { remote } => cmd::push::cmd_push(&remote).await,
+        Commands::Push {
+            remote,
+            force,
+            branch,
+        } => cmd::push::cmd_push(&remote, force, branch.as_deref()).await,
         Commands::Pull { remote, rebase } => cmd::pull::cmd_pull(&remote, rebase).await,
         Commands::Fetch { remote, depth } => cmd::fetch::cmd_fetch(&remote, depth).await,
         Commands::Clone { url, dir, depth } => {
@@ -756,6 +818,7 @@ async fn main() {
             cmd::shortlog::cmd_shortlog(branch.as_deref(), number).await
         }
         Commands::Notes { action } => cmd::notes::cmd_notes(&action).await,
+        Commands::Worktree { action } => cmd::worktree::cmd_worktree(&action).await,
         Commands::Gc => cmd::gc::cmd_gc().await,
         Commands::Fsck => cmd::fsck::cmd_fsck().await,
         Commands::Bisect { action } => cmd::bisect::cmd_bisect(&action).await,

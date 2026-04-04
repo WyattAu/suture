@@ -76,6 +76,9 @@ pub struct PushRequest {
     /// Optional for backward compatibility.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub known_branches: Option<Vec<BranchProto>>,
+    /// If true, skip fast-forward validation on push.
+    #[serde(default)]
+    pub force: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -8,5 +8,5 @@ pub mod repo_impl;
 pub use repo_impl::{
     BlameEntry, ConflictInfo, FsckResult, GcResult, MergeExecutionResult, RebaseAction, RebasePlan,
     RebasePlanEntry, RebaseResult, RebaseState, RepoError, RepoStatus, Repository, ResetMode,
-    StashEntry,
+    StashEntry, WorktreeEntry,
 };

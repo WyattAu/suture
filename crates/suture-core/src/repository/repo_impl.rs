@@ -83,6 +83,9 @@ pub enum RepoError {
 
     #[error("{0}")]
     Custom(String),
+
+    #[error("unsupported operation: {0}")]
+    Unsupported(String),
 }
 
 /// Reset mode for the `reset` command.
@@ -123,6 +126,8 @@ pub struct Repository {
     cached_head_branch: RefCell<Option<String>>,
     /// Per-repo configuration loaded from `.suture/config`.
     repo_config: crate::metadata::repo_config::RepoConfig,
+    /// Whether this repository is a worktree (linked to a main repo).
+    is_worktree: bool,
 }
 
 impl Repository {
@@ -186,6 +191,7 @@ impl Repository {
             cached_head_id: RefCell::new(None),
             cached_head_branch: RefCell::new(None),
             repo_config: crate::metadata::repo_config::RepoConfig::default(),
+            is_worktree: false,
         })
     }
     ///
@@ -196,6 +202,8 @@ impl Repository {
         if !suture_dir.exists() {
             return Err(RepoError::NotARepository(path.to_path_buf()));
         }
+
+        let is_worktree = suture_dir.join("worktree").exists();
 
         // Initialize CAS (disable per-read hash verification for performance)
         let mut cas = BlobStore::new(&suture_dir)?;
@@ -289,6 +297,7 @@ impl Repository {
             cached_head_id: RefCell::new(None),
             cached_head_branch: RefCell::new(None),
             repo_config,
+            is_worktree,
         })
     }
 
@@ -334,11 +343,7 @@ impl Repository {
         {
             return Ok((branch.clone(), *cached));
         }
-        let branch_name = self
-            .meta
-            .get_config("head_branch")
-            .unwrap_or(None)
-            .unwrap_or_else(|| "main".to_string());
+        let branch_name = self.read_head_branch()?;
 
         let bn = BranchName::new(&branch_name)?;
         let target_id = self
@@ -410,6 +415,38 @@ impl Repository {
     /// List all configuration key-value pairs.
     pub fn list_config(&self) -> Result<Vec<(String, String)>, RepoError> {
         self.meta.list_config().map_err(RepoError::from)
+    }
+
+    // =========================================================================
+    // Worktree HEAD (per-worktree branch pointer)
+    // =========================================================================
+
+    fn read_head_branch(&self) -> Result<String, RepoError> {
+        if self.is_worktree {
+            let head_path = self.suture_dir.join("HEAD");
+            if head_path.exists() {
+                Ok(fs::read_to_string(&head_path)?.trim().to_string())
+            } else {
+                Ok("main".to_string())
+            }
+        } else {
+            Ok(self
+                .meta
+                .get_config("head_branch")
+                .unwrap_or(None)
+                .unwrap_or_else(|| "main".to_string()))
+        }
+    }
+
+    fn write_head_branch(&self, branch: &str) -> Result<(), RepoError> {
+        if self.is_worktree {
+            fs::write(self.suture_dir.join("HEAD"), branch)?;
+        } else {
+            self.meta
+                .set_config("head_branch", branch)
+                .map_err(RepoError::Meta)?;
+        }
+        Ok(())
     }
 
     // =========================================================================
@@ -1047,11 +1084,7 @@ impl Repository {
         // been updated externally, e.g., by do_fetch). Only use the in-memory
         // cache if the IDs match.
         let (branch_name, head_id) = {
-            let branch_name = self
-                .meta
-                .get_config("head_branch")
-                .map_err(RepoError::Meta)?
-                .unwrap_or_else(|| "main".to_string());
+            let branch_name = self.read_head_branch()?;
             let bn = BranchName::new(&branch_name)?;
             let target_id = self
                 .dag
@@ -1316,9 +1349,7 @@ impl Repository {
             }
         }
 
-        self.meta
-            .set_config("head_branch", branch_name)
-            .map_err(RepoError::Meta)?;
+        self.write_head_branch(branch_name)?;
 
         self.invalidate_head_cache();
 
@@ -2833,6 +2864,170 @@ impl Repository {
         Ok(())
     }
 
+    // =========================================================================
+    // Worktree Operations
+    // =========================================================================
+
+    /// Check whether this repository is a linked worktree.
+    pub fn is_worktree(&self) -> bool {
+        self.is_worktree
+    }
+
+    /// Add a worktree. Creates a new directory linked to this repo's data.
+    pub fn add_worktree(
+        &mut self,
+        name: &str,
+        path: &Path,
+        branch: Option<&str>,
+    ) -> Result<(), RepoError> {
+        if name.is_empty()
+            || name.contains('/')
+            || name.contains('\\')
+            || name.contains("..")
+            || name.contains('\0')
+        {
+            return Err(RepoError::Custom("invalid worktree name".into()));
+        }
+        if path.exists() {
+            return Err(RepoError::Custom(format!(
+                "path '{}' already exists",
+                path.display()
+            )));
+        }
+        if self.is_worktree {
+            return Err(RepoError::Custom(
+                "cannot add worktree from a linked worktree; use the main repo".into(),
+            ));
+        }
+
+        let abs_path = if path.is_relative() {
+            std::env::current_dir()?.join(path)
+        } else {
+            path.to_path_buf()
+        };
+
+        fs::create_dir_all(&abs_path)?;
+        let new_suture_dir = abs_path.join(".suture");
+        fs::create_dir_all(&new_suture_dir)?;
+
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(
+                self.suture_dir.join("metadata.db"),
+                new_suture_dir.join("metadata.db"),
+            )?;
+            if self.suture_dir.join("objects").exists() {
+                std::os::unix::fs::symlink(
+                    self.suture_dir.join("objects"),
+                    new_suture_dir.join("objects"),
+                )?;
+            }
+            if self.suture_dir.join("keys").exists() {
+                std::os::unix::fs::symlink(
+                    self.suture_dir.join("keys"),
+                    new_suture_dir.join("keys"),
+                )?;
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            return Err(RepoError::Unsupported(
+                "worktrees require symlink support (Unix only)".into(),
+            ));
+        }
+
+        fs::write(
+            new_suture_dir.join("worktree"),
+            self.root.to_string_lossy().as_ref(),
+        )?;
+
+        let branch_name = branch.unwrap_or("main");
+        fs::write(new_suture_dir.join("HEAD"), branch_name)?;
+
+        self.set_config(
+            &format!("worktree.{}.path", name),
+            &abs_path.to_string_lossy(),
+        )?;
+        self.set_config(&format!("worktree.{}.branch", name), branch_name)?;
+
+        let mut wt_repo = Repository::open(&abs_path)?;
+        wt_repo.checkout(branch_name)?;
+
+        Ok(())
+    }
+
+    /// List all worktrees. Returns the main worktree plus any linked worktrees.
+    pub fn list_worktrees(&self) -> Result<Vec<WorktreeEntry>, RepoError> {
+        let mut worktrees = Vec::new();
+
+        let main_branch = self
+            .head()
+            .map(|(n, _)| n)
+            .unwrap_or_else(|_| "main".to_string());
+        worktrees.push(WorktreeEntry {
+            name: String::new(),
+            path: self.root.to_string_lossy().to_string(),
+            branch: main_branch,
+            is_main: true,
+        });
+
+        let config = self.list_config()?;
+        let mut names: Vec<&str> = Vec::new();
+        for (key, _value) in &config {
+            if let Some(n) = key
+                .strip_prefix("worktree.")
+                .and_then(|n| n.strip_suffix(".path"))
+            {
+                names.push(n);
+            }
+        }
+        names.sort();
+
+        for name in names {
+            let path_key = format!("worktree.{}.path", name);
+            let branch_key = format!("worktree.{}.branch", name);
+            let path_val = self
+                .meta
+                .get_config(&path_key)
+                .unwrap_or(None)
+                .unwrap_or_default();
+            let branch_val = self
+                .meta
+                .get_config(&branch_key)
+                .unwrap_or(None)
+                .unwrap_or_default();
+            worktrees.push(WorktreeEntry {
+                name: name.to_string(),
+                path: path_val,
+                branch: branch_val,
+                is_main: false,
+            });
+        }
+
+        Ok(worktrees)
+    }
+
+    /// Remove a worktree by name. Deletes the worktree directory and cleans
+    /// up the main repo's config entries.
+    pub fn remove_worktree(&mut self, name: &str) -> Result<(), RepoError> {
+        let path_key = format!("worktree.{}.path", name);
+        let path_val = self
+            .meta
+            .get_config(&path_key)?
+            .ok_or_else(|| RepoError::Custom(format!("worktree '{}' not found", name)))?;
+
+        let wt_path = Path::new(&path_val);
+        if wt_path.exists() {
+            fs::remove_dir_all(wt_path)?;
+        }
+
+        self.meta.delete_config(&path_key)?;
+        self.meta
+            .delete_config(&format!("worktree.{}.branch", name))?;
+
+        Ok(())
+    }
+
     /// Rename a tracked file. Stages both the deletion of the old path
     /// and the addition of the new path.
     pub fn rename_file(&self, old_path: &str, new_path: &str) -> Result<(), RepoError> {
@@ -3226,6 +3421,15 @@ pub struct StashEntry {
     pub message: String,
     pub branch: String,
     pub head_id: String,
+}
+
+/// Information about a worktree.
+#[derive(Debug, Clone)]
+pub struct WorktreeEntry {
+    pub name: String,
+    pub path: String,
+    pub branch: String,
+    pub is_main: bool,
 }
 
 /// A single blame entry for one line of a file.
