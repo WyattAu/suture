@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.4.0] - 2026-04-04
+
+Suture v0.4.0 — a usability and polish release with CLI modularization, rich help text, fuzzy error suggestions, and nushell shell completions.
+
+### CLI Modularization
+
+- **Split main.rs into 36 command modules** — the 3,102-line monolithic `main.rs` is now 737 lines containing only CLI definitions and dispatch. Each command lives in its own `cmd/*.rs` file.
+- **Extracted helper modules** — `style.rs` (ANSI constants, hook runner), `display.rs` (file walking, diff formatting, timestamps), `ref_utils.rs` (ref resolution, time parsing), `remote_proto.rs` (Hub protocol types and helpers).
+
+### Shell Completions
+
+- **Nushell support** — added `clap_complete_nushell` dependency. `suture completions nushell` generates Nushell completion scripts.
+- **String-based shell argument** — changed from `clap_complete::Shell` enum to a string parameter, supporting `bash`, `zsh`, `fish`, `powershell`/`pwsh`, and `nushell`.
+- **Clear error for unsupported shells** — prints available shells when an invalid name is given.
+
+### Fuzzy Error Suggestions
+
+- **"Did you mean...?" suggestions** — added `strsim` (Levenshtein distance) based fuzzy matching. When a branch name, tag name, ref, config key, or key name is not found, the closest match is suggested.
+- **Applies to**: `checkout`, `branch --delete`, `rebase`, `show`, `notes`, `config`, `key public`, and any command using `resolve_ref()`.
+
+### Rich Help Text
+
+- **Usage examples for all commands** — added `after_long_help` with practical examples to every command and subcommand. Run `suture COMMAND --help` to see examples.
+- **Covers**: init, status, add, rm, commit, branch, log, checkout, mv, diff, revert, merge, cherry-pick, rebase, blame, tag, config, push, pull, fetch, clone, reset, show, squash, completions, key (generate/list/public), stash (push/pop/apply/list/drop), remote (add/list/remove/login/mirror), notes (add), bisect (start/run).
+
+### Dependencies
+
+- Added `strsim = "0.11"` for fuzzy string matching
+- Added `clap_complete_nushell = "4.6"` for Nushell completions
+
 ## [0.3.0] - 2026-04-04
 
 Suture v0.3.0 — a scalability release with persistent snapshots, eliminating O(n) patch replay on cold start.

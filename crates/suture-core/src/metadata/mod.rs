@@ -8,7 +8,7 @@ pub mod repo_config;
 
 use crate::engine::tree::FileTree;
 use crate::patch::types::{Patch, PatchId, TouchSet};
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use std::collections::BTreeMap;
 use std::path::Path;
 use suture_common::{BranchName, FileStatus, Hash, RepoPath};

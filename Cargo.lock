@@ -364,6 +364,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "clap_complete_nushell"
+version = "4.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fbb9e9715d29a754b468591be588f6b926f5b0a1eb6a8b62acabeb66ff84d897"
+dependencies = [
+ "clap",
+ "clap_complete",
+]
+
+[[package]]
 name = "clap_derive"
 version = "4.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2366,7 +2376,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "suture-bench"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "criterion",
  "suture-common",
@@ -2376,17 +2386,19 @@ dependencies = [
 
 [[package]]
 name = "suture-cli"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "base64",
  "clap",
  "clap_complete",
+ "clap_complete_nushell",
  "ed25519-dalek",
  "hex",
  "rand 0.8.5",
  "reqwest",
  "serde",
  "serde_json",
+ "strsim",
  "suture-common",
  "suture-core",
  "suture-driver",
@@ -2405,7 +2417,7 @@ dependencies = [
 
 [[package]]
 name = "suture-common"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "blake3",
  "serde",
@@ -2414,7 +2426,7 @@ dependencies = [
 
 [[package]]
 name = "suture-core"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "blake3",
  "dirs",
@@ -2435,7 +2447,7 @@ dependencies = [
 
 [[package]]
 name = "suture-driver"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -2446,7 +2458,7 @@ dependencies = [
 
 [[package]]
 name = "suture-driver-csv"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "csv",
  "suture-driver",
@@ -2454,7 +2466,7 @@ dependencies = [
 
 [[package]]
 name = "suture-driver-docx"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "quick-xml",
  "serde",
@@ -2466,7 +2478,7 @@ dependencies = [
 
 [[package]]
 name = "suture-driver-json"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "serde_json",
  "suture-driver",
@@ -2474,7 +2486,7 @@ dependencies = [
 
 [[package]]
 name = "suture-driver-otio"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -2485,7 +2497,7 @@ dependencies = [
 
 [[package]]
 name = "suture-driver-pptx"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "quick-xml",
  "serde",
@@ -2495,7 +2507,7 @@ dependencies = [
 
 [[package]]
 name = "suture-driver-toml"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "suture-driver",
  "toml",
@@ -2503,7 +2515,7 @@ dependencies = [
 
 [[package]]
 name = "suture-driver-xlsx"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "quick-xml",
  "serde",
@@ -2513,7 +2525,7 @@ dependencies = [
 
 [[package]]
 name = "suture-driver-xml"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "roxmltree",
  "suture-driver",
@@ -2521,7 +2533,7 @@ dependencies = [
 
 [[package]]
 name = "suture-driver-yaml"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "serde",
  "serde_yaml",
@@ -2530,7 +2542,7 @@ dependencies = [
 
 [[package]]
 name = "suture-e2e"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "axum",
  "reqwest",
@@ -2541,7 +2553,7 @@ dependencies = [
 
 [[package]]
 name = "suture-fuzz"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "proptest",
  "serde_json",
@@ -2553,7 +2565,7 @@ dependencies = [
 
 [[package]]
 name = "suture-git-bridge"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "suture-common",
  "suture-core",
@@ -2563,7 +2575,7 @@ dependencies = [
 
 [[package]]
 name = "suture-hub"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "axum",
  "base64",
@@ -2588,7 +2600,7 @@ dependencies = [
 
 [[package]]
 name = "suture-lsp"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -2603,7 +2615,7 @@ dependencies = [
 
 [[package]]
 name = "suture-ooxml"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "quick-xml",
  "serde",
@@ -2615,7 +2627,7 @@ dependencies = [
 
 [[package]]
 name = "suture-protocol"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "serde",
  "suture-common",
