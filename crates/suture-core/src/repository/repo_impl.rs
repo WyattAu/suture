@@ -1982,8 +1982,8 @@ impl Repository {
     fn write_conflict_markers(
         &self,
         info: &ConflictInfo,
-        #[allow(unused_variables)] source_branch: &str,
-        #[allow(unused_variables)] head_branch: &str,
+        source_branch: &str,
+        head_branch: &str,
     ) -> Result<String, RepoError> {
         let our_content = match info.our_content_hash {
             Some(hash) => String::from_utf8(self.cas.get_blob(&hash)?).unwrap_or_default(),
@@ -2000,7 +2000,13 @@ impl Repository {
             None => None,
         };
 
-        let merged = three_way_merge(base_content.as_deref(), &our_content, &their_content);
+        let merged = three_way_merge(
+            base_content.as_deref(),
+            &our_content,
+            &their_content,
+            head_branch,
+            source_branch,
+        );
 
         match merged {
             Ok(content) => Ok(content),
@@ -3380,19 +3386,36 @@ pub struct FsckResult {
 /// Line-level three-way merge using diff3 algorithm.
 ///
 /// Returns `Ok(merged_content)` if clean, `Err(conflict_marker_lines)` if conflicts.
-fn three_way_merge(base: Option<&str>, ours: &str, theirs: &str) -> Result<String, Vec<String>> {
+fn three_way_merge(
+    base: Option<&str>,
+    ours: &str,
+    theirs: &str,
+    head_branch: &str,
+    source_branch: &str,
+) -> Result<String, Vec<String>> {
     use crate::engine::merge::three_way_merge_lines;
 
     let base_lines: Vec<&str> = base.map(|s| s.lines().collect()).unwrap_or_default();
     let ours_lines: Vec<&str> = ours.lines().collect();
     let theirs_lines: Vec<&str> = theirs.lines().collect();
 
+    let ours_label = if head_branch.is_empty() {
+        "HEAD".to_string()
+    } else {
+        format!("{head_branch} (HEAD)")
+    };
+    let theirs_label = if source_branch.is_empty() {
+        "theirs".to_string()
+    } else {
+        source_branch.to_string()
+    };
+
     let result = three_way_merge_lines(
         &base_lines,
         &ours_lines,
         &theirs_lines,
-        "ours (HEAD)",
-        "theirs",
+        &ours_label,
+        &theirs_label,
     );
 
     if result.is_clean {
@@ -3783,10 +3806,10 @@ mod tests {
         assert_eq!(result.unresolved_conflicts[0].path, "shared.txt");
 
         let content = fs::read_to_string(dir.path().join("shared.txt")).unwrap();
-        assert!(content.contains("<<<<<<< ours (HEAD)"));
+        assert!(content.contains("<<<<<<< feature (HEAD)"));
         assert!(content.contains("main version"));
         assert!(content.contains("feature version"));
-        assert!(content.contains(">>>>>>> theirs"));
+        assert!(content.contains(">>>>>>> main"));
     }
 
     #[test]
@@ -3850,17 +3873,17 @@ mod tests {
     fn test_three_way_merge() {
         let ours = "line1\nline2-modified\nline3";
         let theirs = "line1\nline2-modified\nline3";
-        let result = three_way_merge(Some("line1\nline2\nline3"), ours, theirs);
+        let result = three_way_merge(Some("line1\nline2\nline3"), ours, theirs, "main", "feature");
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), ours);
 
-        let result = three_way_merge(Some("base"), "base", "changed");
+        let result = three_way_merge(Some("base"), "base", "changed", "main", "feature");
         assert_eq!(result.unwrap(), "changed");
 
-        let result = three_way_merge(Some("base"), "changed", "base");
+        let result = three_way_merge(Some("base"), "changed", "base", "main", "feature");
         assert_eq!(result.unwrap(), "changed");
 
-        let result = three_way_merge(None, "ours content", "theirs content");
+        let result = three_way_merge(None, "ours content", "theirs content", "main", "feature");
         assert!(result.is_err());
         let lines = result.unwrap_err();
         assert!(lines[0].contains("<<<<<<<"));

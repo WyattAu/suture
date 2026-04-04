@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.5.0] - 2026-04-04
+
+Suture v0.5.0 — Semantic Merge 2.0 with XLSX/PPTX merge support, merge abort, strategy resolution, branch-name conflict markers, a Markdown driver, and standalone merge-file.
+
+### Merge Enhancements
+
+- **Merge abort** — `suture merge --abort` cancels an in-progress merge, clears `pending_merge_parents`, and restores the working tree to HEAD.
+- **Merge strategies** — `suture merge --strategy ours` / `--strategy theirs` resolves all conflicts by taking one side. `suture merge --strategy auto` (default) uses driver-assisted resolution.
+- **Branch names in conflict markers** — conflict markers now show actual branch names (`<<<<<<< feature (HEAD)` / `>>>>>>> main`) instead of hardcoded "ours/theirs".
+
+### Standalone merge-file
+
+- **`suture merge-file`** — performs three-way file merge outside of a branch merge context. Reads base/ours/theirs files, writes merged output to stdout. Supports `--label-ours` and `--label-theirs` for custom conflict marker labels.
+
+### Semantic Drivers
+
+- **XLSX merge** — wired up the existing `merge_cells()` implementation. XLSX files now participate in semantic three-way merge at the cell level.
+- **PPTX merge** — wired up the existing `merge_slides()` implementation. PPTX files now participate in semantic three-way merge at the slide level.
+- **Markdown driver** — new `suture-driver-markdown` crate with section-level diff and merge. Parses Markdown into blocks (headings, code blocks, lists, tables, paragraphs), matches by heading, and performs three-way merge at the block level. 21 unit tests.
+- **Centralized driver registry** — extracted `builtin_registry()` helper in `driver_registry.rs`. Eliminates duplicated 19-line registration blocks in `cmd/merge.rs`, `cmd/diff.rs`, and `cmd/drivers.rs`. All 9 drivers (JSON, TOML, CSV, YAML, XML, Markdown, DOCX, XLSX, PPTX) registered in one place.
+
+### Test Coverage
+
+- 264 unit tests in suture-core
+- 21 unit tests in suture-driver-markdown
+- 12 unit tests in suture-driver-xlsx
+- All workspace tests pass, clippy clean with `-D warnings`
+
 ## [0.4.0] - 2026-04-04
 
 Suture v0.4.0 — a usability and polish release with CLI modularization, rich help text, fuzzy error suggestions, and nushell shell completions.

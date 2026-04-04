@@ -16,6 +16,7 @@ pub mod init;
 pub mod key;
 pub mod log;
 pub mod merge;
+pub mod merge_file;
 pub mod mv;
 pub mod notes;
 pub mod pull;

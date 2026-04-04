@@ -136,7 +136,6 @@ impl XlsxDriver {
         changes
     }
 
-    #[allow(dead_code)]
     fn merge_cells(base: &[Cell], ours: &[Cell], theirs: &[Cell]) -> Option<Vec<Cell>> {
         let base_map: std::collections::HashMap<(usize, usize), &String> =
             base.iter().map(|(r, c, v)| ((*r, *c), v)).collect();
@@ -185,6 +184,27 @@ impl XlsxDriver {
             }
         }
         Some(merged)
+    }
+
+    fn build_sheet_xml(cells: &[Cell]) -> String {
+        let mut xml = String::from(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n\
+             <worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">",
+        );
+        let mut rows: std::collections::BTreeMap<usize, Vec<(usize, &String)>> =
+            std::collections::BTreeMap::new();
+        for &(row, col, ref val) in cells {
+            rows.entry(row).or_default().push((col, val));
+        }
+        for (row_num, cols) in &rows {
+            xml.push_str(&format!("<row r=\"{}\">", row_num));
+            for (col, val) in cols {
+                xml.push_str(&format!("<c r=\"{}{}\"><v>{}</v></c>", row_num, col, val));
+            }
+            xml.push_str("</row>");
+        }
+        xml.push_str("</worksheet>");
+        xml
     }
 }
 
@@ -264,13 +284,74 @@ impl SutureDriver for XlsxDriver {
         Ok(lines.join("\n"))
     }
 
-    fn merge(
-        &self,
-        _base: &str,
-        _ours: &str,
-        _theirs: &str,
-    ) -> Result<Option<String>, DriverError> {
-        Ok(None)
+    fn merge(&self, base: &str, ours: &str, theirs: &str) -> Result<Option<String>, DriverError> {
+        let base_doc = OoxmlDocument::from_bytes(base.as_bytes())
+            .map_err(|e| DriverError::ParseError(e.to_string()))?;
+        let ours_doc = OoxmlDocument::from_bytes(ours.as_bytes())
+            .map_err(|e| DriverError::ParseError(e.to_string()))?;
+        let theirs_doc = OoxmlDocument::from_bytes(theirs.as_bytes())
+            .map_err(|e| DriverError::ParseError(e.to_string()))?;
+
+        let base_sheets = Self::parse_sheets(&base_doc)?;
+        let ours_sheets = Self::parse_sheets(&ours_doc)?;
+        let theirs_sheets = Self::parse_sheets(&theirs_doc)?;
+
+        let all_names: std::collections::HashSet<&str> = base_sheets
+            .iter()
+            .chain(ours_sheets.iter())
+            .chain(theirs_sheets.iter())
+            .map(|(n, _)| n.as_str())
+            .collect();
+
+        let mut merged_sheets: Vec<(String, Vec<Cell>)> = Vec::new();
+        for &name in &all_names {
+            let base_cells = base_sheets
+                .iter()
+                .find(|(n, _)| n == name)
+                .map(|(_, c)| c.as_slice())
+                .unwrap_or(&[]);
+            let ours_cells = ours_sheets
+                .iter()
+                .find(|(n, _)| n == name)
+                .map(|(_, c)| c.as_slice())
+                .unwrap_or(&[]);
+            let theirs_cells = theirs_sheets
+                .iter()
+                .find(|(n, _)| n == name)
+                .map(|(_, c)| c.as_slice())
+                .unwrap_or(&[]);
+
+            match Self::merge_cells(base_cells, ours_cells, theirs_cells) {
+                Some(cells) => merged_sheets.push((name.to_string(), cells)),
+                None => return Ok(None),
+            }
+        }
+
+        let mut doc = OoxmlDocument::from_bytes(base.as_bytes())
+            .map_err(|e| DriverError::ParseError(e.to_string()))?;
+
+        let mut name_to_path: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
+        for path in doc.parts.keys() {
+            if path.contains("worksheets/") && path.ends_with(".xml") {
+                let sheet_name = path.rsplit('/').next().unwrap_or("sheet");
+                let sheet_name = sheet_name.strip_suffix(".xml").unwrap_or(sheet_name);
+                name_to_path.insert(sheet_name.to_string(), path.clone());
+            }
+        }
+
+        for (name, cells) in &merged_sheets {
+            if let Some(path) = name_to_path.get(name)
+                && let Some(part) = doc.parts.get_mut(path)
+            {
+                part.content = Self::build_sheet_xml(cells);
+            }
+        }
+
+        let bytes = doc
+            .to_bytes()
+            .map_err(|e| DriverError::SerializationError(e.to_string()))?;
+        Ok(Some(unsafe { String::from_utf8_unchecked(bytes) }))
     }
 }
 

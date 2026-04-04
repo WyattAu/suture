@@ -2,6 +2,7 @@ use clap::{CommandFactory, Parser, Subcommand};
 
 mod cmd;
 mod display;
+mod driver_registry;
 mod fuzzy;
 mod ref_utils;
 mod remote_proto;
@@ -196,6 +197,25 @@ EXAMPLES:
     Merge {
         /// Source branch to merge into HEAD
         source: String,
+    },
+    /// Perform three-way file merge (standalone, no branch merge needed)
+    #[command(after_long_help = "\
+EXAMPLES:
+    suture merge-file base.txt ours.txt theirs.txt
+    suture merge-file --label-ours HEAD --label-theirs feature base.txt ours.txt theirs.txt")]
+    MergeFile {
+        /// Base (ancestor) file path
+        base: String,
+        /// Ours (current) file path
+        ours: String,
+        /// Theirs (incoming) file path
+        theirs: String,
+        /// Label for 'ours' side in conflict markers (default: ours)
+        #[arg(long)]
+        label_ours: Option<String>,
+        /// Label for 'theirs' side in conflict markers (default: theirs)
+        #[arg(long)]
+        label_theirs: Option<String>,
     },
     /// Apply a specific commit onto the current branch
     #[command(after_long_help = "\
@@ -634,6 +654,22 @@ async fn main() {
             cmd::revert::cmd_revert(&commit, message.as_deref()).await
         }
         Commands::Merge { source } => cmd::merge::cmd_merge(&source).await,
+        Commands::MergeFile {
+            base,
+            ours,
+            theirs,
+            label_ours,
+            label_theirs,
+        } => {
+            cmd::merge_file::cmd_merge_file(
+                &base,
+                &ours,
+                &theirs,
+                label_ours.as_deref(),
+                label_theirs.as_deref(),
+            )
+            .await
+        }
         Commands::CherryPick { commit } => cmd::cherry_pick::cmd_cherry_pick(&commit).await,
         Commands::Rebase {
             branch,

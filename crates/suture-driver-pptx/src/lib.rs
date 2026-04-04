@@ -57,7 +57,6 @@ impl PptxDriver {
         changes
     }
 
-    #[allow(dead_code)]
     fn merge_slides(base: &[String], ours: &[String], theirs: &[String]) -> Option<Vec<String>> {
         let ours_set: std::collections::HashSet<&str> = ours.iter().map(|s| s.as_str()).collect();
         let theirs_set: std::collections::HashSet<&str> =
@@ -92,6 +91,40 @@ impl PptxDriver {
             }
         }
         Some(merged)
+    }
+
+    fn extract_slides(doc: &OoxmlDocument) -> Result<Vec<String>, DriverError> {
+        let main_path = doc
+            .main_document_path()
+            .ok_or_else(|| DriverError::ParseError("no presentation.xml".into()))?;
+        let main = doc
+            .get_part(main_path)
+            .ok_or_else(|| DriverError::ParseError("main part missing".into()))?;
+        Ok(Self::parse_slides(&main.content))
+    }
+
+    fn build_presentation_xml(slides: &[String]) -> String {
+        let mut xml = String::from(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n\
+             <p:presentation xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\" \
+             xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\">",
+        );
+        for slide in slides {
+            xml.push_str(&format!(
+                "<p:sp name=\"{}\"><p:nvSpPr><p:cNvPr id=\"1\" name=\"{}\"/></p:nvSpPr></p:sp>",
+                slide, slide
+            ));
+        }
+        xml.push_str("</p:presentation>");
+        xml
+    }
+
+    fn copy_slide_parts(src: &OoxmlDocument, dst: &mut OoxmlDocument) {
+        for (path, part) in &src.parts {
+            if path.contains("slides/") && path.ends_with(".xml") && !dst.parts.contains_key(path) {
+                dst.parts.insert(path.clone(), part.clone());
+            }
+        }
     }
 }
 
@@ -173,13 +206,54 @@ impl SutureDriver for PptxDriver {
         Ok(lines.join("\n"))
     }
 
-    fn merge(
-        &self,
-        _base: &str,
-        _ours: &str,
-        _theirs: &str,
-    ) -> Result<Option<String>, DriverError> {
-        Ok(None)
+    fn merge(&self, base: &str, ours: &str, theirs: &str) -> Result<Option<String>, DriverError> {
+        let base_doc = OoxmlDocument::from_bytes(base.as_bytes())
+            .map_err(|e| DriverError::ParseError(e.to_string()))?;
+        let ours_doc = OoxmlDocument::from_bytes(ours.as_bytes())
+            .map_err(|e| DriverError::ParseError(e.to_string()))?;
+        let theirs_doc = OoxmlDocument::from_bytes(theirs.as_bytes())
+            .map_err(|e| DriverError::ParseError(e.to_string()))?;
+
+        let base_slides = Self::extract_slides(&base_doc)?;
+        let ours_slides = Self::extract_slides(&ours_doc)?;
+        let theirs_slides = Self::extract_slides(&theirs_doc)?;
+
+        let merged = match Self::merge_slides(&base_slides, &ours_slides, &theirs_slides) {
+            Some(m) => m,
+            None => return Ok(None),
+        };
+
+        let mut doc = OoxmlDocument::from_bytes(base.as_bytes())
+            .map_err(|e| DriverError::ParseError(e.to_string()))?;
+
+        if let Some(main_path) = doc.main_document_path().map(|s| s.to_string())
+            && let Some(part) = doc.parts.get_mut(&main_path)
+        {
+            part.content = Self::build_presentation_xml(&merged);
+        }
+
+        for slide in &merged {
+            if !base_slides.contains(slide) {
+                if let Some(src_doc) = if ours_slides.contains(slide) {
+                    Some(&ours_doc)
+                } else {
+                    None
+                } {
+                    Self::copy_slide_parts(src_doc, &mut doc);
+                } else if let Some(src_doc) = if theirs_slides.contains(slide) {
+                    Some(&theirs_doc)
+                } else {
+                    None
+                } {
+                    Self::copy_slide_parts(src_doc, &mut doc);
+                }
+            }
+        }
+
+        let bytes = doc
+            .to_bytes()
+            .map_err(|e| DriverError::SerializationError(e.to_string()))?;
+        Ok(Some(unsafe { String::from_utf8_unchecked(bytes) }))
     }
 }
 
