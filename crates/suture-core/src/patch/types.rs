@@ -15,6 +15,17 @@ use suture_common::Hash;
 /// Unique identifier for a patch (BLAKE3 hash of serialized patch content).
 pub type PatchId = Hash;
 
+/// A single file change within a batched commit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileChange {
+    /// The type of operation on this file.
+    pub op: OperationType,
+    /// The file path affected.
+    pub path: String,
+    /// The payload (hex-encoded blob hash for Create/Modify, empty for Delete).
+    pub payload: Vec<u8>,
+}
+
 /// The type of operation a patch represents.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OperationType {
@@ -32,6 +43,9 @@ pub enum OperationType {
     Merge,
     /// No-op / identity patch.
     Identity,
+    /// A batched commit containing multiple file changes.
+    /// The payload contains a JSON-serialized Vec<FileChange>.
+    Batch,
 }
 
 impl std::fmt::Display for OperationType {
@@ -44,6 +58,7 @@ impl std::fmt::Display for OperationType {
             OperationType::Metadata => write!(f, "metadata"),
             OperationType::Merge => write!(f, "merge"),
             OperationType::Identity => write!(f, "identity"),
+            OperationType::Batch => write!(f, "batch"),
         }
     }
 }
@@ -270,6 +285,40 @@ impl Patch {
     /// Check if this is an identity (no-op) patch.
     pub fn is_identity(&self) -> bool {
         self.operation_type == OperationType::Identity && self.touch_set.is_empty()
+    }
+
+    /// Create a batched commit patch that groups multiple file changes.
+    pub fn new_batch(
+        file_changes: Vec<FileChange>,
+        parent_ids: Vec<PatchId>,
+        author: String,
+        message: String,
+    ) -> Self {
+        let touch_set = TouchSet::from_addrs(file_changes.iter().map(|fc| fc.path.clone()));
+        let payload = serde_json::to_vec(&file_changes).unwrap_or_default();
+        Self::new(
+            OperationType::Batch,
+            touch_set,
+            None,
+            payload,
+            parent_ids,
+            author,
+            message,
+        )
+    }
+
+    /// If this is a Batch patch, deserialize the file changes.
+    pub fn file_changes(&self) -> Option<Vec<FileChange>> {
+        if self.operation_type == OperationType::Batch {
+            serde_json::from_slice(&self.payload).ok()
+        } else {
+            None
+        }
+    }
+
+    /// Whether this patch is a batched commit.
+    pub fn is_batch(&self) -> bool {
+        self.operation_type == OperationType::Batch
     }
 }
 

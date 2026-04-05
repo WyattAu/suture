@@ -256,6 +256,7 @@ impl MetadataStore {
                         "metadata" => crate::patch::types::OperationType::Metadata,
                         "merge" => crate::patch::types::OperationType::Merge,
                         "identity" => crate::patch::types::OperationType::Identity,
+                        "batch" => crate::patch::types::OperationType::Batch,
                         _ => crate::patch::types::OperationType::Modify,
                     };
 

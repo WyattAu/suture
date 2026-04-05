@@ -253,7 +253,27 @@ impl SutureHubServer {
 
         let mut needed_hashes: std::collections::HashSet<String> = std::collections::HashSet::new();
         for patch in &new_patches {
-            if !patch.payload.is_empty() {
+            if patch.operation_type == "batch" {
+                if let Ok(decoded) = base64_decode(&patch.payload)
+                    && let Ok(changes) = serde_json::from_str::<Vec<serde_json::Value>>(
+                        &String::from_utf8_lossy(&decoded),
+                    )
+                {
+                    for change in &changes {
+                        if let Some(payload_val) =
+                            change.get("payload").and_then(|v| v.as_array())
+                        {
+                            let hex_bytes: Vec<u8> = payload_val
+                                .iter()
+                                .filter_map(|v| v.as_u64().map(|n| n as u8))
+                                .collect();
+                            if let Ok(hex) = String::from_utf8(hex_bytes) {
+                                needed_hashes.insert(hex);
+                            }
+                        }
+                    }
+                }
+            } else if !patch.payload.is_empty() {
                 // Payload may be raw hex (from tests) or base64-encoded (from CLI).
                 // Try raw hex first — if it looks like a hex hash, use it directly.
                 // Otherwise try base64 decode.

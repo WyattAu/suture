@@ -45,12 +45,22 @@ pub(crate) async fn cmd_push(
     let mut blobs = Vec::new();
     let mut seen_hashes = std::collections::HashSet::new();
     for patch in &patches {
-        if !patch.payload.is_empty() {
-            let hash_hex = String::from_utf8_lossy(&patch.payload).to_string();
-            let Ok(hash) = suture_common::Hash::from_hex(&hash_hex) else {
-                continue;
-            };
-            if !seen_hashes.contains(&hash_hex) {
+        let file_changes = patch.file_changes();
+        let is_batch = patch.operation_type == suture_core::patch::types::OperationType::Batch;
+
+        if is_batch {
+            let changes = file_changes.as_deref().unwrap_or(&[]);
+            for change in changes {
+                if change.payload.is_empty() {
+                    continue;
+                }
+                let hash_hex = String::from_utf8_lossy(&change.payload).to_string();
+                if seen_hashes.contains(&hash_hex) {
+                    continue;
+                }
+                let Ok(hash) = suture_common::Hash::from_hex(&hash_hex) else {
+                    continue;
+                };
                 seen_hashes.insert(hash_hex.clone());
                 let Ok(blob_data) = repo.cas().get_blob(&hash) else {
                     continue;
@@ -60,6 +70,22 @@ pub(crate) async fn cmd_push(
                     data: b64.encode(&blob_data),
                 });
             }
+        } else if !patch.payload.is_empty() {
+            let hash_hex = String::from_utf8_lossy(&patch.payload).to_string();
+            if seen_hashes.contains(&hash_hex) {
+                continue;
+            }
+            let Ok(hash) = suture_common::Hash::from_hex(&hash_hex) else {
+                continue;
+            };
+            seen_hashes.insert(hash_hex.clone());
+            let Ok(blob_data) = repo.cas().get_blob(&hash) else {
+                continue;
+            };
+            blobs.push(BlobRef {
+                hash: hex_to_hash_proto(&hash_hex),
+                data: b64.encode(&blob_data),
+            });
         }
     }
 

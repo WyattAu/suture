@@ -116,6 +116,7 @@ pub(crate) fn proto_to_patch(
         "metadata" => OperationType::Metadata,
         "merge" => OperationType::Merge,
         "identity" => OperationType::Identity,
+        "batch" => OperationType::Batch,
         _ => OperationType::Modify,
     };
     let touch_set = TouchSet::from_addrs(proto.touch_set.iter().cloned());

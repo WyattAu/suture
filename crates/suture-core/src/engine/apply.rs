@@ -10,7 +10,7 @@
 //! - **Identity**: No-op
 
 use crate::engine::tree::FileTree;
-use crate::patch::types::{OperationType, Patch};
+use crate::patch::types::{OperationType, Patch, TouchSet};
 use thiserror::Error;
 
 /// Errors that can occur during patch application.
@@ -60,6 +60,22 @@ where
 {
     let mut new_tree = tree.clone();
 
+    // Handle Batch patches — iterate file changes and apply each
+    if patch.operation_type == OperationType::Batch {
+        if let Some(changes) = patch.file_changes() {
+            for change in &changes {
+                new_tree = apply_single_op(
+                    &new_tree,
+                    &change.op,
+                    &change.path,
+                    &change.payload,
+                    &mut get_payload_blob,
+                )?;
+            }
+        }
+        return Ok(new_tree);
+    }
+
     // Skip identity, merge, and root patches (no target_path)
     if patch.is_identity()
         || patch.operation_type == OperationType::Merge
@@ -71,19 +87,53 @@ where
     // Safe to unwrap — we checked is_none above
     let target_path = patch.target_path.as_deref().unwrap();
 
-    match patch.operation_type {
+    apply_single_op(
+        &new_tree,
+        &patch.operation_type,
+        target_path,
+        &patch.payload,
+        &mut get_payload_blob,
+    )
+}
+
+fn apply_single_op<F>(
+    tree: &FileTree,
+    op: &OperationType,
+    target_path: &str,
+    payload: &[u8],
+    mut get_payload_blob: F,
+) -> Result<FileTree, ApplyError>
+where
+    F: FnMut(&Patch) -> Option<suture_common::Hash>,
+{
+    let mut new_tree = tree.clone();
+
+    match op {
         OperationType::Create => {
-            if new_tree.contains(target_path) {
-                // In practice, we allow overwrite (same as Modify) for resilience
-                if let Some(blob_hash) = get_payload_blob(patch) {
-                    new_tree.insert(target_path.to_string(), blob_hash);
-                }
-            } else if let Some(blob_hash) = get_payload_blob(patch) {
+            let tmp_patch = Patch::new(
+                OperationType::Create,
+                TouchSet::single(target_path),
+                Some(target_path.to_string()),
+                payload.to_vec(),
+                vec![],
+                String::new(),
+                String::new(),
+            );
+            if let Some(blob_hash) = get_payload_blob(&tmp_patch) {
                 new_tree.insert(target_path.to_string(), blob_hash);
             }
         }
         OperationType::Modify => {
-            if let Some(blob_hash) = get_payload_blob(patch) {
+            let tmp_patch = Patch::new(
+                OperationType::Modify,
+                TouchSet::single(target_path),
+                Some(target_path.to_string()),
+                payload.to_vec(),
+                vec![],
+                String::new(),
+                String::new(),
+            );
+            if let Some(blob_hash) = get_payload_blob(&tmp_patch) {
                 new_tree.insert(target_path.to_string(), blob_hash);
             }
         }
@@ -91,19 +141,12 @@ where
             new_tree.remove(target_path);
         }
         OperationType::Move => {
-            // For Move, the payload encodes the destination path
-            // Format: payload is the new path as UTF-8 bytes
-            let new_path = String::from_utf8(patch.payload.clone())
+            let new_path = String::from_utf8(payload.to_vec())
                 .map_err(|_| ApplyError::Custom("Move payload must be valid UTF-8 path".into()))?;
             new_tree.rename(target_path, new_path);
         }
-        OperationType::Metadata => {
-            // Metadata-only changes don't affect file contents
-            // In v0.1, this is a no-op on the file tree
-        }
-        OperationType::Merge | OperationType::Identity => {
-            // Already handled above
-        }
+        OperationType::Metadata => {}
+        OperationType::Merge | OperationType::Identity | OperationType::Batch => {}
     }
 
     Ok(new_tree)
@@ -150,7 +193,7 @@ pub fn resolve_payload_to_hash(patch: &Patch) -> Option<suture_common::Hash> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::patch::types::TouchSet;
+    use crate::patch::types::{FileChange, TouchSet};
 
     fn make_patch(op: OperationType, path: &str, payload: &[u8]) -> Patch {
         let op_name = format!("{:?}", op);
@@ -275,6 +318,77 @@ mod tests {
     fn test_resolve_empty_payload() {
         let patch = make_patch(OperationType::Delete, "file.txt", &[]);
         assert!(resolve_payload_to_hash(&patch).is_none());
+    }
+
+    #[test]
+    fn test_apply_batch() {
+        let tree = FileTree::empty();
+        let file_changes = vec![
+            FileChange {
+                op: OperationType::Create,
+                path: "a.txt".to_string(),
+                payload: blob_hash(b"content a"),
+            },
+            FileChange {
+                op: OperationType::Create,
+                path: "b.txt".to_string(),
+                payload: blob_hash(b"content b"),
+            },
+            FileChange {
+                op: OperationType::Modify,
+                path: "a.txt".to_string(),
+                payload: blob_hash(b"content a v2"),
+            },
+        ];
+        let batch = Patch::new_batch(
+            file_changes,
+            vec![],
+            "test".to_string(),
+            "batch commit".to_string(),
+        );
+        let result = apply_patch(&tree, &batch, resolve_payload_to_hash).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(
+            result.get("a.txt"),
+            Some(&suture_common::Hash::from_data(b"content a v2"))
+        );
+        assert_eq!(
+            result.get("b.txt"),
+            Some(&suture_common::Hash::from_data(b"content b"))
+        );
+    }
+
+    #[test]
+    fn test_apply_batch_with_delete() {
+        let mut tree = FileTree::empty();
+        tree.insert("a.txt".to_string(), suture_common::Hash::from_data(b"old"));
+        tree.insert("b.txt".to_string(), suture_common::Hash::from_data(b"keep"));
+
+        let file_changes = vec![
+            FileChange {
+                op: OperationType::Modify,
+                path: "a.txt".to_string(),
+                payload: blob_hash(b"new"),
+            },
+            FileChange {
+                op: OperationType::Delete,
+                path: "b.txt".to_string(),
+                payload: vec![],
+            },
+        ];
+        let batch = Patch::new_batch(
+            file_changes,
+            vec![],
+            "test".to_string(),
+            "batch with delete".to_string(),
+        );
+        let result = apply_patch(&tree, &batch, resolve_payload_to_hash).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(
+            result.get("a.txt"),
+            Some(&suture_common::Hash::from_data(b"new"))
+        );
+        assert!(!result.contains("b.txt"));
     }
 
     mod proptests {

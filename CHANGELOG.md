@@ -1,5 +1,47 @@
 # Changelog
 
+## [0.8.0] - 2026-04-05
+
+Suture v0.8.0 — Scale release with batched commits, eliminating the #1 performance bottleneck. Each commit now creates a single patch instead of N patches (one per file).
+
+### Batched Commit Model
+
+- **`OperationType::Batch`** — new variant that carries a `Vec<FileChange>` as its payload. Each `FileChange` contains an operation type, file path, and payload (blob hash).
+- **`Patch::new_batch()`** — creates a single patch representing an entire commit. The touch set contains all affected file paths.
+- **`Patch::file_changes()` / `Patch::is_batch()`** — helpers to inspect batch patches.
+- **`FileChange` struct** — serializable representation of a single file operation within a batch.
+
+### Performance Impact
+
+- **Commit writes**: reduced from 2N SQLite writes per commit (N files) to 2 writes total (1 patch + 1 edge).
+- **DAG size**: reduced from O(commits × avg_files) nodes to O(commits) nodes.
+- **Cold snapshot replay**: reduced from O(P × F) to O(C × F) where C = commits (not total patches).
+- **`patch_chain()` walk**: O(C) instead of O(P), eliminating the O(P²) `chain.contains()` check.
+- **Repo open**: loads C patches instead of P patches into the in-memory DAG.
+
+### Engine Changes
+
+- **`apply_patch` Batch handling** — applies all file changes from a Batch patch in a single pass over the FileTree (one clone instead of N clones).
+- **New tests** — `test_apply_batch` and `test_apply_batch_with_delete` verify correct multi-file application.
+
+### Push/Pull Compatibility
+
+- **Push blob collection** — CLI `cmd/push.rs` extracts per-file blob hashes from Batch patch payloads for upload.
+- **Pull blob delivery** — Hub `server.rs` parses Batch patch payloads to deliver only referenced blobs.
+- **Metadata serialization** — `get_patch()` in `metadata/mod.rs` handles `"batch"` operation type correctly.
+
+### Backward Compatibility
+
+- Old per-file patch chains continue to work — `apply_patch` handles both `Batch` and single-op patches.
+- Existing repos with per-file chains replay correctly on open.
+- Wire format (`PatchProto`) requires no changes — `operation_type: "batch"`, `touch_set: [all paths]`, `payload: [JSON file changes]`.
+
+### Test Coverage
+
+- 485 workspace tests pass (266 core + 18 e2e + 19 hub + 182 others)
+- 2 new batch apply tests in suture-core
+- Clippy clean with `-D warnings`
+
 ## [0.7.0] - 2026-04-05
 
 Suture v0.7.0 — Library SDK release with in-memory repository support, hidden internal modules, improved documentation, and config-without-filesystem constructors.

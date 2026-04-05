@@ -29,7 +29,7 @@ use crate::engine::tree::FileTree;
 use crate::metadata::MetaError;
 use crate::patch::conflict::Conflict;
 use crate::patch::merge::MergeResult;
-use crate::patch::types::{OperationType, Patch, PatchId, TouchSet};
+use crate::patch::types::{FileChange, OperationType, Patch, PatchId, TouchSet};
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -822,7 +822,7 @@ impl Repository {
         let (branch_name, head_id) = self.head()?;
         let is_merge_resolution = !self.pending_merge_parents.is_empty();
 
-        let mut parent_ids = if self.pending_merge_parents.is_empty() {
+        let parent_ids = if self.pending_merge_parents.is_empty() {
             vec![head_id]
         } else {
             std::mem::take(&mut self.pending_merge_parents)
@@ -834,69 +834,72 @@ impl Repository {
             .conn()
             .execute("DELETE FROM config WHERE key = 'pending_merge_parents'", []);
 
-        let mut last_patch_id = head_id;
-
+        // Build batched file changes
+        let mut file_changes = Vec::new();
         for (path, status) in &staged {
             let full_path = self.root.join(path);
 
-            let (op_type, payload, touch_set) = match status {
+            let (op_type, payload) = match status {
                 FileStatus::Added | FileStatus::Modified => {
                     let data = fs::read(&full_path)?;
                     let hash = self.cas.put_blob(&data)?;
                     let payload = hash.to_hex().as_bytes().to_vec();
-                    let touch_set = TouchSet::single(path.clone());
-                    (OperationType::Modify, payload, touch_set)
+                    (OperationType::Modify, payload)
                 }
-                FileStatus::Deleted => {
-                    let touch_set = TouchSet::single(path.clone());
-                    (OperationType::Delete, vec![], touch_set)
-                }
+                FileStatus::Deleted => (OperationType::Delete, Vec::new()),
                 _ => continue,
             };
-
-            let patch = Patch::new(
-                op_type,
-                touch_set,
-                Some(path.clone()),
+            file_changes.push(FileChange {
+                op: op_type,
+                path: path.clone(),
                 payload,
-                parent_ids.clone(),
-                self.author.clone(),
-                message.to_string(),
-            );
+            });
+        }
 
-            let patch_id = self.dag.add_patch(patch.clone(), parent_ids.clone())?;
-            self.meta.store_patch(&patch)?;
+        if file_changes.is_empty() {
+            return Err(RepoError::NothingToCommit);
+        }
 
-            last_patch_id = patch_id;
-            parent_ids = vec![patch_id];
+        // Create single batched patch
+        let batch_patch = Patch::new_batch(
+            file_changes,
+            parent_ids.clone(),
+            self.author.clone(),
+            message.to_string(),
+        );
 
+        let patch_id = self.dag.add_patch(batch_patch.clone(), parent_ids)?;
+        self.meta.store_patch(&batch_patch)?;
+
+        // Clear working set entries
+        for (path, _) in &staged {
             let repo_path = RepoPath::new(path.clone())?;
             self.meta.working_set_remove(&repo_path)?;
         }
 
         let branch = BranchName::new(&branch_name)?;
-        self.dag.update_branch(&branch, last_patch_id)?;
-        self.meta.set_branch(&branch, &last_patch_id)?;
+        self.dag.update_branch(&branch, patch_id)?;
+        self.meta.set_branch(&branch, &patch_id)?;
 
         // Persist the file tree for this commit tip (enables O(1) cold-load later).
         // Build the tree directly from patches (not from the stale cache).
-        if let Ok(tree) = self.snapshot_uncached(&last_patch_id) {
+        if let Ok(tree) = self.snapshot_uncached(&patch_id) {
             let tree_hash = tree.content_hash();
             let _ = self.meta.set_config("head_tree_hash", &tree_hash.to_hex());
-            let _ = self.meta.store_file_tree(&last_patch_id, &tree);
+            let _ = self.meta.store_file_tree(&patch_id, &tree);
         }
 
         self.invalidate_head_cache();
 
-        let _ = self.record_reflog(&old_head, &last_patch_id, &format!("commit: {}", message));
+        let _ = self.record_reflog(&old_head, &patch_id, &format!("commit: {}", message));
 
         // If this was a merge resolution, update merge commit's parent_ids
         if is_merge_resolution {
-            // The first patch in the chain has the real merge parents
+            // The batch patch already has the correct merge parents
             // (already handled above via pending_merge_parents)
         }
 
-        Ok(last_patch_id)
+        Ok(patch_id)
     }
 
     // =========================================================================
@@ -1660,7 +1663,58 @@ impl Repository {
 
         let old_tree = self.snapshot_head().unwrap_or_else(|_| FileTree::empty());
 
-        match patch.operation_type {
+        match &patch.operation_type {
+            OperationType::Batch => {
+                let changes = patch.file_changes().ok_or_else(|| {
+                    RepoError::Custom("batch patch has invalid file changes".into())
+                })?;
+                if changes.is_empty() {
+                    return Err(RepoError::Custom("cannot revert empty batch".into()));
+                }
+                let parent_tree = patch
+                    .parent_ids
+                    .first()
+                    .map(|pid| self.snapshot(pid).unwrap_or_else(|_| FileTree::empty()))
+                    .unwrap_or_else(FileTree::empty);
+                let mut revert_changes = Vec::new();
+                for change in &changes {
+                    match change.op {
+                        OperationType::Create | OperationType::Modify => {
+                            revert_changes.push(FileChange {
+                                op: OperationType::Delete,
+                                path: change.path.clone(),
+                                payload: Vec::new(),
+                            });
+                        }
+                        OperationType::Delete => {
+                            if let Some(hash) = parent_tree.get(&change.path) {
+                                revert_changes.push(FileChange {
+                                    op: OperationType::Modify,
+                                    path: change.path.clone(),
+                                    payload: hash.to_hex().as_bytes().to_vec(),
+                                });
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                if revert_changes.is_empty() {
+                    return Err(RepoError::Custom("nothing to revert in batch".into()));
+                }
+                let revert_patch =
+                    Patch::new_batch(revert_changes, vec![head_id], self.author.clone(), msg);
+                let revert_id = self.dag.add_patch(revert_patch.clone(), vec![head_id])?;
+                self.meta.store_patch(&revert_patch)?;
+
+                let branch = BranchName::new(&branch_name)?;
+                self.dag.update_branch(&branch, revert_id)?;
+                self.meta.set_branch(&branch, &revert_id)?;
+
+                self.invalidate_head_cache();
+
+                self.sync_working_tree(&old_tree)?;
+                Ok(revert_id)
+            }
             OperationType::Create | OperationType::Modify => {
                 let revert_patch = Patch::new(
                     OperationType::Delete,
@@ -2057,7 +2111,11 @@ impl Repository {
         let path = patch_a
             .target_path
             .clone()
-            .or_else(|| patch_b.target_path.clone())?;
+            .or_else(|| patch_b.target_path.clone())
+            .or_else(|| {
+                // For batch patches, find the conflicting path from the conflict addresses
+                conflict.conflict_addresses.first().cloned()
+            })?;
 
         let our_content_hash = head_tree.get(&path).copied();
         let their_content_hash = source_tree.get(&path).copied();
@@ -2142,15 +2200,27 @@ impl Repository {
 
         let (branch_name, head_id) = self.head()?;
 
-        let new_patch = Patch::new(
-            patch.operation_type.clone(),
-            patch.touch_set.clone(),
-            patch.target_path.clone(),
-            patch.payload.clone(),
-            vec![head_id],
-            self.author.clone(),
-            patch.message.clone(),
-        );
+        let new_patch = if patch.operation_type == OperationType::Batch {
+            let changes = patch
+                .file_changes()
+                .ok_or_else(|| RepoError::Custom("batch patch has invalid file changes".into()))?;
+            Patch::new_batch(
+                changes,
+                vec![head_id],
+                self.author.clone(),
+                patch.message.clone(),
+            )
+        } else {
+            Patch::new(
+                patch.operation_type.clone(),
+                patch.touch_set.clone(),
+                patch.target_path.clone(),
+                patch.payload.clone(),
+                vec![head_id],
+                self.author.clone(),
+                patch.message.clone(),
+            )
+        };
 
         let new_id = match self.dag.add_patch(new_patch.clone(), vec![head_id]) {
             Ok(id) => id,
@@ -2269,15 +2339,25 @@ impl Repository {
                 continue;
             }
 
-            let new_patch = Patch::new(
-                patch.operation_type.clone(),
-                patch.touch_set.clone(),
-                patch.target_path.clone(),
-                patch.payload.clone(),
-                vec![current_parent],
-                self.author.clone(),
-                patch.message.clone(),
-            );
+            let new_patch = if patch.operation_type == OperationType::Batch {
+                let changes = patch.file_changes().unwrap_or_default();
+                Patch::new_batch(
+                    changes,
+                    vec![current_parent],
+                    self.author.clone(),
+                    patch.message.clone(),
+                )
+            } else {
+                Patch::new(
+                    patch.operation_type.clone(),
+                    patch.touch_set.clone(),
+                    patch.target_path.clone(),
+                    patch.payload.clone(),
+                    vec![current_parent],
+                    self.author.clone(),
+                    patch.message.clone(),
+                )
+            };
 
             let new_id = self
                 .dag
@@ -2566,15 +2646,25 @@ impl Repository {
                             continue;
                         }
 
-                        let new_patch = Patch::new(
-                            patch.operation_type.clone(),
-                            patch.touch_set.clone(),
-                            patch.target_path.clone(),
-                            patch.payload.clone(),
-                            vec![current_parent],
-                            self.author.clone(),
-                            message.clone(),
-                        );
+                        let new_patch = if patch.operation_type == OperationType::Batch {
+                            let changes = patch.file_changes().unwrap_or_default();
+                            Patch::new_batch(
+                                changes,
+                                vec![current_parent],
+                                self.author.clone(),
+                                message.clone(),
+                            )
+                        } else {
+                            Patch::new(
+                                patch.operation_type.clone(),
+                                patch.touch_set.clone(),
+                                patch.target_path.clone(),
+                                patch.payload.clone(),
+                                vec![current_parent],
+                                self.author.clone(),
+                                message.clone(),
+                            )
+                        };
 
                         let new_id = self
                             .dag
@@ -2716,68 +2806,145 @@ impl Repository {
         let mut current_lines: Vec<String> = Vec::new();
 
         for patch in &patches {
-            let targets_file = patch.target_path.as_deref() == Some(path);
-
-            match patch.operation_type {
-                OperationType::Create | OperationType::Modify if targets_file => {
-                    let new_content = if !patch.payload.is_empty() {
-                        let payload_hex = String::from_utf8_lossy(&patch.payload);
-                        if let Ok(blob_hash) = Hash::from_hex(&payload_hex) {
-                            if let Ok(blob_data) = self.cas.get_blob(&blob_hash) {
-                                String::from_utf8_lossy(&blob_data).to_string()
-                            } else {
-                                continue;
-                            }
-                        } else {
-                            continue;
-                        }
-                    } else {
-                        continue;
-                    };
-
-                    let old_refs: Vec<&str> = current_lines.iter().map(|s| s.as_str()).collect();
-                    let new_refs: Vec<&str> = new_content.lines().collect();
-                    let changes = crate::engine::merge::diff_lines(&old_refs, &new_refs);
-
-                    let mut new_line_author: Vec<Option<(PatchId, String, String)>> = Vec::new();
-                    let mut old_idx = 0usize;
-
-                    for change in &changes {
-                        match change {
-                            crate::engine::merge::LineChange::Unchanged(clines) => {
-                                for i in 0..clines.len() {
-                                    if old_idx + i < line_author.len() {
-                                        new_line_author.push(line_author[old_idx + i].clone());
+            match &patch.operation_type {
+                OperationType::Batch => {
+                    if let Some(changes) = patch.file_changes()
+                        && let Some(change) = changes.iter().find(|c| c.path == path)
+                    {
+                        match change.op {
+                            OperationType::Create | OperationType::Modify => {
+                                let payload_hex = String::from_utf8_lossy(&change.payload);
+                                let new_content =
+                                    if let Ok(blob_hash) = Hash::from_hex(&payload_hex) {
+                                        if let Ok(blob_data) = self.cas.get_blob(&blob_hash) {
+                                            String::from_utf8_lossy(&blob_data).to_string()
+                                        } else {
+                                            continue;
+                                        }
                                     } else {
-                                        new_line_author.push(None);
+                                        continue;
+                                    };
+
+                                let old_refs: Vec<&str> =
+                                    current_lines.iter().map(|s| s.as_str()).collect();
+                                let new_refs: Vec<&str> = new_content.lines().collect();
+                                let changes_diff =
+                                    crate::engine::merge::diff_lines(&old_refs, &new_refs);
+
+                                let mut new_line_author: Vec<
+                                    Option<(PatchId, String, String)>,
+                                > = Vec::new();
+                                let mut old_idx = 0usize;
+
+                                for change_diff in &changes_diff {
+                                    match change_diff {
+                                        crate::engine::merge::LineChange::Unchanged(clines) => {
+                                            for i in 0..clines.len() {
+                                                if old_idx + i < line_author.len() {
+                                                    new_line_author
+                                                        .push(line_author[old_idx + i].clone());
+                                                } else {
+                                                    new_line_author.push(None);
+                                                }
+                                            }
+                                            old_idx += clines.len();
+                                        }
+                                        crate::engine::merge::LineChange::Deleted(clines) => {
+                                            old_idx += clines.len();
+                                        }
+                                        crate::engine::merge::LineChange::Inserted(clines) => {
+                                            for _ in 0..clines.len() {
+                                                new_line_author.push(Some((
+                                                    patch.id,
+                                                    patch.message.clone(),
+                                                    patch.author.clone(),
+                                                )));
+                                            }
+                                        }
                                     }
                                 }
-                                old_idx += clines.len();
+
+                                line_author = new_line_author;
+                                current_lines =
+                                    new_content.lines().map(|s| s.to_string()).collect();
                             }
-                            crate::engine::merge::LineChange::Deleted(clines) => {
-                                old_idx += clines.len();
+                            OperationType::Delete => {
+                                line_author.clear();
+                                current_lines.clear();
+                                break;
                             }
-                            crate::engine::merge::LineChange::Inserted(clines) => {
-                                for _ in 0..clines.len() {
-                                    new_line_author.push(Some((
-                                        patch.id,
-                                        patch.message.clone(),
-                                        patch.author.clone(),
-                                    )));
-                                }
-                            }
+                            _ => {}
                         }
                     }
+                }
+                _ => {
+                    let targets_file = patch.target_path.as_deref() == Some(path);
 
-                    line_author = new_line_author;
-                    current_lines = new_content.lines().map(|s| s.to_string()).collect();
+                    match patch.operation_type {
+                        OperationType::Create | OperationType::Modify if targets_file => {
+                            let new_content = if !patch.payload.is_empty() {
+                                let payload_hex = String::from_utf8_lossy(&patch.payload);
+                                if let Ok(blob_hash) = Hash::from_hex(&payload_hex) {
+                                    if let Ok(blob_data) = self.cas.get_blob(&blob_hash) {
+                                        String::from_utf8_lossy(&blob_data).to_string()
+                                    } else {
+                                        continue;
+                                    }
+                                } else {
+                                    continue;
+                                }
+                            } else {
+                                continue;
+                            };
+
+                            let old_refs: Vec<&str> =
+                                current_lines.iter().map(|s| s.as_str()).collect();
+                            let new_refs: Vec<&str> = new_content.lines().collect();
+                            let changes = crate::engine::merge::diff_lines(&old_refs, &new_refs);
+
+                            let mut new_line_author: Vec<Option<(PatchId, String, String)>> =
+                                Vec::new();
+                            let mut old_idx = 0usize;
+
+                            for change in &changes {
+                                match change {
+                                    crate::engine::merge::LineChange::Unchanged(clines) => {
+                                        for i in 0..clines.len() {
+                                            if old_idx + i < line_author.len() {
+                                                new_line_author
+                                                    .push(line_author[old_idx + i].clone());
+                                            } else {
+                                                new_line_author.push(None);
+                                            }
+                                        }
+                                        old_idx += clines.len();
+                                    }
+                                    crate::engine::merge::LineChange::Deleted(clines) => {
+                                        old_idx += clines.len();
+                                    }
+                                    crate::engine::merge::LineChange::Inserted(clines) => {
+                                        for _ in 0..clines.len() {
+                                            new_line_author.push(Some((
+                                                patch.id,
+                                                patch.message.clone(),
+                                                patch.author.clone(),
+                                            )));
+                                        }
+                                    }
+                                }
+                            }
+
+                            line_author = new_line_author;
+                            current_lines = new_content.lines().map(|s| s.to_string()).collect();
+                        }
+                        OperationType::Delete if targets_file => {
+                            line_author.clear();
+                            current_lines.clear();
+                            break;
+                        }
+                        _ => {}
+                    }
                 }
-                OperationType::Delete if targets_file => {
-                    line_author.clear();
-                    current_lines.clear();
-                    break;
-                }
-                _ => {}
             }
         }
 
@@ -3238,6 +3405,28 @@ impl Repository {
         let mut blob_ok = true;
         let all_patches = self.all_patches();
         for patch in &all_patches {
+            if patch.is_batch() {
+                if let Some(changes) = patch.file_changes() {
+                    for change in &changes {
+                        if change.payload.is_empty() {
+                            continue;
+                        }
+                        let hex = String::from_utf8_lossy(&change.payload);
+                        if let Ok(hash) = Hash::from_hex(&hex)
+                            && !self.cas().has_blob(&hash)
+                        {
+                            warnings.push(format!(
+                                "batch patch {} references missing blob {} for path {}",
+                                patch.id.to_hex(),
+                                hash.to_hex(),
+                                change.path
+                            ));
+                             blob_ok = false;
+                        }
+                    }
+                }
+                continue;
+            }
             if patch.payload.is_empty() {
                 continue;
             }
