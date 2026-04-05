@@ -42,48 +42,63 @@ use thiserror::Error;
 /// Repository errors.
 #[derive(Error, Debug)]
 pub enum RepoError {
+    /// The given path is not a Suture repository (no `.suture/` directory).
     #[error("not a suture repository: {0}")]
     NotARepository(PathBuf),
 
+    /// A Suture repository already exists at the given path.
     #[error("repository already exists: {0}")]
     AlreadyExists(PathBuf),
 
+    /// An error occurred in the Content Addressable Storage.
     #[error("CAS error: {0}")]
     Cas(#[from] CasError),
 
+    /// An error occurred in the Patch DAG.
     #[error("DAG error: {0}")]
     Dag(#[from] DagError),
 
+    /// An error occurred in the metadata store.
     #[error("metadata error: {0}")]
     Meta(#[from] MetaError),
 
+    /// An I/O error occurred.
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 
+    /// An error occurred during patch application.
     #[error("patch application error: {0}")]
     Apply(#[from] ApplyError),
 
+    /// A patch-related error occurred.
     #[error("patch error: {0}")]
     Patch(String),
 
+    /// No changes are staged for commit.
     #[error("nothing to commit")]
     NothingToCommit,
 
+    /// A merge is in progress with unresolved conflicts.
     #[error("merge in progress — resolve conflicts first")]
     MergeInProgress,
 
+    /// Uncommitted staged changes would be overwritten by this operation.
     #[error("uncommitted changes would be overwritten (staged: {0})")]
     DirtyWorkingTree(usize),
 
+    /// The specified branch was not found.
     #[error("branch not found: {0}")]
     BranchNotFound(String),
 
+    /// An error from the `suture-common` crate.
     #[error("common error: {0}")]
     Common(#[from] CommonError),
 
+    /// A generic custom error.
     #[error("{0}")]
     Custom(String),
 
+    /// The requested operation is not supported.
     #[error("unsupported operation: {0}")]
     Unsupported(String),
 }
@@ -298,6 +313,54 @@ impl Repository {
             cached_head_branch: RefCell::new(None),
             repo_config,
             is_worktree,
+        })
+    }
+    /// Open an in-memory repository for testing or embedded use.
+    ///
+    /// Creates a repository backed entirely by in-memory storage. No
+    /// filesystem I/O occurs except for the initial tempdir creation.
+    /// The CAS uses a temporary directory that is cleaned up on drop.
+    pub fn open_in_memory() -> Result<Self, RepoError> {
+        let temp_root = tempfile::tempdir().map_err(RepoError::Io)?.keep();
+        let suture_dir = temp_root.join(".suture");
+        fs::create_dir_all(&suture_dir)?;
+
+        let mut cas = BlobStore::new(&suture_dir)?;
+        cas.set_verify_on_read(false);
+        let meta = crate::metadata::MetadataStore::open_in_memory()?;
+
+        let mut dag = PatchDag::new();
+        let root_patch = Patch::new(
+            OperationType::Create,
+            TouchSet::empty(),
+            None,
+            vec![],
+            vec![],
+            "suture".to_string(),
+            "Initial commit".to_string(),
+        );
+        let root_id = dag.add_patch(root_patch.clone(), vec![])?;
+        meta.store_patch(&root_patch)?;
+
+        let main_branch = BranchName::new("main").expect("hardcoded 'main' is always valid");
+        dag.create_branch(main_branch.clone(), root_id)?;
+        meta.set_branch(&main_branch, &root_id)?;
+        meta.set_config("author", "suture")?;
+
+        Ok(Self {
+            root: temp_root,
+            suture_dir,
+            cas,
+            dag,
+            meta,
+            author: "suture".to_string(),
+            ignore_patterns: Vec::new(),
+            pending_merge_parents: Vec::new(),
+            cached_head_snapshot: RefCell::new(None),
+            cached_head_id: RefCell::new(None),
+            cached_head_branch: RefCell::new(None),
+            repo_config: crate::metadata::repo_config::RepoConfig::default(),
+            is_worktree: false,
         })
     }
 
@@ -985,7 +1048,7 @@ impl Repository {
         if let Ok((_, current_head_id)) = self.head()
             && current_head_id.to_hex() != stash_head_id
         {
-            eprintln!(
+            tracing::warn!(
                 "Warning: HEAD has moved since stash@{{{}}} was created",
                 index
             );
@@ -1364,7 +1427,7 @@ impl Repository {
         );
 
         if has_changes && let Err(e) = self.stash_pop() {
-            eprintln!("Warning: could not restore stashed changes: {}", e);
+            tracing::warn!("Warning: could not restore stashed changes: {}", e);
         }
 
         Ok(target_tree)

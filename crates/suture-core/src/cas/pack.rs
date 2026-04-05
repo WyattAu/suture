@@ -52,6 +52,7 @@ pub struct PackIndex {
     entries: Vec<PackIndexEntry>,
 }
 
+#[allow(dead_code)]
 impl PackIndex {
     pub fn load(path: &std::path::Path) -> Result<Self, PackError> {
         let file = fs::File::open(path)?;
@@ -250,6 +251,7 @@ pub struct PackCache {
     indices: HashMap<PathBuf, PackIndex>,
 }
 
+#[allow(dead_code)]
 impl PackCache {
     pub fn new() -> Self {
         Self {

@@ -14,8 +14,11 @@
 //! - The order of application matters (patches are NOT reordered)
 //! - Each operation type (Create/Modify/Delete/Move) has well-defined semantics
 
-pub mod apply;
+#[doc(hidden)]
+pub(crate) mod apply;
+#[doc(hidden)]
 pub mod diff;
+#[doc(hidden)]
 pub mod merge;
 pub mod tree;
 

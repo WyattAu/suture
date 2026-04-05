@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.7.0] - 2026-04-05
+
+Suture v0.7.0 — Library SDK release with in-memory repository support, hidden internal modules, improved documentation, and config-without-filesystem constructors.
+
+### In-Memory Repository
+
+- **`Repository::open_in_memory()`** — creates a fully initialized repository backed by a tempdir CAS and an in-memory SQLite metadata store. No filesystem setup required — ideal for testing, embedding, and programmatic use.
+- **`BlobStore::open_in_memory()`** — creates a CAS backed by a temporary directory. The directory persists for the lifetime of the BlobStore.
+
+### API Surface Cleanup
+
+- **Hidden internal modules** — sub-modules like `cas::compressor`, `cas::hasher`, `cas::pack`, `dag::branch`, `dag::merge`, `engine::apply`, `patch::commute`, `patch::compose`, `metadata::global_config`, `metadata::repo_config`, and `repository::repo_impl` are now `#[doc(hidden)] pub(crate)`. They remain accessible within the crate but are not part of the public API.
+- **`DagNode` fields** — changed from `pub` to `pub(crate)` to prevent external access to internal DAG structure.
+- **Public re-exports preserved** — `BlobStore`, `CasError`, `PatchDag`, `DagError`, `FileTree`, `Patch`, etc. remain accessible via their parent module re-exports.
+
+### Documentation
+
+- **`RepoError` variants** — all 14 variants now have `///` doc comments explaining when each error occurs.
+- **`suture-protocol` crate docs** — added module-level documentation explaining the wire format purpose.
+
+### Config Without Filesystem
+
+- **`RepoConfig::from_str()`** — parse repository configuration from a TOML string without touching the filesystem.
+- **`GlobalConfig::from_str()`** — parse global configuration from a TOML string without touching the filesystem.
+
+### Library Hygiene
+
+- **`eprintln!` → `tracing::warn!`** — replaced all 4 `eprintln!` calls in library code with proper `tracing::warn!` logging. Eliminates side-effect output in library consumers.
+- **`tempfile` promoted to regular dependency** — was dev-dependency only; now required for `open_in_memory()` public API.
+
+### Test Coverage
+
+- 483 workspace tests pass
+- Clippy clean with `-D warnings`
+- All formatting consistent
+
 ## [0.6.0] - 2026-04-04
 
 Suture v0.6.0 — Collaboration features including Hub fast-forward validation, selective blob transfer, max_depth support, force push, branch protection, and worktree support.

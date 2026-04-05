@@ -13,8 +13,10 @@
 //! - THM-MERGE-001: Merging produces a deterministic, unique result
 //! - THM-CONF-001: Conflict nodes preserve all information from both branches
 
-pub mod commute;
-pub mod compose;
+#[doc(hidden)]
+pub(crate) mod commute;
+#[doc(hidden)]
+pub(crate) mod compose;
 pub mod conflict;
 pub mod merge;
 pub mod types;

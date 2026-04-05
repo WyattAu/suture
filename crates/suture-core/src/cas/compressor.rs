@@ -36,6 +36,7 @@ pub fn compress(data: &[u8], level: i32) -> Result<Vec<u8>, super::CasError> {
 }
 
 /// Compress data at the default level (3).
+#[allow(dead_code)]
 pub fn compress_default(data: &[u8]) -> Result<Vec<u8>, super::CasError> {
     compress(data, DEFAULT_COMPRESSION_LEVEL)
 }

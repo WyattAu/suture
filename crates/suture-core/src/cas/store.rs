@@ -95,6 +95,23 @@ impl BlobStore {
         })
     }
 
+    /// Create a BlobStore backed by a temporary directory.
+    ///
+    /// Useful for testing and in-memory repository usage. The temporary
+    /// directory is cleaned up when the BlobStore is dropped.
+    pub fn open_in_memory() -> Result<Self, CasError> {
+        let root = tempfile::tempdir().map_err(CasError::Io)?.keep();
+        let objects_dir = root.join("objects");
+        fs::create_dir_all(&objects_dir)?;
+        Ok(Self {
+            root,
+            compress: true,
+            compression_level: compressor::DEFAULT_COMPRESSION_LEVEL,
+            verify_on_read: true,
+            pack_cache: Mutex::new(None),
+        })
+    }
+
     /// Create a BlobStore with compression disabled (for testing).
     pub fn new_uncompressed(root: impl Into<PathBuf>) -> Result<Self, CasError> {
         let mut store = Self::new(root)?;

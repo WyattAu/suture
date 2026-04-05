@@ -20,9 +20,12 @@
 //! - **Deduplication**: Storing the same blob twice uses one copy
 //! - **Lossless**: Zstd compression/decompression is lossless
 
-pub mod compressor;
-pub mod hasher;
-pub mod pack;
+#[doc(hidden)]
+pub(crate) mod compressor;
+#[doc(hidden)]
+pub(crate) mod hasher;
+#[doc(hidden)]
+pub(crate) mod pack;
 pub mod store;
 
 pub use store::{BlobStore, CasError};

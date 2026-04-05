@@ -46,6 +46,12 @@ pub struct PullConfig {
 }
 
 impl GlobalConfig {
+    /// Parse configuration from a TOML string.
+    #[allow(dead_code)]
+    pub fn from_str(s: &str) -> Result<Self, toml::de::Error> {
+        toml::from_str(s)
+    }
+
     pub fn load() -> Self {
         let path = Self::config_path();
         if !path.exists() {
@@ -58,7 +64,7 @@ impl GlobalConfig {
         match toml::from_str(&content) {
             Ok(config) => config,
             Err(e) => {
-                eprintln!(
+                tracing::warn!(
                     "warning: failed to parse global config at {}: {}",
                     path.display(),
                     e

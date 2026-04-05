@@ -55,6 +55,12 @@ pub struct PullSection {
 }
 
 impl RepoConfig {
+    /// Parse configuration from a TOML string.
+    #[allow(dead_code)]
+    pub fn from_str(s: &str) -> Result<Self, toml::de::Error> {
+        toml::from_str(s)
+    }
+
     /// Load repo config from `.suture/config` in the given repo root.
     pub fn load(repo_root: &Path) -> Self {
         let path = repo_root.join(".suture").join("config");
@@ -68,7 +74,7 @@ impl RepoConfig {
         match toml::from_str(&content) {
             Ok(config) => config,
             Err(e) => {
-                eprintln!(
+                tracing::warn!(
                     "warning: failed to parse repo config at {}: {}",
                     path.display(),
                     e

@@ -22,6 +22,7 @@ pub fn hash_bytes(data: &[u8]) -> Hash {
 ///
 /// This avoids loading the entire file into memory, which is critical
 /// for multi-gigabyte media files.
+#[allow(dead_code)]
 pub fn hash_file(path: &std::path::Path) -> Result<Hash, std::io::Error> {
     let mut hasher = blake3::Hasher::new();
     let file = std::fs::File::open(path)?;

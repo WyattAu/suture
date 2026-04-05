@@ -10,8 +10,10 @@
 //! - Every non-root node has at least one parent
 //! - Branch names are unique
 
-pub mod branch;
+#[doc(hidden)]
+pub(crate) mod branch;
 pub mod graph;
-pub mod merge;
+#[doc(hidden)]
+pub(crate) mod merge;
 
 pub use graph::{DagError, DagNode, PatchDag};

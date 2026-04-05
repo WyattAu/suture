@@ -50,14 +50,14 @@ pub enum DagError {
 #[derive(Clone, Debug)]
 pub struct DagNode {
     /// The patch data.
-    pub patch: Patch,
+    pub(crate) patch: Patch,
     /// Parent patch IDs.
-    pub parent_ids: Vec<PatchId>,
+    pub(crate) parent_ids: Vec<PatchId>,
     /// Child patch IDs.
-    pub child_ids: Vec<PatchId>,
+    pub(crate) child_ids: Vec<PatchId>,
     /// Generation number: max(parent generations) + 1, or 0 for root.
     /// Used for O(1) depth comparisons in LCA computation.
-    pub generation: u64,
+    pub(crate) generation: u64,
 }
 
 /// The Patch-DAG — a directed acyclic graph of patches.

@@ -1,3 +1,9 @@
+//! Suture Protocol — wire format for client-server communication.
+//!
+//! Defines the request/response types used by the Suture Hub for
+//! push, pull, authentication, and repository management operations.
+//! All types are serializable via `serde` for JSON transport.
+
 use serde::{Deserialize, Serialize};
 
 pub const PROTOCOL_VERSION: u32 = 1;
