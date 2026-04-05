@@ -2,11 +2,16 @@
 name = "suture-hub"
 version = "0.8.0"
 edition = "2024"
+license.workspace = true
+repository.workspace = true
+description.workspace = true
+homepage.workspace = true
+keywords.workspace = true
 
 [dependencies]
-suture-common = { path = "../suture-common" }
-suture-core = { path = "../suture-core" }
-suture-protocol = { path = "../suture-protocol" }
+suture-common = { path = "../suture-common", version = "0.8.0" }
+suture-core = { path = "../suture-core", version = "0.8.0" }
+suture-protocol = { path = "../suture-protocol", version = "0.8.0" }
 axum = { version = "0.8", features = ["json"] }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }

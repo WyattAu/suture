@@ -39,6 +39,15 @@ EXAMPLES:
 EXAMPLES:
     suture status              # Show working tree status")]
     Status,
+    /// Inspect .sutureignore patterns
+    #[command(after_long_help = "\
+EXAMPLES:
+    suture ignore list         # List ignore patterns
+    suture ignore check foo.o  # Check if a path is ignored")]
+    Ignore {
+        #[command(subcommand)]
+        action: IgnoreAction,
+    },
     /// Add files to the staging area
     #[command(after_long_help = "\
 EXAMPLES:
@@ -460,6 +469,17 @@ EXAMPLES:
 }
 
 #[derive(Subcommand)]
+pub(crate) enum IgnoreAction {
+    /// List current ignore patterns
+    List,
+    /// Check if a path matches any ignore pattern
+    Check {
+        /// Path to check
+        path: String,
+    },
+}
+
+#[derive(Subcommand)]
 pub(crate) enum KeyAction {
     /// Generate a new Ed25519 keypair
     #[command(
@@ -653,6 +673,13 @@ async fn main() {
     let result = match cli.command {
         Commands::Init { path } => cmd::init::cmd_init(&path).await,
         Commands::Status => cmd::status::cmd_status().await,
+        Commands::Ignore { action } => {
+            let args = match action {
+                IgnoreAction::List => cmd::ignore::IgnoreArgs::List,
+                IgnoreAction::Check { path } => cmd::ignore::IgnoreArgs::Check { path },
+            };
+            cmd::ignore::cmd_ignore(&args).await
+        }
         Commands::Add { paths, all } => cmd::add::cmd_add(&paths, all).await,
         Commands::Rm { paths, cached } => cmd::rm::cmd_rm(&paths, cached).await,
         Commands::Commit { message, all } => cmd::commit::cmd_commit(&message, all).await,

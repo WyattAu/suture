@@ -12,6 +12,7 @@ pub mod drivers;
 pub mod fetch;
 pub mod fsck;
 pub mod gc;
+pub mod ignore;
 pub mod init;
 pub mod key;
 pub mod log;

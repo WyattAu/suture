@@ -1,30 +1,18 @@
 # Security Policy
 
-## Supported Versions
-Only the latest release is supported. Older versions do not receive security updates.
-
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in Suture, please report it responsibly:
+If you discover a security vulnerability in Suture, please report it privately
+by opening a [GitHub Security Advisory](https://github.com/WyattAu/suture/security/advisories/new).
 
-1. **Do not** open a public GitHub issue.
-2. Email security vulnerabilities to: security@suture.dev
-3. Include as much information as possible:
-   - Description of the vulnerability
-   - Steps to reproduce
-   - Potential impact
-   - Any suggested fixes
+Please do not open a public issue for security vulnerabilities.
 
-We will acknowledge receipt within 48 hours and provide a timeline for the fix.
+## Supported Versions
 
-## Vulnerability Handling
-- Critical vulnerabilities are addressed within 72 hours
-- High severity within 1 week
-- Medium severity within 2 weeks
-- Low severity in the next release cycle
+Only the latest release of Suture receives security updates.
 
-## Security Features
-- BLAKE3 content-addressed storage with integrity verification
-- Ed25519 cryptographic commit signing
-- Zstd compression for blob storage
-- No unsafe code in core crates (except FFI boundaries)
+## Signing Infrastructure
+
+Suture uses Ed25519 for cryptographic signing of commits and tags. All
+key material is stored locally under `.suture/keys/` and is never transmitted
+to remote servers. Keep your private keys secure and do not share them.

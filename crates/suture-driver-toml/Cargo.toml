@@ -2,7 +2,12 @@
 name = "suture-driver-toml"
 version = "0.8.0"
 edition = "2024"
+license.workspace = true
+repository.workspace = true
+description.workspace = true
+homepage.workspace = true
+keywords.workspace = true
 
 [dependencies]
-suture-driver = { path = "../suture-driver" }
+suture-driver = { path = "../suture-driver", version = "0.8.0" }
 toml = "0.8"

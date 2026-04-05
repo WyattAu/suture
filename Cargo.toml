@@ -9,7 +9,7 @@ exclude = [
 ]
 
 [workspace.package]
-license = "MIT OR Apache-2.0"
+license = "Apache-2.0"
 repository = "https://github.com/WyattAu/suture"
 description = "A patch-based version control system with semantic merge and format-aware drivers"
 readme = "README.md"

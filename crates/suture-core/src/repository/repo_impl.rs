@@ -2831,9 +2831,8 @@ impl Repository {
                                 let changes_diff =
                                     crate::engine::merge::diff_lines(&old_refs, &new_refs);
 
-                                let mut new_line_author: Vec<
-                                    Option<(PatchId, String, String)>,
-                                > = Vec::new();
+                                let mut new_line_author: Vec<Option<(PatchId, String, String)>> =
+                                    Vec::new();
                                 let mut old_idx = 0usize;
 
                                 for change_diff in &changes_diff {
@@ -3421,7 +3420,7 @@ impl Repository {
                                 hash.to_hex(),
                                 change.path
                             ));
-                             blob_ok = false;
+                            blob_ok = false;
                         }
                     }
                 }

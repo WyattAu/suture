@@ -2,6 +2,11 @@
 name = "suture-common"
 version = "0.8.0"
 edition = "2024"
+license.workspace = true
+repository.workspace = true
+description.workspace = true
+homepage.workspace = true
+keywords.workspace = true
 
 [dependencies]
 blake3 = "1.8"

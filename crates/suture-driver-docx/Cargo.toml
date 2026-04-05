@@ -2,10 +2,15 @@
 name = "suture-driver-docx"
 version = "0.8.0"
 edition = "2024"
+license.workspace = true
+repository.workspace = true
+description.workspace = true
+homepage.workspace = true
+keywords.workspace = true
 
 [dependencies]
-suture-driver = { path = "../suture-driver" }
-suture-ooxml = { path = "../suture-ooxml" }
+suture-driver = { path = "../suture-driver", version = "0.8.0" }
+suture-ooxml = { path = "../suture-ooxml", version = "0.8.0" }
 quick-xml = "0.37"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

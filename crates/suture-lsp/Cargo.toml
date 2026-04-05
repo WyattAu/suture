@@ -2,14 +2,19 @@
 name = "suture-lsp"
 version = "0.8.0"
 edition = "2024"
+license.workspace = true
+repository.workspace = true
+description.workspace = true
+homepage.workspace = true
+keywords.workspace = true
 
 [[bin]]
 name = "suture-lsp"
 path = "src/main.rs"
 
 [dependencies]
-suture-core = { path = "../suture-core" }
-suture-common = { path = "../suture-common" }
+suture-core = { path = "../suture-core", version = "0.8.0" }
+suture-common = { path = "../suture-common", version = "0.8.0" }
 tokio = { version = "1", features = ["full"] }
 tower-lsp = "0.20"
 serde = "1"

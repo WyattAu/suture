@@ -260,8 +260,7 @@ impl SutureHubServer {
                     )
                 {
                     for change in &changes {
-                        if let Some(payload_val) =
-                            change.get("payload").and_then(|v| v.as_array())
+                        if let Some(payload_val) = change.get("payload").and_then(|v| v.as_array())
                         {
                             let hex_bytes: Vec<u8> = payload_val
                                 .iter()
