@@ -373,7 +373,33 @@ impl Repository {
         let branch = BranchName::new(name)?;
         let target_id = match target {
             Some(t) => {
-                if let Ok(bn) = BranchName::new(t) {
+                // Check for HEAD / HEAD~N before trying branch name resolution
+                if t == "HEAD" {
+                    let head = self
+                        .dag
+                        .head()
+                        .ok_or_else(|| RepoError::Custom("no HEAD".to_string()))?;
+                    head.1
+                } else if let Some(rest) = t.strip_prefix("HEAD~") {
+                    let n: usize = rest
+                        .parse()
+                        .map_err(|_| RepoError::Custom(format!("invalid HEAD~N: {}", t)))?;
+                    let (_, head_id) = self.head()?;
+                    let mut current = head_id;
+                    for _ in 0..n {
+                        let patch = self.dag.get_patch(&current).ok_or_else(|| {
+                            RepoError::Custom("HEAD ancestor not found".to_string())
+                        })?;
+                        current = patch
+                            .parent_ids
+                            .first()
+                            .ok_or_else(|| {
+                                RepoError::Custom("HEAD has no parent".to_string())
+                            })?
+                            .to_owned();
+                    }
+                    current
+                } else if let Ok(bn) = BranchName::new(t) {
                     self.dag
                         .get_branch(&bn)
                         .ok_or_else(|| RepoError::BranchNotFound(t.to_string()))?
@@ -1465,13 +1491,29 @@ impl Repository {
                 }
                 return Ok(target_id);
             }
-            // Try hex hash first (patch IDs are 64-char hex strings that
+            // Try full hex hash (patch IDs are 64-char hex strings that
             // also happen to pass BranchName validation, so we must try
             // hex before branch name to avoid false branch lookups).
             if let Ok(hash) = Hash::from_hex(name)
                 && self.dag.has_patch(&hash)
             {
                 return Ok(hash);
+            }
+            // Try short hash prefix
+            let all_patch_ids = self.dag.patch_ids();
+            let prefix_matches: Vec<&PatchId> = all_patch_ids
+                .iter()
+                .filter(|id| id.to_hex().starts_with(name))
+                .collect();
+            match prefix_matches.len() {
+                1 => return Ok(*prefix_matches[0]),
+                0 => {}
+                n => {
+                    return Err(RepoError::Custom(format!(
+                        "ambiguous ref '{}' matches {} commits",
+                        name, n
+                    )));
+                }
             }
             // Try tag
             if let Ok(Some(tag_id)) = self.resolve_tag(name) {
@@ -1521,7 +1563,9 @@ impl Repository {
     /// Show staged changes (diff of staged files vs HEAD).
     pub fn diff_staged(&self) -> Result<Vec<DiffEntry>, RepoError> {
         let head_tree = self.snapshot_head()?;
-        let mut staged_tree = FileTree::empty();
+        // Start from HEAD tree so unchanged files are preserved, then overlay
+        // staged additions/modifications and remove staged deletions.
+        let mut staged_tree = head_tree.clone();
         let working_set = self.meta.working_set()?;
         for (path, status) in &working_set {
             match status {
@@ -1533,7 +1577,8 @@ impl Repository {
                     }
                 }
                 FileStatus::Deleted => {
-                    // File is staged for deletion — it exists in HEAD but not in staged tree
+                    // File is staged for deletion — remove it from the staged tree
+                    staged_tree.remove(path);
                 }
                 _ => {}
             }
