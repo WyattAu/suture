@@ -3,8 +3,7 @@
 //! Uses SQLite in WAL mode for concurrent read access. The metadata store
 //! is the persistent backing for the in-memory PatchDag.
 
-#[doc(hidden)]
-pub(crate) mod global_config;
+pub mod global_config;
 #[doc(hidden)]
 pub(crate) mod repo_config;
 

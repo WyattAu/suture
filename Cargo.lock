@@ -2415,6 +2415,7 @@ dependencies = [
  "suture-protocol",
  "suture-tui",
  "tokio",
+ "toml",
 ]
 
 [[package]]

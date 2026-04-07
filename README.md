@@ -34,26 +34,40 @@ Or grab the tarball from [GitHub Releases](https://github.com/WyattAu/suture/rel
 ## Quick Start
 
 ```bash
-suture init my-project && cd my-project
-echo '{"port": 8080, "host": "localhost"}' > config.json
-suture add config.json && suture commit "initial config"
+# Install
+cargo install suture-cli
 
-# Branch A: change the port
-suture branch deploy && suture checkout deploy
-# (edit config.json: port → 9090)
-suture add config.json && suture commit "change port"
+# Init a repo and set your identity
+suture init
+suture config user.name "Your Name"
 
-# Branch B: change the host
+# Create a JSON config file and commit it
+echo '{"host": "localhost", "port": 3000}' > config.json
+suture add .
+suture commit "base config"
+
+# Create a branch and change one key
+suture branch staging
+suture checkout staging
+echo '{"host": "staging.example.com", "port": 3000}' > config.json
+suture add .
+suture commit "point to staging"
+
+# Switch back and change a different key
 suture checkout main
-# (edit config.json: host → "0.0.0.0")
-suture add config.json && suture commit "change host"
+echo '{"host": "localhost", "port": 8080}' > config.json
+suture add .
+suture commit "change port"
 
-# Merge — no conflict. Suture merges JSON fields structurally.
-suture merge deploy
-# config.json is now: {"port": 9090, "host": "0.0.0.0"}
+# Merge — both changes are combined, zero conflicts
+suture merge staging
+cat config.json
+# {"host": "staging.example.com", "port": 8080}
 ```
 
-With Git, the same scenario produces a merge conflict. Suture recognizes that the two edits touch different JSON keys and merges them automatically.
+That's the demo. Suture understood the JSON structure and merged both sides — `host` from `staging`, `port` from `main` — without conflict markers. Git would have produced a merge conflict on every line.
+
+The same semantic merge works for YAML, TOML, CSV, XML, Markdown, DOCX, XLSX, and PPTX files.
 
 ## Semantic Drivers
 

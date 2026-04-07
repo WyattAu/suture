@@ -210,10 +210,14 @@ EXAMPLES:
     /// Merge a branch into the current branch
     #[command(after_long_help = "\
 EXAMPLES:
-    suture merge feature       # Merge 'feature' into current branch")]
+    suture merge feature       # Merge 'feature' into current branch
+    suture merge --dry-run feature  # Preview merge without modifying working tree")]
     Merge {
         /// Source branch to merge into HEAD
         source: String,
+        /// Preview merge without modifying the working tree
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Perform three-way file merge (standalone, no branch merge needed)
     #[command(after_long_help = "\
@@ -301,8 +305,12 @@ EXAMPLES:
 EXAMPLES:
     suture config              # List all config
     suture config user.name    # Get a config value
-    suture config user.name=Alice  # Set a config value")]
+    suture config user.name=Alice  # Set a config value
+    suture config --global user.name=Alice  # Set global config")]
     Config {
+        /// Operate on the global config (~/.config/suture/config.toml) instead of the repo config
+        #[arg(long)]
+        global: bool,
         /// Key to get, or key=value to set
         key_value: Vec<String>,
     },
@@ -738,7 +746,7 @@ async fn main() {
         Commands::Revert { commit, message } => {
             cmd::revert::cmd_revert(&commit, message.as_deref()).await
         }
-        Commands::Merge { source } => cmd::merge::cmd_merge(&source).await,
+        Commands::Merge { source, dry_run } => cmd::merge::cmd_merge(&source, dry_run).await,
         Commands::MergeFile {
             base,
             ours,
@@ -781,7 +789,7 @@ async fn main() {
             )
             .await
         }
-        Commands::Config { key_value } => cmd::config::cmd_config(&key_value).await,
+        Commands::Config { key_value, global } => cmd::config::cmd_config(&key_value, global).await,
         Commands::Remote { action } => cmd::remote::cmd_remote(&action).await,
         Commands::Push {
             remote,

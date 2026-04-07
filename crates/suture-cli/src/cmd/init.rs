@@ -7,7 +7,7 @@ pub(crate) async fn cmd_init(path: &str) -> Result<(), Box<dyn std::error::Error
         "Initialized empty Suture repository in {}",
         repo_path.display()
     );
-    println!("Hint: run `suture config user.name=\"Your Name\"` to set your identity");
+    println!("Hint: run `suture config user.name \"Your Name\"` to set your identity");
     drop(repo);
     Ok(())
 }

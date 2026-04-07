@@ -16,10 +16,18 @@
   | THM-DAG-001      | DAG.lean            | ⚠ Sketched|
   | CAS Integrity    | CAS.lean            | ✓ Proved  |
   | LEM-001 to LEM-005| Various             | ✓ Proved  |
-  | THM-PATCH-001    | Composition.lean    | ✓ Proved  |
-  
-  Sorry-free theorems: 6/7 (THM-DAG-001 acyclicity preservation has a sorry
-  due to the complexity of inductive reasoning over Reachable paths).
+   | THM-PATCH-001    | Composition.lean    | ✓ Proved  |
+   | Config idempotent| Config.lean         | ✓ Proved  |
+   | Config overrides | Config.lean         | ✓ Proved  |
+   | Config roundtrip | Config.lean         | ✓ Proved  |
+   | Config precedence| Config.lean         | ✓ Proved  |
+   | Merge dry-run    | MergeDryRun.lean    | ✓ Proved  |
+   | Merge deterministic| MergeDryRun.lean  | ✓ Proved  |
+   | Batch apply equiv| BatchCommit.lean    | ⚠ Sketched|
+   | Batch touch union| BatchCommit.lean    | ⚠ Sketched|
+   
+   Sorry-free theorems: 11/13 (THM-DAG-001 acyclicity preservation and
+   batch commit theorems have sorry due to inductive reasoning complexity).
 -/
 
 import SutureProofs.Foundations
@@ -29,3 +37,6 @@ import SutureProofs.Merge
 import SutureProofs.Conflict
 import SutureProofs.DAG
 import SutureProofs.CAS
+import SutureProofs.Config
+import SutureProofs.MergeDryRun
+import SutureProofs.BatchCommit

@@ -1,12 +1,14 @@
 use crate::style::run_hook_if_exists;
 
-pub(crate) async fn cmd_merge(source: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) async fn cmd_merge(
+    source: &str,
+    dry_run: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     use std::path::Path as StdPath;
     use suture_core::repository::ConflictInfo;
 
     let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
 
-    // Run pre-merge hook
     let (branch, head_id) = repo
         .head()
         .unwrap_or_else(|_| ("main".to_string(), suture_common::Hash::ZERO));
@@ -14,11 +16,39 @@ pub(crate) async fn cmd_merge(source: &str) -> Result<(), Box<dyn std::error::Er
     pre_extra.insert("SUTURE_BRANCH".to_string(), branch.clone());
     pre_extra.insert("SUTURE_HEAD".to_string(), head_id.to_hex());
     pre_extra.insert("SUTURE_MERGE_SOURCE".to_string(), source.to_string());
-    run_hook_if_exists(repo.root(), "pre-merge", pre_extra)?;
+
+    if dry_run {
+        println!(
+            "DRY RUN: previewing merge of '{}' into current branch",
+            source
+        );
+    } else {
+        run_hook_if_exists(repo.root(), "pre-merge", pre_extra)?;
+    }
 
     let result = repo.execute_merge(source)?;
 
     if result.is_clean {
+        if dry_run {
+            if result.patches_applied > 0 {
+                if let Some(id) = &result.merge_patch_id {
+                    println!(
+                        "Merge would create: {} ({} patch(es) applied from '{}')",
+                        id, result.patches_applied, source
+                    );
+                } else {
+                    println!(
+                        "Fast-forward merge: would apply {} patch(es) from '{}'",
+                        result.patches_applied, source
+                    );
+                }
+            } else {
+                println!("Already up to date.");
+            }
+            println!("DRY RUN — no files were modified.");
+            return Ok(());
+        }
+
         if let Some(id) = result.merge_patch_id {
             println!("Merge successful: {}", id);
         }
@@ -28,7 +58,7 @@ pub(crate) async fn cmd_merge(source: &str) -> Result<(), Box<dyn std::error::Er
                 result.patches_applied, source
             );
         }
-        // Run post-merge hook (only on clean merge)
+
         let (branch, head_id) = repo.head()?;
         let mut post_extra = std::collections::HashMap::new();
         post_extra.insert("SUTURE_BRANCH".to_string(), branch);
@@ -85,6 +115,13 @@ pub(crate) async fn cmd_merge(source: &str) -> Result<(), Box<dyn std::error::Er
                 continue;
             };
 
+            if dry_run {
+                let driver_name = driver.name().to_lowercase();
+                println!("Would resolve {} via {} driver", conflict.path, driver_name);
+                resolved_count += 1;
+                continue;
+            }
+
             if let Err(e) = std::fs::write(&conflict.path, &content) {
                 eprintln!(
                     "Warning: could not write resolved file '{}': {e}",
@@ -103,8 +140,32 @@ pub(crate) async fn cmd_merge(source: &str) -> Result<(), Box<dyn std::error::Er
                 continue;
             }
 
+            let driver_name = driver.name().to_lowercase();
+            println!("Resolved {} via {} driver", conflict.path, driver_name);
             resolved_count += 1;
         }
+    }
+
+    if dry_run {
+        if resolved_count > 0 {
+            println!(
+                "Would resolve {} conflict(s) via semantic drivers",
+                resolved_count
+            );
+        }
+        if remaining.is_empty() {
+            println!("All conflicts would be resolved via semantic drivers.");
+        } else {
+            println!("{} conflict(s) would remain unresolved:", remaining.len());
+            for conflict in &remaining {
+                println!(
+                    "  CONFLICT in '{}': would need manual resolution",
+                    conflict.path
+                );
+            }
+        }
+        println!("DRY RUN — no files were modified.");
+        return Ok(());
     }
 
     if resolved_count > 0 {

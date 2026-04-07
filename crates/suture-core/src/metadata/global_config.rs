@@ -47,7 +47,7 @@ pub struct PullConfig {
 
 impl GlobalConfig {
     /// Parse configuration from a TOML string.
-    #[allow(dead_code)]
+    #[allow(dead_code, clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Result<Self, toml::de::Error> {
         toml::from_str(s)
     }
