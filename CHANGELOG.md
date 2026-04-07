@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.8.1] - 2026-04-07
+
+Bugfix release — three bugs found and fixed during full QA sweep (80+ E2E tests, 438 unit tests).
+
+### Bug Fixes
+
+- **`diff --cached` showed all tracked files as deleted** — `diff_staged()` built the staged tree from empty instead of from HEAD. Now correctly starts from `head_tree` and overlays staged additions, modifications, and deletions.
+- **`branch --target HEAD` and `branch --target HEAD~N` failed** — `create_branch()` tried to resolve HEAD as a `BranchName` before checking for HEAD refs. Now checks HEAD/HEAD~N first, then branch names, then hex hashes.
+- **`diff --from/--to` rejected short hash prefixes** — `resolve_id` in `diff()` only accepted full 64-char hex via `Hash::from_hex`. Now tries prefix matching against all patch IDs, matching the behavior of `show`, `blame`, and `log`.
+
+### QA Results
+
+- 438/438 unit tests pass
+- 80+ E2E CLI tests pass (41 commands tested, 9 drivers tested)
+- 5 semantic merge formats verified end-to-end (JSON, CSV, TOML, XML, Markdown)
+
 ## [0.8.0] - 2026-04-05
 
 Suture v0.8.0 — Scale release with batched commits, eliminating the #1 performance bottleneck. Each commit now creates a single patch instead of N patches (one per file).
