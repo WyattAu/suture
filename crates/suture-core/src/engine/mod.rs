@@ -15,14 +15,14 @@
 //! - Each operation type (Create/Modify/Delete/Move) has well-defined semantics
 
 #[doc(hidden)]
-pub(crate) mod apply;
+pub mod apply;
 #[doc(hidden)]
 pub mod diff;
 #[doc(hidden)]
 pub mod merge;
 pub mod tree;
 
-pub use apply::{ApplyError, apply_patch, apply_patch_chain};
+pub use apply::{ApplyError, apply_patch, apply_patch_chain, resolve_payload_to_hash};
 pub use diff::{DiffEntry, DiffType, diff_trees};
 pub use merge::{MergeOutput, three_way_merge_lines};
 pub use tree::FileTree;

@@ -16,14 +16,25 @@ pub(crate) async fn cmd_config(key_value: &[String]) -> Result<(), Box<dyn std::
         return Ok(());
     }
 
-    let kv = &key_value[0];
-    if let Some((key, value)) = kv.split_once('=') {
-        repo.set_config(key.trim(), value.trim())?;
-        println!("{}={}", key.trim(), value.trim());
+    // Support: suture config key=value  (single arg with =)
+    //          suture config key value  (two args, joined with space)
+    let (key, value) = if key_value.len() >= 2 {
+        // Multi-arg form: suture config user.name "Your Name"
+        (
+            key_value[0].trim().to_string(),
+            key_value[1..].join(" ").trim().to_string(),
+        )
+    } else if let Some((k, v)) = key_value[0].split_once('=') {
+        // Single-arg form: suture config user.name=Your
+        (k.trim().to_string(), v.trim().to_string())
     } else {
-        let key = kv.trim();
+        // No value provided — treat as a get
+        let key = key_value[0].trim();
         match repo.get_config(key)? {
-            Some(value) => println!("{}", value),
+            Some(value) => {
+                println!("{}", value);
+                return Ok(());
+            }
             None => {
                 let all_keys: Vec<String> = repo
                     .list_config()
@@ -45,7 +56,10 @@ pub(crate) async fn cmd_config(key_value: &[String]) -> Result<(), Box<dyn std::
                 std::process::exit(1);
             }
         }
-    }
+    };
+
+    repo.set_config(&key, &value)?;
+    println!("{}={}", key, value);
 
     Ok(())
 }

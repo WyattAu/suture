@@ -60,6 +60,13 @@ pub struct DagNode {
     pub(crate) generation: u64,
 }
 
+impl DagNode {
+    /// Returns the ID of this node's patch.
+    pub fn id(&self) -> &PatchId {
+        &self.patch.id
+    }
+}
+
 /// The Patch-DAG — a directed acyclic graph of patches.
 ///
 /// Internally stores:

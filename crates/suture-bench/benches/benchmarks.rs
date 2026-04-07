@@ -5,10 +5,10 @@ use tempfile::TempDir;
 use suture_core::cas::pack::PackFile;
 use suture_core::cas::store::BlobStore;
 use suture_core::dag::graph::PatchDag;
-use suture_core::engine::apply::{apply_patch_chain, resolve_payload_to_hash};
 use suture_core::engine::diff::diff_trees;
 use suture_core::engine::merge::diff_lines;
 use suture_core::engine::tree::FileTree;
+use suture_core::engine::{apply_patch_chain, resolve_payload_to_hash};
 use suture_core::patch::types::{OperationType, Patch, TouchSet};
 
 fn bench_cas_put_get(c: &mut Criterion) {
@@ -148,7 +148,7 @@ fn bench_dag_lca_diamond(c: &mut Criterion) {
                         // LCA between two nodes at the same depth (both children of root)
                         // This exercises ancestor caching heavily
                         let root = dag.get_node(&dag.patch_ids()[0]).unwrap();
-                        let root_id = root.patch.id;
+                        let root_id = root.id();
                         let result = black_box(dag.lca(&tip, &root_id));
                         assert!(result.is_some());
                     },
@@ -177,11 +177,12 @@ fn bench_dag_ancestors_cached(c: &mut Criterion) {
                 dag
             },
             |dag| {
-                let tip = dag.patch_ids().last().unwrap();
+                let patch_ids = dag.patch_ids();
+                let tip = patch_ids.last().unwrap();
                 // First call: BFS computation (cached)
-                let _ = black_box(dag.ancestors(&tip));
+                let _ = black_box(dag.ancestors(tip));
                 // Second call: cache hit
-                let _ = black_box(dag.ancestors(&tip));
+                let _ = black_box(dag.ancestors(tip));
             },
         );
     });

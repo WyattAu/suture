@@ -21,11 +21,11 @@
 //! - **Lossless**: Zstd compression/decompression is lossless
 
 #[doc(hidden)]
-pub(crate) mod compressor;
+pub mod compressor;
 #[doc(hidden)]
-pub(crate) mod hasher;
+pub mod hasher;
 #[doc(hidden)]
-pub(crate) mod pack;
+pub mod pack;
 pub mod store;
 
 pub use store::{BlobStore, CasError};
