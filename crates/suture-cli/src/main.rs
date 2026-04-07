@@ -53,13 +53,17 @@ EXAMPLES:
 EXAMPLES:
     suture add file.txt        # Stage a specific file
     suture add src/            # Stage all files in src/
-    suture add --all           # Stage all modified/deleted files")]
+    suture add --all           # Stage all modified/deleted files
+    suture add -p              # Interactively choose which files to stage")]
     Add {
         /// File paths to add (ignored when --all is used)
         paths: Vec<String>,
         /// Add all files (respecting .sutureignore)
         #[arg(short, long)]
         all: bool,
+        /// Interactively review and choose which files to stage
+        #[arg(short = 'p', long)]
+        patch: bool,
     },
     /// Remove files from the working tree and staging area
     #[command(after_long_help = "\
@@ -460,6 +464,16 @@ EXAMPLES:
         #[command(subcommand)]
         action: BisectAction,
     },
+    /// Undo the last commit(s) (soft reset to HEAD~N)
+    #[command(after_long_help = "\
+EXAMPLES:
+    suture undo                # Undo the last commit (soft reset)
+    suture undo --steps 3      # Undo the last 3 commits")]
+    Undo {
+        /// Number of commits to undo (default: 1)
+        #[arg(short, long)]
+        steps: Option<usize>,
+    },
     /// Squash N commits into one
     #[command(after_long_help = "\
 EXAMPLES:
@@ -688,7 +702,7 @@ async fn main() {
             };
             cmd::ignore::cmd_ignore(&args).await
         }
-        Commands::Add { paths, all } => cmd::add::cmd_add(&paths, all).await,
+        Commands::Add { paths, all, patch } => cmd::add::cmd_add(&paths, all, patch).await,
         Commands::Rm { paths, cached } => cmd::rm::cmd_rm(&paths, cached).await,
         Commands::Commit { message, all } => cmd::commit::cmd_commit(&message, all).await,
         Commands::Branch {
@@ -860,6 +874,7 @@ async fn main() {
         Commands::Squash { count, message } => {
             cmd::squash::cmd_squash(count, message.as_deref()).await
         }
+        Commands::Undo { steps } => cmd::undo::cmd_undo(steps).await,
         Commands::Version => cmd::version::cmd_version().await,
         Commands::Tui => cmd::tui::cmd_tui().await,
     };

@@ -35,5 +35,6 @@ pub mod stash;
 pub mod status;
 pub mod tag;
 pub mod tui;
+pub mod undo;
 pub mod version;
 pub mod worktree;

@@ -227,7 +227,7 @@ fn test_stash() {
     assert!(out.contains("Saved as stash"), "stash push: {}", out);
 
     let out = suture_success(&repo, &["stash", "pop"]);
-    assert!(out.contains("Stash popped"), "stash pop: {}", out);
+    assert!(out.contains("Restored stash"), "stash pop: {}", out);
 
     assert!(repo.join("stash_test.txt").exists());
 }

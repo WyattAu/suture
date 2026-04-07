@@ -178,10 +178,42 @@ pub(crate) async fn cmd_merge(
     } else {
         println!("Merge has {} conflict(s):", remaining.len());
         for conflict in &remaining {
-            println!(
-                "  CONFLICT in '{}': edit the file, then commit to resolve",
-                conflict.path
-            );
+            let ours_preview = conflict
+                .our_content_hash
+                .as_ref()
+                .and_then(|h| repo.cas().get_blob(h).ok())
+                .map(|b| String::from_utf8_lossy(&b).to_string());
+            let theirs_preview = conflict
+                .their_content_hash
+                .as_ref()
+                .and_then(|h| repo.cas().get_blob(h).ok())
+                .map(|b| String::from_utf8_lossy(&b).to_string());
+
+            println!("  CONFLICT in '{}':", conflict.path);
+
+            if let Some(ref ours) = ours_preview {
+                let lines: Vec<&str> = ours.lines().take(5).collect();
+                println!("    ours:");
+                for line in &lines {
+                    println!("      {}", line);
+                }
+                if ours.lines().count() > 5 {
+                    println!("      ...");
+                }
+            }
+
+            if let Some(ref theirs) = theirs_preview {
+                let lines: Vec<&str> = theirs.lines().take(5).collect();
+                println!("    theirs:");
+                for line in &lines {
+                    println!("      {}", line);
+                }
+                if theirs.lines().count() > 5 {
+                    println!("      ...");
+                }
+            }
+
+            println!("    Edit the file, then run `suture commit` to resolve");
         }
         println!("Hint: resolve conflicts, then run `suture commit`");
     }

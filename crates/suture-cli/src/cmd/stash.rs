@@ -10,8 +10,19 @@ pub(crate) async fn cmd_stash(
             println!("Saved as stash@{{{}}}", idx);
         }
         StashAction::Pop => {
-            repo.stash_pop()?;
-            println!("Stash popped.");
+            let stashes_before = repo.stash_list()?;
+            if stashes_before.is_empty() {
+                println!("No stashes to pop.");
+            } else {
+                let highest = stashes_before.iter().map(|s| s.index).max().unwrap_or(0);
+                repo.stash_pop()?;
+                let message = stashes_before
+                    .iter()
+                    .find(|s| s.index == highest)
+                    .map(|s| s.message.as_str())
+                    .unwrap_or("unknown");
+                println!("Restored stash@{{{}}}: {}", highest, message);
+            }
         }
         StashAction::Apply { index } => {
             repo.stash_apply(*index)?;

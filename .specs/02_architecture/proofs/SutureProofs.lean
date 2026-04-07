@@ -25,9 +25,17 @@
    | Merge deterministic| MergeDryRun.lean  | ✓ Proved  |
    | Batch apply equiv| BatchCommit.lean    | ⚠ Sketched|
    | Batch touch union| BatchCommit.lean    | ⚠ Sketched|
+   | Undo preserves    | Undo.lean           | ⚠ Sketched|
+   | Undo reversible   | Undo.lean           | ⚠ Sketched|
+   | Undo graph preserv| Undo.lean           | ⚠ Sketched|
+   | Staging monotonic | InteractiveStaging.lean | ✓ Proved|
+   | Staged ⊆ changed  | InteractiveStaging.lean | ✓ Proved|
+   | Empty staging val | InteractiveStaging.lean | ✓ Proved|
+   | Unstage in changed| InteractiveStaging.lean | ✓ Proved|
    
-   Sorry-free theorems: 11/13 (THM-DAG-001 acyclicity preservation and
-   batch commit theorems have sorry due to inductive reasoning complexity).
+   Sorry-free theorems: 15/21 (THM-DAG-001 acyclicity preservation,
+   batch commit theorems, and undo theorems have sorry due to
+   inductive reasoning complexity).
 -/
 
 import SutureProofs.Foundations
@@ -40,3 +48,5 @@ import SutureProofs.CAS
 import SutureProofs.Config
 import SutureProofs.MergeDryRun
 import SutureProofs.BatchCommit
+import SutureProofs.Undo
+import SutureProofs.InteractiveStaging
