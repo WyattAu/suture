@@ -87,6 +87,16 @@ fn parse_blocks(content: &str) -> Vec<Block> {
     let mut current_heading: Option<String> = None;
     let mut in_code_block = false;
 
+    /// Flush the current block into `blocks` if one exists.
+    /// Returns `true` if a block was flushed.
+    macro_rules! flush_block {
+        () => {
+            if let Some(block) = current_block.take() {
+                blocks.push(block);
+            }
+        };
+    }
+
     for line in content.lines() {
         if in_code_block {
             if let Some(ref mut block) = current_block {
@@ -94,15 +104,13 @@ fn parse_blocks(content: &str) -> Vec<Block> {
             }
             if line.trim_start().starts_with("```") {
                 in_code_block = false;
-                current_block = current_block.take();
+                flush_block!();
             }
             continue;
         }
 
         if line.trim_start().starts_with("```") {
-            if current_block.is_some() {
-                blocks.push(current_block.take().unwrap());
-            }
+            flush_block!();
             in_code_block = true;
             current_block = Some(Block {
                 block_type: BlockType::CodeBlock,
@@ -113,9 +121,7 @@ fn parse_blocks(content: &str) -> Vec<Block> {
         }
 
         if is_blank(line) {
-            if current_block.is_some() {
-                blocks.push(current_block.take().unwrap());
-            }
+            flush_block!();
             continue;
         }
 
@@ -123,9 +129,7 @@ fn parse_blocks(content: &str) -> Vec<Block> {
 
         match bt {
             BlockType::Heading => {
-                if current_block.is_some() {
-                    blocks.push(current_block.take().unwrap());
-                }
+                flush_block!();
                 let heading_text = line.trim_start_matches('#').trim().to_string();
                 current_heading = Some(heading_text.clone());
                 current_block = Some(Block {
@@ -140,7 +144,7 @@ fn parse_blocks(content: &str) -> Vec<Block> {
                         block.lines.push(line.to_string());
                         continue;
                     } else {
-                        blocks.push(current_block.take().unwrap());
+                        flush_block!();
                     }
                 }
                 current_block = Some(Block {
@@ -152,10 +156,7 @@ fn parse_blocks(content: &str) -> Vec<Block> {
         }
     }
 
-    if let Some(block) = current_block {
-        blocks.push(block);
-    }
-
+    flush_block!();
     blocks
 }
 

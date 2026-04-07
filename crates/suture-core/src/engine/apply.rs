@@ -85,7 +85,9 @@ where
     }
 
     // Safe to unwrap — we checked is_none above
-    let target_path = patch.target_path.as_deref().unwrap();
+    let Some(target_path) = patch.target_path.as_deref() else {
+        return Ok(new_tree);
+    };
 
     apply_single_op(
         &new_tree,

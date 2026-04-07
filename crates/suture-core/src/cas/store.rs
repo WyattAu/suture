@@ -368,7 +368,11 @@ impl BlobStore {
         if guard.is_none() {
             *guard = Some(PackCache::load_all(&self.pack_dir()).map_err(CasError::Pack)?);
         }
-        Ok(f(guard.as_ref().unwrap()))
+        // Guard was just set to Some(...) on the line above if it was None.
+        let cache = guard.as_ref().ok_or_else(|| {
+            CasError::Pack(PackError::BlobNotFound("pack cache not loaded".into()))
+        })?;
+        Ok(f(cache))
     }
 
     /// Invalidate the pack cache (call after repack or external pack changes).

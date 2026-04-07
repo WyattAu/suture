@@ -47,8 +47,10 @@ async fn cmd_add_patch(
         }
 
         if head_tree.contains(path) {
-            let head_hash = head_tree.get(path).unwrap();
-            let head_bytes = repo.cas().get_blob(head_hash).unwrap_or_default();
+            let Some(&head_hash) = head_tree.get(path) else {
+                continue;
+            };
+            let head_bytes = repo.cas().get_blob(&head_hash).unwrap_or_default();
             let head_content = String::from_utf8_lossy(&head_bytes);
 
             let disk_content = std::fs::read_to_string(path).unwrap_or_default();

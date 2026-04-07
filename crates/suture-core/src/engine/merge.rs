@@ -90,7 +90,9 @@ fn try_extend_last(result: &mut [LineChange], change: &LineChange) -> bool {
     if !can_merge {
         return false;
     }
-    let last = result.last_mut().unwrap();
+    let Some(last) = result.last_mut() else {
+        return false;
+    };
     match (last, change) {
         (LineChange::Unchanged(v), LineChange::Unchanged(new)) => {
             v.extend(new.iter().cloned());

@@ -253,6 +253,9 @@ impl SutureDriver for PptxDriver {
         let bytes = doc
             .to_bytes()
             .map_err(|e| DriverError::SerializationError(e.to_string()))?;
+        // SAFETY: simple_xml produces valid UTF-8 XML content. The
+        // serialization only writes ASCII characters (tags, attributes,
+        // escaped text content) so the output is always valid UTF-8.
         Ok(Some(unsafe { String::from_utf8_unchecked(bytes) }))
     }
 }
