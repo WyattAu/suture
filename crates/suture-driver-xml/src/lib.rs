@@ -293,7 +293,10 @@ impl XmlDriver {
                     {
                         merged_children.push(Self::element_to_string(o, indent + 1));
                     } else {
-                        return Ok(None);
+                        // Both sides added different children at the same position.
+                        // Include both — additions from both sides should be preserved.
+                        merged_children.push(Self::element_to_string(o, indent + 1));
+                        merged_children.push(Self::element_to_string(t, indent + 1));
                     }
                 }
                 (None, None, _) => {}

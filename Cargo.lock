@@ -2394,6 +2394,7 @@ dependencies = [
  "clap_complete_nushell",
  "ed25519-dalek",
  "hex",
+ "libc",
  "rand 0.8.5",
  "reqwest",
  "serde",

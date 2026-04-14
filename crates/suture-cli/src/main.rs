@@ -681,6 +681,14 @@ pub(crate) enum BisectAction {
 
 #[tokio::main]
 async fn main() {
+    // On Unix, restore default SIGPIPE handling so broken pipes terminate the
+    // process silently instead of panicking with a backtrace. This matches the
+    // behavior of standard Unix tools (cat, grep, etc.) when piped to `head`.
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+
     let cli = Cli::parse();
 
     if let Some(path) = &cli.repo_path {

@@ -101,11 +101,13 @@ pub(crate) async fn cmd_log(
         return Ok(());
     }
 
-    let branches = repo.list_branches();
+    let mut branches = repo.list_branches();
     if branches.is_empty() {
         println!("No commits.");
         return Ok(());
     }
+    // Sort branches for deterministic graph column assignment
+    branches.sort_by(|a, b| a.0.cmp(&b.0));
 
     let all_patches = repo.all_patches();
     let mut commit_groups: Vec<(Vec<suture_core::patch::types::PatchId>, String, u64)> = Vec::new();
@@ -122,7 +124,18 @@ pub(crate) async fn cmd_log(
         }
     }
 
-    commit_groups.sort_by(|a, b| b.2.cmp(&a.2));
+    commit_groups.sort_by(|a, b| {
+        // Primary: newest first (descending timestamp)
+        b.2.cmp(&a.2)
+            // Secondary: message for consistent grouping
+            .then_with(|| a.1.cmp(&b.1))
+            // Tertiary: first patch ID for total determinism
+            .then_with(|| {
+                let a_id = a.0.first().copied().unwrap_or(suture_common::Hash::ZERO);
+                let b_id = b.0.first().copied().unwrap_or(suture_common::Hash::ZERO);
+                a_id.cmp(&b_id)
+            })
+    });
 
     let branch_tips: std::collections::HashSet<suture_core::patch::types::PatchId> =
         branches.iter().map(|(_, id)| *id).collect();

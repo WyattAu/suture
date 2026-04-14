@@ -547,6 +547,28 @@ impl Repository {
     /// Tags are stored as config entries `tag.<name>` pointing to a patch hash.
     pub fn create_tag(&mut self, name: &str, target: Option<&str>) -> Result<(), RepoError> {
         let target_id = match target {
+            Some(t) if t == "HEAD" || t.starts_with("HEAD~") => {
+                let (_, head_id) = self.head()?;
+                let mut current = head_id;
+                if let Some(n_str) = t.strip_prefix("HEAD~") {
+                    let n: usize = n_str
+                        .parse()
+                        .map_err(|_| RepoError::Custom(format!("invalid HEAD~N: {}", n_str)))?;
+                    for _ in 0..n {
+                        if let Some(patch) = self.dag.get_patch(&current) {
+                            current = *patch
+                                .parent_ids
+                                .first()
+                                .ok_or_else(|| RepoError::Custom("HEAD has no parent".into()))?;
+                        } else {
+                            return Err(RepoError::Custom(
+                                "HEAD ancestor not found".into(),
+                            ));
+                        }
+                    }
+                }
+                current
+            }
             Some(t) => {
                 if let Ok(bn) = BranchName::new(t) {
                     self.dag
@@ -565,14 +587,25 @@ impl Repository {
         self.set_config(&format!("tag.{name}"), &target_id.to_hex())
     }
 
-    /// Delete a tag.
+    /// Delete a tag. Returns an error if the tag does not exist.
     pub fn delete_tag(&mut self, name: &str) -> Result<(), RepoError> {
+        let key = format!("tag.{name}");
+        let exists: bool = self
+            .meta
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM config WHERE key = ?1",
+                rusqlite::params![key],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(|count| count > 0)
+            .map_err(|e| RepoError::Custom(e.to_string()))?;
+        if !exists {
+            return Err(RepoError::Custom(format!("tag '{}' not found", name)));
+        }
         self.meta
             .conn()
-            .execute(
-                "DELETE FROM config WHERE key = ?1",
-                rusqlite::params![format!("tag.{name}")],
-            )
+            .execute("DELETE FROM config WHERE key = ?1", rusqlite::params![key])
             .map_err(|e| RepoError::Custom(e.to_string()))?;
         Ok(())
     }
@@ -629,8 +662,16 @@ impl Repository {
         Ok(notes.into_iter().map(|(_, v)| v).collect())
     }
 
-    /// Remove a note from a commit.
+    /// Remove a note from a commit. Returns an error if the index is out of range.
     pub fn remove_note(&self, patch_id: &PatchId, index: usize) -> Result<(), RepoError> {
+        let notes = self.list_notes(patch_id)?;
+        if index >= notes.len() {
+            return Err(RepoError::Custom(format!(
+                "note index {} out of range ({} notes for commit)",
+                index,
+                notes.len()
+            )));
+        }
         let key = format!("note.{}.{}", patch_id, index);
         self.meta.delete_config(&key).map_err(RepoError::Meta)
     }
@@ -1912,6 +1953,152 @@ impl Repository {
     /// 1. Apply all non-conflicting patches from source
     /// 2. Return a `MergeExecutionResult` with conflict details
     /// 3. The caller can then resolve conflicts and commit
+    ///
+    /// Preview a merge without modifying the repository.
+    ///
+    /// Returns the same `MergeExecutionResult` that `execute_merge` would produce,
+    /// but without creating any patches, moving branches, or writing files.
+    /// The `merge_patch_id` and `unresolved_conflicts` fields are computed
+    /// heuristically (the patch ID is a placeholder since no patch is actually created).
+    pub fn preview_merge(
+        &self,
+        source_branch: &str,
+    ) -> Result<MergeExecutionResult, RepoError> {
+        if !self.pending_merge_parents.is_empty() {
+            return Err(RepoError::MergeInProgress);
+        }
+
+        let (head_branch, head_id) = self.head()?;
+        let source_bn = BranchName::new(source_branch)?;
+        let source_tip = self
+            .dag
+            .get_branch(&source_bn)
+            .ok_or_else(|| RepoError::BranchNotFound(source_branch.to_string()))?;
+
+        let head_bn = BranchName::new(&head_branch)?;
+
+        let merge_result = self.dag.merge_branches(&head_bn, &source_bn)?;
+
+        if head_id == source_tip {
+            return Ok(MergeExecutionResult {
+                is_clean: true,
+                merged_tree: self.snapshot_head()?,
+                merge_patch_id: None,
+                unresolved_conflicts: Vec::new(),
+                patches_applied: 0,
+            });
+        }
+
+        if merge_result.patches_b_only.is_empty() && merge_result.patches_a_only.is_empty() {
+            return Ok(MergeExecutionResult {
+                is_clean: true,
+                merged_tree: self.snapshot_head()?,
+                merge_patch_id: None,
+                unresolved_conflicts: Vec::new(),
+                patches_applied: 0,
+            });
+        }
+
+        let patches_applied = merge_result.patches_b_only.len();
+        let is_clean = merge_result.is_clean;
+
+        if is_clean {
+            // For a clean merge preview, compute what the merge tree would look like
+            // without actually writing files or creating patches.
+            let source_tree = self.snapshot(&source_tip).unwrap_or_else(|_| FileTree::empty());
+            let lca_id = self
+                .dag
+                .lca(&head_id, &source_tip)
+                .ok_or_else(|| RepoError::Custom("no common ancestor found".to_string()))?;
+            let lca_tree = self.snapshot(&lca_id).unwrap_or_else(|_| FileTree::empty());
+            let head_tree = self.snapshot_head().unwrap_or_else(|_| FileTree::empty());
+
+            let source_diffs = diff_trees(&lca_tree, &source_tree);
+            let mut merged_tree = head_tree.clone();
+            for entry in &source_diffs {
+                match &entry.diff_type {
+                    DiffType::Added | DiffType::Modified => {
+                        if let Some(new_hash) = &entry.new_hash {
+                            merged_tree.insert(entry.path.clone(), *new_hash);
+                        }
+                    }
+                    DiffType::Deleted => {
+                        merged_tree.remove(&entry.path);
+                    }
+                    DiffType::Renamed { old_path, .. } => {
+                        if let Some(old_hash) = entry.old_hash {
+                            merged_tree.remove(old_path);
+                            merged_tree.insert(entry.path.clone(), old_hash);
+                        }
+                    }
+                }
+            }
+
+            Ok(MergeExecutionResult {
+                is_clean: true,
+                merged_tree,
+                merge_patch_id: None, // No actual patch created in preview
+                unresolved_conflicts: Vec::new(),
+                patches_applied,
+            })
+        } else {
+            // For conflicting merge preview, compute conflicts without writing files.
+            let head_tree = self.snapshot(&head_id).unwrap_or_else(|_| FileTree::empty());
+            let source_tree = self.snapshot(&source_tip).unwrap_or_else(|_| FileTree::empty());
+            let lca_id = self
+                .dag
+                .lca(&head_id, &source_tip)
+                .ok_or_else(|| RepoError::Custom("no common ancestor found".to_string()))?;
+            let lca_tree = self.snapshot(&lca_id).unwrap_or_else(|_| FileTree::empty());
+
+            // Collect all paths from all three trees
+            let mut all_paths = std::collections::HashSet::new();
+            for path in head_tree.paths() {
+                all_paths.insert(path);
+            }
+            for path in source_tree.paths() {
+                all_paths.insert(path);
+            }
+            for path in lca_tree.paths() {
+                all_paths.insert(path);
+            }
+
+            let mut unresolved_conflicts: Vec<ConflictInfo> = Vec::new();
+            for path in &all_paths {
+                let lca_hash = lca_tree.get(path).copied();
+                let ours_hash = head_tree.get(path).copied();
+                let theirs_hash = source_tree.get(path).copied();
+
+                // Skip if all three sides agree
+                if ours_hash == theirs_hash {
+                    continue;
+                }
+                // Skip if only one side changed
+                if ours_hash == lca_hash || theirs_hash == lca_hash {
+                    continue;
+                }
+                // This is a genuine conflict
+                unresolved_conflicts.push(ConflictInfo {
+                    path: path.to_string(),
+                    our_patch_id: head_id,
+                    their_patch_id: source_tip,
+                    our_content_hash: ours_hash,
+                    their_content_hash: theirs_hash,
+                    base_content_hash: lca_hash,
+                });
+            }
+
+            Ok(MergeExecutionResult {
+                is_clean: false,
+                merged_tree: self.snapshot_head()?,
+                merge_patch_id: None,
+                unresolved_conflicts,
+                patches_applied,
+            })
+        }
+    }
+
+    /// Execute a merge: applies patches from source_branch into the current branch.
     pub fn execute_merge(
         &mut self,
         source_branch: &str,

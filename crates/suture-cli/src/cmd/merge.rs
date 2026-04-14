@@ -26,22 +26,20 @@ pub(crate) async fn cmd_merge(
         run_hook_if_exists(repo.root(), "pre-merge", pre_extra)?;
     }
 
-    let result = repo.execute_merge(source)?;
+    let result = if dry_run {
+        // Use read-only preview — does not modify the repository
+        repo.preview_merge(source)?
+    } else {
+        repo.execute_merge(source)?
+    };
 
     if result.is_clean {
         if dry_run {
             if result.patches_applied > 0 {
-                if let Some(id) = &result.merge_patch_id {
-                    println!(
-                        "Merge would create: {} ({} patch(es) applied from '{}')",
-                        id, result.patches_applied, source
-                    );
-                } else {
-                    println!(
-                        "Fast-forward merge: would apply {} patch(es) from '{}'",
-                        result.patches_applied, source
-                    );
-                }
+                println!(
+                    "Would apply {} patch(es) from '{}'",
+                    result.patches_applied, source
+                );
             } else {
                 println!("Already up to date.");
             }
@@ -69,10 +67,49 @@ pub(crate) async fn cmd_merge(
         return Ok(());
     }
 
+    // Handle conflicts
     let conflicts = result.unresolved_conflicts;
     let mut remaining: Vec<ConflictInfo> = Vec::new();
     let mut resolved_count = 0usize;
 
+    if dry_run {
+        if result.patches_applied > 0 {
+            println!(
+                "Would apply {} patch(es) from '{}'",
+                result.patches_applied, source
+            );
+        }
+
+        // Preview semantic driver resolution
+        let registry = crate::driver_registry::builtin_registry();
+        for conflict in &conflicts {
+            let path = StdPath::new(&conflict.path);
+            if registry.get_for_path(path).is_ok() {
+                resolved_count += 1;
+            } else {
+                remaining.push(conflict.clone());
+            }
+        }
+
+        if resolved_count > 0 {
+            println!(
+                "Would resolve {} conflict(s) via semantic drivers",
+                resolved_count
+            );
+        }
+        if remaining.is_empty() && resolved_count > 0 {
+            println!("All conflicts would be resolved via semantic drivers.");
+        } else if !remaining.is_empty() {
+            println!("{} conflict(s) would remain unresolved:", remaining.len());
+            for conflict in &remaining {
+                println!("  CONFLICT in '{}'", conflict.path);
+            }
+        }
+        println!("DRY RUN — no files were modified.");
+        return Ok(());
+    }
+
+    // Not dry-run — actually perform the merge with semantic driver resolution
     {
         let registry = crate::driver_registry::builtin_registry();
 
@@ -115,13 +152,6 @@ pub(crate) async fn cmd_merge(
                 continue;
             };
 
-            if dry_run {
-                let driver_name = driver.name().to_lowercase();
-                println!("Would resolve {} via {} driver", conflict.path, driver_name);
-                resolved_count += 1;
-                continue;
-            }
-
             if let Err(e) = std::fs::write(&conflict.path, &content) {
                 eprintln!(
                     "Warning: could not write resolved file '{}': {e}",
@@ -146,77 +176,42 @@ pub(crate) async fn cmd_merge(
         }
     }
 
-    if dry_run {
-        if resolved_count > 0 {
-            println!(
-                "Would resolve {} conflict(s) via semantic drivers",
-                resolved_count
-            );
-        }
-        if remaining.is_empty() {
-            println!("All conflicts would be resolved via semantic drivers.");
-        } else {
-            println!("{} conflict(s) would remain unresolved:", remaining.len());
-            for conflict in &remaining {
-                println!(
-                    "  CONFLICT in '{}': would need manual resolution",
-                    conflict.path
-                );
-            }
-        }
-        println!("DRY RUN — no files were modified.");
-        return Ok(());
-    }
-
-    if resolved_count > 0 {
-        println!("Resolved {resolved_count} conflict(s) via semantic drivers");
+    println!("Merge has {} conflict(s):", remaining.len());
+    for conflict in &remaining {
+        let our_content = conflict
+            .our_content_hash
+            .and_then(|h| repo.cas().get_blob(&h).ok())
+            .map(|b| String::from_utf8_lossy(&b).to_string())
+            .unwrap_or_default();
+        let their_content = conflict
+            .their_content_hash
+            .and_then(|h| repo.cas().get_blob(&h).ok())
+            .map(|b| String::from_utf8_lossy(&b).to_string())
+            .unwrap_or_default();
+        println!("  CONFLICT in '{}':", conflict.path);
+        println!("    ours:\n{}", indent(&our_content, "      "));
+        println!("    theirs:\n{}", indent(&their_content, "      "));
     }
 
     if remaining.is_empty() {
-        println!("All conflicts resolved via semantic drivers.");
+        println!(
+            "All conflicts resolved. {} via semantic drivers.",
+            resolved_count
+        );
         println!("Run `suture commit` to finalize the merge.");
     } else {
-        println!("Merge has {} conflict(s):", remaining.len());
-        for conflict in &remaining {
-            let ours_preview = conflict
-                .our_content_hash
-                .as_ref()
-                .and_then(|h| repo.cas().get_blob(h).ok())
-                .map(|b| String::from_utf8_lossy(&b).to_string());
-            let theirs_preview = conflict
-                .their_content_hash
-                .as_ref()
-                .and_then(|h| repo.cas().get_blob(h).ok())
-                .map(|b| String::from_utf8_lossy(&b).to_string());
-
-            println!("  CONFLICT in '{}':", conflict.path);
-
-            if let Some(ref ours) = ours_preview {
-                let lines: Vec<&str> = ours.lines().take(5).collect();
-                println!("    ours:");
-                for line in &lines {
-                    println!("      {}", line);
-                }
-                if ours.lines().count() > 5 {
-                    println!("      ...");
-                }
-            }
-
-            if let Some(ref theirs) = theirs_preview {
-                let lines: Vec<&str> = theirs.lines().take(5).collect();
-                println!("    theirs:");
-                for line in &lines {
-                    println!("      {}", line);
-                }
-                if theirs.lines().count() > 5 {
-                    println!("      ...");
-                }
-            }
-
-            println!("    Edit the file, then run `suture commit` to resolve");
-        }
-        println!("Hint: resolve conflicts, then run `suture commit`");
+        println!("Edit the file(s), then run `suture commit` to resolve");
+        println!(
+            "Hint: resolve conflicts, then run `suture commit`"
+        );
     }
 
     Ok(())
+}
+
+fn indent(s: &str, prefix: &str) -> String {
+    s.lines()
+        .map(|line| format!("{}{}", prefix, line))
+        .collect::<Vec<_>>()
+        .join("\n")
 }

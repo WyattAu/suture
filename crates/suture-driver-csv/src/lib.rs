@@ -149,7 +149,10 @@ impl CsvDriver {
                     if o == t {
                         merged_rows.push(o.clone());
                     } else {
-                        return Ok(None);
+                        // Both sides added different rows at the same position.
+                        // Include both — additions from both sides should be preserved.
+                        merged_rows.push(o.clone());
+                        merged_rows.push(t.clone());
                     }
                 }
                 (None, None, _) => {}
@@ -396,6 +399,26 @@ mod tests {
         assert!(result.is_some());
         let merged = result.unwrap();
         assert!(merged.contains("Charlie,charlie@example.com"));
+    }
+
+    #[test]
+    fn test_csv_merge_both_add_different_rows() {
+        let driver = CsvDriver::new();
+        let base = "id,name\n1,Alice\n";
+        let ours = "id,name\n1,Alice\n3,Charlie\n";
+        let theirs = "id,name\n1,Alice\n2,Bob\n";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(
+            result.is_some(),
+            "both sides adding different rows should merge"
+        );
+        let merged = result.unwrap();
+        assert!(merged.contains("2,Bob"), "merged should contain theirs row");
+        assert!(
+            merged.contains("3,Charlie"),
+            "merged should contain ours row"
+        );
     }
 
     #[test]
