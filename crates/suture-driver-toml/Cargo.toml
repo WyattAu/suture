@@ -11,4 +11,4 @@ readme.workspace = true
 
 [dependencies]
 suture-driver = { path = "../suture-driver", version = "0.10.0" }
-toml = "0.8"
+toml = "1.1"
