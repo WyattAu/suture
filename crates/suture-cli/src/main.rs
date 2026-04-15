@@ -22,7 +22,7 @@ struct Cli {
     command: Commands,
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug)]
 enum Commands {
     /// Initialize a new Suture repository
     #[command(after_long_help = "\
@@ -499,7 +499,7 @@ EXAMPLES:
     Tui,
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug)]
 pub(crate) enum IgnoreAction {
     /// List current ignore patterns
     List,
@@ -510,7 +510,7 @@ pub(crate) enum IgnoreAction {
     },
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug)]
 pub(crate) enum KeyAction {
     /// Generate a new Ed25519 keypair
     #[command(
@@ -535,7 +535,7 @@ pub(crate) enum KeyAction {
     },
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug)]
 pub(crate) enum StashAction {
     /// Stash current changes
     #[command(
@@ -563,7 +563,7 @@ pub(crate) enum StashAction {
     Drop { index: usize },
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug)]
 pub(crate) enum RemoteAction {
     /// Add a remote Hub
     #[command(after_long_help = "EXAMPLES:\n    suture remote add origin http://localhost:50051")]
@@ -606,7 +606,7 @@ pub(crate) enum RemoteAction {
     },
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug)]
 pub(crate) enum NotesAction {
     /// Add a note to a commit
     #[command(
@@ -638,7 +638,7 @@ pub(crate) enum NotesAction {
     },
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug)]
 pub(crate) enum WorktreeAction {
     /// Create a new worktree
     Add {
@@ -659,7 +659,7 @@ pub(crate) enum WorktreeAction {
     },
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug)]
 pub(crate) enum BisectAction {
     /// Start a bisect session
     #[command(
@@ -903,5 +903,315 @@ async fn main() {
     if let Err(e) = result {
         eprintln!("Error: {e}");
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(args: &[&str]) -> Cli {
+        Cli::try_parse_from(args).unwrap_or_else(|e| panic!("failed to parse {:?}: {e}", args))
+    }
+
+    #[test]
+    fn test_init_default() {
+        let cli = parse(&["suture", "init"]);
+        match cli.command {
+            Commands::Init { path } => assert_eq!(path, "."),
+            other => panic!("expected Init, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_init_with_path() {
+        let cli = parse(&["suture", "init", "/tmp/myrepo"]);
+        match cli.command {
+            Commands::Init { path } => assert_eq!(path, "/tmp/myrepo"),
+            other => panic!("expected Init, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_commit_with_message() {
+        let cli = parse(&["suture", "commit", "my message"]);
+        match cli.command {
+            Commands::Commit { message, all } => {
+                assert_eq!(message, "my message");
+                assert!(!all);
+            }
+            other => panic!("expected Commit, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_commit_with_all_flag() {
+        let cli = parse(&["suture", "commit", "--all", "msg"]);
+        match cli.command {
+            Commands::Commit { message, all } => {
+                assert_eq!(message, "msg");
+                assert!(all);
+            }
+            other => panic!("expected Commit, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_diff_cached_flag() {
+        let cli = parse(&["suture", "diff", "--cached"]);
+        match cli.command {
+            Commands::Diff { cached, from, to } => {
+                assert!(cached);
+                assert!(from.is_none());
+                assert!(to.is_none());
+            }
+            other => panic!("expected Diff, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_diff_from_to() {
+        let cli = parse(&["suture", "diff", "--from", "HEAD~1", "--to", "HEAD"]);
+        match cli.command {
+            Commands::Diff { cached, from, to } => {
+                assert!(!cached);
+                assert_eq!(from.as_deref(), Some("HEAD~1"));
+                assert_eq!(to.as_deref(), Some("HEAD"));
+            }
+            other => panic!("expected Diff, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_log_graph() {
+        let cli = parse(&["suture", "log", "--graph"]);
+        match cli.command {
+            Commands::Log { graph, .. } => assert!(graph),
+            other => panic!("expected Log, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_log_oneline() {
+        let cli = parse(&["suture", "log", "--oneline"]);
+        match cli.command {
+            Commands::Log { oneline, .. } => assert!(oneline),
+            other => panic!("expected Log, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_branch_create() {
+        let cli = parse(&["suture", "branch", "feature"]);
+        match cli.command {
+            Commands::Branch { name, .. } => assert_eq!(name.as_deref(), Some("feature")),
+            other => panic!("expected Branch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_branch_delete() {
+        let cli = parse(&["suture", "branch", "--delete", "feature"]);
+        match cli.command {
+            Commands::Branch { delete, name, .. } => {
+                assert!(delete);
+                assert_eq!(name.as_deref(), Some("feature"));
+            }
+            other => panic!("expected Branch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_tag_lightweight() {
+        let cli = parse(&["suture", "tag", "v1.0"]);
+        match cli.command {
+            Commands::Tag { name, annotate, .. } => {
+                assert_eq!(name.as_deref(), Some("v1.0"));
+                assert!(!annotate);
+            }
+            other => panic!("expected Tag, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_tag_annotated() {
+        let cli = parse(&["suture", "tag", "-a", "-m", "release", "v1.0"]);
+        match cli.command {
+            Commands::Tag { name, annotate, message, .. } => {
+                assert_eq!(name.as_deref(), Some("v1.0"));
+                assert!(annotate);
+                assert_eq!(message.as_deref(), Some("release"));
+            }
+            other => panic!("expected Tag, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_tag_delete() {
+        let cli = parse(&["suture", "tag", "--delete", "v1.0"]);
+        match cli.command {
+            Commands::Tag { delete, name, .. } => {
+                assert!(delete);
+                assert_eq!(name.as_deref(), Some("v1.0"));
+            }
+            other => panic!("expected Tag, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_merge_dry_run() {
+        let cli = parse(&["suture", "merge", "--dry-run", "feature"]);
+        match cli.command {
+            Commands::Merge { source, dry_run } => {
+                assert_eq!(source, "feature");
+                assert!(dry_run);
+            }
+            other => panic!("expected Merge, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_merge_file_with_driver() {
+        let cli = parse(&["suture", "merge-file", "--driver", "json", "base", "ours", "theirs", "-o", "out.json"]);
+        match cli.command {
+            Commands::MergeFile {
+                driver, output, ..
+            } => {
+                assert_eq!(driver.as_deref(), Some("json"));
+                assert_eq!(output.as_deref(), Some("out.json"));
+            }
+            other => panic!("expected MergeFile, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_merge_file_auto_detect() {
+        let cli = parse(&["suture", "merge-file", "base.json", "ours.json", "theirs.json"]);
+        match cli.command {
+            Commands::MergeFile {
+                base, ours, theirs, driver, output, ..
+            } => {
+                assert_eq!(base, "base.json");
+                assert_eq!(ours, "ours.json");
+                assert_eq!(theirs, "theirs.json");
+                assert!(driver.is_none());
+                assert!(output.is_none());
+            }
+            other => panic!("expected MergeFile, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_stash_push() {
+        let cli = parse(&["suture", "stash", "push", "-m", "work in progress"]);
+        match cli.command {
+            Commands::Stash { action } => match action {
+                StashAction::Push { message } => {
+                    assert_eq!(message.as_deref(), Some("work in progress"));
+                }
+                other => panic!("expected StashAction::Push, got {other:?}"),
+            },
+            other => panic!("expected Stash, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_stash_pop() {
+        let cli = parse(&["suture", "stash", "pop"]);
+        match cli.command {
+            Commands::Stash { action } => match action {
+                StashAction::Pop => {}
+                other => panic!("expected StashAction::Pop, got {other:?}"),
+            },
+            other => panic!("expected Stash, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_remote_add() {
+        let cli = parse(&["suture", "remote", "add", "origin", "https://example.com"]);
+        match cli.command {
+            Commands::Remote { action } => match action {
+                RemoteAction::Add { name, url } => {
+                    assert_eq!(name, "origin");
+                    assert_eq!(url, "https://example.com");
+                }
+                other => panic!("expected RemoteAction::Add, got {other:?}"),
+            },
+            other => panic!("expected Remote, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_push_force() {
+        let cli = parse(&["suture", "push", "--force", "origin"]);
+        match cli.command {
+            Commands::Push { remote, force, branch } => {
+                assert_eq!(remote, "origin");
+                assert!(force);
+                assert!(branch.is_none());
+            }
+            other => panic!("expected Push, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_rebase_interactive() {
+        let cli = parse(&["suture", "rebase", "-i", "main"]);
+        match cli.command {
+            Commands::Rebase { branch, interactive, .. } => {
+                assert_eq!(branch, "main");
+                assert!(interactive);
+            }
+            other => panic!("expected Rebase, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_config_set() {
+        let cli = parse(&["suture", "config", "user.name=Alice"]);
+        match cli.command {
+            Commands::Config { key_value, global } => {
+                assert_eq!(key_value, vec!["user.name=Alice"]);
+                assert!(!global);
+            }
+            other => panic!("expected Config, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_notes_add() {
+        let cli = parse(&["suture", "notes", "add", "HEAD", "-m", "review note"]);
+        match cli.command {
+            Commands::Notes { action } => match action {
+                NotesAction::Add { commit, message } => {
+                    assert_eq!(commit, "HEAD");
+                    assert_eq!(message.as_deref(), Some("review note"));
+                }
+                other => panic!("expected NotesAction::Add, got {other:?}"),
+            },
+            other => panic!("expected Notes, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_worktree_add() {
+        let cli = parse(&["suture", "worktree", "add", "../wt", "-b", "feature"]);
+        match cli.command {
+            Commands::Worktree { action } => match action {
+                WorktreeAction::Add { path, b, .. } => {
+                    assert_eq!(path, "../wt");
+                    assert_eq!(b.as_deref(), Some("feature"));
+                }
+                other => panic!("expected WorktreeAction::Add, got {other:?}"),
+            },
+            other => panic!("expected Worktree, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_global_repo_path() {
+        let cli = parse(&["suture", "-C", "/some/path", "status"]);
+        assert_eq!(cli.repo_path.as_deref(), Some("/some/path"));
     }
 }

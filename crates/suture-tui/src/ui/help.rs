@@ -128,7 +128,7 @@ pub fn draw(f: &mut Frame, _app: &App, area: Rect) {
     ]));
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        "  Suture USVCS v0.9.0 — Universal Semantic Version Control",
+        "  Suture USVCS v0.10.0 — Universal Semantic Version Control",
         dim_style,
     )));
 

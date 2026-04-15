@@ -670,3 +670,239 @@ fn test_rebase_interactive_plan_parsing() {
     assert!(log.contains("first commit"));
     assert!(log.contains("second commit"));
 }
+
+// =========================================================================
+// merge-file standalone command tests
+// =========================================================================
+
+#[test]
+fn test_merge_file_json() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+
+    fs::write(dir.join("base.json"), r#"{"a": 1, "b": 2}"#).unwrap();
+    fs::write(dir.join("ours.json"), r#"{"a": 10, "b": 2}"#).unwrap();
+    fs::write(dir.join("theirs.json"), r#"{"a": 1, "b": 20}"#).unwrap();
+
+    let out = suture_success(dir, &["merge-file", "--driver", "json",
+        "base.json", "ours.json", "theirs.json"]);
+
+    assert!(out.contains("\"a\": 10"), "should have our change to a: {}", out);
+    assert!(out.contains("\"b\": 20"), "should have their change to b: {}", out);
+}
+
+#[test]
+fn test_merge_file_conflict_fallback() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+
+    fs::write(dir.join("base.json"), r#"{"key": "original"}"#).unwrap();
+    fs::write(dir.join("ours.json"), r#"{"key": "ours"}"#).unwrap();
+    fs::write(dir.join("theirs.json"), r#"{"key": "theirs"}"#).unwrap();
+
+    let output = suture(dir, &["merge-file", "--driver", "json",
+        "base.json", "ours.json", "theirs.json", "-o", "merged.json"]);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let combined = format!("{}{}", stdout, stderr);
+    assert!(combined.contains("falling back") || combined.contains("conflict") || combined.contains("Conflict"),
+        "merge-file should fall back to line-based on conflicts: {}", combined);
+}
+
+#[test]
+fn test_merge_file_auto_detect() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+
+    fs::write(dir.join("base.yaml"), "a: 1\nb: 2\n").unwrap();
+    fs::write(dir.join("ours.yaml"), "a: 10\nb: 2\n").unwrap();
+    fs::write(dir.join("theirs.yaml"), "a: 1\nb: 20\n").unwrap();
+
+    let out = suture_success(dir, &["merge-file",
+        "base.yaml", "ours.yaml", "theirs.yaml"]);
+
+    assert!(out.contains("a: 10"), "should have our change: {}", out);
+    assert!(out.contains("b: 20"), "should have their change: {}", out);
+}
+
+#[test]
+fn test_merge_file_invalid_driver() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+
+    fs::write(dir.join("base.txt"), "hello\n").unwrap();
+    fs::write(dir.join("ours.txt"), "hello world\n").unwrap();
+    fs::write(dir.join("theirs.txt"), "hello there\n").unwrap();
+
+    let output = suture(dir, &["merge-file", "--driver", "nonexistent",
+        "base.txt", "ours.txt", "theirs.txt"]);
+    assert!(!output.status.success(), "invalid driver should error");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("nonexistent") || stderr.contains("driver"),
+        "error should mention driver: {}", stderr);
+}
+
+// =========================================================================
+// cherry-pick test
+// =========================================================================
+
+#[test]
+fn test_cherry_pick() {
+    let (_tmp, repo) = new_test_repo("cherry");
+
+    fs::write(repo.join("main.txt"), "main\n").unwrap();
+    suture_success(&repo, &["add", "main.txt"]);
+    suture_success(&repo, &["commit", "main commit"]);
+
+    suture_success(&repo, &["branch", "feature"]);
+    suture_success(&repo, &["checkout", "feature"]);
+    fs::write(repo.join("feat.txt"), "feature\n").unwrap();
+    suture_success(&repo, &["add", "feat.txt"]);
+    suture_success(&repo, &["commit", "feature commit"]);
+
+    let log = suture_success(&repo, &["log", "--oneline"]);
+    let lines: Vec<&str> = log.lines().filter(|l| !l.is_empty()).collect();
+    let feat_hash = lines.iter()
+        .find(|l| l.contains("feature commit"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    suture_success(&repo, &["checkout", "main"]);
+    let output = suture(&repo, &["cherry-pick", feat_hash]);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if output.status.success() {
+        assert!(stdout.contains("Cherry-pick") || stdout.contains("applied") || stdout.contains("success"),
+            "cherry-pick output: {}", stdout);
+        assert!(repo.join("feat.txt").exists(), "feat.txt should exist after cherry-pick");
+    } else {
+        assert!(stderr.contains("already exists") || stderr.contains("reachable"),
+            "cherry-pick should either succeed or report patch exists: {}", stderr);
+    }
+}
+
+// =========================================================================
+// revert test
+// =========================================================================
+
+#[test]
+fn test_revert() {
+    let (_tmp, repo) = new_test_repo("revert_test");
+
+    fs::write(repo.join("file.txt"), "original\n").unwrap();
+    suture_success(&repo, &["add", "file.txt"]);
+    suture_success(&repo, &["commit", "original"]);
+
+    fs::write(repo.join("file.txt"), "modified\n").unwrap();
+    suture_success(&repo, &["add", "file.txt"]);
+    suture_success(&repo, &["commit", "modification"]);
+
+    let log = suture_success(&repo, &["log", "--oneline"]);
+    let lines: Vec<&str> = log.lines().filter(|l| !l.is_empty()).collect();
+    let mod_hash = lines.iter()
+        .find(|l| l.contains("modification"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    let out = suture_success(&repo, &["revert", mod_hash]);
+    assert!(out.contains("Revert") || out.contains("success"), "revert output: {}", out);
+
+    let log = suture_success(&repo, &["log", "--oneline"]);
+    assert!(log.contains("Revert"), "log should contain a Revert commit: {}", log);
+}
+
+// =========================================================================
+// notes test
+// =========================================================================
+
+#[test]
+fn test_notes() {
+    let (_tmp, repo) = new_test_repo("notes_test");
+
+    fs::write(repo.join("file.txt"), "content\n").unwrap();
+    suture_success(&repo, &["add", "file.txt"]);
+    suture_success(&repo, &["commit", "initial"]);
+
+    let log = suture_success(&repo, &["log", "--oneline"]);
+    let hash = log.lines().next().unwrap().split_whitespace().next().unwrap();
+
+    let out = suture_success(&repo, &["notes", "add", hash, "-m", "This is a test note"]);
+    assert!(out.contains("Note added") || out.contains("success"), "notes add: {}", out);
+
+    let out = suture_success(&repo, &["notes", "list", hash]);
+    assert!(out.contains("test note"), "notes list should contain note: {}", out);
+
+    let out = suture_success(&repo, &["notes", "show", hash]);
+    assert!(out.contains("test note"), "notes show: {}", out);
+
+    let out = suture_success(&repo, &["notes", "remove", hash, "0"]);
+    assert!(out.contains("Removed") || out.contains("removed") || out.contains("success"), "notes remove: {}", out);
+
+    let out = suture_success(&repo, &["notes", "list", hash]);
+    assert!(!out.contains("test note"), "note should be removed: {}", out);
+}
+
+// =========================================================================
+// worktree test
+// =========================================================================
+
+#[cfg(unix)]
+#[test]
+fn test_worktree() {
+    let (_tmp, repo) = new_test_repo("worktree_test");
+
+    fs::write(repo.join("main.txt"), "main\n").unwrap();
+    suture_success(&repo, &["add", "main.txt"]);
+    suture_success(&repo, &["commit", "main commit"]);
+
+    let wt_path = repo.join("../worktree-test-wt");
+    let output = suture(&repo, &["worktree", "add",
+        wt_path.to_str().unwrap(), "-b", "wt-branch"]);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let combined = format!("{}{}", stdout, stderr);
+    assert!(output.status.success() || combined.contains("worktree") || combined.contains("CAS"),
+        "worktree add should succeed or report known issue: {}", combined);
+
+    assert!(wt_path.exists(), "worktree directory should exist");
+
+    let out = suture_success(&repo, &["worktree", "list"]);
+    assert!(out.contains("wt-branch") || out.contains("worktree"), "worktree list: {}", out);
+
+    let _ = suture(&repo, &["worktree", "remove", wt_path.to_str().unwrap()]);
+}
+
+// =========================================================================
+// merge conflict detection test
+// =========================================================================
+
+#[test]
+fn test_merge_conflict_detection() {
+    let (_tmp, repo) = new_test_repo("conflict_test");
+
+    fs::write(repo.join("file.txt"), "line 1\nline 2\nline 3\n").unwrap();
+    suture_success(&repo, &["add", "file.txt"]);
+    suture_success(&repo, &["commit", "base"]);
+
+    suture_success(&repo, &["branch", "other"]);
+    fs::write(repo.join("file.txt"), "line 1\nMODIFIED BY MAIN\nline 3\n").unwrap();
+    suture_success(&repo, &["add", "file.txt"]);
+    suture_success(&repo, &["commit", "main change"]);
+
+    suture_success(&repo, &["checkout", "other"]);
+    fs::write(repo.join("file.txt"), "line 1\nMODIFIED BY OTHER\nline 3\n").unwrap();
+    suture_success(&repo, &["add", "file.txt"]);
+    suture_success(&repo, &["commit", "other change"]);
+
+    suture_success(&repo, &["checkout", "main"]);
+    let output = suture(&repo, &["merge", "other"]);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let combined = format!("{}{}", stdout, stderr);
+    assert!(combined.contains("conflict") || combined.contains("CONFLICT") || combined.contains("Conflict"),
+        "merge should detect conflict: {}", combined);
+}

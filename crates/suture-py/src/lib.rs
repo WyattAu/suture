@@ -7,7 +7,7 @@ use suture_common::Hash;
 use suture_core::repository::Repository;
 
 /// A Suture repository.
-#[pyclass]
+#[pyclass(unsendable)]
 struct SutureRepo {
     repo: Repository,
 }

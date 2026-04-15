@@ -1,0 +1,26 @@
+name: Semantic Merge Check
+on:
+  pull_request:
+    paths:
+      - '**.json'
+      - '**.yaml'
+      - '**.yml'
+      - '**.toml'
+      - '**.csv'
+      - '**.xml'
+      - '**.md'
+
+jobs:
+  semantic-merge:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/semantic-merge
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}

@@ -1,13 +1,16 @@
 [package]
-name = "suture-driver-markdown"
+name = "suture-driver-example"
 version = "0.10.0"
 edition = "2024"
 license.workspace = true
 repository.workspace = true
-description.workspace = true
+description = "Example Suture driver demonstrating the driver SDK"
 homepage.workspace = true
 keywords.workspace = true
 readme.workspace = true
 
 [dependencies]
 suture-driver = { path = "../suture-driver", version = "0.10.0" }
+suture-common = { path = "../suture-common", version = "0.10.0" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

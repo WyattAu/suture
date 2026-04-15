@@ -13,10 +13,19 @@ Suture's internal patch model. Each driver is responsible for:
 Drivers do not manage repository state; they only translate between format-
 specific representations and Suture's patch algebra.
 
-## Reference Driver: OTIO
+## Reference Drivers
+
+### OTIO
 
 The `suture-driver-otio` crate demonstrates the driver pattern for
 OpenTimelineIO (.otio) files.
+
+### Properties (Example)
+
+The `suture-driver-example` crate provides a minimal, self-contained example
+of implementing the `SutureDriver` trait for Java `.properties` files. It
+covers parsing, semantic diffing, and three-way merge — making it the
+recommended starting point for anyone writing a custom driver.
 
 ### Parsing
 
@@ -62,14 +71,15 @@ println!("{}", diff);
 
 ## Implementing a Custom Driver
 
-To add support for a new file format:
+See `crates/suture-driver-example/` for a minimal working driver. The general
+steps are:
 
 1. Create a new crate: `crates/suture-driver-<format>/`
-2. Implement parsing for the format into structured types
-3. Assign unique element IDs (e.g., `sheet/rows/3`, `doc/paragraphs/5`)
-4. Compute touch sets that cascade from parent to child elements
-5. Generate `ChangeDescription` lists from diffs between two versions
-6. Serialize patches with the format-specific payload
+2. Depend on `suture-driver` and implement the `SutureDriver` trait
+3. Implement `diff()` to produce `SemanticChange` values between two file versions
+4. Implement `format_diff()` for human-readable output
+5. Implement `merge()` for three-way semantic merge (return `None` on conflict)
+6. Return supported extensions from `supported_extensions()`
 
 ### Element ID Convention
 

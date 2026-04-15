@@ -10,7 +10,7 @@ pub mod registry;
 pub mod types;
 
 pub use error::DriverError;
-pub use plugin::{BuiltinDriverPlugin, DriverPlugin, PluginRegistry};
+pub use plugin::{BuiltinDriverPlugin, DriverPlugin, PluginError, PluginRegistry};
 pub use registry::DriverRegistry;
 pub use types::{DiffHunk, DiffHunkType, DiffSummary, VisualDiff};
 

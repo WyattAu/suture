@@ -1,0 +1,123 @@
+name: 'Semantic Merge Check'
+description: 'Check if PR changes can be semantically merged without conflicts'
+inputs:
+  github-token:
+    description: 'GitHub token for posting comments'
+    required: true
+runs:
+  using: 'composite'
+  steps:
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache Cargo artifacts
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: semantic-merge-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          semantic-merge-${{ runner.os }}-cargo-
+
+    - name: Build suture-cli
+      shell: bash
+      run: cargo build --release -p suture-cli
+
+    - name: Check semantic mergeability
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      shell: bash
+      run: |
+        set -eo pipefail
+
+        BASE_REF="${{ github.base_ref }}"
+        PR_NUMBER="${{ github.event.number }}"
+        SUTURE_BIN="${{ github.workspace }}/target/release/suture"
+        TEMP_DIR=$(mktemp -d -t suture-merge-XXXXXX)
+        trap 'rm -rf "$TEMP_DIR"' EXIT
+
+        echo "::group::Fetching base branch"
+        git fetch origin "$BASE_REF"
+        echo "::endgroup::"
+
+        CHANGED_FILES=$(git diff --name-only "origin/${BASE_REF}" HEAD || true)
+
+        if [ -z "$CHANGED_FILES" ]; then
+          echo "No changed files detected."
+          exit 0
+        fi
+
+        SUPPORTED_EXTS="json yaml yml toml csv xml md"
+        PASS=0
+        FAIL=0
+        SKIP=0
+        TABLE_ROWS=""
+
+        for file in $CHANGED_FILES; do
+          ext="${file##*.}"
+
+          if ! echo " $SUPPORTED_EXTS " | grep -q " $ext "; then
+            continue
+          fi
+
+          safe_name=$(printf '%s' "$file" | tr '/' '_')
+          base_file="$TEMP_DIR/base_${safe_name}"
+          ours_file="$TEMP_DIR/ours_${safe_name}"
+          merged_file="$TEMP_DIR/merged_${safe_name}"
+
+          if ! git show "origin/${BASE_REF}:${file}" > "$base_file" 2>/dev/null; then
+            TABLE_ROWS+="| \`${file}\` | skip | File does not exist in base branch |"$'\n'
+            SKIP=$((SKIP + 1))
+            continue
+          fi
+
+          if [ ! -f "$file" ]; then
+            TABLE_ROWS+="| \`${file}\` | skip | File deleted in PR |"$'\n'
+            SKIP=$((SKIP + 1))
+            continue
+          fi
+
+          cp "$file" "$ours_file"
+
+          if "$SUTURE_BIN" merge-file "$base_file" "$base_file" "$ours_file" -o "$merged_file" 2>"$TEMP_DIR/err"; then
+            TABLE_ROWS+="| \`${file}\` | pass | Semantic merge succeeded |"$'\n'
+            PASS=$((PASS + 1))
+          else
+            err_msg=$(tail -1 "$TEMP_DIR/err" 2>/dev/null || echo "unknown error")
+            TABLE_ROWS+="| \`${file}\` | fail | ${err_msg} |"$'\n'
+            FAIL=$((FAIL + 1))
+          fi
+        done
+
+        TOTAL=$((PASS + FAIL + SKIP))
+
+        if [ "$TOTAL" -eq 0 ]; then
+          echo "No supported files changed in this PR."
+          exit 0
+        fi
+
+        COMMENT=$(cat <<'BODY'
+        ## Semantic Merge Check
+
+        | File | Result | Details |
+        |------|--------|---------|
+        BODY
+        )
+        COMMENT+=$'\n'"$TABLE_ROWS"
+        COMMENT+=$'\n'
+        COMMENT+="**Summary:** ${PASS} passed, ${FAIL} failed, ${SKIP} skipped"
+        COMMENT+=$'\n\n'
+        COMMENT+="> Checked with [suture](https://github.com/WyattAu/suture) semantic merge"
+
+        echo "::group::Posting PR comment"
+        gh pr comment "$PR_NUMBER" --repo "${{ github.repository }}" --body "$COMMENT"
+        echo "::endgroup::"
+
+        if [ "$FAIL" -gt 0 ]; then
+          echo "::error::$FAIL file(s) failed semantic merge check"
+          exit 1
+        fi
+
+        echo "All $PASS file(s) passed semantic merge check."

@@ -1,6 +1,6 @@
 [package]
 name = "suture-core"
-version = "0.9.0"
+version = "0.10.0"
 edition = "2024"
 license.workspace = true
 repository.workspace = true
@@ -10,7 +10,7 @@ keywords.workspace = true
 readme.workspace = true
 
 [dependencies]
-suture-common = { path = "../suture-common", version = "0.9.0" }
+suture-common = { path = "../suture-common", version = "0.10.0" }
 blake3 = "1.8"
 zstd = "0.13"
 rusqlite = { version = "0.39", features = ["bundled"] }

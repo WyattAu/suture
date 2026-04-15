@@ -1,6 +1,6 @@
 [package]
 name = "suture-driver-xml"
-version = "0.9.0"
+version = "0.10.0"
 edition = "2024"
 license.workspace = true
 repository.workspace = true
@@ -10,5 +10,5 @@ keywords.workspace = true
 readme.workspace = true
 
 [dependencies]
-suture-driver = { path = "../suture-driver", version = "0.9.0" }
+suture-driver = { path = "../suture-driver", version = "0.10.0" }
 roxmltree = "0.20"

@@ -86,6 +86,10 @@ The same semantic merge works for YAML, TOML, CSV, XML, Markdown, DOCX, XLSX, an
 
 Files without a matching driver fall back to line-based diff and merge, same as Git.
 
+## Git Merge Driver
+
+Suture can be used as a [Git merge driver](docs/git_merge_driver.md) to get semantic merging inside existing Git workflows — no need to switch VCS. Configured file types (JSON, YAML, TOML, etc.) are merged at the field level instead of line-by-line.
+
 ## CLI Reference
 
 | Command | Description |

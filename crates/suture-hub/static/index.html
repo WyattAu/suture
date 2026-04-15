@@ -8,39 +8,98 @@
 </head>
 <body>
     <header>
-        <h1>Suture Hub</h1>
-        <div id="repo-selector">
-            <select id="repo-select">
-                <option value="">Select repository...</option>
-            </select>
+        <div class="header-left">
+            <h1>Suture Hub</h1>
+            <span id="connection-indicator" class="indicator disconnected" title="Disconnected">
+                <span class="indicator-dot"></span>
+                <span class="indicator-text">Disconnected</span>
+            </span>
         </div>
+        <nav class="tabs">
+            <button class="tab active" data-tab="repos">Repositories</button>
+            <button class="tab" data-tab="users">Users</button>
+            <button class="tab" data-tab="replication">Replication</button>
+        </nav>
     </header>
 
-    <main id="main-content">
-        <div id="repo-info" class="hidden">
-            <div id="branches-panel" class="panel">
-                <h2>Branches</h2>
-                <ul id="branch-list"></ul>
+    <main>
+        <section id="tab-repos" class="tab-content active">
+            <div class="section-header">
+                <h2>Repositories</h2>
+                <span id="repo-count" class="badge"></span>
             </div>
-
-            <div id="log-panel" class="panel">
-                <h2>Commit Log</h2>
-                <div id="commit-log"></div>
+            <div id="repos-loading" class="loading">Loading repositories&hellip;</div>
+            <div id="repos-error" class="error-banner hidden"></div>
+            <div id="repos-table-wrap" class="table-wrap hidden">
+                <table id="repos-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Patches</th>
+                            <th>Branches</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="repos-tbody"></tbody>
+                </table>
             </div>
-
-            <div id="detail-panel" class="panel">
-                <h2 id="detail-title">Commit Details</h2>
-                <div id="commit-detail"></div>
+            <div id="repos-empty" class="empty-state hidden">
+                No repositories found.
             </div>
-        </div>
+        </section>
 
-        <div id="empty-state">
-            <p>Select a repository to view its contents.</p>
-        </div>
+        <section id="tab-users" class="tab-content">
+            <div class="section-header">
+                <h2>Users</h2>
+                <span id="user-count" class="badge"></span>
+            </div>
+            <div id="users-loading" class="loading">Loading users&hellip;</div>
+            <div id="users-error" class="error-banner hidden"></div>
+            <div id="users-table-wrap" class="table-wrap hidden">
+                <table id="users-table">
+                    <thead>
+                        <tr>
+                            <th>Username</th>
+                            <th>Display Name</th>
+                            <th>Role</th>
+                            <th>Created</th>
+                        </tr>
+                    </thead>
+                    <tbody id="users-tbody"></tbody>
+                </table>
+            </div>
+            <div id="users-empty" class="empty-state hidden">
+                No users found.
+            </div>
+        </section>
+
+        <section id="tab-replication" class="tab-content">
+            <div class="section-header">
+                <h2>Replication</h2>
+            </div>
+            <div id="replication-loading" class="loading">Loading replication status&hellip;</div>
+            <div id="replication-error" class="error-banner hidden"></div>
+            <div id="replication-table-wrap" class="table-wrap hidden">
+                <table id="replication-table">
+                    <thead>
+                        <tr>
+                            <th>Repo</th>
+                            <th>Upstream</th>
+                            <th>Status</th>
+                            <th>Last Sync</th>
+                        </tr>
+                    </thead>
+                    <tbody id="replication-tbody"></tbody>
+                </table>
+            </div>
+            <div id="replication-empty" class="empty-state hidden">
+                No mirrors configured.
+            </div>
+        </section>
     </main>
 
     <footer>
-        <p>Suture Hub &mdash; Patch-based version control</p>
+        Suture Hub &mdash; Patch-based version control
     </footer>
 
     <script src="/static/app.js"></script>

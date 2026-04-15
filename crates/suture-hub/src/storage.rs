@@ -3,11 +3,11 @@
 //! Stores repositories, patches, branches, blobs, and authorized public keys
 //! in a single SQLite database. This replaces the in-memory HashMap approach.
 
-use rusqlite::{Connection, params};
+use rusqlite::{params, Connection};
 use std::path::Path;
 use thiserror::Error;
 
-use crate::types::{BlobRef, BranchProto, HashProto, PatchProto};
+use crate::types::{BlobRef, BranchProto, HashProto, PatchProto, UserInfo};
 
 #[derive(Error, Debug)]
 pub enum StorageError {
@@ -31,6 +31,11 @@ pub enum StorageError {
 pub struct HubStorage {
     conn: Connection,
 }
+
+// Safety: HubStorage is always accessed through tokio::sync::RwLock in server.rs,
+// which ensures exclusive write access and concurrent read access is safe because
+// rusqlite::Connection serializes its own internal operations.
+unsafe impl Sync for HubStorage {}
 
 /// Mirror row from DB: (repo_name, upstream_url, upstream_repo, last_sync, status)
 type MirrorRow = (String, String, String, Option<i64>, String);
@@ -122,10 +127,36 @@ impl HubStorage {
                 status TEXT DEFAULT 'idle'
             );
 
+            CREATE TABLE IF NOT EXISTS users (
+                username TEXT PRIMARY KEY,
+                display_name TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'member',
+                api_token TEXT UNIQUE,
+                created_at INTEGER NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_patches_repo ON patches(repo_id);
             CREATE INDEX IF NOT EXISTS idx_branches_repo ON branches(repo_id);
             CREATE INDEX IF NOT EXISTS idx_blobs_repo ON blobs(repo_id);
             CREATE INDEX IF NOT EXISTS idx_mirrors_repo ON mirrors(repo_name);
+
+            CREATE TABLE IF NOT EXISTS replication_peers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                peer_url TEXT NOT NULL UNIQUE,
+                role TEXT NOT NULL DEFAULT 'follower',
+                last_sync_seq INTEGER DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'active',
+                added_at INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS replication_log (
+                seq INTEGER PRIMARY KEY AUTOINCREMENT,
+                operation TEXT NOT NULL,
+                table_name TEXT NOT NULL,
+                row_id TEXT NOT NULL,
+                data TEXT,
+                timestamp INTEGER NOT NULL
+            );
             ",
         )?;
         Ok(())
@@ -676,6 +707,261 @@ impl HubStorage {
             Err(e) => Err(StorageError::Database(e)),
         }
     }
+
+    // === Users ===
+
+    pub fn create_user(
+        &self,
+        username: &str,
+        display_name: &str,
+        role: &str,
+        api_token: &str,
+    ) -> Result<(), StorageError> {
+        let created_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        self.conn.execute(
+            "INSERT INTO users (username, display_name, role, api_token, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![username, display_name, role, api_token, created_at],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_user(&self, username: &str) -> Result<Option<UserInfo>, StorageError> {
+        let result = self.conn.query_row(
+            "SELECT username, display_name, role, api_token, created_at FROM users WHERE username = ?1",
+            params![username],
+            |row| {
+                Ok(UserInfo {
+                    username: row.get(0)?,
+                    display_name: row.get(1)?,
+                    role: row.get(2)?,
+                    api_token: row.get(3)?,
+                    created_at: row.get(4)?,
+                })
+            },
+        );
+        match result {
+            Ok(user) => Ok(Some(user)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(StorageError::Database(e)),
+        }
+    }
+
+    pub fn get_user_by_token(&self, token: &str) -> Result<Option<UserInfo>, StorageError> {
+        let result = self.conn.query_row(
+            "SELECT username, display_name, role, api_token, created_at FROM users WHERE api_token = ?1",
+            params![token],
+            |row| {
+                Ok(UserInfo {
+                    username: row.get(0)?,
+                    display_name: row.get(1)?,
+                    role: row.get(2)?,
+                    api_token: row.get(3)?,
+                    created_at: row.get(4)?,
+                })
+            },
+        );
+        match result {
+            Ok(user) => Ok(Some(user)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(StorageError::Database(e)),
+        }
+    }
+
+    pub fn list_users(&self) -> Result<Vec<UserInfo>, StorageError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT username, display_name, role, api_token, created_at FROM users ORDER BY username",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(UserInfo {
+                username: row.get(0)?,
+                display_name: row.get(1)?,
+                role: row.get(2)?,
+                api_token: row.get(3)?,
+                created_at: row.get(4)?,
+            })
+        })?;
+        let mut users = Vec::new();
+        for row in rows {
+            users.push(row?);
+        }
+        Ok(users)
+    }
+
+    pub fn update_user_role(&self, username: &str, role: &str) -> Result<(), StorageError> {
+        self.conn.execute(
+            "UPDATE users SET role = ?1 WHERE username = ?2",
+            params![role, username],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_user(&self, username: &str) -> Result<(), StorageError> {
+        self.conn
+            .execute("DELETE FROM users WHERE username = ?1", params![username])?;
+        Ok(())
+    }
+
+    // === Replication ===
+
+    pub fn add_replication_peer(&self, peer_url: &str, role: &str) -> Result<i64, StorageError> {
+        let added_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        self.conn.execute(
+            "INSERT INTO replication_peers (peer_url, role, last_sync_seq, status, added_at) VALUES (?1, ?2, 0, 'active', ?3)",
+            params![peer_url, role, added_at],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    pub fn remove_replication_peer(&self, id: i64) -> Result<(), StorageError> {
+        self.conn
+            .execute("DELETE FROM replication_peers WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn list_replication_peers(&self) -> Result<Vec<ReplicationPeer>, StorageError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, peer_url, role, last_sync_seq, status, added_at FROM replication_peers ORDER BY id",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(ReplicationPeer {
+                id: row.get(0)?,
+                peer_url: row.get(1)?,
+                role: row.get(2)?,
+                last_sync_seq: row.get(3)?,
+                status: row.get(4)?,
+                added_at: row.get(5)?,
+            })
+        })?;
+        let mut peers = Vec::new();
+        for row in rows {
+            peers.push(row?);
+        }
+        Ok(peers)
+    }
+
+    pub fn get_replication_peer(&self, id: i64) -> Result<Option<ReplicationPeer>, StorageError> {
+        let result = self.conn.query_row(
+            "SELECT id, peer_url, role, last_sync_seq, status, added_at FROM replication_peers WHERE id = ?1",
+            params![id],
+            |row| {
+                Ok(ReplicationPeer {
+                    id: row.get(0)?,
+                    peer_url: row.get(1)?,
+                    role: row.get(2)?,
+                    last_sync_seq: row.get(3)?,
+                    status: row.get(4)?,
+                    added_at: row.get(5)?,
+                })
+            },
+        );
+        match result {
+            Ok(peer) => Ok(Some(peer)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(StorageError::Database(e)),
+        }
+    }
+
+    pub fn log_operation(
+        &self,
+        operation: &str,
+        table_name: &str,
+        row_id: &str,
+        data: Option<&str>,
+    ) -> Result<i64, StorageError> {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        self.conn.execute(
+            "INSERT INTO replication_log (operation, table_name, row_id, data, timestamp) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![operation, table_name, row_id, data, timestamp],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    pub fn get_replication_log(
+        &self,
+        since_seq: i64,
+    ) -> Result<Vec<ReplicationEntry>, StorageError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT seq, operation, table_name, row_id, data, timestamp FROM replication_log WHERE seq > ?1 ORDER BY seq",
+        )?;
+        let rows = stmt.query_map(params![since_seq], |row| {
+            Ok(ReplicationEntry {
+                seq: row.get(0)?,
+                operation: row.get(1)?,
+                table_name: row.get(2)?,
+                row_id: row.get(3)?,
+                data: row.get(4)?,
+                timestamp: row.get(5)?,
+            })
+        })?;
+        let mut entries = Vec::new();
+        for row in rows {
+            entries.push(row?);
+        }
+        Ok(entries)
+    }
+
+    pub fn apply_replication_entries(
+        &self,
+        entries: &[ReplicationEntry],
+    ) -> Result<(), StorageError> {
+        for entry in entries {
+            self.conn.execute(
+                "INSERT OR IGNORE INTO replication_log (seq, operation, table_name, row_id, data, timestamp) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![entry.seq, entry.operation, entry.table_name, entry.row_id, entry.data, entry.timestamp],
+            )?;
+        }
+        Ok(())
+    }
+
+    pub fn get_replication_status(&self) -> Result<ReplicationStatus, StorageError> {
+        let peers = self.list_replication_peers()?;
+        let current_seq: i64 = self.conn.query_row(
+            "SELECT COALESCE(MAX(seq), 0) FROM replication_log",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(ReplicationStatus {
+            current_seq,
+            peer_count: peers.len(),
+            peers,
+        })
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ReplicationPeer {
+    pub id: i64,
+    pub peer_url: String,
+    pub role: String,
+    pub last_sync_seq: i64,
+    pub status: String,
+    pub added_at: i64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ReplicationEntry {
+    pub seq: i64,
+    pub operation: String,
+    pub table_name: String,
+    pub row_id: String,
+    pub data: Option<String>,
+    pub timestamp: i64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ReplicationStatus {
+    pub current_seq: i64,
+    pub peer_count: usize,
+    pub peers: Vec<ReplicationPeer>,
 }
 
 fn base64_encode(data: &[u8]) -> String {

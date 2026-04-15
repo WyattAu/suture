@@ -1,5 +1,51 @@
 # Changelog
 
+## [0.10.0] - 2026-04-15
+
+Full-stack roadmap release — 6,614 lines added across 34 files. All 4 roadmap tiers executed: testing hardening, adoption drivers, VCS completeness, and ecosystem expansion.
+
+### Testing (73 new tests → 498 total)
+
+- **Protocol roundtrip tests** — 16 serde serialization roundtrips for all wire format types
+- **CLI unit tests** — 25 clap argument parsing tests covering all 40 commands
+- **E2E integration tests** — 10 new tests: merge-file JSON/YAML/auto-detect, conflict detection, cherry-pick, revert, notes, worktree
+- **Hub tests** — 13 new tests: rate limiting (3), pagination (3), compressed push/pull (1), V2 delta transfer (3), replication (5)
+- **Protocol tests** — 10 new tests: V2 types, delta compute/apply, capability negotiation
+
+### Tier 1: Hardening
+
+- **Hub concurrent access** — Migrated from `Mutex<HubStorage>` to `RwLock<HubStorage>` for parallel read operations
+- **LSP version fix** — Corrected server info version from 0.1.0 to 0.10.0
+- **Deleted suture-daemon** — Removed empty placeholder (`add(2,2)=4`)
+- **Deleted suture-git-bridge** — Removed deprecated crate with known data loss issues
+
+### Tier 2: Adoption Drivers
+
+- **Git merge driver** — Shell script (`contrib/git-merge-driver/suture-merge-driver`) that lets Git use Suture's semantic merge for conflict resolution via `.gitattributes`
+- **Git merge driver documentation** — Setup guide in `docs/git_merge_driver.md`
+- **GitHub Action** — Reusable composite action (`.github/actions/semantic-merge/`) that checks PR file changes for semantic mergeability, posts results as PR comments
+- **Hub rate limiting** — IP-based sliding window: 100 pushes/hour, 1000 pulls/hour per IP, returns 429 with Retry-After
+- **Hub pagination** — `/repos/{id}/patches` now supports `?offset=N&limit=N` (default 50, max 200)
+- **Wire compression** — zstd-compressed push/pull endpoints: `/push/compressed`, `/pull/compressed`
+
+### Tier 3: VCS Completeness
+
+- **LSP enhancements** — Go-to-definition (blame-based), file diagnostics (untracked/modified detection on open/save), semantic tokens placeholder
+- **Daemon** — Full rewrite: file watcher (notify crate, debounced), auto-commit, auto-sync with configurable intervals, graceful shutdown
+- **Hub user accounts** — User CRUD with roles (admin/member/reader), API token auth, RBAC middleware on all endpoints
+- **Protocol v2** — Delta transfer (binary patch encoding), capability negotiation, compressed endpoints, backward-compatible with v1
+
+### Tier 4: Ecosystem
+
+- **WASM plugin loading** — `wasmtime`-based plugin system behind `wasm-plugins` feature flag, ABI documentation, plugin registry integration
+- **Driver SDK example** — `suture-driver-example` crate implementing a `.properties` file driver with full diff/merge
+- **Python bindings** — Updated to PyO3 0.25, edition 2024, version 0.10.0
+- **Hub web UI** — Single-page application with repository browser, user management, replication status (dark theme, vanilla JS)
+
+### EXTRA: Hub Replication
+
+- **Leader-follower replication** — Replication log table, peer management API, sync endpoint, background replication task infrastructure
+
 ## [0.9.0] - 2026-04-15
 
 Quality and publishability release — merge-file semantic drivers, crates.io preparation, CI hardening, and bug fixes from a 417-test CLI determinism audit.

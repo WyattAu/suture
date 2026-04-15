@@ -3,6 +3,19 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
+#[derive(Debug, thiserror::Error)]
+pub enum PluginError {
+    #[error("failed to load plugin: {0}")]
+    LoadFailed(String),
+    #[error("missing required export: {0}")]
+    MissingExport(String),
+    #[error("plugin ABI version mismatch: expected {expected}, got {actual}")]
+    AbiVersionMismatch { expected: i32, actual: i32 },
+    #[cfg(feature = "wasm-plugins")]
+    #[error("wasmtime error: {0}")]
+    Wasmtime(#[from] wasmtime::Error),
+}
+
 pub trait DriverPlugin: Send + Sync {
     fn name(&self) -> &str;
     fn extensions(&self) -> &[&str];
@@ -173,6 +186,189 @@ impl Default for PluginRegistry {
     }
 }
 
+impl PluginRegistry {
+    #[cfg(feature = "wasm-plugins")]
+    pub fn load_wasm_plugin(&mut self, path: &Path) -> Result<(), PluginError> {
+        let plugin = WasmDriverPlugin::from_file(path)?;
+        let name = plugin.name.clone();
+        let extensions: Vec<String> = plugin.extensions_storage.clone();
+        let plugin_arc = Arc::new(plugin);
+        for ext in &extensions {
+            self.extension_map.insert(ext.to_string(), name.clone());
+        }
+        self.plugins.insert(name, plugin_arc);
+        Ok(())
+    }
+}
+
+#[cfg(feature = "wasm-plugins")]
+pub struct WasmDriverPlugin {
+    #[allow(dead_code)]
+    engine: wasmtime::Engine,
+    #[allow(dead_code)]
+    instance: wasmtime::Instance,
+    #[allow(dead_code)]
+    store: wasmtime::Store<()>,
+    name: String,
+    extensions_storage: Vec<String>,
+    extensions: Vec<&'static str>,
+}
+
+#[cfg(feature = "wasm-plugins")]
+impl WasmDriverPlugin {
+    pub fn from_file(path: &std::path::Path) -> Result<Self, PluginError> {
+        let engine = wasmtime::Engine::default();
+        let module = wasmtime::Module::from_file(&engine, path)
+            .map_err(|e| PluginError::LoadFailed(e.to_string()))?;
+
+        let mut store = wasmtime::Store::new(&engine, ());
+        let linker = wasmtime::Linker::new(&engine);
+
+        let instance = linker
+            .instantiate(&mut store, &module)
+            .map_err(|e| PluginError::LoadFailed(e.to_string()))?;
+
+        let version = Self::call_version_export(&mut store, &instance)?;
+        if version != 1 {
+            return Err(PluginError::AbiVersionMismatch {
+                expected: 1,
+                actual: version,
+            });
+        }
+
+        let name =
+            Self::call_string_export(&mut store, &instance, "plugin_name")
+                .unwrap_or_else(|| "unknown".to_string());
+        let extensions_storage = Self::call_extensions_export(&mut store, &instance);
+
+        let mut plugin = Self {
+            engine,
+            instance,
+            store,
+            name,
+            extensions_storage,
+            extensions: Vec::new(),
+        };
+
+        // SAFETY: extensions_storage is never modified after this point,
+        // so the raw pointers remain valid for the lifetime of the struct.
+        unsafe {
+            plugin.extensions = plugin
+                .extensions_storage
+                .iter()
+                .map(|s| {
+                    let ptr: *const str = s.as_str();
+                    &*ptr
+                })
+                .collect();
+        }
+
+        Ok(plugin)
+    }
+
+    fn call_version_export(
+        store: &mut wasmtime::Store<()>,
+        instance: &wasmtime::Instance,
+    ) -> Result<i32, PluginError> {
+        let func = instance
+            .get_typed_func::<(), i32>(&mut *store, "plugin_version")
+            .map_err(|_| PluginError::MissingExport("plugin_version".to_string()))?;
+        let version = func.call(&mut *store, ())?;
+        Ok(version)
+    }
+
+    fn call_string_export(
+        store: &mut wasmtime::Store<()>,
+        instance: &wasmtime::Instance,
+        export_name: &str,
+    ) -> Option<String> {
+        let Ok(func) = instance.get_typed_func::<(), i32>(&mut *store, export_name) else {
+            return None;
+        };
+        let Ok(ptr) = func.call(&mut *store, ()) else {
+            return None;
+        };
+
+        let memory = instance
+            .get_memory(&mut *store, "memory")?;
+
+        let mut buf = Vec::new();
+        let mut offset = ptr as usize;
+        loop {
+            if offset >= memory.data_size(&mut *store) {
+                return None;
+            }
+            let byte = memory.data(&mut *store)[offset];
+            if byte == 0 {
+                break;
+            }
+            buf.push(byte);
+            offset += 1;
+        }
+        String::from_utf8(buf).ok()
+    }
+
+    fn call_extensions_export(
+        store: &mut wasmtime::Store<()>,
+        instance: &wasmtime::Instance,
+    ) -> Vec<String> {
+        match Self::call_string_export(store, instance, "plugin_extensions") {
+            Some(csv) => csv
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect(),
+            None => vec![],
+        }
+    }
+}
+
+#[cfg(feature = "wasm-plugins")]
+impl DriverPlugin for WasmDriverPlugin {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn extensions(&self) -> &[&str] {
+        &self.extensions
+    }
+
+    fn description(&self) -> &str {
+        "WASM plugin driver"
+    }
+
+    fn as_driver(&self) -> &dyn SutureDriver {
+        self
+    }
+}
+
+#[cfg(feature = "wasm-plugins")]
+impl SutureDriver for WasmDriverPlugin {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn supported_extensions(&self) -> &[&str] {
+        &self.extensions
+    }
+
+    fn diff(
+        &self,
+        _base_content: Option<&str>,
+        _new_content: &str,
+    ) -> Result<Vec<crate::SemanticChange>, crate::DriverError> {
+        Ok(vec![])
+    }
+
+    fn format_diff(
+        &self,
+        _base_content: Option<&str>,
+        _new_content: &str,
+    ) -> Result<String, crate::DriverError> {
+        Ok(String::new())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -291,5 +487,50 @@ description = "A custom driver"
         let plugin = reg.get("json").unwrap();
         assert_eq!(plugin.as_driver().name(), "json");
         assert_eq!(plugin.as_driver().supported_extensions(), &[".json"]);
+    }
+
+    #[cfg(feature = "wasm-plugins")]
+    #[test]
+    fn test_wasm_plugin_abi_documentation() {
+        let abi_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/wasm_abi.md");
+        let content = std::fs::read_to_string(&abi_path)
+            .expect("wasm_abi.md should exist");
+        assert!(content.contains("plugin_name"), "ABI doc should define plugin_name export");
+        assert!(content.contains("plugin_extensions"), "ABI doc should define plugin_extensions export");
+        assert!(content.contains("plugin_version"), "ABI doc should define plugin_version export");
+        assert!(content.contains("merge"), "ABI doc should define merge function");
+        assert!(content.contains("diff"), "ABI doc should define diff function");
+        assert!(content.contains("ABI Version"), "ABI doc should specify version");
+        assert!(content.contains("Memory Layout"), "ABI doc should specify memory layout");
+        assert!(content.contains("Error Handling"), "ABI doc should specify error handling");
+    }
+
+    #[cfg(feature = "wasm-plugins")]
+    #[test]
+    fn test_plugin_registry_load_wasm_missing_file() {
+        let mut reg = PluginRegistry::new();
+        let result = reg.load_wasm_plugin(Path::new("/tmp/nonexistent-plugin.wasm"));
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            PluginError::LoadFailed(msg) => {
+                assert!(msg.contains("failed to read") || msg.contains("No such file"));
+            }
+            other => panic!("expected LoadFailed, got: {other}"),
+        }
+    }
+
+    #[cfg(feature = "wasm-plugins")]
+    #[test]
+    fn test_plugin_registry_load_wasm_invalid_module() {
+        let dir = std::env::temp_dir().join("suture-wasm-test-invalid");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("invalid.wasm");
+        std::fs::write(&path, b"not a valid wasm module").unwrap();
+
+        let mut reg = PluginRegistry::new();
+        let result = reg.load_wasm_plugin(&path);
+        assert!(result.is_err());
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
