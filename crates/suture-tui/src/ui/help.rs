@@ -1,10 +1,10 @@
 //! Help panel — displays keyboard shortcuts and general information.
 
-use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
+use ratatui::Frame;
 
 use crate::app::App;
 
@@ -128,7 +128,7 @@ pub fn draw(f: &mut Frame, _app: &App, area: Rect) {
     ]));
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        "  Suture USVCS v0.12.0 — Universal Semantic Version Control",
+        "  Suture USVCS v0.9.0 — Universal Semantic Version Control",
         dim_style,
     )));
 

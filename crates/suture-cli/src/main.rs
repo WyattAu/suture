@@ -227,6 +227,8 @@ EXAMPLES:
     #[command(after_long_help = "\
 EXAMPLES:
     suture merge-file base.txt ours.txt theirs.txt
+    suture merge-file --driver json base.json ours.json theirs.json
+    suture merge-file --driver yaml -o merged.yaml base.yaml ours.yaml theirs.yaml
     suture merge-file --label-ours HEAD --label-theirs feature base.txt ours.txt theirs.txt")]
     MergeFile {
         /// Base (ancestor) file path
@@ -241,6 +243,13 @@ EXAMPLES:
         /// Label for 'theirs' side in conflict markers (default: theirs)
         #[arg(long)]
         label_theirs: Option<String>,
+        /// Use a semantic merge driver (e.g., json, yaml, toml, csv, xml, markdown, docx, xlsx, pptx).
+        /// Auto-detected by file extension if omitted.
+        #[arg(long)]
+        driver: Option<String>,
+        /// Write merged result to a file instead of stdout
+        #[arg(short, long)]
+        output: Option<String>,
     },
     /// Apply a specific commit onto the current branch
     #[command(after_long_help = "\
@@ -775,6 +784,8 @@ async fn main() {
             theirs,
             label_ours,
             label_theirs,
+            driver,
+            output,
         } => {
             cmd::merge_file::cmd_merge_file(
                 &base,
@@ -782,6 +793,8 @@ async fn main() {
                 &theirs,
                 label_ours.as_deref(),
                 label_theirs.as_deref(),
+                driver.as_deref(),
+                output.as_deref(),
             )
             .await
         }

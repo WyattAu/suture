@@ -1,13 +1,14 @@
 [package]
 name = "suture-protocol"
-version = "0.8.0"
+version = "0.9.0"
 edition = "2024"
 license.workspace = true
 repository.workspace = true
 description.workspace = true
 homepage.workspace = true
 keywords.workspace = true
+readme.workspace = true
 
 [dependencies]
-suture-common = { path = "../suture-common", version = "0.8.0" }
+suture-common = { path = "../suture-common", version = "0.9.0" }
 serde = { version = "1.0", features = ["derive"] }

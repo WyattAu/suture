@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.9.0] - 2026-04-15
+
+Quality and publishability release — merge-file semantic drivers, crates.io preparation, CI hardening, and bug fixes from a 417-test CLI determinism audit.
+
+### New Features
+
+- **`merge-file` semantic driver support** — `suture merge-file` now accepts `--driver <name>` for explicit driver selection (json, yaml, csv, xml, toml, markdown) and `-o`/`--output <path>` to write merged output to a file. Auto-detects driver by file extension when `--driver` is omitted. Falls back to line-based merge with a warning when the semantic driver returns a conflict or error. Hard error if an explicitly requested driver doesn't exist.
+
+### Bug Fixes
+
+- **`tag --delete nonexistent` exited 0** — `delete_tag()` now checks existence first and returns an error if the tag doesn't exist.
+- **`tag --target HEAD` failed** — `create_tag()` now resolves HEAD/HEAD~N references before attempting branch name resolution.
+- **`log --graph` was non-deterministic** — HashMap iteration order caused varying output between runs. Fixed by sorting branches and adding secondary/tertiary sort keys (commit message, patch ID) to the commit groups.
+- **Broken pipe panics** — Added `libc::signal(SIGPIPE, SIG_DFL)` at CLI startup to prevent panics when output is piped to `head` or similar.
+- **CSV driver: both sides adding different rows conflicted** — Changed merge semantics from conflict to union when both sides add different rows to a CSV file.
+- **XML driver: both sides adding different children conflicted** — Same fix as CSV: union semantics for divergent additions.
+- **`notes remove` with invalid index exited 0** — Now validates the index is in range before removing.
+- **`merge --dry-run` actually modified the repo** — Added `preview_merge()` read-only method; CLI uses it for dry-run mode instead of performing the actual merge.
+
+### crates.io Preparation
+
+- Added `readme.workspace = true` to all 17 publishable library crates.
+- Fixed `suture-tui` version mismatch (was 0.12.0, aligned to 0.8.0).
+- Added `suture-driver` as a dependency to `suture-driver-otio`.
+
+### CI/CD
+
+- **Dependabot** — Added `.github/dependabot.yml` for automated cargo and GitHub Actions dependency updates (weekly schedule).
+- **Release workflow hardened** — Added system dependency installation (`pkg-config`, `libssl-dev`) for Linux builds, Cargo cache for faster builds, test step on default target, and scoped build to `suture-cli` package only.
+- **Repository cleanup** — Removed test artifacts, added `/test.*` pattern to `.gitignore`.
+
+### QA Results
+
+- 425/425 workspace tests pass (excluding e2e, bench, fuzz)
+- Clippy clean with `-D warnings`
+
 ## [0.8.1] - 2026-04-07
 
 Bugfix release — three bugs found and fixed during full QA sweep (80+ E2E tests, 438 unit tests).

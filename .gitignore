@@ -23,3 +23,7 @@ target
 .direnv/
 suture-e2e-*/
 alice/
+build/
+
+# Manual test artifacts in repo root
+/test.*

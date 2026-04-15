@@ -1,0 +1,22 @@
+version: 2
+updates:
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      timezone: "UTC"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "WyattAu"
+    labels:
+      - "dependencies"
+      - "automated"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      timezone: "UTC"
+    labels:
+      - "dependencies"
+      - "automated"
