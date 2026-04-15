@@ -22,6 +22,6 @@ suture-ooxml = { path = "../suture-ooxml", version = "0.10.0" }
 suture-driver-docx = { path = "../suture-driver-docx", version = "0.10.0" }
 suture-driver-xlsx = { path = "../suture-driver-xlsx", version = "0.10.0" }
 suture-driver-pptx = { path = "../suture-driver-pptx", version = "0.10.0" }
-ratatui = "0.29"
+ratatui = "0.30"
 crossterm = "0.28"
 unicode-width = "0.2"
