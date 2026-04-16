@@ -1,6 +1,6 @@
 [package]
 name = "suture-lsp"
-version = "0.10.0"
+version = "1.0.0-rc.1"
 edition = "2024"
 license.workspace = true
 repository.workspace = true
@@ -12,9 +12,12 @@ keywords.workspace = true
 name = "suture-lsp"
 path = "src/main.rs"
 
+[dev-dependencies]
+tempfile = "3"
+
 [dependencies]
-suture-core = { path = "../suture-core", version = "0.10.0" }
-suture-common = { path = "../suture-common", version = "0.10.0" }
+suture-core = { path = "../suture-core", version = "1.0.0-rc.1" }
+suture-common = { path = "../suture-common", version = "1.0.0-rc.1" }
 tokio = { version = "1", features = ["full"] }
 tower-lsp = "0.20"
 serde = "1"

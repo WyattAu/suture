@@ -21,7 +21,7 @@ pub enum Role {
 }
 
 impl Role {
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse(s: &str) -> Self {
         match s {
             "admin" => Role::Admin,
             "member" => Role::Member,
@@ -64,6 +64,7 @@ pub struct SutureHubServer {
     rate_limits: Arc<std::sync::RwLock<std::collections::HashMap<String, (u32, std::time::Instant)>>>,
     max_pushes_per_hour: u32,
     max_pulls_per_hour: u32,
+    max_token_creates_per_minute: u32,
     rate_limit_window: std::time::Duration,
     replication_role: Arc<std::sync::RwLock<String>>,
 }
@@ -88,6 +89,7 @@ impl SutureHubServer {
             rate_limits: Arc::new(std::sync::RwLock::new(std::collections::HashMap::new())),
             max_pushes_per_hour: 100,
             max_pulls_per_hour: 1000,
+            max_token_creates_per_minute: 5,
             rate_limit_window: std::time::Duration::from_secs(60),
             replication_role: Arc::new(std::sync::RwLock::new("standalone".to_string())),
         }
@@ -100,6 +102,7 @@ impl SutureHubServer {
             rate_limits: Arc::new(std::sync::RwLock::new(std::collections::HashMap::new())),
             max_pushes_per_hour: 100,
             max_pulls_per_hour: 1000,
+            max_token_creates_per_minute: 5,
             rate_limit_window: std::time::Duration::from_secs(60),
             replication_role: Arc::new(std::sync::RwLock::new("standalone".to_string())),
         })
@@ -226,6 +229,7 @@ impl SutureHubServer {
         let limit = match key {
             "push" => self.max_pushes_per_hour,
             "pull" => self.max_pulls_per_hour,
+            "token_create" => self.max_token_creates_per_minute,
             _ => return Ok(()),
         };
 
@@ -358,6 +362,10 @@ impl SutureHubServer {
             }
         }
 
+        for patch in &req.patches {
+            let _ = store.log_operation("insert", "patches", &hash_to_hex(&patch.id), None);
+        }
+
         for branch in &req.branches {
             let target_hex = hash_to_hex(&branch.target_id);
 
@@ -420,6 +428,11 @@ impl SutureHubServer {
                     },
                 ));
             }
+        }
+
+        for branch in &req.branches {
+            let target_hex = hash_to_hex(&branch.target_id);
+            let _ = store.log_operation("set", "branches", &format!("{}:{}", req.repo_id, branch.name), Some(&target_hex));
         }
 
         Ok(PushResponse {
@@ -822,10 +835,9 @@ impl SutureHubServer {
                         if let Ok(b) = store.get_blobs(
                             &req.repo_id,
                             &std::collections::HashSet::from([needed_hash.clone()]),
-                        ) {
-                            if let Some(blob) = b.into_iter().next() {
-                                blobs.push(blob);
-                            }
+                        ) && let Some(blob) = b.into_iter().next()
+                        {
+                            blobs.push(blob);
                         }
                         continue;
                     }
@@ -1039,6 +1051,10 @@ impl SutureHubServer {
             }
         }
 
+        for patch in &req.patches {
+            let _ = store.log_operation("insert", "patches", &hash_to_hex(&patch.id), None);
+        }
+
         for branch in &req.branches {
             let target_hex = hash_to_hex(&branch.target_id);
 
@@ -1101,6 +1117,11 @@ impl SutureHubServer {
                     },
                 ));
             }
+        }
+
+        for branch in &req.branches {
+            let target_hex = hash_to_hex(&branch.target_id);
+            let _ = store.log_operation("set", "branches", &format!("{}:{}", req.repo_id, branch.name), Some(&target_hex));
         }
 
         Ok(PushResponse {
@@ -1364,7 +1385,7 @@ async fn require_role(
     }
 
     let user = resolve_user(hub, headers).await.ok_or(StatusCode::UNAUTHORIZED)?;
-    let user_role = Role::from_str(&user.role);
+    let user_role = Role::parse(&user.role);
 
     if user_role >= *required_role {
         Ok(user)
@@ -1511,21 +1532,19 @@ pub async fn push_handler(
         );
     }
 
-    if !hub.no_auth {
-        if let Some(user) = resolve_user(&hub, &headers).await {
-            let user_role = Role::from_str(&user.role);
-            if user_role < Role::Member {
-                return (
-                    StatusCode::FORBIDDEN,
-                    HeaderMap::new(),
-                    Json(PushResponse {
-                        success: false,
-                        error: Some("insufficient permissions: readers cannot push".to_string()),
-                        existing_patches: vec![],
-                    }),
-                );
-            }
-        }
+    if !hub.no_auth
+        && let Some(user) = resolve_user(&hub, &headers).await
+        && Role::parse(&user.role) < Role::Member
+    {
+        return (
+            StatusCode::FORBIDDEN,
+            HeaderMap::new(),
+            Json(PushResponse {
+                success: false,
+                error: Some("insufficient permissions: readers cannot push".to_string()),
+                existing_patches: vec![],
+            }),
+        );
     }
 
     match hub.handle_push(req).await {
@@ -1620,20 +1639,19 @@ pub struct TokenResponse {
 
 pub async fn create_token_handler(
     State(hub): State<Arc<SutureHubServer>>,
-) -> (StatusCode, Json<TokenResponse>) {
-    let token = generate_random_token();
-    let created_at = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-
-    let store = hub.storage.write().await;
-    if store
-        .store_token(&token, created_at, "cli-generated")
-        .is_err()
-    {
+    headers: HeaderMap,
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+) -> (StatusCode, HeaderMap, Json<TokenResponse>) {
+    let ip = addr.ip().to_string();
+    if let Err(retry_after) = hub.check_rate_limit(&ip, "token_create") {
+        let mut hdrs = HeaderMap::new();
+        hdrs.insert(
+            axum::http::header::RETRY_AFTER,
+            retry_after.to_string().parse().unwrap(),
+        );
         return (
-            StatusCode::INTERNAL_SERVER_ERROR,
+            StatusCode::TOO_MANY_REQUESTS,
+            hdrs,
             Json(TokenResponse {
                 token: String::new(),
                 created_at: 0,
@@ -1641,7 +1659,98 @@ pub async fn create_token_handler(
         );
     }
 
-    (StatusCode::OK, Json(TokenResponse { token, created_at }))
+    if hub.no_auth {
+        let token = generate_random_token();
+        let created_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let expires_at = (created_at + (30 * 24 * 60 * 60)) as i64;
+        let store = hub.storage.write().await;
+        let _ = store.store_token(&token, created_at, "cli-generated", expires_at);
+        return (StatusCode::OK, HeaderMap::new(), Json(TokenResponse { token, created_at }));
+    }
+
+    let store = hub.storage.read().await;
+    let tokens_exist = store.has_tokens().unwrap_or(false);
+    let users_exist = store.has_users().unwrap_or(false);
+    let auth_keys_configured = store.has_authorized_keys().unwrap_or(false);
+    drop(store);
+
+    if !tokens_exist && !users_exist && !auth_keys_configured {
+        let token = generate_random_token();
+        let created_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let expires_at = (created_at + (30 * 24 * 60 * 60)) as i64;
+        let store = hub.storage.write().await;
+        let _ = store.store_token(&token, created_at, "cli-generated", expires_at);
+        return (StatusCode::OK, HeaderMap::new(), Json(TokenResponse { token, created_at }));
+    }
+
+    let user = resolve_user(&hub, &headers).await;
+    match user {
+        Some(u) => {
+            let role = Role::parse(&u.role);
+            if role < Role::Admin {
+                return (
+                    StatusCode::FORBIDDEN,
+                    HeaderMap::new(),
+                    Json(TokenResponse {
+                        token: String::new(),
+                        created_at: 0,
+                    }),
+                );
+            }
+        }
+        None => {
+            let store = hub.storage.read().await;
+            let valid_token = if let Some(auth_header) = headers.get("authorization")
+                && let Ok(auth_str) = auth_header.to_str()
+                && let Some(token) = auth_str.strip_prefix("Bearer ")
+            {
+                store.verify_token(token).unwrap_or(false)
+            } else {
+                false
+            };
+            drop(store);
+            if !valid_token {
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    HeaderMap::new(),
+                    Json(TokenResponse {
+                        token: String::new(),
+                        created_at: 0,
+                    }),
+                );
+            }
+        }
+    }
+
+    let token = generate_random_token();
+    let created_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let expires_at = (created_at + (30 * 24 * 60 * 60)) as i64;
+
+    let store = hub.storage.write().await;
+    if store
+        .store_token(&token, created_at, "cli-generated", expires_at)
+        .is_err()
+    {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            HeaderMap::new(),
+            Json(TokenResponse {
+                token: String::new(),
+                created_at: 0,
+            }),
+        );
+    }
+
+    (StatusCode::OK, HeaderMap::new(), Json(TokenResponse { token, created_at }))
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -2149,21 +2258,19 @@ pub async fn v2_push_handler(
         );
     }
 
-    if !hub.no_auth {
-        if let Some(user) = resolve_user(&hub, &headers).await {
-            let user_role = Role::from_str(&user.role);
-            if user_role < Role::Member {
-                return (
-                    StatusCode::FORBIDDEN,
-                    HeaderMap::new(),
-                    Json(PushResponse {
-                        success: false,
-                        error: Some("insufficient permissions: readers cannot push".to_string()),
-                        existing_patches: vec![],
-                    }),
-                );
-            }
-        }
+    if !hub.no_auth
+        && let Some(user) = resolve_user(&hub, &headers).await
+        && Role::parse(&user.role) < Role::Member
+    {
+        return (
+            StatusCode::FORBIDDEN,
+            HeaderMap::new(),
+            Json(PushResponse {
+                success: false,
+                error: Some("insufficient permissions: readers cannot push".to_string()),
+                existing_patches: vec![],
+            }),
+        );
     }
 
     match hub.handle_push_v2(req).await {
@@ -2245,10 +2352,92 @@ pub async fn replication_sync_handler(
     (status, Json(resp))
 }
 
+async fn replication_background_task(hub: Arc<SutureHubServer>) {
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+    loop {
+        interval.tick().await;
+
+        let role = hub.get_replication_role();
+        if role != "leader" {
+            continue;
+        }
+
+        let peers = {
+            let store = hub.storage.read().await;
+            match store.list_replication_peers() {
+                Ok(p) => p,
+                Err(e) => {
+                    tracing::warn!("replication: failed to list peers: {e}");
+                    continue;
+                }
+            }
+        };
+
+        for peer in &peers {
+            if peer.status != "active" {
+                continue;
+            }
+
+            let entries = {
+                let store = hub.storage.read().await;
+                match store.get_replication_log(peer.last_sync_seq) {
+                    Ok(e) => e,
+                    Err(e) => {
+                        tracing::warn!("replication: failed to get log for peer {}: {e}", peer.id);
+                        continue;
+                    }
+                }
+            };
+
+            if entries.is_empty() {
+                continue;
+            }
+
+            let last_seq = entries.last().map(|e| e.seq).unwrap_or(peer.last_sync_seq);
+
+            let client = match reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(10))
+                .build()
+            {
+                Ok(c) => c,
+                Err(e) => {
+                    tracing::warn!("replication: failed to build client for peer {}: {e}", peer.id);
+                    continue;
+                }
+            };
+
+            let sync_url = format!("{}/replication/sync", peer.peer_url.trim_end_matches('/'));
+            match client.post(&sync_url).json(&entries).send().await {
+                Ok(resp) if resp.status().is_success() => {
+                    tracing::info!("replication: synced {} entries to peer {} (seq {}-{})",
+                        entries.len(), peer.id, peer.last_sync_seq, last_seq);
+                    let store = hub.storage.write().await;
+                    let _ = store.update_peer_sync_seq(peer.id, last_seq);
+                }
+                Ok(resp) => {
+                    tracing::warn!("replication: sync to peer {} returned {}", peer.id, resp.status());
+                }
+                Err(e) => {
+                    tracing::warn!("replication: failed to sync to peer {}: {e}", peer.id);
+                }
+            }
+        }
+    }
+}
+
 pub async fn run_server(
     hub: SutureHubServer,
     addr: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let hub = Arc::new(hub);
+
+    {
+        let hub_clone = Arc::clone(&hub);
+        tokio::spawn(async move {
+            replication_background_task(hub_clone).await;
+        });
+    }
+
     let app = axum::Router::new()
         .route("/", axum::routing::get(serve_index))
         .route("/push", axum::routing::post(push_handler))
@@ -2302,7 +2491,7 @@ pub async fn run_server(
         .route("/replication/peers/{id}", axum::routing::delete(remove_peer_handler))
         .route("/replication/status", axum::routing::get(replication_status_handler))
         .route("/replication/sync", axum::routing::post(replication_sync_handler))
-        .with_state(Arc::new(hub));
+        .with_state(hub);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!("Suture Hub listening on {addr}");
@@ -2678,7 +2867,12 @@ mod tests {
     async fn test_token_creation_and_verification() {
         let hub = Arc::new(SutureHubServer::new());
 
-        let (status, token_resp) = create_token_handler(State(hub.clone())).await;
+        let (status, _, token_resp) = create_token_handler(
+            State(hub.clone()),
+            HeaderMap::new(),
+            ConnectInfo("127.0.0.1:1234".parse().unwrap()),
+        )
+        .await;
         assert_eq!(status, StatusCode::OK);
         assert!(!token_resp.token.is_empty());
 
@@ -3371,4 +3565,1526 @@ mod tests {
         assert_eq!(status.status.peer_count, 1);
         assert_eq!(status.status.peers.len(), 1);
     }
+
+    #[tokio::test]
+    async fn test_token_creation_requires_auth_when_keys_exist() {
+        let hub = Arc::new(SutureHubServer::new());
+
+        create_test_user(&hub, "admin", "Admin", "admin").await;
+
+        let (status, _, resp) = create_token_handler(
+            State(hub.clone()),
+            HeaderMap::new(),
+            ConnectInfo("127.0.0.1:1234".parse().unwrap()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert!(resp.token.is_empty());
+
+        let store = hub.storage.read().await;
+        let admin = store.get_user("admin").unwrap().unwrap();
+        let admin_token = admin.api_token.unwrap();
+        drop(store);
+
+        let (status, _, resp) = create_token_handler(
+            State(hub.clone()),
+            make_auth_header(&admin_token),
+            ConnectInfo("127.0.0.1:1234".parse().unwrap()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(!resp.token.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_token_creation_allowed_when_no_auth() {
+        let hub = Arc::new(SutureHubServer::new());
+
+        let (status, _, resp) = create_token_handler(
+            State(hub.clone()),
+            HeaderMap::new(),
+            ConnectInfo("127.0.0.1:1234".parse().unwrap()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(!resp.token.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_token_expiration() {
+        let store = HubStorage::open_in_memory().unwrap();
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        let past_expiry = (now - 3600) as i64;
+        let future_expiry = (now + 3600) as i64;
+
+        store
+            .store_token("expired-token", now, "test", past_expiry)
+            .unwrap();
+        store
+            .store_token("valid-token", now, "test", future_expiry)
+            .unwrap();
+
+        assert!(!store.verify_token("expired-token").unwrap());
+        assert!(store.verify_token("valid-token").unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_token_rate_limiting() {
+        let hub = Arc::new(SutureHubServer::new());
+
+        let admin_token = create_test_user(&hub, "admin", "Admin", "admin").await;
+
+        for i in 0..5u32 {
+            let (status, _, resp) = create_token_handler(
+                State(hub.clone()),
+                make_auth_header(&admin_token),
+                ConnectInfo("127.0.0.1:1234".parse().unwrap()),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "request {} should succeed", i);
+            assert!(!resp.token.is_empty());
+        }
+
+        let (status, _, _) = create_token_handler(
+            State(hub.clone()),
+            make_auth_header(&admin_token),
+            ConnectInfo("127.0.0.1:1234".parse().unwrap()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+
+        let (status, _, resp) = create_token_handler(
+            State(hub.clone()),
+            make_auth_header(&admin_token),
+            ConnectInfo("127.0.0.2:9999".parse().unwrap()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(!resp.token.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_replication_background_pushes_entries() {
+        let hub = SutureHubServer::new_in_memory();
+        hub.set_replication_role("leader");
+
+        hub.log_write("insert", "patches", "patch-1", None).await.unwrap();
+        hub.log_write("insert", "patches", "patch-2", None).await.unwrap();
+        hub.log_write("set", "branches", "main", Some("abc123")).await.unwrap();
+
+        let store = hub.storage.read().await;
+        let entries = store.get_replication_log(0).unwrap();
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].seq, 1);
+        assert_eq!(entries[2].table_name, "branches");
+    }
+
+    // === Push Edge Cases ===
+
+    #[tokio::test]
+    async fn test_push_empty_patches() {
+        let hub = SutureHubServer::new();
+        let push = PushRequest {
+            repo_id: "empty-patches".to_string(),
+            patches: vec![],
+            branches: vec![],
+            blobs: vec![],
+            signature: None,
+            known_branches: None,
+            force: false,
+        };
+        let resp = hub.handle_push(push).await.unwrap();
+        assert!(resp.success);
+        assert!(resp.existing_patches.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_push_empty_blobs() {
+        let hub = SutureHubServer::new();
+        let a_hex = "a".repeat(64);
+        let b_hex = "b".repeat(64);
+        let push = PushRequest {
+            repo_id: "no-blobs".to_string(),
+            patches: vec![
+                make_patch(&a_hex, "Create", &[], "alice"),
+                make_patch(&b_hex, "Modify", &[&a_hex], "alice"),
+            ],
+            branches: vec![make_branch("main", &b_hex)],
+            blobs: vec![],
+            signature: None,
+            known_branches: None,
+            force: false,
+        };
+        let resp = hub.handle_push(push).await.unwrap();
+        assert!(resp.success);
+        assert!(resp.existing_patches.is_empty());
+
+        let pull = hub.handle_pull(PullRequest {
+            repo_id: "no-blobs".to_string(),
+            known_branches: vec![],
+            max_depth: None,
+        }).await;
+        assert_eq!(pull.patches.len(), 2);
+        assert!(pull.blobs.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_push_duplicate_patch_id() {
+        let hub = SutureHubServer::new();
+        let a_hex = "a".repeat(64);
+        let p = make_patch(&a_hex, "Create", &[], "alice");
+
+        let push1 = PushRequest {
+            repo_id: "dup-repo".to_string(),
+            patches: vec![p.clone()],
+            branches: vec![make_branch("main", &a_hex)],
+            blobs: vec![],
+            signature: None,
+            known_branches: None,
+            force: false,
+        };
+        let r1 = hub.handle_push(push1).await.unwrap();
+        assert!(r1.existing_patches.is_empty());
+
+        let push2 = PushRequest {
+            repo_id: "dup-repo".to_string(),
+            patches: vec![p.clone()],
+            branches: vec![make_branch("main", &a_hex)],
+            blobs: vec![],
+            signature: None,
+            known_branches: None,
+            force: false,
+        };
+        let r2 = hub.handle_push(push2).await.unwrap();
+        assert_eq!(r2.existing_patches.len(), 1);
+        assert_eq!(hash_to_hex(&r2.existing_patches[0]), a_hex);
+    }
+
+    #[tokio::test]
+    async fn test_push_multiple_blobs() {
+        let hub = SutureHubServer::new();
+        let a_hex = "a".repeat(64);
+        let mut blobs = Vec::new();
+        for i in 0..5u32 {
+            let hash = format!("{:0128x}", i);
+            blobs.push(BlobRef {
+                hash: make_hash_proto(&hash),
+                data: base64_encode(format!("blob data {i}").as_bytes()),
+            });
+        }
+        let push = PushRequest {
+            repo_id: "multi-blob".to_string(),
+            patches: vec![make_patch(&a_hex, "Create", &[], "alice")],
+            branches: vec![make_branch("main", &a_hex)],
+            blobs,
+            signature: None,
+            known_branches: None,
+            force: false,
+        };
+        let resp = hub.handle_push(push).await.unwrap();
+        assert!(resp.success);
+
+        let store = hub.storage.read().await;
+        for i in 0..5u32 {
+            let hash = format!("{:0128x}", i);
+            let data = store.get_blob("multi-blob", &hash).unwrap();
+            assert!(data.is_some(), "blob {} should exist", i);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_push_then_pull_roundtrip() {
+        let hub = SutureHubServer::new();
+        let a_hex = "a".repeat(64);
+        let b_hex = "b".repeat(64);
+        let p2 = PatchProto {
+            id: make_hash_proto(&b_hex),
+            operation_type: "Modify".to_string(),
+            touch_set: vec!["file_x".to_string()],
+            target_path: Some("file_x".to_string()),
+            payload: String::new(),
+            parent_ids: vec![make_hash_proto(&a_hex)],
+            author: "bob".to_string(),
+            message: "second patch".to_string(),
+            timestamp: 42,
+        };
+
+        hub.handle_push(PushRequest {
+            repo_id: "roundtrip".to_string(),
+            patches: vec![make_patch(&a_hex, "Create", &[], "alice"), p2.clone()],
+            branches: vec![make_branch("main", &b_hex)],
+            blobs: vec![],
+            signature: None,
+            known_branches: None,
+            force: false,
+        }).await.unwrap();
+
+        let resp = hub.handle_pull(PullRequest {
+            repo_id: "roundtrip".to_string(),
+            known_branches: vec![],
+            max_depth: None,
+        }).await;
+        assert!(resp.success);
+        assert_eq!(resp.patches.len(), 2);
+        assert_eq!(resp.patches[0].operation_type, "Create");
+        assert_eq!(resp.patches[1].author, "bob");
+        assert_eq!(resp.patches[1].timestamp, 42);
+    }
+
+    #[tokio::test]
+    async fn test_push_nonexistent_repo_creates_it() {
+        let hub = SutureHubServer::new();
+        hub.handle_push(PushRequest {
+            repo_id: "brand-new-repo".to_string(),
+            patches: vec![make_patch(&"a".repeat(64), "Create", &[], "alice")],
+            branches: vec![make_branch("main", &"a".repeat(64))],
+            blobs: vec![],
+            signature: None,
+            known_branches: None,
+            force: false,
+        }).await.unwrap();
+
+        let repos = hub.handle_list_repos().await;
+        assert!(repos.repo_ids.contains(&"brand-new-repo".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_push_with_known_branches() {
+        let hub = SutureHubServer::new();
+        let a_hex = "a".repeat(64);
+        let b_hex = "b".repeat(64);
+        let c_hex = "c".repeat(64);
+
+        hub.handle_push(PushRequest {
+            repo_id: "nff-repo".to_string(),
+            patches: vec![
+                make_patch(&a_hex, "Create", &[], "alice"),
+                make_patch(&b_hex, "Modify", &[&a_hex], "alice"),
+            ],
+            branches: vec![make_branch("main", &b_hex)],
+            blobs: vec![],
+            signature: None,
+            known_branches: None,
+            force: false,
+        }).await.unwrap();
+
+        let resp = hub.handle_push(PushRequest {
+            repo_id: "nff-repo".to_string(),
+            patches: vec![make_patch(&c_hex, "Create", &[], "bob")],
+            branches: vec![make_branch("main", &c_hex)],
+            blobs: vec![],
+            signature: None,
+            known_branches: Some(vec![make_branch("main", &a_hex)]),
+            force: false,
+        }).await;
+        assert!(resp.is_err());
+        let (status, _) = resp.unwrap_err();
+        assert_eq!(status, StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
+    async fn test_push_force_non_fast_forward() {
+        let hub = SutureHubServer::new();
+        let a_hex = "a".repeat(64);
+        let b_hex = "b".repeat(64);
+        let c_hex = "c".repeat(64);
+
+        hub.handle_push(PushRequest {
+            repo_id: "force-repo".to_string(),
+            patches: vec![
+                make_patch(&a_hex, "Create", &[], "alice"),
+                make_patch(&b_hex, "Modify", &[&a_hex], "alice"),
+            ],
+            branches: vec![make_branch("main", &b_hex)],
+            blobs: vec![],
+            signature: None,
+            known_branches: None,
+            force: false,
+        }).await.unwrap();
+
+        let resp = hub.handle_push(PushRequest {
+            repo_id: "force-repo".to_string(),
+            patches: vec![make_patch(&c_hex, "Create", &[], "bob")],
+            branches: vec![make_branch("main", &c_hex)],
+            blobs: vec![],
+            signature: None,
+            known_branches: Some(vec![make_branch("main", &a_hex)]),
+            force: true,
+        }).await;
+        assert!(resp.is_ok());
+        assert!(resp.unwrap().success);
+    }
+
+    #[tokio::test]
+    async fn test_push_protected_branch_wrong_author() {
+        let hub = SutureHubServer::new();
+        let a_hex = "a".repeat(64);
+        let b_hex = "b".repeat(64);
+
+        hub.handle_push(PushRequest {
+            repo_id: "prot-wrong".to_string(),
+            patches: vec![make_patch(&a_hex, "Create", &[], "alice")],
+            branches: vec![make_branch("alice", &a_hex)],
+            blobs: vec![],
+            signature: None,
+            known_branches: None,
+            force: false,
+        }).await.unwrap();
+
+        {
+            let store = hub.storage.write().await;
+            store.protect_branch("prot-wrong", "alice").unwrap();
+        }
+
+        let resp = hub.handle_push(PushRequest {
+            repo_id: "prot-wrong".to_string(),
+            patches: vec![make_patch(&b_hex, "Modify", &[&a_hex], "bob")],
+            branches: vec![make_branch("alice", &b_hex)],
+            blobs: vec![],
+            signature: None,
+            known_branches: None,
+            force: false,
+        }).await;
+        assert!(resp.is_err());
+        let (status, body) = resp.unwrap_err();
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert!(!body.success);
+    }
+
+    #[tokio::test]
+    async fn test_push_protected_branch_owner() {
+        let hub = SutureHubServer::new();
+        let a_hex = "a".repeat(64);
+        let b_hex = "b".repeat(64);
+
+        hub.handle_push(PushRequest {
+            repo_id: "prot-owner".to_string(),
+            patches: vec![make_patch(&a_hex, "Create", &[], "alice")],
+            branches: vec![make_branch("alice", &a_hex)],
+            blobs: vec![],
+            signature: None,
+            known_branches: None,
+            force: false,
+        }).await.unwrap();
+
+        {
+            let store = hub.storage.write().await;
+            store.protect_branch("prot-owner", "alice").unwrap();
+        }
+
+        let resp = hub.handle_push(PushRequest {
+            repo_id: "prot-owner".to_string(),
+            patches: vec![make_patch(&b_hex, "Modify", &[&a_hex], "alice")],
+            branches: vec![make_branch("alice", &b_hex)],
+            blobs: vec![],
+            signature: None,
+            known_branches: None,
+            force: false,
+        }).await;
+        assert!(resp.is_ok());
+        assert!(resp.unwrap().success);
+    }
+
+    #[tokio::test]
+    async fn test_push_compressed() {
+        let hub = Arc::new(SutureHubServer::new());
+        let a_hex = "a".repeat(64);
+        let blob_data = b"compressed push test";
+        let blob_hash = "cafebabe".repeat(8);
+        let compressed = suture_protocol::compress(blob_data).unwrap();
+
+        let push = PushRequest {
+            repo_id: "comp-push".to_string(),
+            patches: vec![PatchProto {
+                id: make_hash_proto(&a_hex),
+                operation_type: "Create".to_string(),
+                touch_set: vec!["f".to_string()],
+                target_path: Some("f".to_string()),
+                payload: blob_hash.clone(),
+                parent_ids: vec![],
+                author: "alice".to_string(),
+                message: "p".to_string(),
+                timestamp: 0,
+            }],
+            branches: vec![make_branch("main", &a_hex)],
+            blobs: vec![BlobRef {
+                hash: make_hash_proto(&blob_hash),
+                data: base64_encode(&compressed),
+            }],
+            signature: None,
+            known_branches: None,
+            force: false,
+        };
+        let (status, resp) = push_compressed_handler(State(hub.clone()), HeaderMap::new(), Json(push)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(resp.success);
+    }
+
+    #[tokio::test]
+    async fn test_push_v2_with_deltas() {
+        let hub = SutureHubServer::new();
+        let a_hex = "a".repeat(64);
+        let blob_hash = "deadbeef".repeat(8);
+
+        hub.handle_push(PushRequest {
+            repo_id: "v2-delta".to_string(),
+            patches: vec![make_patch(&a_hex, "Create", &[], "alice")],
+            branches: vec![make_branch("main", &a_hex)],
+            blobs: vec![BlobRef {
+                hash: make_hash_proto(&blob_hash),
+                data: base64_encode(b"original content here"),
+            }],
+            signature: None,
+            known_branches: None,
+            force: false,
+        }).await.unwrap();
+
+        let new_hash = "bbbbbbbb".repeat(8);
+        let new_data = b"original content changed";
+        let (_base_copy, delta_bytes) = suture_protocol::compute_delta(b"original content here", new_data);
+
+        let v2_push = crate::types::PushRequestV2 {
+            repo_id: "v2-delta".to_string(),
+            patches: vec![],
+            branches: vec![],
+            blobs: vec![],
+            deltas: vec![crate::types::BlobDelta {
+                base_hash: make_hash_proto(&blob_hash),
+                target_hash: make_hash_proto(&new_hash),
+                encoding: crate::types::DeltaEncoding::BinaryPatch,
+                delta_data: base64_encode(&delta_bytes),
+            }],
+            signature: None,
+            known_branches: None,
+            force: false,
+        };
+        let resp = hub.handle_push_v2(v2_push).await;
+        assert!(resp.is_ok());
+        assert!(resp.unwrap().success);
+
+        let store = hub.storage.read().await;
+        let retrieved = store.get_blob("v2-delta", &new_hash).unwrap();
+        assert_eq!(retrieved, Some(new_data.to_vec()));
+    }
+
+    #[tokio::test]
+    async fn test_push_v2_full_blob_delta() {
+        let hub = SutureHubServer::new();
+        let new_hash = "fullblob1".repeat(8);
+        let new_data = b"this is a full blob";
+
+        let v2_push = crate::types::PushRequestV2 {
+            repo_id: "v2-full".to_string(),
+            patches: vec![],
+            branches: vec![],
+            blobs: vec![],
+            deltas: vec![crate::types::BlobDelta {
+                base_hash: make_hash_proto(&"0000".repeat(16)),
+                target_hash: make_hash_proto(&new_hash),
+                encoding: crate::types::DeltaEncoding::FullBlob,
+                delta_data: base64_encode(new_data),
+            }],
+            signature: None,
+            known_branches: None,
+            force: false,
+        };
+        let resp = hub.handle_push_v2(v2_push).await;
+        assert!(resp.is_ok());
+
+        let store = hub.storage.read().await;
+        let retrieved = store.get_blob("v2-full", &new_hash).unwrap();
+        assert_eq!(retrieved, Some(new_data.to_vec()));
+    }
+
+    #[tokio::test]
+    async fn test_push_v2_empty() {
+        let hub = SutureHubServer::new();
+        let v2_push = crate::types::PushRequestV2 {
+            repo_id: "v2-empty".to_string(),
+            patches: vec![],
+            branches: vec![],
+            blobs: vec![],
+            deltas: vec![],
+            signature: None,
+            known_branches: None,
+            force: false,
+        };
+        let resp = hub.handle_push_v2(v2_push).await;
+        assert!(resp.is_ok());
+        assert!(resp.unwrap().success);
+    }
+
+    #[tokio::test]
+    async fn test_push_creates_repo() {
+        let hub = SutureHubServer::new();
+        let repos_before = hub.handle_list_repos().await;
+        assert!(!repos_before.repo_ids.contains(&"auto-repo".to_string()));
+
+        hub.handle_push(PushRequest {
+            repo_id: "auto-repo".to_string(),
+            patches: vec![make_patch(&"a".repeat(64), "Create", &[], "alice")],
+            branches: vec![make_branch("main", &"a".repeat(64))],
+            blobs: vec![],
+            signature: None,
+            known_branches: None,
+            force: false,
+        }).await.unwrap();
+
+        let repos_after = hub.handle_list_repos().await;
+        assert!(repos_after.repo_ids.contains(&"auto-repo".to_string()));
+    }
+
+    // === Pull Edge Cases ===
+
+    #[tokio::test]
+    async fn test_pull_empty_repo() {
+        let hub = SutureHubServer::new();
+        hub.handle_push(PushRequest {
+            repo_id: "empty-pull-repo".to_string(),
+            patches: vec![],
+            branches: vec![],
+            blobs: vec![],
+            signature: None,
+            known_branches: None,
+            force: false,
+        }).await.unwrap();
+
+        let resp = hub.handle_pull(PullRequest {
+            repo_id: "empty-pull-repo".to_string(),
+            known_branches: vec![],
+            max_depth: None,
+        }).await;
+        assert!(resp.success);
+        assert!(resp.patches.is_empty());
+        assert!(resp.branches.is_empty());
+        assert!(resp.blobs.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_pull_with_max_depth() {
+        let hub = SutureHubServer::new();
+        let a_hex = "a".repeat(64);
+        let b_hex = "b".repeat(64);
+        let c_hex = "c".repeat(64);
+
+        hub.handle_push(PushRequest {
+            repo_id: "depth-repo".to_string(),
+            patches: vec![
+                make_patch(&a_hex, "Create", &[], "alice"),
+                make_patch(&b_hex, "Modify", &[&a_hex], "alice"),
+                make_patch(&c_hex, "Modify", &[&b_hex], "alice"),
+            ],
+            branches: vec![make_branch("main", &c_hex)],
+            blobs: vec![],
+            signature: None,
+            known_branches: None,
+            force: false,
+        }).await.unwrap();
+
+        let resp = hub.handle_pull(PullRequest {
+            repo_id: "depth-repo".to_string(),
+            known_branches: vec![],
+            max_depth: Some(2),
+        }).await;
+        assert!(resp.success);
+        assert_eq!(resp.patches.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_pull_no_known_branches() {
+        let hub = SutureHubServer::new();
+        let a_hex = "a".repeat(64);
+        let b_hex = "b".repeat(64);
+        let c_hex = "c".repeat(64);
+
+        hub.handle_push(PushRequest {
+            repo_id: "no-kb".to_string(),
+            patches: vec![
+                make_patch(&a_hex, "Create", &[], "alice"),
+                make_patch(&b_hex, "Modify", &[&a_hex], "bob"),
+                make_patch(&c_hex, "Modify", &[&b_hex], "alice"),
+            ],
+            branches: vec![
+                make_branch("main", &c_hex),
+                make_branch("dev", &a_hex),
+            ],
+            blobs: vec![],
+            signature: None,
+            known_branches: None,
+            force: false,
+        }).await.unwrap();
+
+        let resp = hub.handle_pull(PullRequest {
+            repo_id: "no-kb".to_string(),
+            known_branches: vec![],
+            max_depth: None,
+        }).await;
+        assert!(resp.success);
+        assert_eq!(resp.patches.len(), 3);
+        assert_eq!(resp.branches.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_pull_v2_with_negotiation() {
+        let hub = SutureHubServer::new();
+        let a_hex = "a".repeat(64);
+        let blob_hash = "cafebabe".repeat(8);
+
+        hub.handle_push(PushRequest {
+            repo_id: "v2-neg".to_string(),
+            patches: vec![PatchProto {
+                id: make_hash_proto(&a_hex),
+                operation_type: "Create".to_string(),
+                touch_set: vec!["f".to_string()],
+                target_path: Some("f".to_string()),
+                payload: blob_hash.clone(),
+                parent_ids: vec![],
+                author: "alice".to_string(),
+                message: "p".to_string(),
+                timestamp: 0,
+            }],
+            branches: vec![make_branch("main", &a_hex)],
+            blobs: vec![BlobRef {
+                hash: make_hash_proto(&blob_hash),
+                data: base64_encode(b"negotiation blob data"),
+            }],
+            signature: None,
+            known_branches: None,
+            force: false,
+        }).await.unwrap();
+
+        let pull_req = crate::types::PullRequestV2 {
+            repo_id: "v2-neg".to_string(),
+            known_branches: vec![],
+            max_depth: None,
+            known_blob_hashes: vec![],
+            capabilities: crate::types::ClientCapabilities {
+                supports_delta: true,
+                supports_compression: true,
+                max_blob_size: 1024 * 1024,
+            },
+        };
+        let resp = hub.handle_pull_v2(pull_req).await;
+        assert!(resp.success);
+        assert_eq!(resp.patches.len(), 1);
+        assert_eq!(resp.blobs.len(), 1);
+        assert!(resp.deltas.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_pull_compressed() {
+        let hub = Arc::new(SutureHubServer::new());
+        let a_hex = "a".repeat(64);
+        let blob_data = b"compress pull test";
+        let blob_hash = "aabbccdd".repeat(8);
+
+        hub.handle_push(PushRequest {
+            repo_id: "comp-pull".to_string(),
+            patches: vec![PatchProto {
+                id: make_hash_proto(&a_hex),
+                operation_type: "Create".to_string(),
+                touch_set: vec!["f".to_string()],
+                target_path: Some("f".to_string()),
+                payload: blob_hash.clone(),
+                parent_ids: vec![],
+                author: "alice".to_string(),
+                message: "p".to_string(),
+                timestamp: 0,
+            }],
+            branches: vec![make_branch("main", &a_hex)],
+            blobs: vec![BlobRef {
+                hash: make_hash_proto(&blob_hash),
+                data: base64_encode(blob_data),
+            }],
+            signature: None,
+            known_branches: None,
+            force: false,
+        }).await.unwrap();
+
+        let pull = PullRequest {
+            repo_id: "comp-pull".to_string(),
+            known_branches: vec![],
+            max_depth: None,
+        };
+        let (status, resp) = pull_compressed_handler(State(hub.clone()), HeaderMap::new(), Json(pull)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(resp.success);
+        assert_eq!(resp.blobs.len(), 1);
+        let compressed = base64_decode(&resp.blobs[0].data).unwrap();
+        let decompressed = suture_protocol::decompress(&compressed).unwrap();
+        assert_eq!(decompressed, blob_data);
+    }
+
+    #[tokio::test]
+    async fn test_pull_returns_blobs() {
+        let hub = SutureHubServer::new();
+        let a_hex = "a".repeat(64);
+        let blob_hash = "eeff0011".repeat(8);
+
+        hub.handle_push(PushRequest {
+            repo_id: "blob-pull".to_string(),
+            patches: vec![PatchProto {
+                id: make_hash_proto(&a_hex),
+                operation_type: "Create".to_string(),
+                touch_set: vec!["f".to_string()],
+                target_path: Some("f".to_string()),
+                payload: blob_hash.clone(),
+                parent_ids: vec![],
+                author: "alice".to_string(),
+                message: "p".to_string(),
+                timestamp: 0,
+            }],
+            branches: vec![make_branch("main", &a_hex)],
+            blobs: vec![BlobRef {
+                hash: make_hash_proto(&blob_hash),
+                data: base64_encode(b"blob payload data"),
+            }],
+            signature: None,
+            known_branches: None,
+            force: false,
+        }).await.unwrap();
+
+        let resp = hub.handle_pull(PullRequest {
+            repo_id: "blob-pull".to_string(),
+            known_branches: vec![],
+            max_depth: None,
+        }).await;
+        assert!(resp.success);
+        assert_eq!(resp.blobs.len(), 1);
+        let decoded = base64_decode(&resp.blobs[0].data).unwrap();
+        assert_eq!(decoded, b"blob payload data");
+    }
+
+    #[tokio::test]
+    async fn test_pull_partial_depth() {
+        let hub = SutureHubServer::new();
+        let a_hex = "a".repeat(64);
+        let b_hex = "b".repeat(64);
+        let c_hex = "c".repeat(64);
+
+        hub.handle_push(PushRequest {
+            repo_id: "partial".to_string(),
+            patches: vec![
+                make_patch(&a_hex, "Create", &[], "alice"),
+                make_patch(&b_hex, "Modify", &[&a_hex], "alice"),
+                make_patch(&c_hex, "Modify", &[&b_hex], "alice"),
+            ],
+            branches: vec![make_branch("main", &c_hex)],
+            blobs: vec![],
+            signature: None,
+            known_branches: None,
+            force: false,
+        }).await.unwrap();
+
+        let resp = hub.handle_pull(PullRequest {
+            repo_id: "partial".to_string(),
+            known_branches: vec![],
+            max_depth: Some(1),
+        }).await;
+        assert!(resp.success);
+        assert_eq!(resp.patches.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_pull_multiple_repos() {
+        let hub = SutureHubServer::new();
+        let a_hex = "a".repeat(64);
+
+        hub.handle_push(PushRequest {
+            repo_id: "repo-x".to_string(),
+            patches: vec![make_patch(&a_hex, "Create", &[], "alice")],
+            branches: vec![make_branch("main", &a_hex)],
+            blobs: vec![],
+            signature: None,
+            known_branches: None,
+            force: false,
+        }).await.unwrap();
+
+        let resp_x = hub.handle_pull(PullRequest {
+            repo_id: "repo-x".to_string(),
+            known_branches: vec![],
+            max_depth: None,
+        }).await;
+        assert_eq!(resp_x.patches.len(), 1);
+
+        let resp_y = hub.handle_pull(PullRequest {
+            repo_id: "repo-y".to_string(),
+            known_branches: vec![],
+            max_depth: None,
+        }).await;
+        assert!(!resp_y.success);
+    }
+
+    #[tokio::test]
+    async fn test_pull_branches_returned() {
+        let hub = SutureHubServer::new();
+        let a_hex = "a".repeat(64);
+
+        hub.handle_push(PushRequest {
+            repo_id: "branch-pull".to_string(),
+            patches: vec![make_patch(&a_hex, "Create", &[], "alice")],
+            branches: vec![
+                make_branch("main", &a_hex),
+                make_branch("develop", &a_hex),
+                make_branch("staging", &a_hex),
+            ],
+            blobs: vec![],
+            signature: None,
+            known_branches: None,
+            force: false,
+        }).await.unwrap();
+
+        let resp = hub.handle_pull(PullRequest {
+            repo_id: "branch-pull".to_string(),
+            known_branches: vec![],
+            max_depth: None,
+        }).await;
+        assert!(resp.success);
+        assert_eq!(resp.branches.len(), 3);
+        let names: Vec<&str> = resp.branches.iter().map(|b| b.name.as_str()).collect();
+        assert!(names.contains(&"main"));
+        assert!(names.contains(&"develop"));
+        assert!(names.contains(&"staging"));
+    }
+
+    #[tokio::test]
+    async fn test_handshake_returns_version() {
+        let req = crate::types::HandshakeRequest {
+            client_version: 1,
+            client_name: "cli".to_string(),
+        };
+        let resp = handshake_handler(Json(req)).await;
+        assert_eq!(resp.server_version, 1);
+        assert_eq!(resp.server_name, "suture-hub");
+    }
+
+    #[tokio::test]
+    async fn test_handshake_v2() {
+        let req = crate::types::HandshakeRequestV2 {
+            client_version: 2,
+            client_name: "cli-v2".to_string(),
+            capabilities: crate::types::ClientCapabilities {
+                supports_delta: false,
+                supports_compression: false,
+                max_blob_size: 0,
+            },
+        };
+        let resp = handshake_v2_handler(Json(req)).await;
+        assert!(resp.compatible);
+        assert_eq!(resp.server_version, 2);
+        assert_eq!(resp.server_capabilities.protocol_versions.len(), 2);
+    }
+
+    // === User/Auth CRUD ===
+
+    #[tokio::test]
+    async fn test_register_user() {
+        let hub = Arc::new(SutureHubServer::new());
+        let admin_token = create_test_user(&hub, "reg-admin", "Reg Admin", "admin").await;
+
+        let req = crate::types::RegisterRequest {
+            username: "new-member".to_string(),
+            display_name: "New Member".to_string(),
+            role: None,
+        };
+        let (status, resp) = register_handler(
+            State(hub.clone()),
+            make_auth_header(&admin_token),
+            Json(req),
+        ).await;
+        assert_eq!(status, StatusCode::CREATED);
+        assert!(resp.success);
+        assert_eq!(resp.user.as_ref().unwrap().role, "member");
+    }
+
+    #[tokio::test]
+    async fn test_register_duplicate_user() {
+        let hub = Arc::new(SutureHubServer::new());
+        let admin_token = create_test_user(&hub, "dup-admin", "Dup Admin", "admin").await;
+
+        let req = crate::types::RegisterRequest {
+            username: "dup-user".to_string(),
+            display_name: "Dup User".to_string(),
+            role: Some("member".to_string()),
+        };
+        let (status1, _) = register_handler(
+            State(hub.clone()),
+            make_auth_header(&admin_token),
+            Json(req.clone()),
+        ).await;
+        assert_eq!(status1, StatusCode::CREATED);
+
+        let (status2, resp2) = register_handler(
+            State(hub.clone()),
+            make_auth_header(&admin_token),
+            Json(req),
+        ).await;
+        assert_eq!(status2, StatusCode::CONFLICT);
+        assert!(!resp2.success);
+    }
+
+    #[tokio::test]
+    async fn test_list_users_all() {
+        let hub = Arc::new(SutureHubServer::new());
+        create_test_user(&hub, "lu-admin", "LU Admin", "admin").await;
+        create_test_user(&hub, "lu-member", "LU Member", "member").await;
+        create_test_user(&hub, "lu-reader", "LU Reader", "reader").await;
+
+        let admin_token = {
+            let store = hub.storage.read().await;
+            store.get_user("lu-admin").unwrap().unwrap().api_token.unwrap()
+        };
+
+        let (_status, resp) = list_users_handler(
+            State(hub.clone()),
+            make_auth_header(&admin_token),
+        ).await;
+        assert!(resp.success);
+        assert_eq!(resp.users.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_get_user() {
+        let hub = Arc::new(SutureHubServer::new());
+        let admin_token = create_test_user(&hub, "gu-admin", "GU Admin", "admin").await;
+        create_test_user(&hub, "gu-target", "GU Target", "member").await;
+
+        let (status, resp) = get_user_handler(
+            State(hub.clone()),
+            make_auth_header(&admin_token),
+            Path("gu-target".to_string()),
+        ).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(resp.success);
+        assert_eq!(resp.user.as_ref().unwrap().username, "gu-target");
+        assert_eq!(resp.user.as_ref().unwrap().role, "member");
+    }
+
+    #[tokio::test]
+    async fn test_get_nonexistent_user() {
+        let hub = Arc::new(SutureHubServer::new());
+        let admin_token = create_test_user(&hub, "gnu-admin", "GNU Admin", "admin").await;
+
+        let (status, resp) = get_user_handler(
+            State(hub.clone()),
+            make_auth_header(&admin_token),
+            Path("nobody".to_string()),
+        ).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert!(!resp.success);
+    }
+
+    #[tokio::test]
+    async fn test_update_user_role() {
+        let hub = Arc::new(SutureHubServer::new());
+        let admin_token = create_test_user(&hub, "ur-admin", "UR Admin", "admin").await;
+        create_test_user(&hub, "ur-target", "UR Target", "reader").await;
+
+        let (_status, resp) = update_role_handler(
+            State(hub.clone()),
+            make_auth_header(&admin_token),
+            Path("ur-target".to_string()),
+            Json(crate::types::UpdateRoleRequest { role: "admin".to_string() }),
+        ).await;
+        assert!(resp.success);
+
+        let store = hub.storage.read().await;
+        let user = store.get_user("ur-target").unwrap().unwrap();
+        assert_eq!(user.role, "admin");
+    }
+
+    #[tokio::test]
+    async fn test_delete_user() {
+        let hub = Arc::new(SutureHubServer::new());
+        let admin_token = create_test_user(&hub, "du-admin", "DU Admin", "admin").await;
+        create_test_user(&hub, "du-target", "DU Target", "member").await;
+
+        let (status, resp) = delete_user_handler(
+            State(hub.clone()),
+            make_auth_header(&admin_token),
+            Path("du-target".to_string()),
+        ).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(resp.success);
+
+        let store = hub.storage.read().await;
+        assert!(store.get_user("du-target").unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_delete_nonexistent_user() {
+        let hub = Arc::new(SutureHubServer::new());
+        let admin_token = create_test_user(&hub, "dnu-admin", "DNU Admin", "admin").await;
+
+        let (status, resp) = delete_user_handler(
+            State(hub.clone()),
+            make_auth_header(&admin_token),
+            Path("ghost".to_string()),
+        ).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(resp.success);
+    }
+
+    #[tokio::test]
+    async fn test_create_token() {
+        let hub = Arc::new(SutureHubServer::new());
+        let (status, _, resp) = create_token_handler(
+            State(hub.clone()),
+            HeaderMap::new(),
+            ConnectInfo("127.0.0.1:9999".parse().unwrap()),
+        ).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(!resp.token.is_empty());
+        assert!(resp.created_at > 0);
+    }
+
+    #[tokio::test]
+    async fn test_verify_token() {
+        let hub = Arc::new(SutureHubServer::new());
+        let (_, _, token_resp) = create_token_handler(
+            State(hub.clone()),
+            HeaderMap::new(),
+            ConnectInfo("127.0.0.1:8888".parse().unwrap()),
+        ).await;
+
+        let auth_req = crate::types::AuthRequest {
+            method: crate::types::AuthMethod::Token(token_resp.token.clone()),
+            timestamp: 0,
+        };
+        let verify_resp = verify_token_handler(State(hub.clone()), Json(auth_req)).await;
+        assert!(verify_resp.valid);
+    }
+
+    // === Rate Limiting ===
+
+    #[tokio::test]
+    async fn test_rate_limit_pull() {
+        let mut hub = SutureHubServer::new();
+        hub.set_rate_limit_config(1000, 3, std::time::Duration::from_secs(60));
+        assert!(hub.check_rate_limit("10.0.0.2", "pull").is_ok());
+        assert!(hub.check_rate_limit("10.0.0.2", "pull").is_ok());
+        assert!(hub.check_rate_limit("10.0.0.2", "pull").is_ok());
+        assert!(hub.check_rate_limit("10.0.0.2", "pull").is_err());
+    }
+
+    #[tokio::test]
+    async fn test_rate_limit_reset_after_window() {
+        let mut hub = SutureHubServer::new();
+        hub.set_rate_limit_config(1, 1, std::time::Duration::from_millis(100));
+        assert!(hub.check_rate_limit("1.1.1.1", "push").is_ok());
+        assert!(hub.check_rate_limit("1.1.1.1", "push").is_err());
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+        assert!(hub.check_rate_limit("1.1.1.1", "push").is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_no_rate_limit_with_zero_window() {
+        let mut hub = SutureHubServer::new();
+        hub.set_rate_limit_config(1, 1, std::time::Duration::ZERO);
+        for _ in 0..50 {
+            assert!(hub.check_rate_limit("5.5.5.5", "push").is_ok());
+        }
+    }
+
+    #[tokio::test]
+    async fn test_rate_limit_different_ips_independent() {
+        let mut hub = SutureHubServer::new();
+        hub.set_rate_limit_config(1, 1000, std::time::Duration::from_secs(60));
+        assert!(hub.check_rate_limit("192.168.1.1", "push").is_ok());
+        assert!(hub.check_rate_limit("192.168.1.1", "push").is_err());
+        assert!(hub.check_rate_limit("192.168.1.2", "push").is_ok());
+    }
+
+    // === Branch Protection ===
+
+    #[tokio::test]
+    async fn test_protect_branch() {
+        let hub = Arc::new(SutureHubServer::new());
+        let (status, Json(resp)) = protect_branch_handler(
+            State(hub.clone()),
+            Path(("prot-repo".to_string(), "main".to_string())),
+        ).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(resp["success"].as_bool().unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_unprotect_branch() {
+        let hub = Arc::new(SutureHubServer::new());
+        protect_branch_handler(
+            State(hub.clone()),
+            Path(("unprot-repo".to_string(), "main".to_string())),
+        ).await;
+
+        let (status, Json(resp)) = unprotect_branch_handler(
+            State(hub.clone()),
+            Path(("unprot-repo".to_string(), "main".to_string())),
+        ).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(resp["success"].as_bool().unwrap());
+
+        let store = hub.storage.read().await;
+        assert!(!store.is_branch_protected("unprot-repo", "main").unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_protect_nonexistent_branch() {
+        let hub = SutureHubServer::new();
+        let store = hub.storage.write().await;
+        let result = store.protect_branch("nonexistent-repo-xyz", "main");
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_push_to_protected_branch_rejected() {
+        let hub = SutureHubServer::new();
+        let a_hex = "a".repeat(64);
+        let b_hex = "b".repeat(64);
+
+        hub.handle_push(PushRequest {
+            repo_id: "prot-rej".to_string(),
+            patches: vec![make_patch(&a_hex, "Create", &[], "alice")],
+            branches: vec![make_branch("release", &a_hex)],
+            blobs: vec![],
+            signature: None,
+            known_branches: None,
+            force: false,
+        }).await.unwrap();
+
+        {
+            let store = hub.storage.write().await;
+            store.protect_branch("prot-rej", "release").unwrap();
+        }
+
+        let resp = hub.handle_push(PushRequest {
+            repo_id: "prot-rej".to_string(),
+            patches: vec![make_patch(&b_hex, "Modify", &[&a_hex], "alice")],
+            branches: vec![make_branch("release", &b_hex)],
+            blobs: vec![],
+            signature: None,
+            known_branches: None,
+            force: false,
+        }).await;
+        assert!(resp.is_err());
+        let (status, _) = resp.unwrap_err();
+        assert_eq!(status, StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn test_push_to_unprotected_branch_allowed() {
+        let hub = SutureHubServer::new();
+        let a_hex = "a".repeat(64);
+        let b_hex = "b".repeat(64);
+
+        hub.handle_push(PushRequest {
+            repo_id: "unprot-allow".to_string(),
+            patches: vec![make_patch(&a_hex, "Create", &[], "alice")],
+            branches: vec![make_branch("main", &a_hex)],
+            blobs: vec![],
+            signature: None,
+            known_branches: None,
+            force: false,
+        }).await.unwrap();
+
+        let resp = hub.handle_push(PushRequest {
+            repo_id: "unprot-allow".to_string(),
+            patches: vec![make_patch(&b_hex, "Modify", &[&a_hex], "alice")],
+            branches: vec![make_branch("main", &b_hex)],
+            blobs: vec![],
+            signature: None,
+            known_branches: None,
+            force: false,
+        }).await;
+        assert!(resp.is_ok());
+        assert!(resp.unwrap().success);
+    }
+
+    // === Repository Management ===
+
+    #[tokio::test]
+    async fn test_list_repos_empty() {
+        let hub = SutureHubServer::new();
+        let resp = hub.handle_list_repos().await;
+        assert!(resp.repo_ids.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_list_repos_after_push() {
+        let hub = SutureHubServer::new();
+        let a_hex = "a".repeat(64);
+        hub.handle_push(PushRequest {
+            repo_id: "list-after".to_string(),
+            patches: vec![make_patch(&a_hex, "Create", &[], "alice")],
+            branches: vec![make_branch("main", &a_hex)],
+            blobs: vec![],
+            signature: None,
+            known_branches: None,
+            force: false,
+        }).await.unwrap();
+
+        let resp = hub.handle_list_repos().await;
+        assert!(resp.repo_ids.contains(&"list-after".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_repo_info_patch_count() {
+        let hub = SutureHubServer::new();
+        let a_hex = "a".repeat(64);
+        let b_hex = "b".repeat(64);
+
+        hub.handle_push(PushRequest {
+            repo_id: "info-count".to_string(),
+            patches: vec![
+                make_patch(&a_hex, "Create", &[], "alice"),
+                make_patch(&b_hex, "Modify", &[&a_hex], "alice"),
+            ],
+            branches: vec![make_branch("main", &b_hex), make_branch("dev", &a_hex)],
+            blobs: vec![],
+            signature: None,
+            known_branches: None,
+            force: false,
+        }).await.unwrap();
+
+        let resp = hub.handle_repo_info("info-count").await;
+        assert!(resp.success);
+        assert_eq!(resp.patch_count, 2);
+        assert_eq!(resp.branches.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_repo_branches() {
+        let hub = Arc::new(SutureHubServer::new());
+        let a_hex = "a".repeat(64);
+
+        hub.handle_push(PushRequest {
+            repo_id: "branch-h".to_string(),
+            patches: vec![make_patch(&a_hex, "Create", &[], "alice")],
+            branches: vec![
+                make_branch("main", &a_hex),
+                make_branch("develop", &a_hex),
+            ],
+            blobs: vec![],
+            signature: None,
+            known_branches: None,
+            force: false,
+        }).await.unwrap();
+
+        let (status, Json(branches)) = repo_branches_handler(
+            State(hub.clone()),
+            Path("branch-h".to_string()),
+        ).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(branches.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_repo_patches_pagination() {
+        let hub = SutureHubServer::new();
+        for i in 0..5u32 {
+            let hex = format!("{:064x}", i);
+            let parents: Vec<String> = if i > 0 {
+                vec![format!("{:064x}", i - 1)]
+            } else {
+                vec![]
+            };
+            hub.handle_push(PushRequest {
+                repo_id: "pag-new".to_string(),
+                patches: vec![PatchProto {
+                    id: make_hash_proto(&hex),
+                    operation_type: "Create".to_string(),
+                    touch_set: vec![format!("f{i}")],
+                    target_path: Some(format!("f{i}")),
+                    payload: String::new(),
+                    parent_ids: parents.iter().map(|p| make_hash_proto(p)).collect(),
+                    author: "alice".to_string(),
+                    message: format!("p{i}"),
+                    timestamp: 0,
+                }],
+                branches: vec![],
+                blobs: vec![],
+                signature: None,
+                known_branches: None,
+                force: false,
+            }).await.unwrap();
+        }
+        let page1 = hub.handle_repo_patches("pag-new", 0, 2).await;
+        assert_eq!(page1.len(), 2);
+        let page2 = hub.handle_repo_patches("pag-new", 2, 2).await;
+        assert_eq!(page2.len(), 2);
+        let page3 = hub.handle_repo_patches("pag-new", 4, 2).await;
+        assert_eq!(page3.len(), 1);
+    }
+
+    // === Storage-level tests ===
+
+    #[tokio::test]
+    async fn test_storage_ensure_repo_idempotent() {
+        let hub = SutureHubServer::new();
+        let store = hub.storage.write().await;
+        assert!(store.ensure_repo("idem-repo").unwrap());
+        assert!(!store.ensure_repo("idem-repo").unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_storage_insert_patch_duplicate() {
+        let hub = SutureHubServer::new();
+        let store = hub.storage.write().await;
+        store.ensure_repo("dup-patch").unwrap();
+        let patch = make_patch(&"a".repeat(64), "Create", &[], "alice");
+        assert!(store.insert_patch("dup-patch", &patch).unwrap());
+        assert!(!store.insert_patch("dup-patch", &patch).unwrap());
+        assert_eq!(store.patch_count("dup-patch").unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_storage_blob_roundtrip() {
+        let hub = SutureHubServer::new();
+        let store = hub.storage.write().await;
+        store.ensure_repo("blob-rt").unwrap();
+        let data = b"storage blob roundtrip test";
+        let hash = "aabbccddee".repeat(6);
+        store.store_blob("blob-rt", &hash, data).unwrap();
+        let retrieved = store.get_blob("blob-rt", &hash).unwrap();
+        assert_eq!(retrieved, Some(data.to_vec()));
+    }
+
+    #[tokio::test]
+    async fn test_storage_branch_set_get() {
+        let hub = SutureHubServer::new();
+        let store = hub.storage.write().await;
+        store.ensure_repo("branch-sg").unwrap();
+        store.set_branch("branch-sg", "main", &"a".repeat(64)).unwrap();
+        let target = store.get_branch_target("branch-sg", "main").unwrap();
+        assert_eq!(target, Some("a".repeat(64)));
+    }
+
+    #[tokio::test]
+    async fn test_storage_branch_nonexistent() {
+        let hub = SutureHubServer::new();
+        let store = hub.storage.write().await;
+        store.ensure_repo("branch-ne").unwrap();
+        let target = store.get_branch_target("branch-ne", "ghost").unwrap();
+        assert_eq!(target, None);
+    }
+
+    #[tokio::test]
+    async fn test_storage_is_ancestor() {
+        let hub = SutureHubServer::new();
+        let store = hub.storage.write().await;
+        store.ensure_repo("ancestor-test").unwrap();
+        let a_hex = "a".repeat(64);
+        let b_hex = "b".repeat(64);
+        store.insert_patch("ancestor-test", &make_patch(&a_hex, "Create", &[], "alice")).unwrap();
+        store.insert_patch("ancestor-test", &make_patch(&b_hex, "Modify", &[&a_hex], "alice")).unwrap();
+        assert!(store.is_ancestor("ancestor-test", &a_hex, &b_hex).unwrap());
+        assert!(store.is_ancestor("ancestor-test", &b_hex, &b_hex).unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_storage_is_ancestor_unrelated() {
+        let hub = SutureHubServer::new();
+        let store = hub.storage.write().await;
+        store.ensure_repo("unrelated-test").unwrap();
+        let a_hex = "a".repeat(64);
+        let b_hex = "b".repeat(64);
+        store.insert_patch("unrelated-test", &make_patch(&a_hex, "Create", &[], "alice")).unwrap();
+        store.insert_patch("unrelated-test", &make_patch(&b_hex, "Create", &[], "bob")).unwrap();
+        assert!(!store.is_ancestor("unrelated-test", &a_hex, &b_hex).unwrap());
+        assert!(!store.is_ancestor("unrelated-test", &b_hex, &a_hex).unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_storage_authorized_keys() {
+        let hub = SutureHubServer::new();
+        let store = hub.storage.write().await;
+        let key = [42u8; 32];
+        store.add_authorized_key("alice", &key).unwrap();
+        let retrieved = store.get_authorized_key("alice").unwrap();
+        assert_eq!(retrieved, Some(key.to_vec()));
+        assert!(store.get_authorized_key("bob").unwrap().is_none());
+    }
+
+    // === Mirror Operations ===
+
+    #[tokio::test]
+    async fn test_mirror_setup() {
+        let hub = SutureHubServer::new();
+        let resp = hub.handle_mirror_setup(crate::types::MirrorSetupRequest {
+            repo_name: "my-mirror".to_string(),
+            upstream_url: "http://example.com".to_string(),
+            upstream_repo: "upstream/repo".to_string(),
+        }).await;
+        assert!(resp.success);
+        assert!(resp.mirror_id.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_mirror_status_empty() {
+        let hub = SutureHubServer::new();
+        let resp = hub.handle_mirror_status(crate::types::MirrorStatusRequest {
+            mirror_id: None,
+            repo_name: None,
+        }).await;
+        assert!(resp.success);
+        assert!(resp.mirrors.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_mirror_list_after_setup() {
+        let hub = SutureHubServer::new();
+        hub.handle_mirror_setup(crate::types::MirrorSetupRequest {
+            repo_name: "mirrored-repo".to_string(),
+            upstream_url: "http://example.com".to_string(),
+            upstream_repo: "upstream/repo".to_string(),
+        }).await;
+
+        let resp = hub.handle_mirror_status(crate::types::MirrorStatusRequest {
+            mirror_id: None,
+            repo_name: None,
+        }).await;
+        assert_eq!(resp.mirrors.len(), 1);
+        assert_eq!(resp.mirrors[0].repo_name, "mirrored-repo");
+    }
+
+    #[tokio::test]
+    async fn test_mirror_sync_nonexistent() {
+        let hub = SutureHubServer::new();
+        let resp = hub.handle_mirror_sync(crate::types::MirrorSyncRequest { mirror_id: 999 }).await;
+        assert!(!resp.success);
+        assert!(resp.error.is_some());
+    }
+
+    // === Misc ===
+
+    #[tokio::test]
+    async fn test_repo_not_found_info() {
+        let hub = SutureHubServer::new();
+        let resp = hub.handle_repo_info("no-such-repo").await;
+        assert!(!resp.success);
+        assert_eq!(resp.patch_count, 0);
+    }
+
+    #[tokio::test]
+    async fn test_set_no_auth() {
+        let mut hub = SutureHubServer::new();
+        hub.set_no_auth(true);
+        assert!(hub.is_no_auth());
+    }
+
+    #[tokio::test]
+    async fn test_default_rate_limit_config() {
+        let hub = SutureHubServer::new();
+        for _ in 0..10 {
+            assert!(hub.check_rate_limit("9.9.9.9", "push").is_ok());
+        }
+        for _ in 0..10 {
+            assert!(hub.check_rate_limit("9.9.9.9", "pull").is_ok());
+        }
+    }
+
 }

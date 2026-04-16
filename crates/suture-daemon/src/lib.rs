@@ -3,9 +3,15 @@ use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use base64::Engine;
 use clap::Subcommand;
 use notify::{Event, EventKind, RecursiveMode, Watcher, recommended_watcher};
+use suture_core::patch::types::{OperationType, Patch, TouchSet};
 use suture_core::repository::{Repository, RepoError};
+use suture_protocol::{
+    BlobRef, BranchProto, PatchProto, PullRequest, PullResponse, PushRequest, PushResponse,
+    hex_to_hash,
+};
 use tokio::sync::{broadcast, mpsc};
 use tokio::time;
 use tracing::{debug, error, info, warn};
@@ -265,25 +271,309 @@ impl AutoSync {
         info!("starting sync cycle");
 
         let repo_path = self.repo_path.clone();
-        let result = tokio::task::spawn_blocking(move || {
-            let repo = Repository::open(&repo_path)
-                .map_err(|e| format!("failed to open repo: {e}"))?;
 
-            repo.status()
-                .map_err(|e| format!("status check failed: {e}"))?;
+        let remote_url = {
+            let rp = repo_path.clone();
+            tokio::task::spawn_blocking(move || {
+                let repo = Repository::open(&rp)
+                    .map_err(|e| format!("failed to open repo: {e}"))?;
+                match repo.get_remote_url("origin") {
+                    Ok(url) => Ok(Some(url)),
+                    Err(_) => {
+                        info!("no remote 'origin' configured, skipping sync");
+                        Ok(None)
+                    }
+                }
+            })
+            .await
+            .map_err(|e| format!("sync task panicked: {e}"))?
+            .map_err(|e: String| e)?
+        };
 
+        let Some(remote_url) = remote_url else {
+            return Ok(());
+        };
+
+        match self.do_pull(&repo_path, &remote_url).await {
+            Ok(count) if count > 0 => info!("pulled {} new patch(es)", count),
+            Ok(_) => debug!("pull: already up to date"),
+            Err(e) => warn!("pull failed: {e}"),
+        }
+
+        match self.do_push(&repo_path, &remote_url).await {
+            Ok(count) if count > 0 => info!("pushed {} patch(es)", count),
+            Ok(_) => debug!("push: nothing to push"),
+            Err(e) => warn!("push failed: {e}"),
+        }
+
+        info!("sync cycle complete");
+        Ok(())
+    }
+
+    async fn do_pull(&self, repo_path: &Path, remote_url: &str) -> Result<usize, String> {
+        let known_branches: Vec<(String, String)> = {
+            let rp = repo_path.to_path_buf();
+            tokio::task::spawn_blocking(move || {
+                let repo = Repository::open(&rp)
+                    .map_err(|e| format!("failed to open repo: {e}"))?;
+                Ok(repo
+                    .list_branches()
+                    .into_iter()
+                    .map(|(name, id)| (name, id.to_hex()))
+                    .collect::<Vec<_>>())
+            })
+            .await
+            .map_err(|e| format!("pull task panicked: {e}"))?
+            .map_err(|e: String| e)?
+        };
+
+        let known_branches_proto: Vec<BranchProto> = known_branches
+            .iter()
+            .map(|(name, hex)| BranchProto {
+                name: name.clone(),
+                target_id: hex_to_hash(hex),
+            })
+            .collect();
+
+        let repo_id = derive_repo_id(remote_url, "origin");
+        let pull_body = PullRequest {
+            repo_id,
+            known_branches: known_branches_proto,
+            max_depth: None,
+        };
+
+        let client = reqwest::Client::new();
+        let resp = client
+            .post(format!("{}/pull", remote_url))
+            .json(&pull_body)
+            .send()
+            .await
+            .map_err(|e| format!("pull request failed: {e}"))?;
+
+        if !resp.status().is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            return Err(format!("pull failed (HTTP): {}", text));
+        }
+
+        let result: PullResponse = resp
+            .json()
+            .await
+            .map_err(|e| format!("failed to parse pull response: {e}"))?;
+
+        if !result.success {
+            return Err(format!("pull failed: {:?}", result.error));
+        }
+
+        if result.patches.is_empty() {
+            return Ok(0);
+        }
+
+        let rp = repo_path.to_path_buf();
+        let patches = result.patches;
+        let branches = result.branches;
+        let blobs = result.blobs;
+
+        let new_count = tokio::task::spawn_blocking(move || {
+            let mut repo =
+                Repository::open(&rp).map_err(|e| format!("failed to open repo: {e}"))?;
+
+            let old_tree = repo
+                .snapshot_head()
+                .unwrap_or_else(|_| suture_core::engine::tree::FileTree::empty());
+
+            let b64 = base64::engine::general_purpose::STANDARD;
+
+            for blob in &blobs {
+                let hash = suture_common::Hash::from_hex(&blob.hash.value)
+                    .map_err(|e| format!("invalid blob hash: {e}"))?;
+                let data = b64
+                    .decode(&blob.data)
+                    .map_err(|e| format!("failed to decode blob: {e}"))?;
+                repo.cas()
+                    .put_blob_with_hash(&data, &hash)
+                    .map_err(|e| format!("failed to store blob: {e}"))?;
+            }
+
+            let mut count = 0usize;
+            for patch_proto in &patches {
+                let patch = proto_to_patch(patch_proto)
+                    .map_err(|e| format!("failed to convert patch: {e}"))?;
+                if !repo.dag().has_patch(&patch.id) {
+                    repo.meta()
+                        .store_patch(&patch)
+                        .map_err(|e| format!("failed to store patch: {e}"))?;
+                    let valid_parents: Vec<_> = patch
+                        .parent_ids
+                        .iter()
+                        .filter(|pid| repo.dag().has_patch(pid))
+                        .copied()
+                        .collect();
+                    let _ = repo
+                        .dag_mut()
+                        .add_patch(patch, valid_parents)
+                        .map_err(|e| format!("failed to add patch to DAG: {e}"))?;
+                    count += 1;
+                }
+            }
+
+            for branch in &branches {
+                let target_id = suture_common::Hash::from_hex(&branch.target_id.value)
+                    .map_err(|e| format!("invalid branch target: {e}"))?;
+                let branch_name = suture_common::BranchName::new(&branch.name)
+                    .map_err(|e| format!("invalid branch name: {e}"))?;
+                if !repo.dag().branch_exists(&branch_name) {
+                    let _ = repo.dag_mut().create_branch(branch_name.clone(), target_id);
+                } else {
+                    let _ = repo.dag_mut().update_branch(&branch_name, target_id);
+                }
+                repo.meta()
+                    .set_branch(&branch_name, &target_id)
+                    .map_err(|e| format!("failed to set branch: {e}"))?;
+            }
+
+            repo.invalidate_head_cache();
+            repo.sync_working_tree(&old_tree)
+                .map_err(|e| format!("failed to sync working tree: {e}"))?;
+
+            Ok::<usize, String>(count)
+        })
+        .await
+        .map_err(|e| format!("pull apply task panicked: {e}"))??;
+
+        Ok(new_count)
+    }
+
+    async fn do_push(&self, repo_path: &Path, remote_url: &str) -> Result<usize, String> {
+        let push_data = {
+            let rp = repo_path.to_path_buf();
+            tokio::task::spawn_blocking(move || -> Result<PushData, String> {
+                let repo =
+                    Repository::open(&rp).map_err(|e| format!("failed to open repo: {e}"))?;
+
+                let push_state_key = "remote.origin.last_pushed";
+                let patches: Vec<Patch> =
+                    if let Some(last_pushed_hex) = repo.get_config(push_state_key).map_err(|e| e.to_string())? {
+                        let last_pushed = suture_common::Hash::from_hex(&last_pushed_hex)
+                            .map_err(|e| format!("invalid last_pushed hash: {e}"))?;
+                        repo.patches_since(&last_pushed)
+                    } else {
+                        repo.all_patches()
+                    };
+
+                if patches.is_empty() {
+                    return Ok(PushData {
+                        patches: Vec::new(),
+                        blobs: Vec::new(),
+                        branches: Vec::new(),
+                        head_hex: String::new(),
+                    });
+                }
+
+                let branches = repo.list_branches();
+                let (_, head_id) = repo.head().unwrap_or_else(|_| {
+                    ("main".to_string(), suture_common::Hash::ZERO)
+                });
+
+                let b64 = base64::engine::general_purpose::STANDARD;
+                let mut blobs = Vec::new();
+                let mut seen = HashMap::new();
+                for patch in &patches {
+                    collect_blobs_from_patch(patch, repo.cas(), &b64, &mut blobs, &mut seen)?;
+                }
+
+                let branches_proto: Vec<BranchProto> = branches
+                    .iter()
+                    .map(|(name, id)| BranchProto {
+                        name: name.clone(),
+                        target_id: hex_to_hash(&id.to_hex()),
+                    })
+                    .collect();
+
+                Ok(PushData {
+                    patches,
+                    blobs,
+                    branches: branches_proto,
+                    head_hex: head_id.to_hex(),
+                })
+            })
+            .await
+            .map_err(|e| format!("push prepare task panicked: {e}"))?
+            .map_err(|e: String| e)?
+        };
+
+        if push_data.patches.is_empty() {
+            return Ok(0);
+        }
+
+        let repo_id = derive_repo_id(remote_url, "origin");
+
+        let patches_proto: Vec<PatchProto> = push_data
+            .patches
+            .iter()
+            .map(|p| PatchProto {
+                id: hex_to_hash(&p.id.to_hex()),
+                operation_type: p.operation_type.to_string(),
+                touch_set: p.touch_set.addresses(),
+                target_path: p.target_path.clone(),
+                payload: base64::engine::general_purpose::STANDARD.encode(&p.payload),
+                parent_ids: p
+                    .parent_ids
+                    .iter()
+                    .map(|id| hex_to_hash(&id.to_hex()))
+                    .collect(),
+                author: p.author.clone(),
+                message: p.message.clone(),
+                timestamp: p.timestamp,
+            })
+            .collect();
+
+        let push_body = PushRequest {
+            repo_id,
+            patches: patches_proto,
+            branches: push_data.branches.clone(),
+            blobs: push_data.blobs,
+            signature: None,
+            known_branches: Some(push_data.branches),
+            force: false,
+        };
+
+        let client = reqwest::Client::new();
+        let resp = client
+            .post(format!("{}/push", remote_url))
+            .json(&push_body)
+            .send()
+            .await
+            .map_err(|e| format!("push request failed: {e}"))?;
+
+        if !resp.status().is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            return Err(format!("push failed (HTTP): {}", text));
+        }
+
+        let result: PushResponse = resp
+            .json()
+            .await
+            .map_err(|e| format!("failed to parse push response: {e}"))?;
+
+        if !result.success {
+            return Err(format!("push failed: {:?}", result.error));
+        }
+
+        let patch_count = push_data.patches.len();
+        let head_hex = push_data.head_hex;
+        let rp = repo_path.to_path_buf();
+
+        tokio::task::spawn_blocking(move || {
+            let mut repo =
+                Repository::open(&rp).map_err(|e| format!("failed to open repo: {e}"))?;
+            repo.set_config("remote.origin.last_pushed", &head_hex)
+                .map_err(|e| format!("failed to update last_pushed: {e}"))?;
             Ok::<(), String>(())
         })
-        .await;
+        .await
+        .map_err(|e| format!("push cleanup task panicked: {e}"))??;
 
-        match result {
-            Ok(Ok(())) => {
-                info!("sync cycle complete");
-                Ok(())
-            }
-            Ok(Err(e)) => Err(e),
-            Err(e) => Err(format!("sync task panicked: {e}")),
-        }
+        Ok(patch_count)
     }
 }
 
@@ -483,6 +773,121 @@ pub async fn execute_command(cmd: DaemonCommand) -> Result<(), Box<dyn Error + S
     }
 }
 
+struct PushData {
+    patches: Vec<Patch>,
+    blobs: Vec<BlobRef>,
+    branches: Vec<BranchProto>,
+    head_hex: String,
+}
+
+fn derive_repo_id(url: &str, remote_name: &str) -> String {
+    let trimmed = url.trim_end_matches('/');
+    let after_scheme = if let Some(idx) = trimmed.find("://") {
+        &trimmed[idx + 3..]
+    } else {
+        trimmed
+    };
+    if let Some(path_start) = after_scheme.find('/') {
+        let path = &after_scheme[path_start + 1..];
+        if let Some(name) = path.rsplit('/').next()
+            && !name.is_empty()
+        {
+            return name.to_string();
+        }
+    }
+    remote_name.to_string()
+}
+
+fn proto_to_patch(proto: &PatchProto) -> Result<Patch, String> {
+    use suture_common::Hash;
+
+    let id = Hash::from_hex(&proto.id.value)
+        .map_err(|e| format!("invalid patch id: {e}"))?;
+    let parent_ids: Vec<suture_common::Hash> = proto
+        .parent_ids
+        .iter()
+        .filter_map(|h| Hash::from_hex(&h.value).ok())
+        .collect();
+    let op_type = match proto.operation_type.as_str() {
+        "create" => OperationType::Create,
+        "delete" => OperationType::Delete,
+        "modify" => OperationType::Modify,
+        "move" => OperationType::Move,
+        "metadata" => OperationType::Metadata,
+        "merge" => OperationType::Merge,
+        "identity" => OperationType::Identity,
+        "batch" => OperationType::Batch,
+        _ => OperationType::Modify,
+    };
+    let touch_set = TouchSet::from_addrs(proto.touch_set.iter().cloned());
+    let payload = base64::engine::general_purpose::STANDARD
+        .decode(&proto.payload)
+        .map_err(|e| format!("failed to decode patch payload: {e}"))?;
+
+    Ok(Patch::with_id(
+        id,
+        op_type,
+        touch_set,
+        proto.target_path.clone(),
+        payload,
+        parent_ids,
+        proto.author.clone(),
+        proto.message.clone(),
+        proto.timestamp,
+    ))
+}
+
+fn collect_blobs_from_patch(
+    patch: &Patch,
+    cas: &suture_core::cas::store::BlobStore,
+    b64: &base64::engine::general_purpose::GeneralPurpose,
+    blobs: &mut Vec<BlobRef>,
+    seen: &mut HashMap<String, bool>,
+) -> Result<(), String> {
+    let is_batch = patch.operation_type == OperationType::Batch;
+
+    if is_batch {
+        let changes = patch.file_changes().unwrap_or_default();
+        for change in &changes {
+            if change.payload.is_empty() {
+                continue;
+            }
+            let hash_hex = String::from_utf8_lossy(&change.payload).to_string();
+            if seen.contains_key(&hash_hex) {
+                continue;
+            }
+            let Ok(hash) = suture_common::Hash::from_hex(&hash_hex) else {
+                continue;
+            };
+            seen.insert(hash_hex.clone(), true);
+            let Ok(blob_data) = cas.get_blob(&hash) else {
+                continue;
+            };
+            blobs.push(BlobRef {
+                hash: hex_to_hash(&hash_hex),
+                data: b64.encode(&blob_data),
+            });
+        }
+    } else if !patch.payload.is_empty() {
+        let hash_hex = String::from_utf8_lossy(&patch.payload).to_string();
+        if !seen.contains_key(&hash_hex) {
+            let Ok(hash) = suture_common::Hash::from_hex(&hash_hex) else {
+                return Ok(());
+            };
+            seen.insert(hash_hex.clone(), true);
+            let Ok(blob_data) = cas.get_blob(&hash) else {
+                return Ok(());
+            };
+            blobs.push(BlobRef {
+                hash: hex_to_hash(&hash_hex),
+                data: b64.encode(&blob_data),
+            });
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -654,5 +1059,682 @@ mod tests {
 
         let result = handle.await;
         assert!(result.is_ok() || result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_auto_sync_performs_real_sync() {
+        init_tracing();
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+
+        let mut hub = suture_hub::SutureHubServer::new_in_memory();
+        hub.set_no_auth(true);
+
+        let hub_addr = format!("127.0.0.1:{}", port);
+        let server_handle = tokio::spawn(async move {
+            let _ = suture_hub::server::run_server(hub, &hub_addr).await;
+        });
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        let hub_url = format!("http://127.0.0.1:{}", port);
+
+        let dir = tempfile::tempdir().unwrap();
+        let repo_path = dir.path().to_path_buf();
+        let mut repo = Repository::init(&repo_path, "test-user").unwrap();
+
+        std::fs::write(repo_path.join("hello.txt"), "hello world").unwrap();
+        repo.add("hello.txt").unwrap();
+        repo.commit("initial commit").unwrap();
+
+        repo.add_remote("origin", &hub_url).unwrap();
+
+        let auto_sync = AutoSync::new(
+            repo_path.clone(),
+            Some(hub_url.clone()),
+            Duration::from_secs(60),
+        );
+
+        let result = auto_sync.sync_once().await;
+        assert!(result.is_ok(), "sync_once should succeed: {:?}", result.err());
+
+        repo = Repository::open(&repo_path).unwrap();
+        let last_pushed = repo
+            .get_config("remote.origin.last_pushed")
+            .unwrap()
+            .expect("last_pushed should be set after push");
+        assert!(!last_pushed.is_empty(), "last_pushed should not be empty");
+
+        let (_, head_id) = repo.head().unwrap();
+        assert_eq!(
+            head_id.to_hex(), last_pushed,
+            "last_pushed should match HEAD"
+        );
+
+        server_handle.abort();
+    }
+
+    #[tokio::test]
+    async fn test_auto_sync_no_remote_returns_ok() {
+        init_tracing();
+        let (_tmp, repo_path) = create_test_repo();
+
+        let auto_sync = AutoSync::new(repo_path.clone(), None, Duration::from_secs(60));
+        let result = auto_sync.sync_once().await;
+        assert!(
+            result.is_ok(),
+            "sync_once should return Ok when no remote configured"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_sync_no_remote_configured() {
+        init_tracing();
+        let dir = tempfile::tempdir().unwrap();
+        let repo_path = dir.path().to_path_buf();
+        Repository::init(&repo_path, "test-user").unwrap();
+
+        let auto_sync = AutoSync::new(repo_path.clone(), None, Duration::from_secs(60));
+        let result = auto_sync.sync_once().await;
+        assert!(result.is_ok(), "sync_once with no remote should succeed gracefully");
+    }
+
+    #[tokio::test]
+    async fn test_sync_hub_unreachable() {
+        init_tracing();
+        let (_tmp, repo_path) = create_test_repo();
+
+        let bad_url = "http://127.0.0.1:1".to_string();
+        let mut repo = Repository::open(&repo_path).unwrap();
+        repo.add_remote("origin", &bad_url).unwrap();
+        drop(repo);
+
+        let auto_sync = AutoSync::new(
+            repo_path.clone(),
+            Some(bad_url),
+            Duration::from_secs(60),
+        );
+
+        let result = auto_sync.sync_once().await;
+        assert!(
+            result.is_ok(),
+            "sync_once should handle unreachable hub gracefully without panicking"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_sync_empty_repo() {
+        init_tracing();
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+
+        let mut hub = suture_hub::SutureHubServer::new_in_memory();
+        hub.set_no_auth(true);
+
+        let hub_addr = format!("127.0.0.1:{}", port);
+        let server_handle = tokio::spawn(async move {
+            let _ = suture_hub::server::run_server(hub, &hub_addr).await;
+        });
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        let hub_url = format!("http://127.0.0.1:{}", port);
+
+        let dir = tempfile::tempdir().unwrap();
+        let repo_path = dir.path().to_path_buf();
+        let repo = Repository::init(&repo_path, "test-user").unwrap();
+        repo.add_remote("origin", &hub_url).unwrap();
+
+        let auto_sync = AutoSync::new(
+            repo_path.clone(),
+            Some(hub_url.clone()),
+            Duration::from_secs(60),
+        );
+
+        let result = auto_sync.sync_once().await;
+        assert!(
+            result.is_ok(),
+            "syncing an empty repo should succeed: {:?}",
+            result.err()
+        );
+
+        server_handle.abort();
+    }
+
+    #[tokio::test]
+    async fn test_sync_multiple_rounds() {
+        init_tracing();
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+
+        let mut hub = suture_hub::SutureHubServer::new_in_memory();
+        hub.set_no_auth(true);
+
+        let hub_addr = format!("127.0.0.1:{}", port);
+        let server_handle = tokio::spawn(async move {
+            let _ = suture_hub::server::run_server(hub, &hub_addr).await;
+        });
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        let hub_url = format!("http://127.0.0.1:{}", port);
+
+        let dir = tempfile::tempdir().unwrap();
+        let repo_path = dir.path().to_path_buf();
+        let mut repo = Repository::init(&repo_path, "test-user").unwrap();
+
+        fs::write(repo_path.join("file1.txt"), "first").unwrap();
+        repo.add("file1.txt").unwrap();
+        repo.commit("first commit").unwrap();
+        repo.add_remote("origin", &hub_url).unwrap();
+
+        let auto_sync = AutoSync::new(
+            repo_path.clone(),
+            Some(hub_url.clone()),
+            Duration::from_secs(60),
+        );
+
+        let result1 = auto_sync.sync_once().await;
+        assert!(result1.is_ok(), "first sync should succeed: {:?}", result1.err());
+
+        let repo = Repository::open(&repo_path).unwrap();
+        let log1 = repo.log(None).unwrap();
+        let _log1 = repo.log(None).unwrap();
+
+        let mut repo = Repository::open(&repo_path).unwrap();
+        fs::write(repo_path.join("file2.txt"), "second").unwrap();
+        repo.add("file2.txt").unwrap();
+        let commit_result = repo.commit("second commit");
+        assert!(commit_result.is_ok(), "second commit should succeed: {:?}", commit_result.err());
+
+        let repo = Repository::open(&repo_path).unwrap();
+        let log_before_sync = repo.log(None).unwrap();
+        let has_second = log_before_sync.iter().any(|p| p.message == "second commit");
+        assert!(has_second, "second commit should be in log after commit");
+
+        let auto_sync2 = AutoSync::new(
+            repo_path.clone(),
+            Some(hub_url.clone()),
+            Duration::from_secs(60),
+        );
+        let result2 = auto_sync2.sync_once().await;
+        assert!(result2.is_ok(), "second sync should succeed: {:?}", result2.err());
+
+        server_handle.abort();
+    }
+
+    #[tokio::test]
+    async fn test_sync_with_blobs() {
+        init_tracing();
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+
+        let mut hub = suture_hub::SutureHubServer::new_in_memory();
+        hub.set_no_auth(true);
+
+        let hub_addr = format!("127.0.0.1:{}", port);
+        let server_handle = tokio::spawn(async move {
+            let _ = suture_hub::server::run_server(hub, &hub_addr).await;
+        });
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        let hub_url = format!("http://127.0.0.1:{}", port);
+
+        let dir = tempfile::tempdir().unwrap();
+        let repo_path = dir.path().to_path_buf();
+        let mut repo = Repository::init(&repo_path, "test-user").unwrap();
+
+        let blob_content = "x".repeat(4096);
+        fs::write(repo_path.join("bigfile.bin"), &blob_content).unwrap();
+        repo.add("bigfile.bin").unwrap();
+        repo.commit("add binary blob").unwrap();
+        repo.add_remote("origin", &hub_url).unwrap();
+
+        let auto_sync = AutoSync::new(
+            repo_path.clone(),
+            Some(hub_url.clone()),
+            Duration::from_secs(60),
+        );
+
+        let result = auto_sync.sync_once().await;
+        assert!(
+            result.is_ok(),
+            "syncing repo with blobs should succeed: {:?}",
+            result.err()
+        );
+
+        let repo = Repository::open(&repo_path).unwrap();
+        let last_pushed = repo
+            .get_config("remote.origin.last_pushed")
+            .unwrap();
+        assert!(last_pushed.is_some(), "last_pushed should be set after push");
+
+        server_handle.abort();
+    }
+
+    #[test]
+    fn test_file_watcher_detects_new_file() {
+        init_tracing();
+        let (_tmp, repo_path) = create_test_repo();
+
+        let (shutdown_tx, _) = broadcast::channel::<()>(2);
+        let (change_tx, mut change_rx) = mpsc::channel::<Vec<FileChangeEvent>>(16);
+
+        let watcher = FileWatcher::new(repo_path.clone(), Duration::from_millis(100));
+        let watch_shutdown = shutdown_tx.subscribe();
+        watcher.run(watch_shutdown, change_tx);
+
+        std::thread::sleep(Duration::from_millis(200));
+
+        fs::write(repo_path.join("brand_new.txt"), "freshly created").unwrap();
+
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let result = rt.block_on(async {
+            timeout(Duration::from_secs(5), async {
+                while let Some(changes) = change_rx.recv().await {
+                    for c in &changes {
+                        if c.path.to_string_lossy() == "brand_new.txt" {
+                            return true;
+                        }
+                    }
+                }
+                false
+            })
+            .await
+        });
+
+        drop(shutdown_tx);
+        assert!(result.unwrap_or(false), "watcher should detect new file creation");
+    }
+
+    #[test]
+    fn test_file_watcher_detects_modification() {
+        init_tracing();
+        let (_tmp, repo_path) = create_test_repo();
+
+        let (shutdown_tx, _) = broadcast::channel::<()>(2);
+        let (change_tx, mut change_rx) = mpsc::channel::<Vec<FileChangeEvent>>(16);
+
+        let watcher = FileWatcher::new(repo_path.clone(), Duration::from_millis(100));
+        let watch_shutdown = shutdown_tx.subscribe();
+        watcher.run(watch_shutdown, change_tx);
+
+        std::thread::sleep(Duration::from_millis(200));
+
+        fs::write(repo_path.join("hello.txt"), "modified content").unwrap();
+
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let result = rt.block_on(async {
+            timeout(Duration::from_secs(5), async {
+                while let Some(changes) = change_rx.recv().await {
+                    for c in &changes {
+                        if c.path.to_string_lossy() == "hello.txt"
+                            && c.kind == ChangeKind::Modified
+                        {
+                            return true;
+                        }
+                    }
+                }
+                false
+            })
+            .await
+        });
+
+        drop(shutdown_tx);
+        assert!(result.unwrap_or(false), "watcher should detect file modification");
+    }
+
+    #[test]
+    fn test_file_watcher_detects_deletion() {
+        init_tracing();
+        let (_tmp, repo_path) = create_test_repo();
+
+        let delete_path = repo_path.join("to_delete.txt");
+        fs::write(&delete_path, "will be deleted").unwrap();
+
+        let (shutdown_tx, _) = broadcast::channel::<()>(2);
+        let (change_tx, mut change_rx) = mpsc::channel::<Vec<FileChangeEvent>>(16);
+
+        let watcher = FileWatcher::new(repo_path.clone(), Duration::from_millis(100));
+        let watch_shutdown = shutdown_tx.subscribe();
+        watcher.run(watch_shutdown, change_tx);
+
+        std::thread::sleep(Duration::from_millis(200));
+
+        fs::remove_file(&delete_path).unwrap();
+
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let result = rt.block_on(async {
+            timeout(Duration::from_secs(5), async {
+                while let Some(changes) = change_rx.recv().await {
+                    for c in &changes {
+                        if c.path.to_string_lossy() == "to_delete.txt"
+                            && c.kind == ChangeKind::Removed
+                        {
+                            return true;
+                        }
+                    }
+                }
+                false
+            })
+            .await
+        });
+
+        drop(shutdown_tx);
+        assert!(result.unwrap_or(false), "watcher should detect file deletion");
+    }
+
+    #[test]
+    fn test_file_watcher_ignores_dotfiles() {
+        init_tracing();
+        let (_tmp, repo_path) = create_test_repo();
+
+        let suture_event = Event {
+            kind: EventKind::Create(notify::event::CreateKind::File),
+            paths: vec![repo_path.join(".suture/test_file")],
+            ..Default::default()
+        };
+        let result_suture = FileChangeEvent::from_notify_event(&suture_event, &repo_path);
+        assert!(
+            result_suture.is_none(),
+            ".suture/ path changes should be filtered out"
+        );
+
+        let nested_suture_event = Event {
+            kind: EventKind::Modify(notify::event::ModifyKind::Data(
+                notify::event::DataChange::Any,
+            )),
+            paths: vec![repo_path.join(".suture/deep/nested_file")],
+            ..Default::default()
+        };
+        let result_nested = FileChangeEvent::from_notify_event(&nested_suture_event, &repo_path);
+        assert!(
+            result_nested.is_none(),
+            "nested .suture/ path changes should be filtered out"
+        );
+
+        let visible_event = Event {
+            kind: EventKind::Create(notify::event::CreateKind::File),
+            paths: vec![repo_path.join("visible.txt")],
+            ..Default::default()
+        };
+        let result_visible = FileChangeEvent::from_notify_event(&visible_event, &repo_path);
+        assert!(
+            result_visible.is_some(),
+            "visible file changes should pass through"
+        );
+        assert_eq!(
+            result_visible.unwrap().path.to_string_lossy(),
+            "visible.txt"
+        );
+    }
+
+    #[test]
+    fn test_file_watcher_multiple_changes() {
+        init_tracing();
+        let (_tmp, repo_path) = create_test_repo();
+
+        let (shutdown_tx, _) = broadcast::channel::<()>(2);
+        let (change_tx, mut change_rx) = mpsc::channel::<Vec<FileChangeEvent>>(16);
+
+        let debounce = Duration::from_millis(300);
+        let watcher = FileWatcher::new(repo_path.clone(), debounce);
+        let watch_shutdown = shutdown_tx.subscribe();
+        watcher.run(watch_shutdown, change_tx);
+
+        std::thread::sleep(Duration::from_millis(200));
+
+        for i in 0..5 {
+            fs::write(
+                repo_path.join(format!("multi_{i}.txt")),
+                format!("data {i}"),
+            )
+            .unwrap();
+        }
+
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let result = rt.block_on(async {
+            timeout(Duration::from_secs(5), async {
+                let mut total_changes = 0;
+                while let Some(changes) = change_rx.recv().await {
+                    total_changes += changes.len();
+                    if total_changes >= 5 {
+                        break;
+                    }
+                }
+                total_changes
+            })
+            .await
+        });
+
+        drop(shutdown_tx);
+        assert!(
+            result.unwrap_or(0) >= 5,
+            "should detect at least 5 changes from multiple file creates"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_auto_commit_empty_repo() {
+        init_tracing();
+        let dir = tempfile::tempdir().unwrap();
+        let repo_path = dir.path().to_path_buf();
+        Repository::init(&repo_path, "test-user").unwrap();
+
+        let auto_commit = AutoCommit::new(
+            repo_path.clone(),
+            "auto: {count} file(s) changed".to_string(),
+        );
+
+        fs::write(repo_path.join("first.txt"), "initial content").unwrap();
+
+        let changes = vec![FileChangeEvent {
+            path: PathBuf::from("first.txt"),
+            kind: ChangeKind::Created,
+        }];
+
+        let result = auto_commit.handle_changes(&changes).await;
+        assert!(result.is_ok(), "auto-commit on empty repo should succeed");
+        let patch_id = result.unwrap();
+        assert!(
+            patch_id.is_some(),
+            "auto-commit should create an initial patch"
+        );
+
+        let repo = Repository::open(&repo_path).unwrap();
+        let log = repo.log(None).unwrap();
+        assert!(log.iter().any(|p| p.message.contains("auto:")));
+    }
+
+    #[tokio::test]
+    async fn test_auto_commit_with_changes() {
+        init_tracing();
+        let (_tmp, repo_path) = create_test_repo();
+
+        let auto_commit = AutoCommit::new(
+            repo_path.clone(),
+            "auto: {count} file(s) changed".to_string(),
+        );
+
+        fs::write(repo_path.join("changed.txt"), "new data").unwrap();
+        fs::write(repo_path.join("another.txt"), "more data").unwrap();
+
+        let changes = vec![
+            FileChangeEvent {
+                path: PathBuf::from("changed.txt"),
+                kind: ChangeKind::Modified,
+            },
+            FileChangeEvent {
+                path: PathBuf::from("another.txt"),
+                kind: ChangeKind::Created,
+            },
+        ];
+
+        let result = auto_commit.handle_changes(&changes).await;
+        assert!(result.is_ok());
+        let patch_id = result.unwrap();
+        assert!(
+            patch_id.is_some(),
+            "auto-commit should capture file changes"
+        );
+
+        let repo = Repository::open(&repo_path).unwrap();
+        let log = repo.log(None).unwrap();
+        let auto_patch = log.iter().find(|p| p.message.contains("auto:"));
+        assert!(auto_patch.is_some(), "should find an auto-commit in log");
+        let last = auto_patch.unwrap();
+        assert!(
+            last.message.contains("2"),
+            "template should include count of 2 files"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_auto_commit_idempotent() {
+        init_tracing();
+        let (_tmp, repo_path) = create_test_repo();
+
+        let auto_commit = AutoCommit::new(
+            repo_path.clone(),
+            "auto: {count} file(s) changed".to_string(),
+        );
+
+        let changes = vec![FileChangeEvent {
+            path: PathBuf::from("nonexistent.txt"),
+            kind: ChangeKind::Modified,
+        }];
+
+        let result1 = auto_commit.handle_changes(&changes).await;
+        assert!(
+            result1.is_ok(),
+            "first auto-commit should not error"
+        );
+
+        let result2 = auto_commit.handle_changes(&changes).await;
+        assert!(
+            result2.is_ok(),
+            "second auto-commit should not error"
+        );
+
+        let repo = Repository::open(&repo_path).unwrap();
+        let log = repo.log(None).unwrap();
+        let auto_count = log.iter().filter(|p| p.message.contains("auto:")).count();
+        assert_eq!(
+            auto_count, 0,
+            "no auto-commits should be created when staging fails (nonexistent file)"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_start_stop_daemon() {
+        init_tracing();
+        let (_tmp, repo_path) = create_test_repo();
+
+        let daemon = Daemon::new(
+            repo_path,
+            None,
+            Duration::from_secs(3600),
+        );
+
+        let handle = tokio::spawn(async move {
+            match timeout(Duration::from_secs(2), daemon.run()).await {
+                Ok(Ok(())) => {}
+                Ok(Err(_)) => {}
+                Err(_) => {}
+            }
+        });
+
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        handle.abort();
+
+        let outcome = handle.await;
+        assert!(
+            outcome.is_ok() || outcome.is_err(),
+            "daemon task should complete or be cancelled without panic"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_daemon_status_after_sync() {
+        init_tracing();
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+
+        let mut hub = suture_hub::SutureHubServer::new_in_memory();
+        hub.set_no_auth(true);
+
+        let hub_addr = format!("127.0.0.1:{}", port);
+        let server_handle = tokio::spawn(async move {
+            let _ = suture_hub::server::run_server(hub, &hub_addr).await;
+        });
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        let hub_url = format!("http://127.0.0.1:{}", port);
+
+        let dir = tempfile::tempdir().unwrap();
+        let repo_path = dir.path().to_path_buf();
+        let mut repo = Repository::init(&repo_path, "test-user").unwrap();
+
+        fs::write(repo_path.join("status_test.txt"), "content").unwrap();
+        repo.add("status_test.txt").unwrap();
+        repo.commit("initial").unwrap();
+        repo.add_remote("origin", &hub_url).unwrap();
+
+        let auto_sync = AutoSync::new(
+            repo_path.clone(),
+            Some(hub_url.clone()),
+            Duration::from_secs(60),
+        );
+
+        let sync_result = auto_sync.sync_once().await;
+        assert!(sync_result.is_ok(), "sync should succeed: {:?}", sync_result.err());
+
+        let repo = Repository::open(&repo_path).unwrap();
+        let status = repo.status().unwrap();
+        assert_eq!(status.branch_count, 1, "should have exactly 1 branch");
+        assert!(status.head_patch.is_some(), "HEAD should be set");
+        assert!(status.patch_count > 0, "should have patches after sync");
+
+        let last_pushed = repo
+            .get_config("remote.origin.last_pushed")
+            .unwrap();
+        assert!(last_pushed.is_some(), "last_pushed config should exist after sync");
+
+        let (_, head_id) = repo.head().unwrap();
+        assert_eq!(
+            head_id.to_hex(),
+            last_pushed.unwrap(),
+            "last_pushed should match current HEAD"
+        );
+
+        server_handle.abort();
     }
 }

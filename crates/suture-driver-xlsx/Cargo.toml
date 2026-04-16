@@ -1,6 +1,6 @@
 [package]
 name = "suture-driver-xlsx"
-version = "0.10.0"
+version = "1.0.0-rc.1"
 edition = "2024"
 license.workspace = true
 repository.workspace = true
@@ -10,7 +10,7 @@ keywords.workspace = true
 readme.workspace = true
 
 [dependencies]
-suture-driver = { path = "../suture-driver", version = "0.10.0" }
-suture-ooxml = { path = "../suture-ooxml", version = "0.10.0" }
+suture-driver = { path = "../suture-driver", version = "1.0.0-rc.1" }
+suture-ooxml = { path = "../suture-ooxml", version = "1.0.0-rc.1" }
 quick-xml = "0.37"
 serde = { version = "1", features = ["derive"] }

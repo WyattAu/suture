@@ -1,6 +1,6 @@
 [package]
 name = "suture-py"
-version = "0.10.0"
+version = "1.0.0-rc.1"
 edition = "2024"
 readme = "README.md"
 
@@ -10,5 +10,5 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = { version = "0.25", features = ["extension-module"] }
-suture-core = { path = "../suture-core", version = "0.10.0" }
-suture-common = { path = "../suture-common", version = "0.10.0" }
+suture-core = { path = "../suture-core", version = "1.0.0-rc.1" }
+suture-common = { path = "../suture-common", version = "1.0.0-rc.1" }

@@ -76,24 +76,31 @@
         <section id="tab-replication" class="tab-content">
             <div class="section-header">
                 <h2>Replication</h2>
+                <span id="replication-role-badge" class="badge"></span>
             </div>
             <div id="replication-loading" class="loading">Loading replication status&hellip;</div>
             <div id="replication-error" class="error-banner hidden"></div>
-            <div id="replication-table-wrap" class="table-wrap hidden">
+            <div id="replication-info-wrap" class="table-wrap hidden">
+                <div class="replication-summary">
+                    <div class="detail-label">Log Sequence</div>
+                    <div id="replication-current-seq" class="detail-value">—</div>
+                    <div class="detail-label">Peers</div>
+                    <div id="replication-peer-count" class="detail-value">—</div>
+                </div>
                 <table id="replication-table">
                     <thead>
                         <tr>
-                            <th>Repo</th>
-                            <th>Upstream</th>
+                            <th>Peer URL</th>
+                            <th>Role</th>
                             <th>Status</th>
-                            <th>Last Sync</th>
+                            <th>Sync Seq</th>
                         </tr>
                     </thead>
                     <tbody id="replication-tbody"></tbody>
                 </table>
             </div>
             <div id="replication-empty" class="empty-state hidden">
-                No mirrors configured.
+                No replication peers configured. This hub is running in standalone mode.
             </div>
         </section>
     </main>

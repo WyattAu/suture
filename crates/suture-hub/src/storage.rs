@@ -109,7 +109,8 @@ impl HubStorage {
             CREATE TABLE IF NOT EXISTS tokens (
                 token TEXT PRIMARY KEY,
                 created_at INTEGER NOT NULL,
-                description TEXT
+                description TEXT,
+                expires_at INTEGER NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS branch_protection (
@@ -159,6 +160,28 @@ impl HubStorage {
             );
             ",
         )?;
+
+        let has_expires: bool = self.conn.query_row(
+            "SELECT COUNT(*) > 0 FROM pragma_table_info('tokens') WHERE name = 'expires_at'",
+            [],
+            |row| row.get(0),
+        )?;
+
+        if !has_expires {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64;
+            let default_expiry = now + (30 * 24 * 60 * 60);
+            self.conn.execute_batch(
+                "ALTER TABLE tokens ADD COLUMN expires_at INTEGER NOT NULL DEFAULT 0;",
+            )?;
+            self.conn.execute(
+                "UPDATE tokens SET expires_at = ?1 WHERE expires_at = 0",
+                params![default_expiry],
+            )?;
+        }
+
         Ok(())
     }
 
@@ -600,18 +623,23 @@ impl HubStorage {
         token: &str,
         created_at: u64,
         description: &str,
+        expires_at: i64,
     ) -> Result<(), StorageError> {
         self.conn.execute(
-            "INSERT INTO tokens (token, created_at, description) VALUES (?1, ?2, ?3)",
-            params![token, created_at as i64, description],
+            "INSERT INTO tokens (token, created_at, description, expires_at) VALUES (?1, ?2, ?3, ?4)",
+            params![token, created_at as i64, description, expires_at],
         )?;
         Ok(())
     }
 
     pub fn verify_token(&self, token: &str) -> Result<bool, StorageError> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
         let count: i64 = self.conn.query_row(
-            "SELECT COUNT(*) FROM tokens WHERE token = ?1",
-            params![token],
+            "SELECT COUNT(*) FROM tokens WHERE token = ?1 AND expires_at > ?2",
+            params![token, now],
             |row| row.get(0),
         )?;
         Ok(count > 0)
@@ -621,6 +649,13 @@ impl HubStorage {
         let count: i64 = self
             .conn
             .query_row("SELECT COUNT(*) FROM tokens", [], |row| row.get(0))?;
+        Ok(count > 0)
+    }
+
+    pub fn has_users(&self) -> Result<bool, StorageError> {
+        let count: i64 = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM users", [], |row| row.get(0))?;
         Ok(count > 0)
     }
 
@@ -843,6 +878,14 @@ impl HubStorage {
             peers.push(row?);
         }
         Ok(peers)
+    }
+
+    pub fn update_peer_sync_seq(&self, peer_id: i64, seq: i64) -> Result<(), StorageError> {
+        self.conn.execute(
+            "UPDATE replication_peers SET last_sync_seq = ?1 WHERE id = ?2",
+            params![seq, peer_id],
+        )?;
+        Ok(())
     }
 
     pub fn get_replication_peer(&self, id: i64) -> Result<Option<ReplicationPeer>, StorageError> {

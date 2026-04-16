@@ -200,41 +200,55 @@ async function loadUsers() {
 
 async function loadReplication() {
     hide('replication-error');
-    hide('replication-table-wrap');
+    hide('replication-info-wrap');
     hide('replication-empty');
     show('replication-loading');
 
     try {
-        const data = await fetchJSON(`${API_BASE}/mirror/status`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({}),
-        });
-        const mirrors = data.mirrors || [];
+        const [statusData, peersData] = await Promise.all([
+            fetchJSON(`${API_BASE}/replication/status`),
+            fetchJSON(`${API_BASE}/replication/peers`),
+        ]);
 
         hide('replication-loading');
 
-        if (mirrors.length === 0) {
+        const status = statusData.status || {};
+        const peers = peersData.peers || [];
+        const currentSeq = status.current_seq || 0;
+        const peerCount = status.peer_count || peers.length;
+
+        document.getElementById('replication-role-badge').textContent = 'seq ' + currentSeq;
+
+        if (peers.length === 0 && currentSeq === 0) {
             show('replication-empty');
             return;
         }
 
+        document.getElementById('replication-current-seq').textContent = currentSeq;
+        document.getElementById('replication-peer-count').textContent = peerCount;
+
         const tbody = document.getElementById('replication-tbody');
         tbody.innerHTML = '';
 
-        mirrors.forEach(mirror => {
+        if (peers.length === 0) {
             const tr = document.createElement('tr');
-            const status = (mirror.status || 'idle').toLowerCase();
-            tr.innerHTML = `
-                <td class="mono">${escapeHtml(mirror.repo_name)}</td>
-                <td class="mono">${escapeHtml(mirror.upstream_url)}</td>
-                <td><span class="status-badge ${status}">${escapeHtml(status)}</span></td>
-                <td>${mirror.last_sync ? formatTimestamp(mirror.last_sync) : 'Never'}</td>
-            `;
+            tr.innerHTML = '<td colspan="4" style="text-align:center;color:var(--text-secondary)">No peers configured</td>';
             tbody.appendChild(tr);
-        });
+        } else {
+            peers.forEach(peer => {
+                const tr = document.createElement('tr');
+                const peerStatus = (peer.status || 'active').toLowerCase();
+                tr.innerHTML = `
+                    <td class="mono">${escapeHtml(peer.peer_url)}</td>
+                    <td><span class="role-badge ${escapeHtml(peer.role)}">${escapeHtml(peer.role)}</span></td>
+                    <td><span class="status-badge ${peerStatus}">${escapeHtml(peerStatus)}</span></td>
+                    <td class="mono">${peer.last_sync_seq}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
 
-        show('replication-table-wrap');
+        show('replication-info-wrap');
     } catch (err) {
         hide('replication-loading');
         const banner = document.getElementById('replication-error');

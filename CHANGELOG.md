@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.0.0-rc.1] - 2026-04-16
+
+Honest v1.0 — fixing everything that was broken or fake in v0.10.0, stripping stubs that pretended to work. This is the "come clean" release.
+
+### Critical Fixes (Path A)
+
+- **Auto-sync was a no-op** — `sync_once()` opened the repo, called `status()`, returned `Ok(())`. Now actually pulls patches from hub then pushes local patches via HTTP.
+- **LSP goto-definition was fake** — returned `suture://patch/{hex}` URIs that no editor can resolve. Removed entirely.
+- **LSP semantic tokens were a stub** — `semantic_tokens_full()` returned `Ok(None)` while advertising the capability. Removed entirely.
+- **LSP completion provider was a stub** — Advertised capability but returned nothing. Removed entirely.
+- **WASM plugins had 2 critical CVEs** — wasmtime 28.0.1 had sandbox escapes (RUSTSEC-2026-0095, RUSTSEC-2026-0096). Downgraded to wasmtime 22.0.1 (safe, zero API changes).
+- **Hub token creation had NO auth gate** — anyone could `POST /auth/token` to mint unlimited tokens. Now requires admin auth (or bootstrap mode when no users exist), rate-limited to 5/min/IP.
+- **Tokens had no expiration** — now expire after 30 days, `verify_token()` checks `expires_at`.
+- **Hub replication had NO background task** — tables, API endpoints, and CRUD existed, but no automated process transferred data between peers. Now a `tokio::spawn` loop in leader mode pushes replication log entries to followers every 30s.
+- **Web UI "Replication" tab hit wrong endpoints** — called `POST /mirror/status` instead of `GET /replication/status` and `GET /replication/peers`. Now calls the correct replication endpoints with proper table columns (Peer URL, Role, Status, Sync Seq).
+- **Push handlers didn't log to replication log** — mutations were silently dropped. Now `handle_push` and `handle_push_v2` record all patch insertions and branch updates in `replication_log`.
+- **Replication peer sync position never updated** — `last_sync_seq` was never written after a successful sync. Added `update_peer_sync_seq` storage method.
+- **No `--replication-role` CLI flag** — hub binary could only be configured programmatically. Now accepts `--replication-role {leader,follower,standalone}`.
+- **4 pre-existing clippy errors** — `Role::from_str` shadowing std trait, collapsible `if` statements, missing `Default` impl, manual suffix stripping. All fixed.
+
+### Testing (104 new tests → 602 total)
+
+- **Hub: +65 tests** (43 → 108) — push edge cases (15), pull edge cases (12), user/auth CRUD (10), rate limiting (4), branch protection (5), repository management (5), storage-level (8), mirror operations (4), misc (3)
+- **Daemon: +15 tests** (6 → 21) — sync error cases (5), file watcher edge cases (5), auto-commit edge cases (3), integration (3)
+- **LSP: +8 tests** (3 → 11) — hover with various states (4), diagnostics (3), lifecycle (1)
+- **Clippy** — full workspace passes with `-D warnings`
+
+### Removed / Stripped
+
+- LSP goto-definition provider (was fabricating URIs)
+- LSP semantic tokens provider (was returning `Ok(None)`)
+- LSP completion provider (was advertising empty capability)
+
 ## [0.10.0] - 2026-04-15
 
 Full-stack roadmap release — 6,614 lines added across 34 files. All 4 roadmap tiers executed: testing hardening, adoption drivers, VCS completeness, and ecosystem expansion.

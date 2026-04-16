@@ -2,6 +2,12 @@ use suture_driver::{DriverError, SemanticChange, SutureDriver};
 
 pub struct PropertiesDriver;
 
+impl Default for PropertiesDriver {
+    fn default() -> Self {
+        Self
+    }
+}
+
 impl PropertiesDriver {
     pub fn new() -> Self {
         Self
@@ -29,8 +35,8 @@ impl PropertiesDriver {
                 }
                 current_key = trimmed[..eq_pos].trim().to_string();
                 continuation = trimmed[eq_pos + 1..].trim().to_string();
-            } else if trimmed.ends_with('\\') {
-                continuation.push_str(&trimmed[..trimmed.len() - 1]);
+            } else if let Some(stripped) = trimmed.strip_suffix('\\') {
+                continuation.push_str(stripped);
             } else if !current_key.is_empty() {
                 continuation.push_str(trimmed);
                 entries.push((current_key.clone(), continuation.trim_end().to_string()));

@@ -14,6 +14,12 @@ struct Args {
     /// Path to SQLite database file. Uses in-memory storage if omitted.
     #[arg(long)]
     db: Option<String>,
+
+    /// Replication role: leader, follower, or standalone (default).
+    /// Leader pushes replication log to followers periodically.
+    /// Followers accept replication entries from the leader.
+    #[arg(long, default_value = "standalone")]
+    replication_role: String,
 }
 
 #[tokio::main]
@@ -26,6 +32,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         SutureHubServer::new()
     };
+
+    hub.set_replication_role(&args.replication_role);
 
     suture_hub::server::run_server(hub, &args.addr).await?;
 
