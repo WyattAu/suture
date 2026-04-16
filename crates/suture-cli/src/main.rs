@@ -700,13 +700,11 @@ async fn main() {
 
     let cli = Cli::parse();
 
-    if let Some(path) = &cli.repo_path {
-        std::env::set_current_dir(path)
-            .map_err(|e| format!("cannot change to '{}': {}", path, e))
-            .unwrap_or_else(|e| {
-                eprintln!("Error: {e}");
-                std::process::exit(1);
-            });
+    if let Some(path) = &cli.repo_path
+        && let Err(e) = std::env::set_current_dir(path)
+    {
+        eprintln!("error: cannot change to '{}': {e}", path);
+        std::process::exit(1);
     }
 
     let result = match cli.command {
@@ -873,7 +871,7 @@ async fn main() {
                 ),
                 _ => {
                     eprintln!(
-                        "unsupported shell: '{}' (supported: bash, zsh, fish, powershell, nushell)",
+                        "error: unsupported shell '{}' (supported: bash, zsh, fish, powershell, nushell)",
                         shell
                     );
                     std::process::exit(1);
@@ -901,8 +899,57 @@ async fn main() {
     };
 
     if let Err(e) = result {
-        eprintln!("Error: {e}");
+        user_friendly_error(e.as_ref());
         std::process::exit(1);
+    }
+}
+
+fn user_friendly_error(err: &dyn std::error::Error) {
+    let msg = err.to_string();
+    let clean = clean_error_message(&msg);
+    eprintln!("error: {clean}");
+    if let Some(hint) = error_hint(&clean) {
+        eprintln!("hint: {hint}");
+    }
+    let mut source = err.source();
+    while let Some(s) = source {
+        let src_clean = clean_error_message(&s.to_string());
+        if src_clean != clean {
+            eprintln!("  caused by: {src_clean}");
+        }
+        source = s.source();
+    }
+}
+
+fn clean_error_message(msg: &str) -> String {
+    let mut s = msg.to_string();
+    s = strip_rust_type_paths(&s);
+    s = strip_rust_backtrace(&s);
+    s.trim().to_string()
+}
+
+fn strip_rust_type_paths(s: &str) -> String {
+    let re = regex::Regex::new(r"[a-z_][a-z0-9_]*(?:::[a-z_][a-z0-9_]*)+::[A-Z][a-zA-Z0-9]*").unwrap();
+    re.replace_all(s, "…").to_string()
+}
+
+fn strip_rust_backtrace(s: &str) -> String {
+    let re = regex::Regex::new(r"\s*at [^\n]+\.(rs|rlib):?\d*").unwrap();
+    re.replace_all(s, "").to_string()
+}
+
+fn error_hint(msg: &str) -> Option<&'static str> {
+    let lower = msg.to_lowercase();
+    if lower.contains("no remote") || lower.contains("remote not found") || lower.contains("no remotes configured") {
+        Some("run `suture remote add <name> <url>` to configure a remote")
+    } else if lower.contains("not a suture repository") || lower.contains("not a repository") || lower.contains(".suture") {
+        Some("run `suture init` to create a new repository")
+    } else if lower.contains("network") || lower.contains("connection refused") || lower.contains("connect error") || lower.contains("could not resolve") || lower.contains("timeout") {
+        Some("check that the remote URL is correct and the server is reachable")
+    } else if lower.contains("permission") || lower.contains("denied") || lower.contains("unauthorized") {
+        Some("run `suture remote login` to authenticate with the remote")
+    } else {
+        None
     }
 }
 

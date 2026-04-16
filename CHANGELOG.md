@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.0.0] - 2026-04-16
+
+Stable release — the culmination of Path A (honest code), Phase 1 (adoption), Phase 2 (polish), and Phase 4 (ecosystem).
+
+### Documentation & Adoption (Phase 1)
+
+- **README rewrite** — added visual Git-vs-Suture merge diagram, "Who is this for?" section, Hub web UI docs
+- **Comparison page** — `docs/comparison.md` with detailed Suture vs Git vs Pijul vs Darcs vs Mercurial analysis
+- **Demo script** — `docs/demo.md` — 60-second step-by-step semantic merge demo
+- **Blog announcement** — updated `BLOG_ANNOUNCEMENT.md` for v1.0.0 with honest messaging
+
+### Polish (Phase 2)
+
+- **Human-readable error messages** — CLI now prints `error: {message}` with actionable hints (`hint: run suture remote add`) instead of Rust-internal traces
+- **WASM plugin soundness fix** — replaced unsafe raw pointer casting with `Box::leak` for `'static` str conversion
+- **WASM plugin stubs made honest** — `diff()` and `format_diff()` now return errors instead of silently returning empty results
+- **CLI audit** — confirmed zero production `panic!()` calls (all 30 are test-only exhaustiveness guards)
+
+### Ecosystem (Phase 4)
+
+- **VS Code extension scaffold** — `vscode-suture/` with 3 commands (semantic merge, init, status) and terminal integration
+- **GitHub Action improvements** — added `fail-on-conflict` and `file-patterns` inputs, better PR comment table with format column and color-coded badges, collapsible setup instructions
+
 ## [1.0.0-rc.1] - 2026-04-16
 
 Honest v1.0 — fixing everything that was broken or fake in v0.10.0, stripping stubs that pretended to work. This is the "come clean" release.

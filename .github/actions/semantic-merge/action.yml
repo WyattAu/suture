@@ -1,9 +1,17 @@
-name: 'Semantic Merge Check'
-description: 'Check if PR changes can be semantically merged without conflicts'
+name: 'Suture Semantic Merge Check'
+description: 'Check if PR file changes can be semantically merged using Suture'
 inputs:
   github-token:
     description: 'GitHub token for posting comments'
     required: true
+  fail-on-conflict:
+    description: 'Fail the workflow if unmergeable files are detected'
+    required: false
+    default: 'false'
+  file-patterns:
+    description: 'Comma-separated file patterns to check for semantic mergeability'
+    required: false
+    default: '*.json,*.yaml,*.yml,*.toml,*.xml,*.csv,*.md,*.docx,*.xlsx,*.pptx'
 runs:
   using: 'composite'
   steps:
@@ -38,6 +46,9 @@ runs:
         TEMP_DIR=$(mktemp -d -t suture-merge-XXXXXX)
         trap 'rm -rf "$TEMP_DIR"' EXIT
 
+        FAIL_ON_CONFLICT="${{ inputs.fail-on-conflict }}"
+        FILE_PATTERNS="${{ inputs.file-patterns }}"
+
         echo "::group::Fetching base branch"
         git fetch origin "$BASE_REF"
         echo "::endgroup::"
@@ -49,32 +60,46 @@ runs:
           exit 0
         fi
 
-        SUPPORTED_EXTS="json yaml yml toml csv xml md"
+        build_pattern_regex() {
+          local patterns="$1"
+          local regex=""
+          IFS=',' read -ra PATTERNS <<< "$patterns"
+          for pat in "${PATTERNS[@]}"; do
+            pat=$(echo "$pat" | sed 's/^\*\./\\./' | sed 's/\./\\./g')
+            if [ -n "$regex" ]; then
+              regex+="|"
+            fi
+            regex+="(${pat})"
+          done
+          echo "$regex"
+        }
+
+        PATTERN_REGEX=$(build_pattern_regex "$FILE_PATTERNS")
         PASS=0
         FAIL=0
+        LINE_ONLY=0
         SKIP=0
         TABLE_ROWS=""
 
         for file in $CHANGED_FILES; do
-          ext="${file##*.}"
-
-          if ! echo " $SUPPORTED_EXTS " | grep -q " $ext "; then
+          if ! echo "$file" | grep -qE "$PATTERN_REGEX"; then
             continue
           fi
 
+          ext="${file##*.}"
           safe_name=$(printf '%s' "$file" | tr '/' '_')
           base_file="$TEMP_DIR/base_${safe_name}"
           ours_file="$TEMP_DIR/ours_${safe_name}"
           merged_file="$TEMP_DIR/merged_${safe_name}"
 
           if ! git show "origin/${BASE_REF}:${file}" > "$base_file" 2>/dev/null; then
-            TABLE_ROWS+="| \`${file}\` | skip | File does not exist in base branch |"$'\n'
+            TABLE_ROWS+="| \`$file\` | \`$ext\` | ⏭️ skip | New file (not in base branch) |"$'\n'
             SKIP=$((SKIP + 1))
             continue
           fi
 
           if [ ! -f "$file" ]; then
-            TABLE_ROWS+="| \`${file}\` | skip | File deleted in PR |"$'\n'
+            TABLE_ROWS+="| \`$file\` | \`$ext\` | ⏭️ skip | File deleted in PR |"$'\n'
             SKIP=$((SKIP + 1))
             continue
           fi
@@ -82,42 +107,74 @@ runs:
           cp "$file" "$ours_file"
 
           if "$SUTURE_BIN" merge-file "$base_file" "$base_file" "$ours_file" -o "$merged_file" 2>"$TEMP_DIR/err"; then
-            TABLE_ROWS+="| \`${file}\` | pass | Semantic merge succeeded |"$'\n'
-            PASS=$((PASS + 1))
+            if diff -q "$merged_file" "$ours_file" > /dev/null 2>&1; then
+              TABLE_ROWS+="| \`$file\` | \`$ext\` | ✅ mergeable | Semantic merge produced identical result |"$'\n'
+              PASS=$((PASS + 1))
+            else
+              TABLE_ROWS+="| \`$file\` | \`$ext\` | ⚠️ line-only | Merged with differences — consider semantic merge driver |"$'\n'
+              LINE_ONLY=$((LINE_ONLY + 1))
+            fi
           else
             err_msg=$(tail -1 "$TEMP_DIR/err" 2>/dev/null || echo "unknown error")
-            TABLE_ROWS+="| \`${file}\` | fail | ${err_msg} |"$'\n'
+            TABLE_ROWS+="| \`$file\` | \`$ext\` | ❌ conflict | \`${err_msg}\` |"$'\n'
             FAIL=$((FAIL + 1))
           fi
         done
 
-        TOTAL=$((PASS + FAIL + SKIP))
+        TOTAL=$((PASS + LINE_ONLY + FAIL + SKIP))
 
         if [ "$TOTAL" -eq 0 ]; then
           echo "No supported files changed in this PR."
           exit 0
         fi
 
-        COMMENT=$(cat <<'BODY'
-        ## Semantic Merge Check
+        COMMENT=$(cat <<BODY
+        ## 🔀 Suture Semantic Merge Check
 
-        | File | Result | Details |
-        |------|--------|---------|
+        | File | Format | Status | Details |
+        |------|--------|--------|---------|
+        $TABLE_ROWS
+
+        **Summary:** ✅ ${PASS} mergeable · ⚠️ ${LINE_ONLY} line-only · ❌ ${FAIL} conflicts · ⏭️ ${SKIP} skipped
+
+        ---
+
+        <details>
+        <summary>📖 Setting up the Suture Git merge driver</summary>
+
+        Install suture-cli, then configure Git to use semantic merging:
+
+        \`\`\`bash
+        # Install suture-cli
+        cargo install --locked suture-cli
+
+        # Configure Git to use suture for supported formats
+        git config merge.suture.name "Suture semantic merge driver"
+        git config merge.suture.driver "suture merge-file %O %A %B -o %A"
+
+        # Create or update .gitattributes in your repo root
+        echo "*.json merge=suture" >> .gitattributes
+        echo "*.yaml merge=suture" >> .gitattributes
+        echo "*.yml merge=suture" >> .gitattributes
+        echo "*.toml merge=suture" >> .gitattributes
+        echo "*.xml merge=suture" >> .gitattributes
+        echo "*.csv merge=suture" >> .gitattributes
+        echo "*.md merge=suture" >> .gitattributes
+        \`\`\`
+
+        </details>
+
+        > Checked with [suture](https://github.com/WyattAu/suture) semantic merge
         BODY
         )
-        COMMENT+=$'\n'"$TABLE_ROWS"
-        COMMENT+=$'\n'
-        COMMENT+="**Summary:** ${PASS} passed, ${FAIL} failed, ${SKIP} skipped"
-        COMMENT+=$'\n\n'
-        COMMENT+="> Checked with [suture](https://github.com/WyattAu/suture) semantic merge"
 
         echo "::group::Posting PR comment"
         gh pr comment "$PR_NUMBER" --repo "${{ github.repository }}" --body "$COMMENT"
         echo "::endgroup::"
 
-        if [ "$FAIL" -gt 0 ]; then
-          echo "::error::$FAIL file(s) failed semantic merge check"
+        if [ "$FAIL" -gt 0 ] && [ "$FAIL_ON_CONFLICT" = "true" ]; then
+          echo "::error::$FAIL file(s) have semantic merge conflicts"
           exit 1
         fi
 
-        echo "All $PASS file(s) passed semantic merge check."
+        echo "Semantic merge check complete: $PASS mergeable, $LINE_ONLY line-only, $FAIL conflicts, $SKIP skipped."

@@ -7,6 +7,28 @@ A version control system that understands your file formats.
 
 Unlike Git, which treats every file as opaque bytes, Suture uses semantic drivers to perform intelligent merges on JSON, YAML, CSV, XML, TOML, Markdown, DOCX, XLSX, and PPTX files.
 
+```text
+  Git merge on JSON:                    Suture merge on JSON:
+  ┌─────────────────────┐              ┌─────────────────────┐
+  │ <<<<<<< HEAD        │              │ {                   │
+  │   "host": "prod",   │              │   "host": "prod",   │  ← from theirs
+  │   "port": 8080      │              │   "port": 3000,     │  ← from ours  
+  │ =======             │              │   "debug": true     │  ← from theirs
+  │   "host": "staging" │              │ }                   │
+  │   "port": 8080      │              └─────────────────────┘
+  │ >>>>>>> staging     │              No conflict. Both changes applied.
+  │   "debug": true     │
+  └─────────────────────┘
+  Conflict markers in your file.
+```
+
+## Who is this for?
+
+- **DevOps teams** collaborating on Kubernetes YAML, Docker Compose, CI/CD configs
+- **Data teams** editing JSON/YAML/CSV pipelines and schemas
+- **Documentation teams** working with DOCX, XLSX, PPTX where Git's line merge is catastrophic
+- **Config-as-code teams** managing TOML, XML, properties files across environments
+
 ## Why Suture?
 
 - **No more false merge conflicts on JSON.** Two people edit different keys in a config file — Git produces a conflict. Suture merges them cleanly at the field level.
@@ -16,11 +38,11 @@ Unlike Git, which treats every file as opaque bytes, Suture uses semantic driver
 
 ## Install
 
-**From source (primary):**
-
 ```bash
-cargo install --git https://github.com/WyattAu/suture suture-cli
+cargo install suture-cli
 ```
+
+Requires Rust 1.85+. See [rustup.rs](https://rustup.rs) to install Rust.
 
 **Binary releases** (Linux x86_64/aarch64, macOS x86_64/aarch64):
 
@@ -30,6 +52,17 @@ curl -fsSL https://raw.githubusercontent.com/WyattAu/suture/main/install.sh | sh
 ```
 
 Or grab the tarball from [GitHub Releases](https://github.com/WyattAu/suture/releases) directly.
+
+## Hub (Web UI)
+
+Run `suture-hub` to start a web-based patch browser on port 50051:
+
+```bash
+suture-hub --db suture.db
+# Open http://localhost:50051
+```
+
+The hub provides repository browsing, user management, and replication status.
 
 ## Quick Start
 
@@ -132,6 +165,8 @@ The codebase is split into focused crates — core engine, CLI, semantic drivers
 | **Conflict detection** | Logical address overlap | Line overlap | Line overlap |
 | **Language** | Rust | C | Rust |
 | **Maturity** | Early | Production | Early |
+
+See [docs/comparison.md](docs/comparison.md) for a detailed feature comparison.
 
 ## Contributing
 

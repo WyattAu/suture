@@ -222,7 +222,9 @@ impl WasmDriverPlugin {
             .map_err(|e| PluginError::LoadFailed(e.to_string()))?;
 
         let mut store = wasmtime::Store::new(&engine, ());
-        let linker = wasmtime::Linker::new(&engine);
+        let mut linker = wasmtime::Linker::new(&engine);
+        // TODO: Add `suture.alloc` host import for WASM memory allocation.
+        // WASM modules that call `suture.alloc` will fail at link time until this is implemented.
 
         let instance = linker
             .instantiate(&mut store, &module)
@@ -241,27 +243,19 @@ impl WasmDriverPlugin {
                 .unwrap_or_else(|| "unknown".to_string());
         let extensions_storage = Self::call_extensions_export(&mut store, &instance);
 
-        let mut plugin = Self {
+        let extensions: Vec<&'static str> = extensions_storage
+            .iter()
+            .map(|s| Box::leak(s.clone().into_boxed_str()))
+            .collect();
+
+        let plugin = Self {
             engine,
             instance,
             store,
             name,
             extensions_storage,
-            extensions: Vec::new(),
+            extensions,
         };
-
-        // SAFETY: extensions_storage is never modified after this point,
-        // so the raw pointers remain valid for the lifetime of the struct.
-        unsafe {
-            plugin.extensions = plugin
-                .extensions_storage
-                .iter()
-                .map(|s| {
-                    let ptr: *const str = s.as_str();
-                    &*ptr
-                })
-                .collect();
-        }
 
         Ok(plugin)
     }
@@ -357,7 +351,9 @@ impl SutureDriver for WasmDriverPlugin {
         _base_content: Option<&str>,
         _new_content: &str,
     ) -> Result<Vec<crate::SemanticChange>, crate::DriverError> {
-        Ok(vec![])
+        Err(crate::DriverError::ParseError(
+            "WASM plugin diff is not yet implemented".to_string(),
+        ))
     }
 
     fn format_diff(
@@ -365,7 +361,9 @@ impl SutureDriver for WasmDriverPlugin {
         _base_content: Option<&str>,
         _new_content: &str,
     ) -> Result<String, crate::DriverError> {
-        Ok(String::new())
+        Err(crate::DriverError::ParseError(
+            "WASM plugin format_diff is not yet implemented".to_string(),
+        ))
     }
 }
 

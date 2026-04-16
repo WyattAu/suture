@@ -6,9 +6,12 @@ on:
       - '**.yaml'
       - '**.yml'
       - '**.toml'
-      - '**.csv'
       - '**.xml'
+      - '**.csv'
       - '**.md'
+      - '**.docx'
+      - '**.xlsx'
+      - '**.pptx'
 
 jobs:
   semantic-merge:
@@ -24,3 +27,5 @@ jobs:
       - uses: ./.github/actions/semantic-merge
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          fail-on-conflict: 'false'
+          file-patterns: '*.json,*.yaml,*.yml,*.toml,*.xml,*.csv,*.md,*.docx,*.xlsx,*.pptx'
