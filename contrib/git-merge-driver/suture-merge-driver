@@ -8,6 +8,7 @@
 #   $1 = %O  (base/ancestor version)
 #   $2 = %A  (ours version — Git reads this back as the merge result)
 #   $3 = %B  (theirs version)
+#   $4 = %P  (original file path — used for extension detection)
 #
 # If the merge succeeds, the merged content is written to $2 and the script
 # exits 0. If it fails, Git falls back to its default line-based merge.
@@ -17,7 +18,7 @@
 # 1. Register the driver (run once per repo or globally with --global):
 #
 #      git config merge.suture.name "Suture semantic merge"
-#      git config merge.suture.driver "/path/to/suture-merge-driver %O %A %B"
+#      git config merge.suture.driver "/path/to/suture-merge-driver %O %A %B %P"
 #
 # 2. Tell Git which file types to route through Suture (add to .gitattributes):
 #
@@ -54,7 +55,10 @@ else
 fi
 
 # --- Detect driver from file extension ---
-EXT="${OURS##*.}"
+# Git passes temp files (e.g. .merge_file_XXXX) without the original extension,
+# so we use $4 (%P) — the original file path — when available.
+ORIG_PATH="${4:-$OURS}"
+EXT="${ORIG_PATH##*.}"
 case "$EXT" in
     json|yaml|yml|toml|csv|xml|md)
         DRIVER="--driver $EXT"

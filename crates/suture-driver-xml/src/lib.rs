@@ -603,4 +603,323 @@ mod tests {
         let result = driver.merge(base, ours, theirs).unwrap();
         assert!(result.is_none());
     }
+
+    #[test]
+    fn test_correctness_merge_determinism() {
+        let driver = XmlDriver::new();
+        let base = r#"<root><a>1</a><b>2</b><c>3</c></root>"#;
+        let ours = r#"<root><a>10</a><b>2</b><d>4</d></root>"#;
+        let theirs = r#"<root><a>1</a><b>20</b><e>5</e></root>"#;
+
+        let r1 = driver.merge(base, ours, theirs).unwrap();
+        let r2 = driver.merge(base, theirs, ours).unwrap();
+        assert_eq!(r1.is_some(), r2.is_some());
+        if let (Some(m1), Some(m2)) = (r1, r2) {
+            let d1 = roxmltree::Document::parse(&m1).unwrap();
+            let d2 = roxmltree::Document::parse(&m2).unwrap();
+            let s1 = XmlDriver::element_to_string(d1.root(), 0);
+            let s2 = XmlDriver::element_to_string(d2.root(), 0);
+            assert_eq!(s1, s2, "merge must be commutative");
+        }
+    }
+
+    #[test]
+    fn test_correctness_merge_idempotency() {
+        let driver = XmlDriver::new();
+        let base = r#"<root><a>1</a><b>2</b></root>"#;
+        let ours = r#"<root><a>10</a><b>2</b><c>3</c></root>"#;
+
+        let result = driver.merge(base, ours, ours).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(merged.contains(">10<"));
+        assert!(merged.contains(">3<"));
+    }
+
+    #[test]
+    fn test_correctness_base_equals_ours() {
+        let driver = XmlDriver::new();
+        let base = r#"<root><a>1</a><b>2</b></root>"#;
+        let theirs = r#"<root><a>10</a><b>2</b><c>3</c></root>"#;
+
+        let result = driver.merge(base, base, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(merged.contains(">10<"));
+        assert!(merged.contains(">3<"));
+    }
+
+    #[test]
+    fn test_correctness_base_equals_theirs() {
+        let driver = XmlDriver::new();
+        let base = r#"<root><a>1</a><b>2</b></root>"#;
+        let ours = r#"<root><a>10</a><b>2</b><c>3</c></root>"#;
+
+        let result = driver.merge(base, ours, base).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(merged.contains(">10<"));
+        assert!(merged.contains(">3<"));
+    }
+
+    #[test]
+    fn test_correctness_all_equal() {
+        let driver = XmlDriver::new();
+        let content = r#"<root><x>42</x><y>hello</y></root>"#;
+
+        let result = driver.merge(content, content, content).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(merged.contains(">42<"));
+        assert!(merged.contains(">hello<"));
+    }
+
+    #[test]
+    fn test_correctness_both_add_different_elements() {
+        let driver = XmlDriver::new();
+        let base = r#"<root><shared>true</shared></root>"#;
+        let ours = r#"<root><shared>true</shared><from_ours>100</from_ours></root>"#;
+        let theirs = r#"<root><shared>true</shared><from_theirs>200</from_theirs></root>"#;
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(merged.contains(">100<"), "ours element should be present");
+        assert!(merged.contains(">200<"), "theirs element should be present");
+        assert!(merged.contains(">true<"));
+    }
+
+    #[test]
+    fn test_correctness_both_modify_different_elements() {
+        let driver = XmlDriver::new();
+        let base = r#"<root><a>1</a><b>2</b><c>3</c></root>"#;
+        let ours = r#"<root><a>10</a><b>2</b><c>3</c></root>"#;
+        let theirs = r#"<root><a>1</a><b>2</b><c>30</c></root>"#;
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(merged.contains(">10<"), "ours change to a");
+        assert!(merged.contains(">30<"), "theirs change to c");
+        assert!(merged.contains(">2<"), "unchanged b");
+    }
+
+    #[test]
+    fn test_correctness_both_modify_same_element_same_value() {
+        let driver = XmlDriver::new();
+        let base = r#"<root><key>original</key></root>"#;
+        let ours = r#"<root><key>changed</key></root>"#;
+        let theirs = r#"<root><key>changed</key></root>"#;
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some(), "identical changes should not conflict");
+        let merged = result.unwrap();
+        assert!(merged.contains(">changed<"));
+    }
+
+    #[test]
+    fn test_correctness_both_modify_same_element_different_value() {
+        let driver = XmlDriver::new();
+        let base = r#"<root><key>original</key></root>"#;
+        let ours = r#"<root><key>ours</key></root>"#;
+        let theirs = r#"<root><key>theirs</key></root>"#;
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_correctness_deeply_nested_merge() {
+        let driver = XmlDriver::new();
+        let base = r#"<root><l1><l2><l3><a>1</a><b>2</b><c>3</c></l3></l2></l1></root>"#;
+        let ours = r#"<root><l1><l2><l3><a>10</a><b>2</b><c>3</c></l3></l2></l1></root>"#;
+        let theirs = r#"<root><l1><l2><l3><a>1</a><b>2</b><c>30</c></l3></l2></l1></root>"#;
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(merged.contains(">10<"));
+        assert!(merged.contains(">30<"));
+        assert!(merged.contains(">2<"));
+    }
+
+    #[test]
+    fn test_correctness_unicode_text() {
+        let driver = XmlDriver::new();
+        let base = r#"<root><名前>太郎</名前><age>30</age></root>"#;
+        let ours = r#"<root><名前>太郎</名前><age>31</age></root>"#;
+        let theirs = r#"<root><名前>次郎</名前><age>30</age></root>"#;
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(merged.contains("次郎"));
+        assert!(merged.contains(">31<"));
+    }
+
+    #[test]
+    fn test_correctness_large_file() {
+        let driver = XmlDriver::new();
+        let mut base_children = String::new();
+        let mut ours_children = String::new();
+        let mut theirs_children = String::new();
+
+        for i in 0..100 {
+            let tag = format!("item{i}");
+            let val = format!("value_{i}");
+            let ours_val = if i == 50 { "modified_by_ours".to_string() } else { val.clone() };
+            let theirs_val = if i == 80 { "modified_by_theirs".to_string() } else { val.clone() };
+
+            base_children.push_str(&format!("<{tag}>{val}</{tag}>"));
+            ours_children.push_str(&format!("<{tag}>{ours_val}</{tag}>"));
+            theirs_children.push_str(&format!("<{tag}>{theirs_val}</{tag}>"));
+        }
+
+        let base = format!("<root>{base_children}</root>");
+        let ours = format!("<root>{ours_children}</root>");
+        let theirs = format!("<root>{theirs_children}</root>");
+
+        let result = driver.merge(&base, &ours, &theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(merged.contains("modified_by_ours"));
+        assert!(merged.contains("modified_by_theirs"));
+        assert!(merged.contains("value_0"));
+        assert!(merged.contains("value_99"));
+    }
+
+    #[test]
+    fn test_correctness_output_validity() {
+        let driver = XmlDriver::new();
+        let base = r#"<root><a>1</a><b>2</b></root>"#;
+        let ours = r#"<root><a>10</a><b>2</b></root>"#;
+        let theirs = r#"<root><a>1</a><b>20</b></root>"#;
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged_str = result.unwrap();
+        assert!(merged_str.contains("<?xml version=\"1.0\" encoding=\"UTF-8\"?>"));
+        assert!(merged_str.contains(">10<"));
+        assert!(merged_str.contains(">20<"));
+        assert!(merged_str.contains("<root"));
+        assert!(merged_str.contains("</root>"));
+    }
+
+    #[test]
+    fn test_correctness_attribute_merge_same_element() {
+        let driver = XmlDriver::new();
+        let base = r#"<root><item id="1" name="a">text</item></root>"#;
+        let ours = r#"<root><item id="2" name="a">text</item></root>"#;
+        let theirs = r#"<root><item id="1" name="b">text</item></root>"#;
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(merged.contains("id=\"2\""), "ours attr change");
+        assert!(merged.contains("name=\"b\""), "theirs attr change");
+    }
+
+    #[test]
+    fn test_correctness_attribute_conflict() {
+        let driver = XmlDriver::new();
+        let base = r#"<root><item id="1">text</item></root>"#;
+        let ours = r#"<root><item id="2">text</item></root>"#;
+        let theirs = r#"<root><item id="3">text</item></root>"#;
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_none(), "conflicting attribute changes should conflict");
+    }
+
+    #[test]
+    fn test_correctness_attribute_added_by_one_side() {
+        let driver = XmlDriver::new();
+        let base = r#"<root><item id="1">text</item></root>"#;
+        let ours = r#"<root><item id="1" color="red">text</item></root>"#;
+        let theirs = r#"<root><item id="1">text</item></root>"#;
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(merged.contains("color=\"red\""));
+    }
+
+    #[test]
+    fn test_correctness_attribute_removed_by_one_side() {
+        let driver = XmlDriver::new();
+        let base = r#"<root><item id="1" color="red">text</item></root>"#;
+        let ours = r#"<root><item id="1">text</item></root>"#;
+        let theirs = r#"<root><item id="1" color="red">text</item></root>"#;
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(merged.contains("color=\"red\""), "theirs kept the attribute since ours removed it but theirs didn't");
+    }
+
+    #[test]
+    fn test_correctness_namespace_handling() {
+        let driver = XmlDriver::new();
+        let base = r#"<root xmlns:ns="http://example.com"><ns:item>text</ns:item></root>"#;
+        let ours = r#"<root xmlns:ns="http://example.com"><ns:item>modified</ns:item></root>"#;
+        let theirs = r#"<root xmlns:ns="http://example.com"><ns:item>text</ns:item></root>"#;
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(merged.contains("modified"));
+    }
+
+    #[test]
+    fn test_correctness_cdata_section() {
+        let driver = XmlDriver::new();
+        let base = r#"<root><data><![CDATA[original]]></data></root>"#;
+        let ours = r#"<root><data><![CDATA[ours]]></data></root>"#;
+        let theirs = r#"<root><data><![CDATA[original]]></data></root>"#;
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(merged.contains("ours"));
+    }
+
+    #[test]
+    fn test_correctness_empty_elements() {
+        let driver = XmlDriver::new();
+        let base = r#"<root><a/><b/></root>"#;
+        let ours = r#"<root><a>filled</a><b/></root>"#;
+        let theirs = r#"<root><a/><b>filled</b></root>"#;
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(merged.contains(">filled<"));
+    }
+
+    #[test]
+    fn test_correctness_both_add_same_element_different_content() {
+        let driver = XmlDriver::new();
+        let base = r#"<root><existing>keep</existing></root>"#;
+        let ours = r#"<root><existing>keep</existing><new>ours</new></root>"#;
+        let theirs = r#"<root><existing>keep</existing><new>theirs</new></root>"#;
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some(), "both adding same element at same position with different content should include both");
+        let merged = result.unwrap();
+        assert!(merged.contains(">ours<"));
+        assert!(merged.contains(">theirs<"));
+    }
+
+    #[test]
+    fn test_correctness_mixed_text_and_child_modifications() {
+        let driver = XmlDriver::new();
+        let base = r#"<root><parent>base_text<child>1</child></parent></root>"#;
+        let ours = r#"<root><parent>ours_text<child>1</child></parent></root>"#;
+        let theirs = r#"<root><parent>base_text<child>10</child></parent></root>"#;
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(merged.contains("ours_text"), "ours text change");
+        assert!(merged.contains(">10<"), "theirs child change");
+    }
 }

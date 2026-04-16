@@ -1,6 +1,6 @@
 [package]
 name = "suture-tui"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2024"
 license.workspace = true
 repository.workspace = true
@@ -10,18 +10,18 @@ keywords.workspace = true
 readme.workspace = true
 
 [dependencies]
-suture-core = { path = "../suture-core", version = "1.0.0" }
-suture-common = { path = "../suture-common", version = "1.0.0" }
-suture-driver = { path = "../suture-driver", version = "1.0.0" }
-suture-driver-json = { path = "../suture-driver-json", version = "1.0.0" }
-suture-driver-toml = { path = "../suture-driver-toml", version = "1.0.0" }
-suture-driver-csv = { path = "../suture-driver-csv", version = "1.0.0" }
-suture-driver-yaml = { path = "../suture-driver-yaml", version = "1.0.0" }
-suture-driver-xml = { path = "../suture-driver-xml", version = "1.0.0" }
-suture-ooxml = { path = "../suture-ooxml", version = "1.0.0" }
-suture-driver-docx = { path = "../suture-driver-docx", version = "1.0.0" }
-suture-driver-xlsx = { path = "../suture-driver-xlsx", version = "1.0.0" }
-suture-driver-pptx = { path = "../suture-driver-pptx", version = "1.0.0" }
+suture-core = { path = "../suture-core", version = "1.1.0" }
+suture-common = { path = "../suture-common", version = "1.1.0" }
+suture-driver = { path = "../suture-driver", version = "1.1.0" }
+suture-driver-json = { path = "../suture-driver-json", version = "1.1.0" }
+suture-driver-toml = { path = "../suture-driver-toml", version = "1.1.0" }
+suture-driver-csv = { path = "../suture-driver-csv", version = "1.1.0" }
+suture-driver-yaml = { path = "../suture-driver-yaml", version = "1.1.0" }
+suture-driver-xml = { path = "../suture-driver-xml", version = "1.1.0" }
+suture-ooxml = { path = "../suture-ooxml", version = "1.1.0" }
+suture-driver-docx = { path = "../suture-driver-docx", version = "1.1.0" }
+suture-driver-xlsx = { path = "../suture-driver-xlsx", version = "1.1.0" }
+suture-driver-pptx = { path = "../suture-driver-pptx", version = "1.1.0" }
 ratatui = "0.29"
 crossterm = "0.28"
 unicode-width = "0.2"

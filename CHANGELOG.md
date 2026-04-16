@@ -1,5 +1,40 @@
 # Changelog
 
+## [1.1.0] - 2026-04-16
+
+Rigorous testing and correctness release — bugs found and fixed, formal proofs, comprehensive test suite.
+
+### Bug Fixes
+
+- **BUG-001 (CRITICAL): Delta encoding data corruption** — `apply_delta` silently corrupted data when target ≥ 24 bytes shared no prefix/suffix with base. The delta format now uses a discriminator byte (0x00 = full copy, 0x01 = delta) to eliminate ambiguity.
+- **BUG-002: Create silently overwrites** — `apply_single_op` for `Create` now returns the tree unchanged if the path already exists, instead of silently overwriting.
+- **BUG-003: Modify silently creates** — `apply_single_op` for `Modify` now returns the tree unchanged if the path doesn't exist, instead of silently creating it.
+- **BUG-004: Commit used wrong operation type** — `commit()` now uses `OperationType::Create` for added files and `OperationType::Modify` for modified files, matching the corrected apply semantics.
+- **E2E test fix** — `test_push_pull_roundtrip` now uses `into_make_service_with_connect_info` so axum can provide the `ConnectInfo<SocketAddr>` extractor.
+- **Git merge driver fix** — Accepts a 4th argument `%P` (original file path) for file extension detection, fixing temp file name issues.
+
+### Testing (142 new tests → 808 total)
+
+- **suture-protocol: +25 tests** (0 → 25) — delta roundtrip (10 sizes), compress/decompress (6), capability negotiation, V2 types, protocol constants
+- **Semantic drivers: +136 tests** — JSON (+33), YAML (+19), TOML (+22), CSV (+16), XML (+21), Markdown (+25). Covers merge determinism, idempotency, commutativity, deep nesting, Unicode, null values, large files, output validity
+- **Determinism: +7 tests** — commit determinism, patch ID determinism, merge determinism, push-pull roundtrip, BLAKE3 determinism, diff symmetry, branch idempotency
+- **Git merge driver: +2 tests** — clean merge end-to-end, conflict detection end-to-end (with real git repos)
+
+### Formal Verification (Lean4)
+
+23 theorems proved in `.specs/02_architecture/proofs/proof_suture_core.lean`:
+
+- **TouchSet algebra** (3): conflict ↔ intersection, symmetry, disjoint ⇒ no conflict
+- **Commutativity** (7): symmetry, disjoint touch sets ⇒ commute, identity units, contrapositive
+- **DAG acyclicity** (2): add_node preserves acyclicity, add_edge preserves acyclicity
+- **Ancestor transitivity** (3): reachable is transitive, ancestors are transitive, reflexivity
+- **LCA properties** (5): common ancestors non-empty, reflexivity, reaches both, is ancestor, symmetry
+- **Merge properties** (7): base-equals-theirs, base-equals-ours, both-same, symmetry, no spurious, clean symmetry, clean subset
+
+### Performance Benchmarks
+
+28 benchmark functions in `suture-bench` covering: repo operations (init, commit, log, diff, branch, merge), semantic merge (JSON/YAML/TOML/CSV at 3 sizes), protocol (delta compute/apply at 3 sizes), compression (3 sizes), hub push/pull/roundtrip, large file handling.
+
 ## [1.0.1] - 2026-04-16
 
 Distribution release — one-command install via Homebrew and Nix.

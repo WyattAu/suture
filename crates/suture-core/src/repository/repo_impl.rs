@@ -907,7 +907,13 @@ impl Repository {
             let full_path = self.root.join(path);
 
             let (op_type, payload) = match status {
-                FileStatus::Added | FileStatus::Modified => {
+                FileStatus::Added => {
+                    let data = fs::read(&full_path)?;
+                    let hash = self.cas.put_blob(&data)?;
+                    let payload = hash.to_hex().as_bytes().to_vec();
+                    (OperationType::Create, payload)
+                }
+                FileStatus::Modified => {
                     let data = fs::read(&full_path)?;
                     let hash = self.cas.put_blob(&data)?;
                     let payload = hash.to_hex().as_bytes().to_vec();

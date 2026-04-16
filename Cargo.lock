@@ -2935,17 +2935,25 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "suture-bench"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "criterion",
+ "serde_json",
  "suture-common",
  "suture-core",
+ "suture-driver",
+ "suture-driver-csv",
+ "suture-driver-json",
+ "suture-driver-toml",
+ "suture-driver-yaml",
+ "suture-hub",
+ "suture-protocol",
  "tempfile",
 ]
 
 [[package]]
 name = "suture-cli"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "base64 0.22.1",
  "clap",
@@ -2981,7 +2989,7 @@ dependencies = [
 
 [[package]]
 name = "suture-common"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "blake3",
  "serde",
@@ -2990,7 +2998,7 @@ dependencies = [
 
 [[package]]
 name = "suture-core"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "blake3",
  "dirs",
@@ -3011,7 +3019,7 @@ dependencies = [
 
 [[package]]
 name = "suture-daemon"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "base64 0.22.1",
  "clap",
@@ -3031,7 +3039,7 @@ dependencies = [
 
 [[package]]
 name = "suture-driver"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -3043,7 +3051,7 @@ dependencies = [
 
 [[package]]
 name = "suture-driver-csv"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "csv",
  "suture-driver",
@@ -3051,7 +3059,7 @@ dependencies = [
 
 [[package]]
 name = "suture-driver-docx"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "quick-xml",
  "serde",
@@ -3063,7 +3071,7 @@ dependencies = [
 
 [[package]]
 name = "suture-driver-example"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -3073,7 +3081,7 @@ dependencies = [
 
 [[package]]
 name = "suture-driver-json"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "serde_json",
  "suture-driver",
@@ -3081,14 +3089,14 @@ dependencies = [
 
 [[package]]
 name = "suture-driver-markdown"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "suture-driver",
 ]
 
 [[package]]
 name = "suture-driver-otio"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -3100,7 +3108,7 @@ dependencies = [
 
 [[package]]
 name = "suture-driver-pptx"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "quick-xml",
  "serde",
@@ -3110,7 +3118,7 @@ dependencies = [
 
 [[package]]
 name = "suture-driver-toml"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "suture-driver",
  "toml",
@@ -3118,7 +3126,7 @@ dependencies = [
 
 [[package]]
 name = "suture-driver-xlsx"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "quick-xml",
  "serde",
@@ -3128,7 +3136,7 @@ dependencies = [
 
 [[package]]
 name = "suture-driver-xml"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "roxmltree",
  "suture-driver",
@@ -3136,7 +3144,7 @@ dependencies = [
 
 [[package]]
 name = "suture-driver-yaml"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "serde",
  "serde_yaml",
@@ -3145,7 +3153,7 @@ dependencies = [
 
 [[package]]
 name = "suture-e2e"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "axum",
  "reqwest",
@@ -3156,7 +3164,7 @@ dependencies = [
 
 [[package]]
 name = "suture-fuzz"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "proptest",
  "serde_json",
@@ -3168,7 +3176,7 @@ dependencies = [
 
 [[package]]
 name = "suture-hub"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -3194,7 +3202,7 @@ dependencies = [
 
 [[package]]
 name = "suture-lsp"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -3210,7 +3218,7 @@ dependencies = [
 
 [[package]]
 name = "suture-ooxml"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "quick-xml",
  "serde",
@@ -3222,7 +3230,7 @@ dependencies = [
 
 [[package]]
 name = "suture-protocol"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -3232,7 +3240,7 @@ dependencies = [
 
 [[package]]
 name = "suture-tui"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "crossterm",
  "ratatui",

@@ -1,6 +1,6 @@
 [package]
 name = "suture-daemon"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2024"
 license.workspace = true
 repository.workspace = true
@@ -10,9 +10,9 @@ keywords.workspace = true
 readme.workspace = true
 
 [dependencies]
-suture-core = { path = "../suture-core", version = "1.0.0" }
-suture-common = { path = "../suture-common", version = "1.0.0" }
-suture-protocol = { path = "../suture-protocol", version = "1.0.0" }
+suture-core = { path = "../suture-core", version = "1.1.0" }
+suture-common = { path = "../suture-common", version = "1.1.0" }
+suture-protocol = { path = "../suture-protocol", version = "1.1.0" }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -25,4 +25,4 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 base64 = "0.22"
 
 [dev-dependencies]
-suture-hub = { path = "../suture-hub", version = "1.0.0" }
+suture-hub = { path = "../suture-hub", version = "1.1.0" }

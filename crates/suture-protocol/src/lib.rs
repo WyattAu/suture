@@ -279,30 +279,42 @@ pub fn compute_delta(base: &[u8], target: &[u8]) -> (Vec<u8>, Vec<u8>) {
 
     if changed.len() < target.len() {
         let mut delta = Vec::new();
+        delta.push(0x01);
         delta.extend_from_slice(&(prefix_len as u64).to_le_bytes());
         delta.extend_from_slice(&(suffix_len as u64).to_le_bytes());
         delta.extend_from_slice(&(target.len() as u64).to_le_bytes());
         delta.extend_from_slice(changed);
         (base.to_vec(), delta)
     } else {
-        (base.to_vec(), target.to_vec())
+        let mut full = vec![0x00];
+        full.extend_from_slice(target);
+        (base.to_vec(), full)
     }
 }
 
 pub fn apply_delta(base: &[u8], delta: &[u8]) -> Vec<u8> {
-    if delta.len() < 24 {
-        return delta.to_vec();
+    if delta.is_empty() {
+        return Vec::new();
     }
-    let prefix_len = u64::from_le_bytes(delta[0..8].try_into().unwrap_or([0; 8])) as usize;
-    let suffix_len = u64::from_le_bytes(delta[8..16].try_into().unwrap_or([0; 8])) as usize;
-    let total_len = u64::from_le_bytes(delta[16..24].try_into().unwrap_or([0; 8])) as usize;
-    let changed = &delta[24..];
+    match delta[0] {
+        0x00 => delta[1..].to_vec(),
+        0x01 => {
+            if delta.len() < 25 {
+                return delta.to_vec();
+            }
+            let prefix_len = u64::from_le_bytes(delta[1..9].try_into().unwrap_or([0; 8])) as usize;
+            let suffix_len = u64::from_le_bytes(delta[9..17].try_into().unwrap_or([0; 8])) as usize;
+            let total_len = u64::from_le_bytes(delta[17..25].try_into().unwrap_or([0; 8])) as usize;
+            let changed = &delta[25..];
 
-    let mut result = Vec::with_capacity(total_len);
-    result.extend_from_slice(&base[..prefix_len.min(base.len())]);
-    result.extend_from_slice(changed);
-    result.extend_from_slice(&base[base.len().saturating_sub(suffix_len)..]);
-    result
+            let mut result = Vec::with_capacity(total_len);
+            result.extend_from_slice(&base[..prefix_len.min(base.len())]);
+            result.extend_from_slice(changed);
+            result.extend_from_slice(&base[base.len().saturating_sub(suffix_len)..]);
+            result
+        }
+        _ => delta.to_vec(),
+    }
 }
 
 #[cfg(test)]
@@ -613,7 +625,7 @@ mod tests {
         let base = b"identical data here";
         let target = b"identical data here";
         let (_base_copy, delta) = compute_delta(base, target);
-        assert!(delta.len() < target.len() + 24);
+        assert!(delta.len() < target.len() + 25);
         let result = apply_delta(base, &delta);
         assert_eq!(result, target);
     }
@@ -714,5 +726,355 @@ mod tests {
         };
         let rt: BlobDelta = roundtrip(&full);
         assert!(matches!(rt.encoding, DeltaEncoding::FullBlob));
+    }
+
+    fn assert_delta_roundtrip(base: &[u8], target: &[u8]) {
+        let (_base_copy, delta) = compute_delta(base, target);
+        let result = apply_delta(base, &delta);
+        assert_eq!(
+            result,
+            target,
+            "delta roundtrip failed: base_len={}, target_len={}",
+            base.len(),
+            target.len()
+        );
+    }
+
+    #[test]
+    fn test_delta_small_1_to_10_bytes() {
+        for len in 1..=10u32 {
+            let base: Vec<u8> = (0..len).map(|i| (i * 7) as u8).collect();
+            let target: Vec<u8> = (0..len).map(|i| (i * 13 + 3) as u8).collect();
+            assert_delta_roundtrip(&base, &target);
+        }
+    }
+
+    #[test]
+    fn test_delta_medium_100_to_1000_bytes() {
+        for len in [100, 200, 500, 1000] {
+            let base: Vec<u8> = (0..len).map(|i| (i % 256) as u8).collect();
+            let mut target = base.clone();
+            for i in len / 3..len * 2 / 3 {
+                target[i] = target[i].wrapping_add(1);
+            }
+            assert_delta_roundtrip(&base, &target);
+        }
+    }
+
+    #[test]
+    fn test_delta_large_10kb_plus() {
+        for len in [10_240, 50_000, 100_000] {
+            let base: Vec<u8> = (0..len).map(|i| ((i * 7 + 13) % 251) as u8).collect();
+            let mut target = base.clone();
+            target[len / 2] = 0xFF;
+            assert_delta_roundtrip(&base, &target);
+        }
+    }
+
+    #[test]
+    fn test_delta_empty_base() {
+        assert_delta_roundtrip(b"", b"some target data that is reasonably long enough");
+    }
+
+    #[test]
+    fn test_delta_empty_target() {
+        assert_delta_roundtrip(b"some base data that is reasonably long enough too", b"");
+    }
+
+    #[test]
+    fn test_delta_both_empty() {
+        assert_delta_roundtrip(b"", b"");
+    }
+
+    #[test]
+    fn test_delta_identical() {
+        let data = b"The quick brown fox jumps over the lazy dog";
+        assert_delta_roundtrip(data, data);
+    }
+
+    #[test]
+    fn test_delta_base_is_prefix_of_target() {
+        assert_delta_roundtrip(
+            b"shared prefix data",
+            b"shared prefix data and extra suffix content here",
+        );
+    }
+
+    #[test]
+    fn test_delta_target_is_prefix_of_base() {
+        assert_delta_roundtrip(
+            b"shared prefix data and extra suffix content here",
+            b"shared prefix data",
+        );
+    }
+
+    #[test]
+    fn test_delta_completely_different_same_length() {
+        let base: Vec<u8> = (0..100).map(|i| (i * 3) as u8).collect();
+        let target: Vec<u8> = (0..100).map(|i| (i * 7 + 100) as u8).collect();
+        assert_delta_roundtrip(&base, &target);
+    }
+
+    #[test]
+    fn test_delta_completely_different_different_lengths() {
+        assert_delta_roundtrip(&vec![0xAA; 50], &vec![0xBB; 200]);
+    }
+
+    #[test]
+    fn test_delta_common_middle_section() {
+        let middle = b"COMMON_MIDDLE_SECTION_THAT_IS_LONG_ENOUGH";
+        let mut base = Vec::new();
+        base.extend_from_slice(b"DIFFERENT_START_XXXXXX_");
+        base.extend_from_slice(middle);
+        base.extend_from_slice(b"_DIFFERENT_END_XXXXXX");
+
+        let mut target = Vec::new();
+        target.extend_from_slice(b"CHANGED_PREFIX_");
+        target.extend_from_slice(middle);
+        target.extend_from_slice(b"_CHANGED_SUFFIX_DATA");
+
+        assert_delta_roundtrip(&base, &target);
+    }
+
+    #[test]
+    fn test_delta_single_byte_change() {
+        let base = vec![0u8; 1000];
+        let mut target = base.clone();
+        target[500] = 1;
+        assert_delta_roundtrip(&base, &target);
+    }
+
+    #[test]
+    fn test_delta_single_byte_base_and_target() {
+        assert_delta_roundtrip(b"A", b"B");
+    }
+
+    #[test]
+    fn test_delta_single_byte_identical() {
+        assert_delta_roundtrip(b"X", b"X");
+    }
+
+    #[test]
+    fn test_delta_prefix_overlap_large() {
+        let prefix: Vec<u8> = (0..60u8).collect();
+        let mut base = prefix.clone();
+        base.extend_from_slice(&vec![0x00; 60]);
+        let mut target = prefix.clone();
+        target.extend_from_slice(&(60..120u8).collect::<Vec<_>>());
+        assert_delta_roundtrip(&base, &target);
+    }
+
+    #[test]
+    fn test_delta_suffix_overlap_large() {
+        let suffix: Vec<u8> = (60..120u8).collect();
+        let mut base = vec![0x00; 60];
+        base.extend_from_slice(&suffix);
+        let mut target = (0..60u8).collect::<Vec<_>>();
+        target.extend_from_slice(&suffix);
+        assert_delta_roundtrip(&base, &target);
+    }
+
+    #[test]
+    fn test_compress_decompress_empty() {
+        let compressed = compress(b"").unwrap();
+        assert_eq!(decompress(&compressed).unwrap(), b"");
+    }
+
+    #[test]
+    fn test_compress_decompress_small_1_to_100() {
+        for len in 1..=100u32 {
+            let data: Vec<u8> = (0..len).map(|i| (i % 256) as u8).collect();
+            let compressed = compress(&data).unwrap();
+            assert_eq!(
+                decompress(&compressed).unwrap(),
+                data,
+                "failed for len={len}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_compress_decompress_medium() {
+        for len in [100, 500, 1000, 5000, 10_000] {
+            let data: Vec<u8> = (0..len).map(|i| (i % 256) as u8).collect();
+            let compressed = compress(&data).unwrap();
+            assert_eq!(
+                decompress(&compressed).unwrap(),
+                data,
+                "failed for len={len}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_compress_decompress_large() {
+        let len = 200_000usize;
+        let data: Vec<u8> = (0..len).map(|i| (i % 256) as u8).collect();
+        let compressed = compress(&data).unwrap();
+        assert!(
+            compressed.len() < data.len(),
+            "compressed should be smaller for repetitive data"
+        );
+        assert_eq!(decompress(&compressed).unwrap(), data);
+    }
+
+    #[test]
+    fn test_compress_decompress_incompressible() {
+        let mut data = Vec::with_capacity(100_000);
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        for i in 0..100_000 {
+            use std::hash::{Hash, Hasher};
+            i.hash(&mut hasher);
+            data.push((hasher.finish() % 256) as u8);
+            hasher = std::collections::hash_map::DefaultHasher::new();
+        }
+        let compressed = compress(&data).unwrap();
+        assert_eq!(decompress(&compressed).unwrap(), data);
+    }
+
+    #[test]
+    fn test_compress_decompress_highly_compressible() {
+        let data = vec![0xAAu8; 500_000];
+        let compressed = compress(&data).unwrap();
+        assert!(
+            compressed.len() < 100,
+            "highly compressible data should be tiny"
+        );
+        assert_eq!(decompress(&compressed).unwrap(), data);
+    }
+
+    #[test]
+    fn test_decompress_invalid_data_fails() {
+        assert!(decompress(b"not valid zstd data").is_err());
+    }
+
+    #[test]
+    fn test_decompress_empty_input_fails() {
+        assert!(decompress(b"").is_err());
+    }
+
+    #[test]
+    fn test_server_capabilities_roundtrip() {
+        let caps = ServerCapabilities {
+            supports_delta: true,
+            supports_compression: true,
+            max_blob_size: 50 * 1024 * 1024,
+            protocol_versions: vec![1, 2],
+        };
+        let rt: ServerCapabilities = roundtrip(&caps);
+        assert!(rt.supports_delta);
+        assert!(rt.supports_compression);
+        assert_eq!(rt.max_blob_size, 50 * 1024 * 1024);
+        assert_eq!(rt.protocol_versions, vec![1, 2]);
+    }
+
+    #[test]
+    fn test_capability_version_matching() {
+        let server_caps = ServerCapabilities {
+            supports_delta: true,
+            supports_compression: false,
+            max_blob_size: 1024 * 1024,
+            protocol_versions: vec![1, 2],
+        };
+        let client_caps = ClientCapabilities {
+            supports_delta: true,
+            supports_compression: true,
+            max_blob_size: 1024 * 1024,
+        };
+        assert!(server_caps.protocol_versions.contains(&PROTOCOL_VERSION));
+        assert!(server_caps.supports_delta && client_caps.supports_delta);
+        assert!(!(server_caps.supports_compression && client_caps.supports_compression));
+        assert!(client_caps.max_blob_size <= server_caps.max_blob_size);
+    }
+
+    #[test]
+    fn test_capability_version_mismatch() {
+        let server_caps = ServerCapabilities {
+            supports_delta: false,
+            supports_compression: false,
+            max_blob_size: 1024,
+            protocol_versions: vec![1],
+        };
+        let client_caps = ClientCapabilities {
+            supports_delta: true,
+            supports_compression: true,
+            max_blob_size: 10 * 1024 * 1024,
+        };
+        assert!(!server_caps.protocol_versions.contains(&PROTOCOL_VERSION_V2));
+        assert!(!server_caps.supports_delta || !client_caps.supports_delta);
+        assert!(client_caps.max_blob_size > server_caps.max_blob_size);
+    }
+
+    #[test]
+    fn test_push_request_v2_roundtrip() {
+        let req = PushRequestV2 {
+            repo_id: "my-repo".to_string(),
+            patches: vec![make_patch("a".repeat(64).as_str(), "Create", &[])],
+            branches: vec![make_branch("main", "a".repeat(64).as_str())],
+            blobs: vec![BlobRef {
+                hash: make_hash("abc"),
+                data: "dGVzdA==".to_string(),
+            }],
+            deltas: vec![BlobDelta {
+                base_hash: make_hash("base"),
+                target_hash: make_hash("target"),
+                encoding: DeltaEncoding::BinaryPatch,
+                delta_data: "ZGVsdGE=".to_string(),
+            }],
+            signature: None,
+            known_branches: None,
+            force: false,
+        };
+        let rt: PushRequestV2 = roundtrip(&req);
+        assert_eq!(rt.repo_id, "my-repo");
+        assert_eq!(rt.deltas.len(), 1);
+        assert_eq!(rt.patches.len(), 1);
+    }
+
+    #[test]
+    fn test_pull_response_v2_roundtrip() {
+        let resp = PullResponseV2 {
+            success: true,
+            error: None,
+            patches: vec![make_patch("a".repeat(64).as_str(), "Create", &[])],
+            branches: vec![make_branch("main", "a".repeat(64).as_str())],
+            blobs: vec![BlobRef {
+                hash: make_hash("abc"),
+                data: "dGVzdA==".to_string(),
+            }],
+            deltas: vec![BlobDelta {
+                base_hash: make_hash("old"),
+                target_hash: make_hash("new"),
+                encoding: DeltaEncoding::FullBlob,
+                delta_data: "ZnVsbA==".to_string(),
+            }],
+            protocol_version: 2,
+        };
+        let rt: PullResponseV2 = roundtrip(&resp);
+        assert!(rt.success);
+        assert_eq!(rt.protocol_version, 2);
+        assert_eq!(rt.deltas.len(), 1);
+        assert_eq!(rt.blobs.len(), 1);
+    }
+
+    #[test]
+    fn test_protocol_versions() {
+        assert_eq!(PROTOCOL_VERSION, 1);
+        assert_eq!(PROTOCOL_VERSION_V2, 2);
+        assert_ne!(PROTOCOL_VERSION, PROTOCOL_VERSION_V2);
+    }
+
+    #[test]
+    fn test_auth_request_roundtrip() {
+        let req = AuthRequest {
+            method: AuthMethod::Token("secret".to_string()),
+            timestamp: 12345,
+        };
+        let rt: AuthRequest = roundtrip(&req);
+        assert_eq!(rt.timestamp, 12345);
+        match rt.method {
+            AuthMethod::Token(t) => assert_eq!(t, "secret"),
+            _ => panic!("expected Token auth method"),
+        }
     }
 }

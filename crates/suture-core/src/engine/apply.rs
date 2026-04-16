@@ -112,6 +112,9 @@ where
 
     match op {
         OperationType::Create => {
+            if new_tree.contains(target_path) {
+                return Ok(new_tree);
+            }
             let tmp_patch = Patch::new(
                 OperationType::Create,
                 TouchSet::single(target_path),
@@ -126,6 +129,9 @@ where
             }
         }
         OperationType::Modify => {
+            if !new_tree.contains(target_path) {
+                return Ok(new_tree);
+            }
             let tmp_patch = Patch::new(
                 OperationType::Modify,
                 TouchSet::single(target_path),
@@ -391,6 +397,64 @@ mod tests {
             Some(&suture_common::Hash::from_data(b"new"))
         );
         assert!(!result.contains("b.txt"));
+    }
+
+    #[test]
+    fn test_create_on_existing_path_with_same_hash() {
+        let mut tree = FileTree::empty();
+        let hash = suture_common::Hash::from_data(b"hello");
+        tree.insert("file.txt".to_string(), hash);
+
+        let patch = make_patch(OperationType::Create, "file.txt", &blob_hash(b"hello"));
+        let result = apply_patch(&tree, &patch, resolve_payload_to_hash).unwrap();
+        assert_eq!(result, tree);
+    }
+
+    #[test]
+    fn test_create_on_existing_path_with_different_hash() {
+        let mut tree = FileTree::empty();
+        let original_hash = suture_common::Hash::from_data(b"original");
+        tree.insert("file.txt".to_string(), original_hash);
+
+        let patch = make_patch(OperationType::Create, "file.txt", &blob_hash(b"different"));
+        let result = apply_patch(&tree, &patch, resolve_payload_to_hash).unwrap();
+        assert_eq!(result.get("file.txt"), Some(&original_hash));
+    }
+
+    #[test]
+    fn test_modify_on_nonexistent_path() {
+        let tree = FileTree::empty();
+        let patch = make_patch(
+            OperationType::Modify,
+            "ghost.txt",
+            &blob_hash(b"new content"),
+        );
+        let result = apply_patch(&tree, &patch, resolve_payload_to_hash).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_modify_on_existing_path() {
+        let mut tree = FileTree::empty();
+        tree.insert(
+            "file.txt".to_string(),
+            suture_common::Hash::from_data(b"old"),
+        );
+
+        let patch = make_patch(OperationType::Modify, "file.txt", &blob_hash(b"new"));
+        let result = apply_patch(&tree, &patch, resolve_payload_to_hash).unwrap();
+        assert_eq!(
+            result.get("file.txt"),
+            Some(&suture_common::Hash::from_data(b"new"))
+        );
+    }
+
+    #[test]
+    fn test_delete_on_nonexistent_path() {
+        let tree = FileTree::empty();
+        let patch = make_patch(OperationType::Delete, "ghost.txt", &[]);
+        let result = apply_patch(&tree, &patch, resolve_payload_to_hash).unwrap();
+        assert!(result.is_empty());
     }
 
     mod proptests {

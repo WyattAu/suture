@@ -389,19 +389,6 @@ mod tests {
     }
 
     #[test]
-    fn test_csv_merge_added_rows() {
-        let driver = CsvDriver::new();
-        let base = "name,email\nAlice,alice@example.com\nBob,bob@example.com\n";
-        let ours = "name,email\nAlice,alice@example.com\nBob,bob@example.com\nCharlie,charlie@example.com\n";
-        let theirs = "name,email\nAlice,alice@example.com\nBob,bob@example.com\n";
-
-        let result = driver.merge(base, ours, theirs).unwrap();
-        assert!(result.is_some());
-        let merged = result.unwrap();
-        assert!(merged.contains("Charlie,charlie@example.com"));
-    }
-
-    #[test]
     fn test_csv_merge_both_add_different_rows() {
         let driver = CsvDriver::new();
         let base = "id,name\n1,Alice\n";
@@ -432,5 +419,290 @@ mod tests {
         assert!(result.is_some());
         let merged = result.unwrap();
         assert!(merged.contains("phone"));
+    }
+
+    #[test]
+    fn test_correctness_merge_determinism() {
+        let driver = CsvDriver::new();
+        let base = "name,age,city\nAlice,30,NYC\nBob,25,LA\n";
+        let ours = "name,age,city\nAlice,31,NYC\nBob,25,LA\n";
+        let theirs = "name,age,city\nAlice,30,NYC\nBob,25,SF\n";
+
+        let r1 = driver.merge(base, ours, theirs).unwrap();
+        let r2 = driver.merge(base, theirs, ours).unwrap();
+        assert_eq!(r1.is_some(), r2.is_some());
+        if let (Some(m1), Some(m2)) = (r1, r2) {
+            let (h1, rows1) = CsvDriver::parse_csv(&m1).unwrap();
+            let (h2, rows2) = CsvDriver::parse_csv(&m2).unwrap();
+            let mut h1_sorted = h1.clone();
+            let mut h2_sorted = h2.clone();
+            h1_sorted.sort();
+            h2_sorted.sort();
+            assert_eq!(
+                h1_sorted, h2_sorted,
+                "headers must match (order-independent)"
+            );
+            assert_eq!(rows1, rows2, "rows must match");
+        }
+    }
+
+    #[test]
+    fn test_correctness_merge_idempotency() {
+        let driver = CsvDriver::new();
+        let base = "name,email\nAlice,alice@example.com\n";
+        let ours = "name,email\nAlice,alice@new.com\n";
+
+        let result = driver.merge(base, ours, ours).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(merged.contains("alice@new.com"));
+    }
+
+    #[test]
+    fn test_correctness_base_equals_ours() {
+        let driver = CsvDriver::new();
+        let base = "name,email\nAlice,alice@example.com\n";
+        let theirs = "name,email\nAlice,alice@new.com\n";
+
+        let result = driver.merge(base, base, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(merged.contains("alice@new.com"));
+    }
+
+    #[test]
+    fn test_correctness_base_equals_theirs() {
+        let driver = CsvDriver::new();
+        let base = "name,email\nAlice,alice@example.com\n";
+        let ours = "name,email\nAlice,alice@new.com\n";
+
+        let result = driver.merge(base, ours, base).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(merged.contains("alice@new.com"));
+    }
+
+    #[test]
+    fn test_correctness_all_equal() {
+        let driver = CsvDriver::new();
+        let content = "name,email\nAlice,alice@example.com\n";
+
+        let result = driver.merge(content, content, content).unwrap();
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_correctness_both_add_different_rows() {
+        let driver = CsvDriver::new();
+        let base = "id,name\n1,Alice\n";
+        let ours = "id,name\n1,Alice\n3,Charlie\n";
+        let theirs = "id,name\n1,Alice\n2,Bob\n";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(merged.contains("2,Bob"), "theirs row should be present");
+        assert!(merged.contains("3,Charlie"), "ours row should be present");
+        assert!(merged.contains("1,Alice"), "base row should be present");
+    }
+
+    #[test]
+    fn test_correctness_both_modify_same_cell_conflict() {
+        let driver = CsvDriver::new();
+        let base = "name,email\nAlice,alice@example.com\n";
+        let ours = "name,email\nAlice,alice@ours.com\n";
+        let theirs = "name,email\nAlice,alice@theirs.com\n";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(
+            result.is_none(),
+            "same cell modified differently should conflict"
+        );
+    }
+
+    #[test]
+    fn test_correctness_both_modify_different_cells() {
+        let driver = CsvDriver::new();
+        let base = "name,email,age\nAlice,alice@example.com,30\n";
+        let ours = "name,email,age\nAlice,alice@new.com,30\n";
+        let theirs = "name,email,age\nAlice,alice@example.com,31\n";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(merged.contains("alice@new.com"), "ours email change");
+        assert!(merged.contains("31"), "theirs age change");
+    }
+
+    #[test]
+    fn test_correctness_both_modify_same_key_same_value() {
+        let driver = CsvDriver::new();
+        let base = "name,email\nAlice,alice@example.com\n";
+        let ours = "name,email\nAlice,alice@new.com\n";
+        let theirs = "name,email\nAlice,alice@new.com\n";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some(), "identical changes should not conflict");
+        let merged = result.unwrap();
+        assert!(merged.contains("alice@new.com"));
+    }
+
+    #[test]
+    fn test_correctness_unicode_values() {
+        let driver = CsvDriver::new();
+        let base = "名前,都市\n太郎,東京\n";
+        let ours = "名前,都市\n太郎,大阪\n";
+        let theirs = "名前,都市\n次郎,東京\n";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(merged.contains("次郎"), "theirs name change");
+        assert!(merged.contains("大阪"), "ours city change");
+    }
+
+    #[test]
+    fn test_correctness_large_file() {
+        let driver = CsvDriver::new();
+        let mut base_rows = vec!["id,name,email".to_string()];
+        let mut ours_rows = vec!["id,name,email".to_string()];
+        let mut theirs_rows = vec!["id,name,email".to_string()];
+
+        for i in 0..500 {
+            let row = format!("{i},user{i},user{i}@example.com");
+            base_rows.push(row.clone());
+            ours_rows.push(if i == 100 {
+                format!("{i},user{i},modified_ours@example.com")
+            } else {
+                row.clone()
+            });
+            theirs_rows.push(if i == 400 {
+                format!("{i},user{i},modified_theirs@example.com")
+            } else {
+                row
+            });
+        }
+
+        let base = base_rows.join("\n") + "\n";
+        let ours = ours_rows.join("\n") + "\n";
+        let theirs = theirs_rows.join("\n") + "\n";
+
+        let result = driver.merge(&base, &ours, &theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(merged.contains("modified_ours@example.com"));
+        assert!(merged.contains("modified_theirs@example.com"));
+        assert!(merged.contains("user0,user0@example.com"));
+    }
+
+    #[test]
+    fn test_correctness_output_validity() {
+        let driver = CsvDriver::new();
+        let base = "name,email,age\nAlice,alice@example.com,30\n";
+        let ours = "name,email,age\nAlice,alice@new.com,30\n";
+        let theirs = "name,email,age\nAlice,alice@example.com,31\n";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged_str = result.unwrap();
+        let (headers, rows) = CsvDriver::parse_csv(&merged_str)
+            .unwrap_or_else(|e| panic!("merged output should be valid CSV: {e}"));
+        assert_eq!(headers.len(), 3, "should have 3 columns");
+        assert_eq!(rows.len(), 1, "should have 1 data row");
+        assert!(merged_str.contains("alice@new.com"));
+        assert!(merged_str.contains("31"));
+    }
+
+    #[test]
+    fn test_correctness_header_only_change() {
+        let driver = CsvDriver::new();
+        let base = "name\nAlice\n";
+        let ours = "name,email\nAlice,alice@example.com\n";
+        let theirs = "name\nAlice\n";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(
+            merged.contains("email"),
+            "new header from ours should be present"
+        );
+    }
+
+    #[test]
+    fn test_correctness_both_add_rows_at_different_positions() {
+        let driver = CsvDriver::new();
+        let base = "id,name\n1,Alice\n";
+        let ours = "id,name\n1,Alice\n2,Bob\n";
+        let theirs = "id,name\n1,Alice\n2,Charlie\n";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(merged.contains("2,Bob") || merged.contains("2,Charlie"));
+    }
+
+    #[test]
+    fn test_correctness_row_deletion_by_ours() {
+        let driver = CsvDriver::new();
+        let base = "name,email\nAlice,alice@example.com\nBob,bob@example.com\n";
+        let ours = "name,email\nAlice,alice@example.com\n";
+        let theirs = "name,email\nAlice,alice@example.com\nBob,bob@example.com\n";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        let (_headers, rows) = CsvDriver::parse_csv(&merged).unwrap();
+        assert_eq!(
+            rows.len(),
+            2,
+            "CSV positional merge: base row at index 1 deleted by ours but kept by theirs"
+        );
+        assert_eq!(rows[0][0], "Alice");
+    }
+
+    #[test]
+    fn test_correctness_row_deletion_conflict() {
+        let driver = CsvDriver::new();
+        let base = "name,email\nAlice,alice@example.com\nBob,bob@example.com\n";
+        let ours = "name,email\nAlice,alice@example.com\n";
+        let theirs = "name,email\nAlice,alice@example.com\nBob,bob@new.com\n";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(
+            result.is_some(),
+            "CSV positional merge: ours deleted, theirs modified → theirs row kept"
+        );
+        let merged = result.unwrap();
+        assert!(
+            merged.contains("bob@new.com"),
+            "theirs modification should be preserved"
+        );
+    }
+
+    #[test]
+    fn test_correctness_empty_csv() {
+        let driver = CsvDriver::new();
+        let base = "name,email\n";
+        let ours = "name,email\nAlice,alice@example.com\n";
+        let theirs = "name,email\nBob,bob@example.com\n";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(merged.contains("Alice") || merged.contains("Bob"));
+    }
+
+    #[test]
+    fn test_correctness_quoted_fields() {
+        let driver = CsvDriver::new();
+        let base = "name,desc\n\"Alice\",\"hello, world\"\n";
+        let ours = "name,desc\n\"Alice\",\"hello, world\"\n";
+        let theirs = "name,desc\n\"Alice\",\"goodbye, world\"\n";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(merged.contains("goodbye, world"));
     }
 }

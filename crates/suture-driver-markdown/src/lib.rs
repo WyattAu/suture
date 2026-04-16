@@ -666,4 +666,310 @@ mod tests {
         assert!(!regex_is_numbered_list("abc. not a list"));
         assert!(!regex_is_numbered_list("just text"));
     }
+
+    #[test]
+    fn test_correctness_merge_determinism() {
+        let driver = MarkdownDriver::new();
+        let base = "# Title\n\nBase paragraph.\n\n## Section A\n\nBase A.";
+        let ours = "# Title\n\nOur paragraph.\n\n## Section A\n\nBase A.";
+        let theirs = "# Title\n\nBase paragraph.\n\n## Section A\n\nTheir A.";
+
+        let r1 = driver.merge(base, ours, theirs).unwrap();
+        let r2 = driver.merge(base, theirs, ours).unwrap();
+        assert_eq!(r1.is_some(), r2.is_some());
+        if let (Some(m1), Some(m2)) = (r1, r2) {
+            let b1 = parse_blocks(&m1);
+            let b2 = parse_blocks(&m2);
+            assert_eq!(b1.len(), b2.len(), "block count must match");
+            for (a, b) in b1.iter().zip(b2.iter()) {
+                assert_eq!(a.lines, b.lines, "blocks must match in order");
+            }
+        }
+    }
+
+    #[test]
+    fn test_correctness_merge_idempotency() {
+        let driver = MarkdownDriver::new();
+        let base = "# Title\n\nBase paragraph.";
+        let ours = "# Title\n\nOur paragraph.";
+
+        let result = driver.merge(base, ours, ours).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(merged.contains("Our paragraph."));
+    }
+
+    #[test]
+    fn test_correctness_base_equals_ours() {
+        let driver = MarkdownDriver::new();
+        let base = "# Title\n\nBase paragraph.";
+        let theirs = "# Title\n\nTheir paragraph.";
+
+        let result = driver.merge(base, base, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert_eq!(
+            merged, theirs,
+            "merge(base, base, theirs) should equal theirs"
+        );
+    }
+
+    #[test]
+    fn test_correctness_base_equals_theirs() {
+        let driver = MarkdownDriver::new();
+        let base = "# Title\n\nBase paragraph.";
+        let ours = "# Title\n\nOur paragraph.";
+
+        let result = driver.merge(base, ours, base).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert_eq!(merged, ours, "merge(base, ours, base) should equal ours");
+    }
+
+    #[test]
+    fn test_correctness_all_equal() {
+        let driver = MarkdownDriver::new();
+        let content = "# Title\n\nParagraph.";
+
+        let result = driver.merge(content, content, content).unwrap();
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), content);
+    }
+
+    #[test]
+    fn test_correctness_both_add_different_sections() {
+        let driver = MarkdownDriver::new();
+        let base = "# Title\n\nShared.";
+        let ours = "# Title\n\nShared.\n\n## Ours\n\nOurs content.";
+        let theirs = "# Title\n\nShared.\n\n## Theirs\n\nTheirs content.";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(merged.contains("## Ours"));
+        assert!(merged.contains("Ours content."));
+        assert!(merged.contains("## Theirs"));
+        assert!(merged.contains("Theirs content."));
+        assert!(merged.contains("Shared."));
+    }
+
+    #[test]
+    fn test_correctness_both_modify_same_section_same_content() {
+        let driver = MarkdownDriver::new();
+        let base = "# Title\n\nBase text.";
+        let ours = "# Title\n\nChanged text.";
+        let theirs = "# Title\n\nChanged text.";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some(), "identical changes should not conflict");
+        let merged = result.unwrap();
+        assert!(merged.contains("Changed text."));
+    }
+
+    #[test]
+    fn test_correctness_both_modify_same_section_different_content() {
+        let driver = MarkdownDriver::new();
+        let base = "# Title\n\nBase text.";
+        let ours = "# Title\n\nOur text.";
+        let theirs = "# Title\n\nTheir text.";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_correctness_deeply_nested_structure() {
+        let driver = MarkdownDriver::new();
+        let base =
+            "# Title\n\nIntro.\n\n## Section A\n\nA content.\n\n### Subsection\n\nSub content.";
+        let ours = "# Title\n\nModified intro.\n\n## Section A\n\nA content.\n\n### Subsection\n\nSub content.";
+        let theirs = "# Title\n\nIntro.\n\n## Section A\n\nA content.\n\n### Subsection\n\nModified sub content.";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(merged.contains("Modified intro."));
+        assert!(merged.contains("Modified sub content."));
+        assert!(merged.contains("A content."));
+    }
+
+    #[test]
+    fn test_correctness_unicode_content() {
+        let driver = MarkdownDriver::new();
+        let base = "# タイトル\n\n基本テキスト。\n\n## セクション\n\nセクション内容。";
+        let ours = "# タイトル\n\n修正テキスト。\n\n## セクション\n\nセクション内容。";
+        let theirs = "# タイトル\n\n基本テキスト。\n\n## セクション\n\n修正セクション。";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(merged.contains("修正テキスト。"));
+        assert!(merged.contains("修正セクション。"));
+    }
+
+    #[test]
+    fn test_correctness_large_file() {
+        let driver = MarkdownDriver::new();
+        let mut base_sections = vec!["# Title".to_string()];
+        let mut ours_sections = vec!["# Title".to_string()];
+        let mut theirs_sections = vec!["# Title".to_string()];
+
+        for i in 0..100 {
+            let section = format!("## Section {i}\n\nContent for section {i}.");
+            base_sections.push(section.clone());
+            ours_sections.push(if i == 50 {
+                format!("## Section {i}\n\nModified by ours.")
+            } else {
+                section.clone()
+            });
+            theirs_sections.push(if i == 80 {
+                format!("## Section {i}\n\nModified by theirs.")
+            } else {
+                section
+            });
+        }
+
+        let base = base_sections.join("\n\n");
+        let ours = ours_sections.join("\n\n");
+        let theirs = theirs_sections.join("\n\n");
+
+        let result = driver.merge(&base, &ours, &theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(merged.contains("Modified by ours."));
+        assert!(merged.contains("Modified by theirs."));
+        assert!(merged.contains("Content for section 0."));
+        assert!(merged.contains("Content for section 99."));
+    }
+
+    #[test]
+    fn test_correctness_heading_renumbering_merge() {
+        let driver = MarkdownDriver::new();
+        let base = "# Intro\n\nText.\n\n## Section\n\nContent.";
+        let ours = "# Introduction\n\nText.\n\n## Section\n\nContent.";
+        let theirs = "# Intro\n\nText.\n\n## Details\n\nContent.";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(merged.contains("# Introduction"), "ours heading change");
+        assert!(merged.contains("## Details"), "theirs heading change");
+    }
+
+    #[test]
+    fn test_correctness_code_block_merge() {
+        let driver = MarkdownDriver::new();
+        let base = "# Example\n\n```rust\nfn main() {\n    println!(\"Hello\");\n}\n```";
+        let ours = "# Example\n\n```rust\nfn main() {\n    println!(\"World\");\n}\n```";
+        let theirs = "# Example\n\n```rust\nfn main() {\n    println!(\"Hello\");\n}\n```";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(
+            merged.contains("World"),
+            "ours change should be applied when theirs unchanged"
+        );
+    }
+
+    #[test]
+    fn test_correctness_code_block_merge_conflict() {
+        let driver = MarkdownDriver::new();
+        let base = "# Example\n\n```rust\nfn main() {}\n```";
+        let ours = "# Example\n\n```rust\nfn ours() {}\n```";
+        let theirs = "# Example\n\n```rust\nfn theirs() {}\n```";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(
+            result.is_none(),
+            "conflicting code block changes should conflict"
+        );
+    }
+
+    #[test]
+    fn test_correctness_link_reference_merge() {
+        let driver = MarkdownDriver::new();
+        let base = "# Links\n\n[home](https://example.com)\n\n[about](https://example.com/about)";
+        let ours = "# Links\n\n[home](https://example.com)\n\n[about](https://example.com/about)\n\n[contact](https://example.com/contact)";
+        let theirs = "# Links\n\n[home](https://example.com)\n\n[about](https://example.com/about)";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(
+            merged.contains("[contact]"),
+            "ours added link should be present"
+        );
+    }
+
+    #[test]
+    fn test_correctness_list_merge() {
+        let driver = MarkdownDriver::new();
+        let base = "# Items\n\n- one\n- two\n- three";
+        let ours = "# Items\n\n- one\n- modified\n- three";
+        let theirs = "# Items\n\n- one\n- two\n- three\n\n## New Section\n\nAdded.";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(merged.contains("modified"));
+        assert!(merged.contains("New Section"));
+    }
+
+    #[test]
+    fn test_correctness_section_deletion_by_ours() {
+        let driver = MarkdownDriver::new();
+        let base = "# Title\n\nKeep.\n\n## Remove\n\nGone.";
+        let ours = "# Title\n\nKeep.";
+        let theirs = "# Title\n\nKeep.\n\n## Remove\n\nGone.";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(
+            merged.contains("Remove"),
+            "ours deleted the section but theirs kept it → theirs preserved"
+        );
+    }
+
+    #[test]
+    fn test_correctness_multiple_paragraphs_under_same_heading() {
+        let driver = MarkdownDriver::new();
+        let base = "# Section\n\nParagraph one.\n\nParagraph two.";
+        let ours = "# Section\n\nModified one.\n\nParagraph two.";
+        let theirs = "# Section\n\nParagraph one.\n\nModified two.";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(merged.contains("Modified one."));
+        assert!(merged.contains("Modified two."));
+    }
+
+    #[test]
+    fn test_correctness_table_merge() {
+        let driver = MarkdownDriver::new();
+        let base = "# Data\n\n| Col1 | Col2 |\n| --- | --- |\n| a | b |";
+        let ours = "# Data\n\n| Col1 | Col2 |\n| --- | --- |\n| x | b |";
+        let theirs = "# Data\n\n| Col1 | Col2 |\n| --- | --- |\n| a | y |";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(
+            result.is_none(),
+            "table modifications at same position conflict"
+        );
+    }
+
+    #[test]
+    fn test_correctness_empty_document() {
+        let driver = MarkdownDriver::new();
+        let base = "";
+        let ours = "# New\n\nContent.";
+        let theirs = "# Other\n\nOther content.";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(merged.contains("New") || merged.contains("Other"));
+    }
 }
