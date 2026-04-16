@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.0.1] - 2026-04-16
+
+Distribution release — one-command install via Homebrew and Nix.
+
+### Distribution
+
+- **Homebrew tap** — `brew tap WyattAu/suture && brew install suture` (macOS + Linux, x86_64 + aarch64)
+- **Nix flake packages** — `nix build .#suture` and `nix build .#suture-hub` (source build via `buildRustPackage`)
+- **README** — Homebrew listed as primary install method
+
 ## [1.0.0] - 2026-04-16
 
 Stable release — the culmination of Path A (honest code), Phase 1 (adoption), Phase 2 (polish), and Phase 4 (ecosystem).

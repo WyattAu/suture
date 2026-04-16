@@ -38,6 +38,13 @@ Unlike Git, which treats every file as opaque bytes, Suture uses semantic driver
 
 ## Install
 
+**macOS / Linux (recommended):**
+```bash
+brew tap WyattAu/suture
+brew install suture
+```
+
+**From source:**
 ```bash
 cargo install suture-cli
 ```

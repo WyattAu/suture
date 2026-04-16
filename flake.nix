@@ -33,5 +33,42 @@
             export RUST_BACKTRACE=1
           '';
         };
+
+        packages = {
+          default = pkgs.rustPlatform.buildRustPackage {
+            name = "suture";
+            src = ./.;
+            cargoLock = {
+              lockFile = ./Cargo.lock;
+            };
+            nativeBuildInputs = with pkgs; [
+              pkg-config
+              sqlite
+            ] ++ lib.optional stdenv.isLinux [
+              fuse3
+            ];
+
+            buildFeatures = [];
+            cargoBuildFlags = [ "-p suture-cli" ];
+
+            checkFlags = [
+              "--skip e2e"
+            ];
+          };
+
+          suture-hub = pkgs.rustPlatform.buildRustPackage {
+            name = "suture-hub";
+            src = ./.;
+            cargoLock = {
+              lockFile = ./Cargo.lock;
+            };
+            nativeBuildInputs = with pkgs; [
+              pkg-config
+              sqlite
+            ];
+
+            cargoBuildFlags = [ "-p suture-hub" ];
+          };
+        };
       });
 }
