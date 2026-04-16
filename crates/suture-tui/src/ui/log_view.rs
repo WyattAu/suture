@@ -1,10 +1,10 @@
 //! Log view — displays commit history with ASCII branch graph.
 
-use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
+use ratatui::Frame;
 
 use crate::app::App;
 
@@ -104,7 +104,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                 .title(format!(" Log ({} commits) ", entries.len())),
         )
         .wrap(Wrap { trim: false })
-        .scroll(((cursor * 2) as u16, 0)); // 2 lines per entry
+        .scroll((u16::try_from(cursor * 2).unwrap_or(u16::MAX), 0));
 
     f.render_widget(log_widget, area);
 }

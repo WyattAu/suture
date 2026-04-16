@@ -7,6 +7,8 @@
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+    <div id="toast-container" role="status" aria-live="polite"></div>
+
     <header>
         <div class="header-left">
             <h1>Suture Hub</h1>
@@ -14,19 +16,71 @@
                 <span class="indicator-dot"></span>
                 <span class="indicator-text">Disconnected</span>
             </span>
+            <div class="header-auth">
+                <input type="password" id="token-input" placeholder="Auth token..." />
+                <button class="btn btn-secondary btn-sm" id="token-btn">Set</button>
+            </div>
         </div>
-        <nav class="tabs">
-            <button class="tab active" data-tab="repos">Repositories</button>
-            <button class="tab" data-tab="users">Users</button>
-            <button class="tab" data-tab="replication">Replication</button>
+        <nav class="tabs" role="tablist" aria-label="Main navigation">
+            <button class="tab active" data-tab="dashboard" role="tab" aria-selected="true" aria-controls="tab-dashboard" id="btn-tab-dashboard">Dashboard</button>
+            <button class="tab" data-tab="repos" role="tab" aria-selected="false" aria-controls="tab-repos" id="btn-tab-repos">Repositories</button>
+            <button class="tab" data-tab="users" role="tab" aria-selected="false" aria-controls="tab-users" id="btn-tab-users">Users</button>
+            <button class="tab" data-tab="mirrors" role="tab" aria-selected="false" aria-controls="tab-mirrors" id="btn-tab-mirrors">Mirrors</button>
+            <button class="tab" data-tab="replication" role="tab" aria-selected="false" aria-controls="tab-replication" id="btn-tab-replication">Replication</button>
+            <button class="tab" data-tab="settings" role="tab" aria-selected="false" aria-controls="tab-settings" id="btn-tab-settings">Settings</button>
         </nav>
     </header>
 
     <main>
-        <section id="tab-repos" class="tab-content active">
+        <section id="tab-dashboard" class="tab-content active" role="tabpanel" aria-labelledby="btn-tab-dashboard">
+            <div class="section-header">
+                <h2>Dashboard</h2>
+            </div>
+            <div class="skeleton-wrap" id="dashboard-skeleton">
+                <div class="skeleton-cards">
+                    <div class="skeleton-card"></div>
+                    <div class="skeleton-card"></div>
+                    <div class="skeleton-card"></div>
+                </div>
+            </div>
+            <div class="dashboard-cards" id="dashboard-cards">
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-repos">—</div>
+                    <div class="stat-label">Repositories</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-patches">—</div>
+                    <div class="stat-label">Total Patches</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-users">—</div>
+                    <div class="stat-label">Users</div>
+                </div>
+            </div>
+            <div class="dashboard-activity" id="dashboard-activity">
+                <h3>Recent Activity</h3>
+                <div class="activity-placeholder">
+                    <p>Activity feed will be available in a future update.</p>
+                </div>
+            </div>
+        </section>
+
+        <section id="tab-repos" class="tab-content" role="tabpanel" aria-labelledby="btn-tab-repos">
             <div class="section-header">
                 <h2>Repositories</h2>
                 <span id="repo-count" class="badge"></span>
+                <button class="btn btn-primary" id="btn-create-repo">+ New Repository</button>
+            </div>
+            <div class="form-panel hidden" id="create-repo-form">
+                <h3>Create Repository</h3>
+                <form id="form-create-repo">
+                    <label for="new-repo-name">Repository Name</label>
+                    <input type="text" id="new-repo-name" placeholder="my-project" required autocomplete="off">
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">Create</button>
+                        <button type="button" class="btn btn-secondary" id="cancel-create-repo">Cancel</button>
+                    </div>
+                </form>
             </div>
             <div id="repos-loading" class="loading">Loading repositories&hellip;</div>
             <div id="repos-error" class="error-banner hidden"></div>
@@ -48,10 +102,26 @@
             </div>
         </section>
 
-        <section id="tab-users" class="tab-content">
+        <section id="tab-users" class="tab-content" role="tabpanel" aria-labelledby="btn-tab-users">
             <div class="section-header">
                 <h2>Users</h2>
                 <span id="user-count" class="badge"></span>
+                <button class="btn btn-primary" id="btn-toggle-create-user">+ New User</button>
+            </div>
+            <div class="form-panel hidden" id="create-user-form">
+                <h3>Create User</h3>
+                <form id="form-create-user">
+                    <label for="new-user-username">Username</label>
+                    <input type="text" id="new-user-username" placeholder="username" required autocomplete="off">
+                    <label for="new-user-display">Display Name</label>
+                    <input type="text" id="new-user-display" placeholder="Display Name" autocomplete="off">
+                    <label for="new-user-password">Password</label>
+                    <input type="password" id="new-user-password" placeholder="Password" required autocomplete="new-password">
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">Create</button>
+                        <button type="button" class="btn btn-secondary" id="cancel-create-user">Cancel</button>
+                    </div>
+                </form>
             </div>
             <div id="users-loading" class="loading">Loading users&hellip;</div>
             <div id="users-error" class="error-banner hidden"></div>
@@ -63,6 +133,7 @@
                             <th>Display Name</th>
                             <th>Role</th>
                             <th>Created</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody id="users-tbody"></tbody>
@@ -73,10 +144,66 @@
             </div>
         </section>
 
-        <section id="tab-replication" class="tab-content">
+        <section id="tab-mirrors" class="tab-content" role="tabpanel" aria-labelledby="btn-tab-mirrors">
+            <div class="section-header">
+                <h2>Mirrors</h2>
+                <span id="mirror-count" class="badge"></span>
+                <button class="btn btn-primary" id="btn-toggle-add-mirror">+ Add Mirror</button>
+            </div>
+            <div class="form-panel hidden" id="add-mirror-form">
+                <h3>Add Mirror</h3>
+                <form id="form-add-mirror">
+                    <label for="mirror-remote-url">Remote URL</label>
+                    <input type="text" id="mirror-remote-url" placeholder="https://example.com/repo" required autocomplete="off">
+                    <label for="mirror-local-repo">Local Repository</label>
+                    <input type="text" id="mirror-local-repo" placeholder="my-project" required autocomplete="off">
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">Add Mirror</button>
+                        <button type="button" class="btn btn-secondary" id="cancel-add-mirror">Cancel</button>
+                    </div>
+                </form>
+            </div>
+            <div id="mirrors-loading" class="loading">Loading mirrors&hellip;</div>
+            <div id="mirrors-error" class="error-banner hidden"></div>
+            <div id="mirrors-table-wrap" class="table-wrap hidden">
+                <table id="mirrors-table">
+                    <thead>
+                        <tr>
+                            <th>Local Repo</th>
+                            <th>Remote URL</th>
+                            <th>Last Sync</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="mirrors-tbody"></tbody>
+                </table>
+            </div>
+            <div id="mirrors-empty" class="empty-state hidden">
+                No mirrors configured.
+            </div>
+        </section>
+
+        <section id="tab-replication" class="tab-content" role="tabpanel" aria-labelledby="btn-tab-replication">
             <div class="section-header">
                 <h2>Replication</h2>
                 <span id="replication-role-badge" class="badge"></span>
+                <button class="btn btn-primary" id="btn-toggle-add-peer">+ Add Peer</button>
+            </div>
+            <div class="form-panel hidden" id="add-peer-form">
+                <h3>Add Peer</h3>
+                <form id="form-add-peer">
+                    <label for="peer-url">Peer URL</label>
+                    <input type="text" id="peer-url" placeholder="https://hub.example.com" required autocomplete="off">
+                    <label for="peer-role">Role</label>
+                    <select id="peer-role">
+                        <option value="follower">Follower</option>
+                        <option value="leader">Leader</option>
+                    </select>
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">Add Peer</button>
+                        <button type="button" class="btn btn-secondary" id="cancel-add-peer">Cancel</button>
+                    </div>
+                </form>
             </div>
             <div id="replication-loading" class="loading">Loading replication status&hellip;</div>
             <div id="replication-error" class="error-banner hidden"></div>
@@ -94,6 +221,7 @@
                             <th>Role</th>
                             <th>Status</th>
                             <th>Sync Seq</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody id="replication-tbody"></tbody>
@@ -101,6 +229,33 @@
             </div>
             <div id="replication-empty" class="empty-state hidden">
                 No replication peers configured. This hub is running in standalone mode.
+            </div>
+        </section>
+
+        <section id="tab-settings" class="tab-content" role="tabpanel" aria-labelledby="btn-tab-settings">
+            <div class="section-header">
+                <h2>Settings</h2>
+            </div>
+            <div class="settings-panel" id="settings-loading">
+                <div class="skeleton-wrap">
+                    <div class="skeleton-card" style="height:60px;margin-bottom:1rem"></div>
+                    <div class="skeleton-card" style="height:60px;margin-bottom:1rem"></div>
+                    <div class="skeleton-card" style="height:60px"></div>
+                </div>
+            </div>
+            <div class="settings-panel hidden" id="settings-content">
+                <div class="settings-row">
+                    <div class="settings-key">Hub Version</div>
+                    <div class="settings-value" id="setting-version">—</div>
+                </div>
+                <div class="settings-row">
+                    <div class="settings-key">Replication Role</div>
+                    <div class="settings-value" id="setting-replication-role">—</div>
+                </div>
+                <div class="settings-row">
+                    <div class="settings-key">Auth Mode</div>
+                    <div class="settings-value" id="setting-auth-mode">—</div>
+                </div>
             </div>
         </section>
     </main>

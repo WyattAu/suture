@@ -12,9 +12,9 @@ use std::io;
 
 use app::App;
 use crossterm::{
-    event::{DisableMouseCapture, EnableMouseCapture},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+    cursor::Show,
 };
 use event::Event;
 use ratatui::Terminal;
@@ -30,7 +30,7 @@ pub fn run(repo_path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    execute!(stdout, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -38,12 +38,19 @@ pub fn run(repo_path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>
     let mut app = App::new(repo);
     let result = run_app(&mut terminal, &mut app);
 
+    // Install panic hook to restore terminal on crash
+    let original_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic_info| {
+        let _ = disable_raw_mode();
+        let _ = execute!(std::io::stdout(), LeaveAlternateScreen, Show);
+        original_hook(panic_info);
+    }));
+
     // Restore terminal
     disable_raw_mode()?;
     execute!(
         terminal.backend_mut(),
         LeaveAlternateScreen,
-        DisableMouseCapture
     )?;
     terminal.show_cursor()?;
 
@@ -67,9 +74,9 @@ fn run_app(
                         return Ok(());
                     }
                 }
-                Event::Resize => {
+                Event::Resize(w, h) => {
                     terminal
-                        .resize(ratatui::layout::Rect::new(0, 0, 80, 24))
+                        .resize(ratatui::layout::Rect::new(0, 0, w, h))
                         .ok();
                 }
             }

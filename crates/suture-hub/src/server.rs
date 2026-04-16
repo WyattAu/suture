@@ -4716,7 +4716,7 @@ mod tests {
     #[tokio::test]
     async fn test_unprotect_branch() {
         let hub = Arc::new(SutureHubServer::new());
-        protect_branch_handler(
+        let _ = protect_branch_handler(
             State(hub.clone()),
             Path(("unprot-repo".to_string(), "main".to_string())),
         ).await;
@@ -5085,6 +5085,730 @@ mod tests {
         for _ in 0..10 {
             assert!(hub.check_rate_limit("9.9.9.9", "pull").is_ok());
         }
+    }
+
+    // === HTTP Integration Tests ===
+
+    async fn start_test_hub() -> (Arc<SutureHubServer>, u16, String) {
+        let mut hub = SutureHubServer::new_in_memory();
+        hub.set_no_auth(true);
+        let hub = Arc::new(hub);
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let base = format!("http://127.0.0.1:{}", port);
+
+        let app = axum::Router::new()
+            .route("/", axum::routing::get(serve_index))
+            .route("/push", axum::routing::post(push_handler))
+            .route("/push/compressed", axum::routing::post(push_compressed_handler))
+            .route("/pull", axum::routing::post(pull_handler))
+            .route("/repos", axum::routing::get(list_repos_handler))
+            .route("/repo/{repo_id}", axum::routing::get(repo_info_handler))
+            .route("/repos/{repo_id}/branches", axum::routing::get(repo_branches_handler))
+            .route("/repos/{repo_id}/patches", axum::routing::get(repo_patches_handler))
+            .route("/handshake", axum::routing::get(handshake_handler))
+            .route("/handshake", axum::routing::post(handshake_handler))
+            .route("/v2/handshake", axum::routing::get(handshake_v2_handler))
+            .route("/v2/handshake", axum::routing::post(handshake_v2_handler))
+            .route("/v2/pull", axum::routing::post(v2_pull_handler))
+            .route("/v2/push", axum::routing::post(v2_push_handler))
+            .route("/auth/token", axum::routing::post(create_token_handler))
+            .route("/auth/verify", axum::routing::post(verify_token_handler))
+            .route("/mirror/setup", axum::routing::post(mirror_setup_handler))
+            .route("/mirror/status", axum::routing::get(mirror_status_handler))
+            .route("/mirror/status", axum::routing::post(mirror_status_handler))
+            .route("/repos/{repo_id}/protect/{branch}", axum::routing::post(protect_branch_handler))
+            .route("/repos/{repo_id}/unprotect/{branch}", axum::routing::post(unprotect_branch_handler))
+            .route("/auth/register", axum::routing::post(register_handler))
+            .route("/users", axum::routing::get(list_users_handler))
+            .route("/users/{username}", axum::routing::get(get_user_handler))
+            .route("/users/{username}/role", axum::routing::patch(update_role_handler))
+            .route("/users/{username}", axum::routing::delete(delete_user_handler))
+            .route("/static/{*path}", axum::routing::get(serve_static_file))
+            .route("/replication/peers", axum::routing::post(add_peer_handler))
+            .route("/replication/peers", axum::routing::get(list_peers_handler))
+            .route("/replication/peers/{id}", axum::routing::delete(remove_peer_handler))
+            .route("/replication/status", axum::routing::get(replication_status_handler))
+            .route("/replication/sync", axum::routing::post(replication_sync_handler))
+            .with_state(Arc::clone(&hub));
+
+        tokio::spawn(async move {
+            axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>())
+                .await
+                .unwrap();
+        });
+
+        for _ in 0..50 {
+            if reqwest::Client::new()
+                .get(format!("{}/repos", &base))
+                .send()
+                .await
+                .is_ok()
+            {
+                return (hub, port, base);
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        panic!("test server did not start in time");
+    }
+
+    async fn create_test_user_hub(hub: &SutureHubServer, username: &str, display_name: &str, role: &str) -> String {
+        let api_token = generate_api_token();
+        let store = hub.storage.write().await;
+        store.create_user(username, display_name, role, &api_token).unwrap();
+        api_token
+    }
+
+    fn make_auth_header_val(token: &str) -> String {
+        format!("Bearer {}", token)
+    }
+
+    async fn start_test_hub_auth() -> (Arc<SutureHubServer>, u16, String) {
+        let hub = Arc::new(SutureHubServer::new_in_memory());
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let base = format!("http://127.0.0.1:{}", port);
+
+        let app = axum::Router::new()
+            .route("/", axum::routing::get(serve_index))
+            .route("/push", axum::routing::post(push_handler))
+            .route("/push/compressed", axum::routing::post(push_compressed_handler))
+            .route("/pull", axum::routing::post(pull_handler))
+            .route("/repos", axum::routing::get(list_repos_handler))
+            .route("/repo/{repo_id}", axum::routing::get(repo_info_handler))
+            .route("/repos/{repo_id}/branches", axum::routing::get(repo_branches_handler))
+            .route("/repos/{repo_id}/patches", axum::routing::get(repo_patches_handler))
+            .route("/handshake", axum::routing::get(handshake_handler))
+            .route("/handshake", axum::routing::post(handshake_handler))
+            .route("/v2/handshake", axum::routing::get(handshake_v2_handler))
+            .route("/v2/handshake", axum::routing::post(handshake_v2_handler))
+            .route("/v2/pull", axum::routing::post(v2_pull_handler))
+            .route("/v2/push", axum::routing::post(v2_push_handler))
+            .route("/auth/token", axum::routing::post(create_token_handler))
+            .route("/auth/verify", axum::routing::post(verify_token_handler))
+            .route("/mirror/setup", axum::routing::post(mirror_setup_handler))
+            .route("/mirror/status", axum::routing::get(mirror_status_handler))
+            .route("/mirror/status", axum::routing::post(mirror_status_handler))
+            .route("/repos/{repo_id}/protect/{branch}", axum::routing::post(protect_branch_handler))
+            .route("/repos/{repo_id}/unprotect/{branch}", axum::routing::post(unprotect_branch_handler))
+            .route("/auth/register", axum::routing::post(register_handler))
+            .route("/users", axum::routing::get(list_users_handler))
+            .route("/users/{username}", axum::routing::get(get_user_handler))
+            .route("/users/{username}/role", axum::routing::patch(update_role_handler))
+            .route("/users/{username}", axum::routing::delete(delete_user_handler))
+            .route("/static/{*path}", axum::routing::get(serve_static_file))
+            .route("/replication/peers", axum::routing::post(add_peer_handler))
+            .route("/replication/peers", axum::routing::get(list_peers_handler))
+            .route("/replication/peers/{id}", axum::routing::delete(remove_peer_handler))
+            .route("/replication/status", axum::routing::get(replication_status_handler))
+            .route("/replication/sync", axum::routing::post(replication_sync_handler))
+            .with_state(Arc::clone(&hub));
+
+        tokio::spawn(async move {
+            axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>())
+                .await
+                .unwrap();
+        });
+
+        for _ in 0..50 {
+            if reqwest::Client::new()
+                .get(format!("{}/repos", &base))
+                .send()
+                .await
+                .is_ok()
+            {
+                return (hub, port, base);
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        panic!("test server did not start in time");
+    }
+
+    fn post_json(client: &reqwest::Client, url: &str, body: &serde_json::Value) -> reqwest::RequestBuilder {
+        client.post(url).header("Content-Type", "application/json").body(body.to_string())
+    }
+
+    fn patch_json(client: &reqwest::Client, url: &str, body: &serde_json::Value) -> reqwest::RequestBuilder {
+        client.patch(url).header("Content-Type", "application/json").body(body.to_string())
+    }
+
+    #[tokio::test]
+    async fn test_http_index() {
+        let (_hub, _port, base) = start_test_hub().await;
+        let client = reqwest::Client::new();
+        let resp = client.get(format!("{}/", &base)).send().await.unwrap();
+        assert_eq!(resp.status(), 200);
+        let body = resp.text().await.unwrap();
+        assert!(body.contains("Suture Hub"));
+    }
+
+    #[tokio::test]
+    async fn test_http_handshake() {
+        let (_hub, _port, base) = start_test_hub().await;
+        let client = reqwest::Client::new();
+        let resp = client
+            .post(format!("{}/handshake", &base))
+            .json(&serde_json::json!({"client_version": 1, "client_name": "test"}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        let data: serde_json::Value = resp.json().await.unwrap();
+        assert_eq!(data["server_version"], 1);
+        assert_eq!(data["compatible"], true);
+    }
+
+    #[tokio::test]
+    async fn test_http_repos_empty_and_populated() {
+        let (hub, _port, base) = start_test_hub().await;
+        let client = reqwest::Client::new();
+
+        let resp = client.get(format!("{}/repos", &base)).send().await.unwrap();
+        assert_eq!(resp.status(), 200);
+        let data: serde_json::Value = resp.json().await.unwrap();
+        assert_eq!(data["repo_ids"].as_array().unwrap().len(), 0);
+
+        let a_hex = "a".repeat(64);
+        let push_body = serde_json::json!({
+            "repo_id": "http-repo",
+            "patches": [{
+                "id": {"value": &a_hex},
+                "operation_type": "Create",
+                "touch_set": ["f"],
+                "target_path": "f",
+                "payload": "",
+                "parent_ids": [],
+                "author": "alice",
+                "message": "p",
+                "timestamp": 0
+            }],
+            "branches": [],
+            "blobs": []
+        });
+        let push_resp = client
+            .post(format!("{}/push", &base))
+            .json(&push_body)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(push_resp.status(), 200);
+
+        let resp2 = client.get(format!("{}/repos", &base)).send().await.unwrap();
+        let data2: serde_json::Value = resp2.json().await.unwrap();
+        assert_eq!(data2["repo_ids"].as_array().unwrap().len(), 1);
+
+        drop(hub);
+    }
+
+    #[tokio::test]
+    async fn test_http_repo_info() {
+        let (hub, _port, base) = start_test_hub().await;
+        let client = reqwest::Client::new();
+
+        let resp = client.get(format!("{}/repo/nonexistent", &base)).send().await.unwrap();
+        assert_eq!(resp.status(), 404);
+
+        let a_hex = "a".repeat(64);
+        hub.handle_push(PushRequest {
+            repo_id: "info-repo".to_string(),
+            patches: vec![make_patch(&a_hex, "Create", &[], "alice")],
+            branches: vec![make_branch("main", &a_hex)],
+            blobs: vec![],
+            signature: None,
+            known_branches: None,
+            force: false,
+        }).await.unwrap();
+
+        let resp2 = client.get(format!("{}/repo/info-repo", &base)).send().await.unwrap();
+        assert_eq!(resp2.status(), 200);
+        let data: serde_json::Value = resp2.json().await.unwrap();
+        assert_eq!(data["patch_count"], 1);
+        assert_eq!(data["branches"].as_array().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_http_repo_branches() {
+        let (hub, _port, base) = start_test_hub().await;
+        let client = reqwest::Client::new();
+        let a_hex = "a".repeat(64);
+
+        hub.handle_push(PushRequest {
+            repo_id: "branch-repo".to_string(),
+            patches: vec![make_patch(&a_hex, "Create", &[], "alice")],
+            branches: vec![make_branch("main", &a_hex), make_branch("dev", &a_hex)],
+            blobs: vec![],
+            signature: None,
+            known_branches: None,
+            force: false,
+        }).await.unwrap();
+
+        let resp = client
+            .get(format!("{}/repos/branch-repo/branches", &base))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        let data: serde_json::Value = resp.json().await.unwrap();
+        assert_eq!(data.as_array().unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_http_repo_patches() {
+        let (hub, _port, base) = start_test_hub().await;
+        let client = reqwest::Client::new();
+
+        for i in 0..3u32 {
+            let hex = format!("{:064x}", i);
+            let parents: Vec<String> = if i > 0 {
+                vec![format!("{:064x}", i - 1)]
+            } else {
+                vec![]
+            };
+            hub.handle_push(PushRequest {
+                repo_id: "patch-repo".to_string(),
+                patches: vec![PatchProto {
+                    id: make_hash_proto(&hex),
+                    operation_type: "Create".to_string(),
+                    touch_set: vec![format!("f{i}")],
+                    target_path: Some(format!("f{i}")),
+                    payload: String::new(),
+                    parent_ids: parents.iter().map(|p| make_hash_proto(p)).collect(),
+                    author: "alice".to_string(),
+                    message: format!("p{i}"),
+                    timestamp: 0,
+                }],
+                branches: vec![],
+                blobs: vec![],
+                signature: None,
+                known_branches: None,
+                force: false,
+            }).await.unwrap();
+        }
+
+        let resp = client
+            .get(format!("{}/repos/patch-repo/patches?offset=1&limit=1", &base))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        let data: serde_json::Value = resp.json().await.unwrap();
+        assert_eq!(data.as_array().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_http_push_pull_roundtrip() {
+        let (_hub, _port, base) = start_test_hub().await;
+        let client = reqwest::Client::new();
+        let a_hex = "a".repeat(64);
+        let b_hex = "b".repeat(64);
+
+        let push_body = serde_json::json!({
+            "repo_id": "roundtrip-repo",
+            "patches": [
+                {
+                    "id": {"value": &a_hex},
+                    "operation_type": "Create",
+                    "touch_set": ["file_a"],
+                    "target_path": "file_a",
+                    "payload": "",
+                    "parent_ids": [],
+                    "author": "alice",
+                    "message": "first patch",
+                    "timestamp": 100
+                },
+                {
+                    "id": {"value": &b_hex},
+                    "operation_type": "Modify",
+                    "touch_set": ["file_a"],
+                    "target_path": "file_a",
+                    "payload": "",
+                    "parent_ids": [{"value": &a_hex}],
+                    "author": "bob",
+                    "message": "second patch",
+                    "timestamp": 200
+                }
+            ],
+            "branches": [{"name": "main", "target_id": {"value": &b_hex}}],
+            "blobs": []
+        });
+
+        let push_resp = client
+            .post(format!("{}/push", &base))
+            .json(&push_body)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(push_resp.status(), 200);
+        let push_data: serde_json::Value = push_resp.json().await.unwrap();
+        assert_eq!(push_data["success"], true);
+
+        let pull_resp = client
+            .post(format!("{}/pull", &base))
+            .json(&serde_json::json!({
+                "repo_id": "roundtrip-repo",
+                "known_branches": [],
+                "max_depth": null
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(pull_resp.status(), 200);
+        let pull_data: serde_json::Value = pull_resp.json().await.unwrap();
+        assert_eq!(pull_data["success"], true);
+        assert_eq!(pull_data["patches"].as_array().unwrap().len(), 2);
+        assert_eq!(pull_data["branches"].as_array().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_http_push_compressed() {
+        let (_hub, _port, base) = start_test_hub().await;
+        let client = reqwest::Client::new();
+        let a_hex = "a".repeat(64);
+        let blob_data = b"compressed test data";
+        let blob_hash = "cafebabe".repeat(8);
+        let compressed = suture_protocol::compress(blob_data).unwrap();
+
+        let push_body = serde_json::json!({
+            "repo_id": "comp-repo",
+            "patches": [{
+                "id": {"value": &a_hex},
+                "operation_type": "Create",
+                "touch_set": ["f"],
+                "target_path": "f",
+                "payload": &blob_hash,
+                "parent_ids": [],
+                "author": "alice",
+                "message": "p",
+                "timestamp": 0
+            }],
+            "branches": [{"name": "main", "target_id": {"value": &a_hex}}],
+            "blobs": [{"hash": {"value": &blob_hash}, "data": base64_encode(&compressed)}]
+        });
+
+        let resp = client
+            .post(format!("{}/push/compressed", &base))
+            .json(&push_body)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        let data: serde_json::Value = resp.json().await.unwrap();
+        assert_eq!(data["success"], true);
+    }
+
+    #[tokio::test]
+    async fn test_http_v2_handshake() {
+        let (_hub, _port, base) = start_test_hub().await;
+        let client = reqwest::Client::new();
+
+        let resp = client
+            .post(format!("{}/v2/handshake", &base))
+            .json(&serde_json::json!({
+                "client_version": 2,
+                "client_name": "test-v2",
+                "capabilities": {
+                    "supports_delta": true,
+                    "supports_compression": false,
+                    "max_blob_size": 0
+                }
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        let data: serde_json::Value = resp.json().await.unwrap();
+        assert_eq!(data["server_version"], 2);
+        assert_eq!(data["compatible"], true);
+        assert_eq!(data["server_capabilities"]["supports_delta"], true);
+    }
+
+    #[tokio::test]
+    async fn test_http_v2_push_pull() {
+        let (_hub, _port, base) = start_test_hub().await;
+        let client = reqwest::Client::new();
+        let a_hex = "a".repeat(64);
+        let f_hash = blake3::hash(b"f").to_hex().to_string();
+
+        let push_body = serde_json::json!({
+            "repo_id": "v2-repo",
+            "patches": [{
+                "id": {"value": &a_hex},
+                "operation_type": "Create",
+                "touch_set": ["f"],
+                "target_path": "f",
+                "payload": "hello world",
+                "parent_ids": [],
+                "author": "alice",
+                "message": "v2 patch",
+                "timestamp": 0
+            }],
+            "branches": [{"name": "main", "target_id": {"value": &a_hex}}],
+            "blobs": [{"hash": {"value": &f_hash}, "data": "aGVsbG8gd29ybGQ="}],
+            "deltas": [],
+            "signature": null,
+            "known_branches": null,
+            "force": false
+        });
+
+        let push_resp = post_json(&client, &format!("{}/v2/push", &base), &push_body)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(push_resp.status(), 200, "V2 push failed: {}", push_resp.status());
+
+        let pull_body = serde_json::json!({
+            "repo_id": "v2-repo",
+            "known_branches": [],
+            "max_depth": null,
+            "known_blob_hashes": [],
+            "capabilities": {
+                "supports_delta": false,
+                "supports_compression": false,
+                "max_blob_size": 0
+            }
+        });
+
+        let pull_resp = post_json(&client, &format!("{}/v2/pull", &base), &pull_body)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(pull_resp.status(), 200);
+        let pull_data: serde_json::Value = pull_resp.json().await.unwrap();
+        assert_eq!(pull_data["success"], true);
+        assert_eq!(pull_data["patches"].as_array().unwrap().len(), 1);
+        assert_eq!(pull_data["protocol_version"], 2);
+    }
+
+    #[tokio::test]
+    async fn test_http_auth_token_bootstrap() {
+        let (_hub, _port, base) = start_test_hub().await;
+        let client = reqwest::Client::new();
+
+        let resp = client
+            .post(format!("{}/auth/token", &base))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        let data: serde_json::Value = resp.json().await.unwrap();
+        assert!(!data["token"].as_str().unwrap().is_empty());
+        assert!(data["created_at"].as_u64().unwrap() > 0);
+    }
+
+    #[tokio::test]
+    async fn test_http_auth_verify() {
+        let (_hub, _port, base) = start_test_hub().await;
+        let client = reqwest::Client::new();
+
+        let token_resp = client
+            .post(format!("{}/auth/token", &base))
+            .send()
+            .await
+            .unwrap();
+        let token_data: serde_json::Value = token_resp.json().await.unwrap();
+        let token = token_data["token"].as_str().unwrap().to_string();
+
+        let verify_resp = client
+            .post(format!("{}/auth/verify", &base))
+            .json(&serde_json::json!({
+                "method": {"Token": &token},
+                "timestamp": 0
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(verify_resp.status(), 200);
+        let verify_data: serde_json::Value = verify_resp.json().await.unwrap();
+        assert_eq!(verify_data["valid"], true);
+
+        let bad_resp = client
+            .post(format!("{}/auth/verify", &base))
+            .json(&serde_json::json!({
+                "method": {"Token": "invalid-token-xyz"},
+                "timestamp": 0
+            }))
+            .send()
+            .await
+            .unwrap();
+        let bad_data: serde_json::Value = bad_resp.json().await.unwrap();
+        assert_eq!(bad_data["valid"], false);
+    }
+
+    #[tokio::test]
+    async fn test_http_auth_register() {
+        let (hub, _port, base) = start_test_hub_auth().await;
+        let client = reqwest::Client::new();
+        let admin_token = create_test_user_hub(&hub, "http-admin", "HTTP Admin", "admin").await;
+
+        let resp = post_json(&client, &format!("{}/auth/register", &base), &serde_json::json!({
+            "username": "new-http-user",
+            "display_name": "New HTTP User",
+            "role": "member"
+        })).header("Authorization", make_auth_header_val(&admin_token))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 201);
+        let data: serde_json::Value = resp.json().await.unwrap();
+        assert_eq!(data["success"], true);
+        assert_eq!(data["user"]["username"], "new-http-user");
+    }
+
+    #[tokio::test]
+    async fn test_http_users_list() {
+        let (hub, _port, base) = start_test_hub_auth().await;
+        let client = reqwest::Client::new();
+        let admin_token = create_test_user_hub(&hub, "ul-admin", "UL Admin", "admin").await;
+
+        let resp = client
+            .get(format!("{}/users", &base))
+            .header("Authorization", make_auth_header_val(&admin_token))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        let data: serde_json::Value = resp.json().await.unwrap();
+        assert_eq!(data["success"], true);
+        assert!(data["users"].as_array().unwrap().len() >= 1);
+    }
+
+    #[tokio::test]
+    async fn test_http_user_crud() {
+        let (hub, _port, base) = start_test_hub_auth().await;
+        let client = reqwest::Client::new();
+        let admin_token = create_test_user_hub(&hub, "crud-admin", "CRUD Admin", "admin").await;
+        create_test_user_hub(&hub, "crud-target", "CRUD Target", "reader").await;
+        let auth = make_auth_header_val(&admin_token);
+
+        let get_resp = client
+            .get(format!("{}/users/crud-target", &base))
+            .header("Authorization", &auth)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(get_resp.status(), 200);
+        let get_data: serde_json::Value = get_resp.json().await.unwrap();
+        assert_eq!(get_data["user"]["username"], "crud-target");
+        assert_eq!(get_data["user"]["role"], "reader");
+
+        let patch_resp = patch_json(&client, &format!("{}/users/crud-target/role", &base), &serde_json::json!({"role": "admin"}))
+            .header("Authorization", &auth)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(patch_resp.status(), 200);
+        let patch_data: serde_json::Value = patch_resp.json().await.unwrap();
+        assert_eq!(patch_data["success"], true);
+
+        let del_resp = client
+            .delete(format!("{}/users/crud-target", &base))
+            .header("Authorization", &auth)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(del_resp.status(), 200);
+        let del_data: serde_json::Value = del_resp.json().await.unwrap();
+        assert_eq!(del_data["success"], true);
+    }
+
+    #[tokio::test]
+    async fn test_http_mirror_setup_and_status() {
+        let (_hub, _port, base) = start_test_hub().await;
+        let client = reqwest::Client::new();
+
+        let setup_resp = post_json(&client, &format!("{}/mirror/setup", &base), &serde_json::json!({
+            "repo_name": "mirrored",
+            "upstream_url": "http://example.com",
+            "upstream_repo": "upstream/repo"
+        })).send().await.unwrap();
+        assert_eq!(setup_resp.status(), 200);
+        let setup_data: serde_json::Value = setup_resp.json().await.unwrap();
+        assert_eq!(setup_data["success"], true);
+
+        let status_resp = post_json(&client, &format!("{}/mirror/status", &base), &serde_json::json!({}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(status_resp.status(), 200);
+        let status_data: serde_json::Value = status_resp.json().await.unwrap();
+        assert_eq!(status_data["mirrors"].as_array().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_http_replication() {
+        let (hub, _port, base) = start_test_hub().await;
+        let client = reqwest::Client::new();
+        hub.set_replication_role("leader");
+
+        let add_resp = client
+            .post(format!("{}/replication/peers", &base))
+            .json(&serde_json::json!({
+                "peer_url": "http://follower1:8080",
+                "role": "follower"
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(add_resp.status(), 200);
+        let add_data: serde_json::Value = add_resp.json().await.unwrap();
+        assert_eq!(add_data["success"], true);
+
+        let list_resp = client
+            .get(format!("{}/replication/peers", &base))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(list_resp.status(), 200);
+        let list_data: serde_json::Value = list_resp.json().await.unwrap();
+        assert_eq!(list_data["peers"].as_array().unwrap().len(), 1);
+
+        let status_resp = client
+            .get(format!("{}/replication/status", &base))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(status_resp.status(), 200);
+        let status_data: serde_json::Value = status_resp.json().await.unwrap();
+        assert_eq!(status_data["status"]["peer_count"], 1);
+    }
+
+    #[tokio::test]
+    async fn test_http_branch_protection() {
+        let (_hub, _port, base) = start_test_hub().await;
+        let client = reqwest::Client::new();
+
+        let protect_resp = client
+            .post(format!("{}/repos/prot-repo/protect/main", &base))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(protect_resp.status(), 200);
+        let protect_data: serde_json::Value = protect_resp.json().await.unwrap();
+        assert_eq!(protect_data["success"], true);
+
+        let unprotect_resp = client
+            .post(format!("{}/repos/prot-repo/unprotect/main", &base))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(unprotect_resp.status(), 200);
+        let unprotect_data: serde_json::Value = unprotect_resp.json().await.unwrap();
+        assert_eq!(unprotect_data["success"], true);
+    }
+
+    #[tokio::test]
+    async fn test_http_404_unknown_route() {
+        let (_hub, _port, base) = start_test_hub().await;
+        let client = reqwest::Client::new();
+
+        let resp = client
+            .get(format!("{}/nonexistent", &base))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 404);
     }
 
 }

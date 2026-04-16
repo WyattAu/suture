@@ -5,6 +5,7 @@ members = [
 ]
 exclude = [
     "crates/suture-py",
+    "desktop-app",
 ]
 
 [workspace.package]

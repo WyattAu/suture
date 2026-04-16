@@ -8,7 +8,7 @@ pub fn poll_event() -> Result<Option<Event>, std::io::Error> {
     if event::poll(Duration::from_millis(250))? {
         match event::read()? {
             CrosstermEvent::Key(key) => Ok(Some(Event::Key(key))),
-            CrosstermEvent::Resize(_, _) => Ok(Some(Event::Resize)),
+            CrosstermEvent::Resize(w, h) => Ok(Some(Event::Resize(w, h))),
             _ => Ok(None),
         }
     } else {
@@ -20,7 +20,7 @@ pub fn poll_event() -> Result<Option<Event>, std::io::Error> {
 #[derive(Debug)]
 pub enum Event {
     Key(KeyEvent),
-    Resize,
+    Resize(u16, u16),
 }
 
 /// Check if a key event matches the given code and modifiers.

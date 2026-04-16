@@ -13,12 +13,13 @@ pub enum Tab {
     Log,
     Staging,
     Diff,
+    Branches,
     Help,
 }
 
 impl Tab {
     /// All tabs in order for tab cycling.
-    pub const ALL: [Tab; 5] = [Tab::Status, Tab::Log, Tab::Staging, Tab::Diff, Tab::Help];
+    pub const ALL: [Tab; 6] = [Tab::Status, Tab::Log, Tab::Staging, Tab::Diff, Tab::Branches, Tab::Help];
 
     fn next(self) -> Self {
         let idx = Self::ALL.iter().position(|&t| t == self).unwrap_or(0);
@@ -36,6 +37,7 @@ impl Tab {
             Tab::Log => "Log",
             Tab::Staging => "Staging",
             Tab::Diff => "Diff",
+            Tab::Branches => "Branches",
             Tab::Help => "Help",
         }
     }
@@ -80,6 +82,13 @@ pub enum DiffLineType {
     ConflictMarker,
 }
 
+/// Action to perform on branch input submission.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BranchAction {
+    Create,
+    Rename,
+}
+
 /// Application state.
 pub struct App {
     repo: Repository,
@@ -100,6 +109,7 @@ pub struct App {
     // Staging view
     staging_cursor: usize,
     staging_focus_staged: bool, // true = staged pane, false = unstaged pane
+    staging_scroll: usize,      // scroll offset for long file lists
 
     // Log view
     log_entries: Vec<LogEntry>,
@@ -115,6 +125,13 @@ pub struct App {
     // Status bar
     status_message: String,
     error_message: Option<String>,
+
+    // Branch view
+    branch_list: Vec<(String, String)>, // (name, target_patch_hex)
+    branch_cursor: usize,
+    branch_input_mode: bool,
+    branch_input: String,
+    branch_input_action: BranchAction,
 
     // Commit message input
     commit_mode: bool,
@@ -137,6 +154,7 @@ impl App {
             unstaged_files: Vec::new(),
             staging_cursor: 0,
             staging_focus_staged: true,
+            staging_scroll: 0,
             log_entries: Vec::new(),
             log_cursor: 0,
             log_scroll: 0,
@@ -146,6 +164,11 @@ impl App {
             diff_path: None,
             status_message: String::new(),
             error_message: None,
+            branch_list: Vec::new(),
+            branch_cursor: 0,
+            branch_input_mode: false,
+            branch_input: String::new(),
+            branch_input_action: BranchAction::Create,
             commit_mode: false,
             commit_message: String::new(),
             should_quit: false,
@@ -204,6 +227,9 @@ impl App {
         // Refresh log
         self.refresh_log()?;
 
+        // Refresh branch list
+        self.refresh_branches()?;
+
         Ok(())
     }
 
@@ -246,10 +272,31 @@ impl App {
         Ok(())
     }
 
+    fn refresh_branches(&mut self) -> Result<(), RepoError> {
+        self.branch_list = self
+            .repo
+            .dag()
+            .list_branches()
+            .into_iter()
+            .map(|(name, id)| (name, id.to_hex()))
+            .collect();
+        self.branch_list.sort_by(|a, b| a.0.cmp(&b.0));
+        let max = self.branch_list.len().saturating_sub(1);
+        if self.branch_cursor > max {
+            self.branch_cursor = max;
+        }
+        Ok(())
+    }
+
     /// Handle a key event. Returns true if the app should quit.
     pub fn handle_key(&mut self, key: KeyEvent) -> bool {
         if self.should_quit {
             return true;
+        }
+
+        // Branch input mode (for creating/renaming branches)
+        if self.branch_input_mode {
+            return self.handle_branch_input_key(key);
         }
 
         // Commit mode input
@@ -263,6 +310,10 @@ impl App {
         {
             self.should_quit = true;
             return true;
+        }
+
+        if self.current_tab == Tab::Staging && key_matches(key, KeyCode::Tab, KeyModifiers::NONE) {
+            return self.handle_staging_key(key);
         }
 
         if key_matches(key, KeyCode::Tab, KeyModifiers::NONE) {
@@ -286,7 +337,8 @@ impl App {
                 '2' => self.current_tab = Tab::Log,
                 '3' => self.current_tab = Tab::Staging,
                 '4' => self.current_tab = Tab::Diff,
-                '5' => self.current_tab = Tab::Help,
+                '5' => self.current_tab = Tab::Branches,
+                '6' => self.current_tab = Tab::Help,
                 _ => {}
             }
             self.status_message = format!("Switched to {}", self.current_tab.title());
@@ -299,6 +351,7 @@ impl App {
             Tab::Log => self.handle_log_key(key),
             Tab::Staging => self.handle_staging_key(key),
             Tab::Diff => self.handle_diff_key(key),
+            Tab::Branches => self.handle_branches_key(key),
             Tab::Help => self.handle_help_key(key),
         }
     }
@@ -312,6 +365,10 @@ impl App {
             KeyCode::Char('l') => {
                 self.current_tab = Tab::Log;
                 self.status_message = "Switched to Log".to_string();
+            }
+            KeyCode::Char('b') => {
+                self.current_tab = Tab::Branches;
+                self.status_message = "Switched to Branches".to_string();
             }
             KeyCode::Char('c') => {
                 if !self.staged_files.is_empty() {
@@ -393,6 +450,17 @@ impl App {
                     self.staging_cursor += 1;
                 }
             }
+            KeyCode::PageUp => {
+                self.staging_cursor = self.staging_cursor.saturating_sub(10);
+            }
+            KeyCode::PageDown => {
+                let max = if self.staging_focus_staged {
+                    self.staged_files.len()
+                } else {
+                    self.unstaged_files.len()
+                };
+                self.staging_cursor = (self.staging_cursor + 10).min(max.saturating_sub(1));
+            }
             KeyCode::Char(' ') | KeyCode::Enter => {
                 self.toggle_staging();
             }
@@ -437,20 +505,44 @@ impl App {
     fn handle_commit_key(&mut self, key: KeyEvent) -> bool {
         match key.code {
             KeyCode::Enter => {
-                let msg = self.commit_message.trim().to_string();
-                if msg.is_empty() {
-                    self.error_message = Some("Empty commit message".to_string());
-                    return false;
-                }
-                if let Err(e) = self.repo.commit(&msg) {
-                    self.error_message = Some(format!("Commit failed: {e}"));
-                } else if let Err(e) = self.refresh() {
-                    self.error_message = Some(format!("Refresh failed: {e}"));
+                // Ctrl+Enter or plain Enter commits; Ctrl+J inserts newline
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    // Ctrl+Enter: commit (alternative to plain Enter)
+                    let msg = self.commit_message.trim().to_string();
+                    if msg.is_empty() {
+                        self.error_message = Some("Empty commit message".to_string());
+                        return false;
+                    }
+                    if let Err(e) = self.repo.commit(&msg) {
+                        self.error_message = Some(format!("Commit failed: {e}"));
+                    } else if let Err(e) = self.refresh() {
+                        self.error_message = Some(format!("Refresh failed: {e}"));
+                    } else {
+                        self.status_message = "Committed successfully".to_string();
+                    }
+                    self.commit_mode = false;
+                    self.commit_message.clear();
                 } else {
-                    self.status_message = "Committed successfully".to_string();
+                    // Plain Enter: commit
+                    let msg = self.commit_message.trim().to_string();
+                    if msg.is_empty() {
+                        self.error_message = Some("Empty commit message".to_string());
+                        return false;
+                    }
+                    if let Err(e) = self.repo.commit(&msg) {
+                        self.error_message = Some(format!("Commit failed: {e}"));
+                    } else if let Err(e) = self.refresh() {
+                        self.error_message = Some(format!("Refresh failed: {e}"));
+                    } else {
+                        self.status_message = "Committed successfully".to_string();
+                    }
+                    self.commit_mode = false;
+                    self.commit_message.clear();
                 }
-                self.commit_mode = false;
-                self.commit_message.clear();
+            }
+            KeyCode::Char('j') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Ctrl+J: insert newline in commit message
+                self.commit_message.push('\n');
             }
             KeyCode::Esc => {
                 self.commit_mode = false;
@@ -501,6 +593,143 @@ impl App {
     }
 
     fn handle_help_key(&mut self, _key: KeyEvent) -> bool {
+        false
+    }
+
+    fn handle_branches_key(&mut self, key: KeyEvent) -> bool {
+        match key.code {
+            KeyCode::Up | KeyCode::Char('k') => {
+                if self.branch_cursor > 0 {
+                    self.branch_cursor -= 1;
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if self.branch_cursor < self.branch_list.len().saturating_sub(1) {
+                    self.branch_cursor += 1;
+                }
+            }
+            KeyCode::Char('n') => {
+                // Create new branch
+                self.branch_input_mode = true;
+                self.branch_input.clear();
+                self.branch_input_action = BranchAction::Create;
+                self.status_message = "Enter new branch name (Enter to confirm, Esc to cancel)".to_string();
+            }
+            KeyCode::Char('x') => {
+                // Checkout selected branch
+                let branch_name = self.branch_list.get(self.branch_cursor).map(|(n, _)| n.clone());
+                if let Some(name) = branch_name {
+                    if let Err(e) = self.repo.checkout(&name) {
+                        self.error_message = Some(format!("Checkout failed: {e}"));
+                    } else if let Err(e) = self.refresh() {
+                        self.error_message = Some(format!("Refresh failed: {e}"));
+                    } else {
+                        self.status_message = format!("Checked out: {name}");
+                    }
+                }
+            }
+            KeyCode::Char('d') => {
+                // Delete selected branch
+                if let Some((name, _)) = self.branch_list.get(self.branch_cursor).cloned() {
+                    // Don't allow deleting the current branch
+                    if self.head_branch.as_deref() == Some(name.as_str()) {
+                        self.error_message = Some("Cannot delete the current branch".to_string());
+                        return false;
+                    }
+                    match self.repo.delete_branch(&name) {
+                        Ok(()) => {
+                            self.status_message = format!("Deleted branch: {name}");
+                            if let Err(e) = self.refresh() {
+                                self.error_message = Some(format!("Refresh failed: {e}"));
+                            }
+                        }
+                        Err(e) => {
+                            self.error_message = Some(format!("Delete failed: {e}"));
+                        }
+                    }
+                }
+            }
+            KeyCode::Char('r') => {
+                // Rename selected branch
+                if let Some((name, _)) = self.branch_list.get(self.branch_cursor) {
+                    self.branch_input_mode = true;
+                    self.branch_input = name.clone();
+                    self.branch_input_action = BranchAction::Rename;
+                    self.status_message = "Enter new branch name (Enter to confirm, Esc to cancel)".to_string();
+                }
+            }
+            KeyCode::Char('g') => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    self.branch_cursor = 0;
+                }
+            }
+            KeyCode::Char('G') => {
+                self.branch_cursor = self.branch_list.len().saturating_sub(1);
+            }
+            _ => {}
+        }
+        false
+    }
+
+    fn handle_branch_input_key(&mut self, key: KeyEvent) -> bool {
+        match key.code {
+            KeyCode::Enter => {
+                let name = self.branch_input.trim().to_string();
+                if name.is_empty() {
+                    self.error_message = Some("Empty branch name".to_string());
+                    return false;
+                }
+                // Validate branch name
+                if suture_common::BranchName::new(&name).is_err() {
+                    self.error_message = Some("Invalid branch name (must be non-empty, no null bytes)".to_string());
+                    return false;
+                }
+                match self.branch_input_action {
+                    BranchAction::Create => match self.repo.create_branch(&name, None) {
+                        Ok(()) => {
+                            self.status_message = format!("Created branch: {name}");
+                            if let Err(e) = self.refresh() {
+                                self.error_message = Some(format!("Refresh failed: {e}"));
+                            }
+                        }
+                        Err(e) => self.error_message = Some(format!("Create branch failed: {e}")),
+                    },
+                    BranchAction::Rename => {
+                        let old_name = self
+                            .branch_list
+                            .get(self.branch_cursor)
+                            .map(|(n, _)| n.clone())
+                            .unwrap_or_default();
+                        // Delete old and create new (rename primitive)
+                        if let Err(e) = self.repo.delete_branch(&old_name) {
+                            self.error_message = Some(format!("Rename failed (delete): {e}"));
+                        } else if let Err(e) = self.repo.create_branch(&name, None) {
+                            self.error_message = Some(format!("Rename failed (create): {e}"));
+                        } else {
+                            self.status_message =
+                                format!("Renamed: {old_name} → {name}");
+                            if let Err(e) = self.refresh() {
+                                self.error_message = Some(format!("Refresh failed: {e}"));
+                            }
+                        }
+                    }
+                }
+                self.branch_input_mode = false;
+                self.branch_input.clear();
+            }
+            KeyCode::Esc => {
+                self.branch_input_mode = false;
+                self.branch_input.clear();
+                self.status_message = "Cancelled".to_string();
+            }
+            KeyCode::Char(c) => {
+                self.branch_input.push(c);
+            }
+            KeyCode::Backspace => {
+                self.branch_input.pop();
+            }
+            _ => {}
+        }
         false
     }
 
@@ -755,6 +984,21 @@ impl App {
     pub fn staging_focus_staged(&self) -> bool {
         self.staging_focus_staged
     }
+    pub fn staging_scroll(&self) -> usize {
+        self.staging_scroll
+    }
+    pub fn branch_list(&self) -> &[(String, String)] {
+        &self.branch_list
+    }
+    pub fn branch_cursor(&self) -> usize {
+        self.branch_cursor
+    }
+    pub fn branch_input_mode(&self) -> bool {
+        self.branch_input_mode
+    }
+    pub fn branch_input(&self) -> &str {
+        &self.branch_input
+    }
     pub fn repo(&self) -> &Repository {
         &self.repo
     }
@@ -762,10 +1006,6 @@ impl App {
 
 /// Format a unix timestamp to a human-readable date string.
 fn format_timestamp(ts: u64) -> String {
-    use std::time::{Duration, SystemTime};
-    let _datetime = SystemTime::UNIX_EPOCH + Duration::from_secs(ts);
-    // Format as "YYYY-MM-DD HH:MM"
-    // We can't use chrono (not a dependency), so use a simple approach
     let secs = ts;
     // Days since epoch
     let days = secs / 86400;
@@ -965,5 +1205,149 @@ mod tests {
         assert_eq!(Tab::Status.title(), "Status");
         assert_eq!(Tab::Log.title(), "Log");
         assert_eq!(Tab::Help.title(), "Help");
+    }
+
+    fn make_test_app() -> App {
+        let repo = Repository::open_in_memory().expect("open in-memory repo");
+        App::new(repo)
+    }
+
+    fn key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
+        KeyEvent::new(code, modifiers)
+    }
+
+    #[test]
+    fn test_handle_key_quit() {
+        let mut app = make_test_app();
+        assert!(app.handle_key(key(KeyCode::Char('q'), KeyModifiers::NONE)));
+    }
+
+    #[test]
+    fn test_handle_key_tab_cycle() {
+        let mut app = make_test_app();
+        assert_eq!(app.current_tab(), Tab::Status);
+        app.handle_key(key(KeyCode::Tab, KeyModifiers::NONE));
+        assert_eq!(app.current_tab(), Tab::Log);
+        app.handle_key(key(KeyCode::Tab, KeyModifiers::NONE));
+        assert_eq!(app.current_tab(), Tab::Staging);
+        // Tab on Staging toggles pane focus, not tab cycling
+        app.handle_key(key(KeyCode::Tab, KeyModifiers::NONE));
+        assert_eq!(app.current_tab(), Tab::Staging);
+        // Shift+Tab still cycles tabs from Staging
+        app.handle_key(key(KeyCode::BackTab, KeyModifiers::SHIFT));
+        assert_eq!(app.current_tab(), Tab::Log);
+        app.handle_key(key(KeyCode::BackTab, KeyModifiers::SHIFT));
+        assert_eq!(app.current_tab(), Tab::Status);
+        app.handle_key(key(KeyCode::BackTab, KeyModifiers::SHIFT));
+        assert_eq!(app.current_tab(), Tab::Help);
+    }
+
+    #[test]
+    fn test_handle_key_alt_number() {
+        let mut app = make_test_app();
+        app.handle_key(key(KeyCode::Char('3'), KeyModifiers::ALT));
+        assert_eq!(app.current_tab(), Tab::Staging);
+        app.handle_key(key(KeyCode::Char('1'), KeyModifiers::ALT));
+        assert_eq!(app.current_tab(), Tab::Status);
+        app.handle_key(key(KeyCode::Char('5'), KeyModifiers::ALT));
+        assert_eq!(app.current_tab(), Tab::Branches);
+        app.handle_key(key(KeyCode::Char('6'), KeyModifiers::ALT));
+        assert_eq!(app.current_tab(), Tab::Help);
+        app.handle_key(key(KeyCode::Char('2'), KeyModifiers::ALT));
+        assert_eq!(app.current_tab(), Tab::Log);
+        app.handle_key(key(KeyCode::Char('4'), KeyModifiers::ALT));
+        assert_eq!(app.current_tab(), Tab::Diff);
+    }
+
+    #[test]
+    fn test_handle_key_commit_requires_staged() {
+        let mut app = make_test_app();
+        app.handle_key(key(KeyCode::Char('c'), KeyModifiers::NONE));
+        assert_eq!(app.error_message(), Some("Nothing staged to commit"));
+        assert!(!app.commit_mode());
+    }
+
+    #[test]
+    fn test_handle_key_stage_toggle() {
+        let mut app = make_test_app();
+        app.current_tab = Tab::Staging;
+        assert!(app.staging_focus_staged());
+        app.handle_key(key(KeyCode::Tab, KeyModifiers::NONE));
+        assert!(!app.staging_focus_staged());
+        app.handle_key(key(KeyCode::Tab, KeyModifiers::NONE));
+        assert!(app.staging_focus_staged());
+    }
+
+    #[test]
+    fn test_handle_key_diff_scroll() {
+        let mut app = make_test_app();
+        app.diff_lines = (0..50)
+            .map(|_| DiffLine {
+                content: "line".to_string(),
+                line_type: DiffLineType::Context,
+                old_line: None,
+                new_line: None,
+            })
+            .collect();
+        app.current_tab = Tab::Diff;
+        assert_eq!(app.diff_scroll(), 0);
+        app.handle_key(key(KeyCode::Down, KeyModifiers::NONE));
+        assert_eq!(app.diff_scroll(), 1);
+        app.handle_key(key(KeyCode::Char('j'), KeyModifiers::NONE));
+        assert_eq!(app.diff_scroll(), 2);
+        for _ in 0..100 {
+            app.handle_key(key(KeyCode::Down, KeyModifiers::NONE));
+        }
+        assert_eq!(app.diff_scroll(), 49);
+    }
+
+    #[test]
+    fn test_commit_mode_enter_exit() {
+        let mut app = make_test_app();
+        app.staged_files.push(FileEntry {
+            path: "test.txt".to_string(),
+            status: FileStatus::Added,
+            staged: true,
+        });
+        app.current_tab = Tab::Status;
+        app.handle_key(key(KeyCode::Char('c'), KeyModifiers::NONE));
+        assert!(app.commit_mode());
+        app.handle_key(key(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(!app.commit_mode());
+        assert_eq!(app.status_message(), "Commit cancelled");
+    }
+
+    #[test]
+    fn test_commit_mode_submit() {
+        let mut app = make_test_app();
+        app.staged_files.push(FileEntry {
+            path: "test.txt".to_string(),
+            status: FileStatus::Added,
+            staged: true,
+        });
+        app.current_tab = Tab::Status;
+        app.handle_key(key(KeyCode::Char('c'), KeyModifiers::NONE));
+        assert!(app.commit_mode());
+        app.handle_key(key(KeyCode::Char('h'), KeyModifiers::NONE));
+        app.handle_key(key(KeyCode::Char('i'), KeyModifiers::NONE));
+        assert_eq!(app.commit_message(), "hi");
+        app.handle_key(key(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(!app.commit_mode());
+    }
+
+    #[test]
+    fn test_commit_mode_empty_rejected() {
+        let mut app = make_test_app();
+        app.staged_files.push(FileEntry {
+            path: "test.txt".to_string(),
+            status: FileStatus::Added,
+            staged: true,
+        });
+        app.current_tab = Tab::Status;
+        app.handle_key(key(KeyCode::Char('c'), KeyModifiers::NONE));
+        assert!(app.commit_mode());
+        app.handle_key(key(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(app.commit_mode());
+        assert_eq!(app.error_message(), Some("Empty commit message"));
     }
 }

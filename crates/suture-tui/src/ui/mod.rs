@@ -1,16 +1,17 @@
 //! UI rendering for the Suture TUI.
 
+mod branches;
 mod diff_view;
 mod help;
 mod log_view;
 mod staging;
 mod status;
 
-use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Tabs};
+use ratatui::Frame;
 
 use crate::app::{App, DiffLineType, Tab};
 
@@ -64,6 +65,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         Tab::Log => log_view::draw(f, app, content_area),
         Tab::Staging => staging::draw(f, app, content_area),
         Tab::Diff => diff_view::draw(f, app, content_area),
+        Tab::Branches => branches::draw(f, app, content_area),
         Tab::Help => help::draw(f, app, content_area),
     }
 
@@ -81,10 +83,23 @@ pub fn draw(f: &mut Frame, app: &App) {
             Style::default().fg(Color::White).bg(Color::Red),
         ))
     } else if app.commit_mode() {
-        let msg = format!(" Commit: {}█ ", app.commit_message());
+        // Show commit message (truncate for status bar, replacing newlines with ↵)
+        let display_msg = app.commit_message().replace('\n', "↵");
+        let truncated = if display_msg.len() > 40 {
+            format!("{}…", &display_msg[..40])
+        } else {
+            display_msg
+        };
+        let msg = format!(" Commit: {}█ ", truncated);
         Line::from(Span::styled(
             msg,
             Style::default().fg(Color::Black).bg(Color::Green),
+        ))
+    } else if app.branch_input_mode() {
+        let msg = format!(" Branch: {}█ ", app.branch_input());
+        Line::from(Span::styled(
+            msg,
+            Style::default().fg(Color::Black).bg(Color::Magenta),
         ))
     } else {
         let branch = app.head_branch().unwrap_or("HEAD");
@@ -160,4 +175,44 @@ pub fn visible_range(total: usize, scroll: usize, height: usize) -> (usize, usiz
     let start = scroll.min(total.saturating_sub(height));
     let end = (start + height).min(total);
     (start, end)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_visible_range_normal() {
+        assert_eq!(visible_range(100, 10, 20), (10, 30));
+    }
+
+    #[test]
+    fn test_visible_range_clamped() {
+        assert_eq!(visible_range(10, 50, 20), (0, 10));
+    }
+
+    #[test]
+    fn test_status_icon_added() {
+        assert_eq!(status_icon(suture_common::FileStatus::Added), "A");
+    }
+
+    #[test]
+    fn test_status_icon_modified() {
+        assert_eq!(status_icon(suture_common::FileStatus::Modified), "M");
+    }
+
+    #[test]
+    fn test_status_icon_deleted() {
+        assert_eq!(status_icon(suture_common::FileStatus::Deleted), "D");
+    }
+
+    #[test]
+    fn test_status_icon_untracked() {
+        assert_eq!(status_icon(suture_common::FileStatus::Untracked), "?");
+    }
+
+    #[test]
+    fn test_status_icon_clean() {
+        assert_eq!(status_icon(suture_common::FileStatus::Clean), " ");
+    }
 }

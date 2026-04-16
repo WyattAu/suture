@@ -27,7 +27,7 @@ pub fn draw(f: &mut Frame, _app: &App, area: Rect) {
         Span::styled("Cycle through tabs", desc_style),
     ]));
     lines.push(Line::from(vec![
-        Span::styled("  [Alt+1..5]      ", key_style),
+        Span::styled("  [Alt+1..6]      ", key_style),
         Span::styled("Jump to tab", desc_style),
     ]));
     lines.push(Line::from(vec![
@@ -106,6 +106,58 @@ pub fn draw(f: &mut Frame, _app: &App, area: Rect) {
         Span::styled("  [c]      ", key_style),
         Span::styled("Commit staged changes", desc_style),
     ]));
+    lines.push(Line::from(vec![
+        Span::styled("  [PgUp/PgDn] ", key_style),
+        Span::styled("Page up / down", desc_style),
+    ]));
+    lines.push(Line::from(""));
+
+    // Branches tab
+    lines.push(Line::from(Span::styled("BRANCHES TAB", header_style)));
+    lines.push(Line::from(vec![
+        Span::styled("  [↑/k]  ", key_style),
+        Span::styled("Move up", desc_style),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("  [↓/j]  ", key_style),
+        Span::styled("Move down", desc_style),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("  [n]    ", key_style),
+        Span::styled("Create new branch", desc_style),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("  [x]    ", key_style),
+        Span::styled("Checkout selected branch", desc_style),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("  [d]    ", key_style),
+        Span::styled("Delete selected branch", desc_style),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("  [r]    ", key_style),
+        Span::styled("Rename selected branch", desc_style),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("  [g/G]  ", key_style),
+        Span::styled("Top / Bottom", desc_style),
+    ]));
+    lines.push(Line::from(""));
+
+    // Commit mode
+    lines.push(Line::from(Span::styled("COMMIT MODE", header_style)));
+    lines.push(Line::from(vec![
+        Span::styled("  [Enter]   ", key_style),
+        Span::styled("Commit", desc_style),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("  [Ctrl+J]  ", key_style),
+        Span::styled("Insert newline (multi-line message)", desc_style),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("  [Esc]     ", key_style),
+        Span::styled("Cancel", desc_style),
+    ]));
     lines.push(Line::from(""));
 
     // Diff tab
@@ -128,7 +180,10 @@ pub fn draw(f: &mut Frame, _app: &App, area: Rect) {
     ]));
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        "  Suture USVCS v0.10.0 — Universal Semantic Version Control",
+        format!(
+            "  Suture USVCS v{} — Universal Semantic Version Control",
+            env!("CARGO_PKG_VERSION")
+        ),
         dim_style,
     )));
 

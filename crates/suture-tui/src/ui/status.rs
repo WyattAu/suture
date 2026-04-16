@@ -1,10 +1,10 @@
 //! Status panel — shows repository overview.
 
-use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
+use ratatui::Frame;
 
 use crate::app::App;
 
@@ -65,7 +65,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         )));
         summary_lines.push(Line::from(""));
         summary_lines.push(Line::from(Span::styled(
-            "Shortcuts: [s] Staging  [l] Log  [c] Commit  [r] Refresh  [q] Quit",
+            "Shortcuts: [s] Staging  [l] Log  [b] Branches  [c] Commit  [r] Refresh  [q] Quit",
             Style::default().fg(Color::DarkGray),
         )));
     } else {
@@ -119,7 +119,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
 
         summary_lines.push(Line::from(""));
         summary_lines.push(Line::from(Span::styled(
-            "Shortcuts: [s] Staging  [l] Log  [c] Commit  [r] Refresh  [q] Quit",
+            "Shortcuts: [s] Staging  [l] Log  [b] Branches  [c] Commit  [r] Refresh  [q] Quit",
             Style::default().fg(Color::DarkGray),
         )));
     }
