@@ -22,7 +22,7 @@ ed25519-dalek = { version = "2.1", features = ["rand_core"] }
 rand = "0.8"
 toml = "0.8"
 dirs = "6"
-rayon = "1.10"
+rayon = "1.12"
 tempfile = "3"
 
 [dev-dependencies]
