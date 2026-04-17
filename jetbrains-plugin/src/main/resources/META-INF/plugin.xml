@@ -1,0 +1,43 @@
+<idea-plugin>
+    <id>com.suture.intellij</id>
+    <name>Suture VCS</name>
+    <description>Integration with Suture patch-based version control system</description>
+    <version>1.0.0</version>
+    <vendor>Suture</vendor>
+
+    <depends>com.intellij.modules.platform</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <vcs name="Suture" vcsClass="com.suture.SutureVcs" displayName="Suture"/>
+
+        <notificationGroup id="Suture Notifications" displayType="BALLOON" key="notification.group.suture"/>
+
+        <projectService serviceImplementation="com.suture.services.SutureService"/>
+    </extensions>
+
+    <actions>
+        <group id="SutureActionGroup" text="Suture" description="Suture VCS actions"
+               popup="true" icon="AllIcons.Vcs.Vcs">
+            <add-to-group group-id="Vcs.MainMenu" anchor="last"/>
+
+            <action id="SutureInitAction" class="com.suture.actions.SutureInitAction"
+                    text="Initialize Suture Repository" description="Initialize a new Suture repository"/>
+            <action id="SutureAddAction" class="com.suture.actions.SutureAddAction"
+                    text="Add Files to Suture" description="Add files to the Suture index"/>
+            <action id="SutureCommitAction" class="com.suture.actions.SutureCommitAction"
+                    text="Suture Commit" description="Commit changes"/>
+            <action id="SuturePushAction" class="com.suture.actions.SuturePushAction"
+                    text="Suture Push" description="Push to remote"/>
+            <action id="SuturePullAction" class="com.suture.actions.SuturePullAction"
+                    text="Suture Pull" description="Pull from remote"/>
+            <action id="SutureStatusAction" class="com.suture.actions.SutureStatusAction"
+                    text="Suture Status" description="Show working tree status"/>
+            <action id="SutureBranchAction" class="com.suture.actions.SutureBranchAction"
+                    text="Suture Branch" description="List branches"/>
+            <action id="SutureLogAction" class="com.suture.actions.SutureLogAction"
+                    text="Suture Log" description="Show commit history"/>
+            <action id="SutureDiffAction" class="com.suture.actions.SutureDiffAction"
+                    text="Suture Diff" description="Show changes"/>
+        </group>
+    </actions>
+</idea-plugin>
