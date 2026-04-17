@@ -1,0 +1,176 @@
+syntax = "proto3";
+
+package suture;
+
+service SutureHub {
+  rpc Handshake(HandshakeRequest) returns (HandshakeResponse);
+  rpc ListRepos(ListReposRequest) returns (ListReposResponse);
+  rpc GetRepoInfo(GetRepoInfoRequest) returns (RepoInfoResponse);
+  rpc CreateRepo(CreateRepoRequest) returns (CreateRepoResponse);
+  rpc DeleteRepo(DeleteRepoRequest) returns (DeleteRepoResponse);
+  rpc ListBranches(ListBranchesRequest) returns (ListBranchesResponse);
+  rpc CreateBranch(CreateBranchRequest) returns (CreateBranchResponse);
+  rpc DeleteBranch(DeleteBranchRequest) returns (DeleteBranchResponse);
+  rpc ListPatches(ListPatchesRequest) returns (ListPatchesResponse);
+  rpc GetBlob(GetBlobRequest) returns (BlobResponse);
+  rpc Push(PushRequest) returns (PushResponse);
+  rpc Pull(PullRequest) returns (PullResponse);
+  rpc GetTree(GetTreeRequest) returns (TreeResponse);
+  rpc Search(SearchRequest) returns (SearchResponse);
+}
+
+message HandshakeRequest {
+  string client_version = 1;
+  string repo_id = 2;
+  repeated string capabilities = 3;
+}
+
+message HandshakeResponse {
+  string server_version = 1;
+  bool auth_required = 2;
+  repeated string server_capabilities = 3;
+}
+
+message ListReposRequest {}
+
+message ListReposResponse {
+  repeated string repos = 1;
+}
+
+message GetRepoInfoRequest {
+  string repo_id = 1;
+}
+
+message RepoInfoResponse {
+  string repo_id = 1;
+  int32 branch_count = 2;
+  int32 patch_count = 3;
+  int64 created_at = 4;
+}
+
+message CreateRepoRequest {
+  string repo_id = 1;
+}
+
+message CreateRepoResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message DeleteRepoRequest {
+  string repo_id = 1;
+}
+
+message DeleteRepoResponse {
+  bool success = 1;
+}
+
+message ListBranchesRequest {
+  string repo_id = 1;
+}
+
+message ListBranchesResponse {
+  repeated string branches = 1;
+}
+
+message CreateBranchRequest {
+  string repo_id = 1;
+  string branch_name = 2;
+}
+
+message CreateBranchResponse {
+  bool success = 1;
+}
+
+message DeleteBranchRequest {
+  string repo_id = 1;
+  string branch_name = 2;
+}
+
+message DeleteBranchResponse {
+  bool success = 1;
+}
+
+message ListPatchesRequest {
+  string repo_id = 1;
+  string branch = 2;
+}
+
+message ListPatchesResponse {
+  repeated PatchInfo patches = 1;
+}
+
+message PatchInfo {
+  string hash = 1;
+  string message = 2;
+  string author = 3;
+  int64 timestamp = 4;
+  repeated string parents = 5;
+}
+
+message GetBlobRequest {
+  string repo_id = 1;
+  string hash = 2;
+}
+
+message BlobResponse {
+  bytes data = 1;
+}
+
+message PushRequest {
+  string repo_id = 1;
+  repeated PatchInfo patches = 2;
+  repeated BlobData blobs = 3;
+}
+
+message BlobData {
+  string hash = 1;
+  bytes data = 2;
+}
+
+message PushResponse {
+  bool success = 1;
+  int32 patches_stored = 2;
+  int32 blobs_stored = 3;
+}
+
+message PullRequest {
+  string repo_id = 1;
+  string since_hash = 2;
+  repeated string have_patches = 3;
+}
+
+message PullResponse {
+  repeated PatchInfo patches = 2;
+  repeated BlobData blobs = 3;
+  repeated string missing_blobs = 4;
+}
+
+message GetTreeRequest {
+  string repo_id = 1;
+  string branch = 2;
+}
+
+message TreeResponse {
+  repeated TreeEntry entries = 1;
+}
+
+message TreeEntry {
+  string path = 1;
+  string hash = 2;
+  bool is_directory = 3;
+}
+
+message SearchRequest {
+  string query = 1;
+}
+
+message SearchResponse {
+  repeated SearchResult results = 1;
+}
+
+message SearchResult {
+  string repo_id = 1;
+  string match_type = 2;
+  string snippet = 3;
+}
