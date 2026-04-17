@@ -14,12 +14,21 @@ pub enum Tab {
     Staging,
     Diff,
     Branches,
+    Remote,
     Help,
 }
 
 impl Tab {
     /// All tabs in order for tab cycling.
-    pub const ALL: [Tab; 6] = [Tab::Status, Tab::Log, Tab::Staging, Tab::Diff, Tab::Branches, Tab::Help];
+    pub const ALL: [Tab; 7] = [
+        Tab::Status,
+        Tab::Log,
+        Tab::Staging,
+        Tab::Diff,
+        Tab::Branches,
+        Tab::Remote,
+        Tab::Help,
+    ];
 
     fn next(self) -> Self {
         let idx = Self::ALL.iter().position(|&t| t == self).unwrap_or(0);
@@ -38,6 +47,7 @@ impl Tab {
             Tab::Staging => "Staging",
             Tab::Diff => "Diff",
             Tab::Branches => "Branches",
+            Tab::Remote => "Remote",
             Tab::Help => "Help",
         }
     }
@@ -89,6 +99,15 @@ enum BranchAction {
     Rename,
 }
 
+/// State for a file with merge conflict markers.
+#[derive(Debug, Clone)]
+pub struct ConflictFileState {
+    pub path: String,
+    pub ours_content: String,
+    pub theirs_content: String,
+    pub resolution: Option<u8>,
+}
+
 /// Application state.
 pub struct App {
     repo: Repository,
@@ -137,6 +156,24 @@ pub struct App {
     commit_mode: bool,
     commit_message: String,
 
+    // Remote view
+    remote_list: Vec<(String, String)>,
+    remote_cursor: usize,
+    remote_input_mode: bool,
+    remote_input_step: usize,
+    remote_input_name: String,
+    remote_input_url: String,
+
+    // Checkout confirmation
+    checkout_confirm_mode: bool,
+    checkout_target: Option<String>,
+    checkout_changed_files: Vec<String>,
+
+    // Merge conflict view
+    conflict_mode: bool,
+    conflict_files: Vec<ConflictFileState>,
+    conflict_cursor: usize,
+
     /// Whether the app should quit.
     should_quit: bool,
 }
@@ -171,6 +208,18 @@ impl App {
             branch_input_action: BranchAction::Create,
             commit_mode: false,
             commit_message: String::new(),
+            remote_list: Vec::new(),
+            remote_cursor: 0,
+            remote_input_mode: false,
+            remote_input_step: 0,
+            remote_input_name: String::new(),
+            remote_input_url: String::new(),
+            checkout_confirm_mode: false,
+            checkout_target: None,
+            checkout_changed_files: Vec::new(),
+            conflict_mode: false,
+            conflict_files: Vec::new(),
+            conflict_cursor: 0,
             should_quit: false,
         }
     }
@@ -230,6 +279,14 @@ impl App {
         // Refresh branch list
         self.refresh_branches()?;
 
+        // Refresh remotes
+        if let Err(e) = self.refresh_remotes() {
+            self.error_message = Some(format!("Remote refresh warning: {e}"));
+        }
+
+        // Detect merge conflicts
+        self.detect_conflicts();
+
         Ok(())
     }
 
@@ -288,6 +345,58 @@ impl App {
         Ok(())
     }
 
+    fn refresh_remotes(&mut self) -> Result<(), RepoError> {
+        self.remote_list = self.repo.list_remotes()?;
+        self.remote_list.sort_by(|a, b| a.0.cmp(&b.0));
+        let max = self.remote_list.len().saturating_sub(1);
+        if self.remote_cursor > max {
+            self.remote_cursor = max;
+        }
+        Ok(())
+    }
+
+    fn detect_conflicts(&mut self) {
+        self.conflict_files.clear();
+        let root = self.repo.root().to_path_buf();
+        Self::scan_conflicts(&root, &root, &mut self.conflict_files);
+    }
+
+    fn scan_conflicts(
+        root: &std::path::Path,
+        current: &std::path::Path,
+        conflicts: &mut Vec<ConflictFileState>,
+    ) {
+        let Ok(entries) = std::fs::read_dir(current) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                if path.file_name().is_some_and(|n| n == ".suture") {
+                    continue;
+                }
+                Self::scan_conflicts(root, &path, conflicts);
+            } else if path.is_file() {
+                let Ok(content) = std::fs::read_to_string(&path) else {
+                    continue;
+                };
+                if let Some((ours, theirs)) = parse_conflict_markers(&content) {
+                    let relative = path
+                        .strip_prefix(root)
+                        .unwrap_or(&path)
+                        .to_string_lossy()
+                        .replace('\\', "/");
+                    conflicts.push(ConflictFileState {
+                        path: relative,
+                        ours_content: ours,
+                        theirs_content: theirs,
+                        resolution: None,
+                    });
+                }
+            }
+        }
+    }
+
     /// Handle a key event. Returns true if the app should quit.
     pub fn handle_key(&mut self, key: KeyEvent) -> bool {
         if self.should_quit {
@@ -302,6 +411,21 @@ impl App {
         // Commit mode input
         if self.commit_mode {
             return self.handle_commit_key(key);
+        }
+
+        // Remote input mode
+        if self.remote_input_mode {
+            return self.handle_remote_input_key(key);
+        }
+
+        // Checkout confirmation mode
+        if self.checkout_confirm_mode {
+            return self.handle_checkout_confirm_key(key);
+        }
+
+        // Conflict resolution mode
+        if self.conflict_mode {
+            return self.handle_conflict_key(key);
         }
 
         // Global keys
@@ -338,10 +462,23 @@ impl App {
                 '3' => self.current_tab = Tab::Staging,
                 '4' => self.current_tab = Tab::Diff,
                 '5' => self.current_tab = Tab::Branches,
-                '6' => self.current_tab = Tab::Help,
+                '6' => self.current_tab = Tab::Remote,
+                '7' => self.current_tab = Tab::Help,
                 _ => {}
             }
             self.status_message = format!("Switched to {}", self.current_tab.title());
+            return false;
+        }
+
+        // Global [r] → Remote tab (except in Status/Branches where [r] has other uses)
+        if key_matches(key, KeyCode::Char('r'), KeyModifiers::NONE)
+            && !matches!(
+                self.current_tab,
+                Tab::Status | Tab::Branches
+            )
+        {
+            self.current_tab = Tab::Remote;
+            self.status_message = "Switched to Remote".to_string();
             return false;
         }
 
@@ -352,6 +489,7 @@ impl App {
             Tab::Staging => self.handle_staging_key(key),
             Tab::Diff => self.handle_diff_key(key),
             Tab::Branches => self.handle_branches_key(key),
+            Tab::Remote => self.handle_remote_key(key),
             Tab::Help => self.handle_help_key(key),
         }
     }
@@ -385,6 +523,13 @@ impl App {
                     self.error_message = Some(format!("Refresh failed: {e}"));
                 } else {
                     self.status_message = "Refreshed".to_string();
+                }
+            }
+            KeyCode::Char('m') => {
+                if !self.conflict_files.is_empty() {
+                    self.conflict_mode = true;
+                    self.conflict_cursor = 0;
+                    self.status_message = "Conflict resolution mode".to_string();
                 }
             }
             _ => {}
@@ -596,6 +741,178 @@ impl App {
         false
     }
 
+    fn handle_remote_key(&mut self, key: KeyEvent) -> bool {
+        match key.code {
+            KeyCode::Up | KeyCode::Char('k') => {
+                if self.remote_cursor > 0 {
+                    self.remote_cursor -= 1;
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if self.remote_cursor < self.remote_list.len().saturating_sub(1) {
+                    self.remote_cursor += 1;
+                }
+            }
+            KeyCode::Char('a') => {
+                self.remote_input_mode = true;
+                self.remote_input_step = 0;
+                self.remote_input_name.clear();
+                self.remote_input_url.clear();
+                self.status_message =
+                    "Enter remote name (Enter to confirm, Esc to cancel)".to_string();
+            }
+            KeyCode::Char('d') => {
+                if let Some((name, _)) = self.remote_list.get(self.remote_cursor).cloned() {
+                    if let Err(e) = self.repo.remove_remote(&name) {
+                        self.error_message = Some(format!("Remove remote failed: {e}"));
+                    } else if let Err(e) = self.refresh_remotes() {
+                        self.error_message = Some(format!("Refresh failed: {e}"));
+                    } else {
+                        self.status_message = format!("Removed remote: {name}");
+                    }
+                }
+            }
+            KeyCode::Char('g') => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    self.remote_cursor = 0;
+                }
+            }
+            KeyCode::Char('G') => {
+                self.remote_cursor = self.remote_list.len().saturating_sub(1);
+            }
+            _ => {}
+        }
+        false
+    }
+
+    fn handle_remote_input_key(&mut self, key: KeyEvent) -> bool {
+        match key.code {
+            KeyCode::Enter => {
+                if self.remote_input_step == 0 {
+                    let name = self.remote_input_name.trim().to_string();
+                    if name.is_empty() {
+                        self.error_message = Some("Empty remote name".to_string());
+                        return false;
+                    }
+                    self.remote_input_step = 1;
+                    self.status_message =
+                        "Enter remote URL (Enter to confirm, Esc to cancel)".to_string();
+                } else {
+                    let url = self.remote_input_url.trim().to_string();
+                    if url.is_empty() {
+                        self.error_message = Some("Empty remote URL".to_string());
+                        return false;
+                    }
+                    let name = self.remote_input_name.trim().to_string();
+                    if let Err(e) = self.repo.add_remote(&name, &url) {
+                        self.error_message = Some(format!("Add remote failed: {e}"));
+                    } else if let Err(e) = self.refresh_remotes() {
+                        self.error_message = Some(format!("Refresh failed: {e}"));
+                    } else {
+                        self.status_message = format!("Added remote: {name}");
+                    }
+                    self.remote_input_mode = false;
+                    self.remote_input_name.clear();
+                    self.remote_input_url.clear();
+                }
+            }
+            KeyCode::Esc => {
+                self.remote_input_mode = false;
+                self.remote_input_name.clear();
+                self.remote_input_url.clear();
+                self.status_message = "Cancelled".to_string();
+            }
+            KeyCode::Char(c) => {
+                if self.remote_input_step == 0 {
+                    self.remote_input_name.push(c);
+                } else {
+                    self.remote_input_url.push(c);
+                }
+            }
+            KeyCode::Backspace => {
+                if self.remote_input_step == 0 {
+                    self.remote_input_name.pop();
+                } else {
+                    self.remote_input_url.pop();
+                }
+            }
+            _ => {}
+        }
+        false
+    }
+
+    fn handle_checkout_confirm_key(&mut self, key: KeyEvent) -> bool {
+        match key.code {
+            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                let target = self.checkout_target.clone().unwrap_or_default();
+                if let Err(e) = self.repo.checkout(&target) {
+                    self.error_message = Some(format!("Checkout failed: {e}"));
+                } else if let Err(e) = self.refresh() {
+                    self.error_message = Some(format!("Refresh failed: {e}"));
+                } else {
+                    self.status_message = format!("Checked out: {target}");
+                }
+                self.checkout_confirm_mode = false;
+                self.checkout_target = None;
+                self.checkout_changed_files.clear();
+            }
+            KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                self.checkout_confirm_mode = false;
+                self.checkout_target = None;
+                self.checkout_changed_files.clear();
+                self.status_message = "Checkout cancelled".to_string();
+            }
+            _ => {}
+        }
+        false
+    }
+
+    fn handle_conflict_key(&mut self, key: KeyEvent) -> bool {
+        match key.code {
+            KeyCode::Esc => {
+                self.conflict_mode = false;
+                self.status_message = "Exited conflict resolution".to_string();
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if self.conflict_cursor > 0 {
+                    self.conflict_cursor -= 1;
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if self.conflict_cursor < self.conflict_files.len().saturating_sub(1) {
+                    self.conflict_cursor += 1;
+                }
+            }
+            KeyCode::Char('1') => {
+                if let Some(conflict) = self.conflict_files.get_mut(self.conflict_cursor) {
+                    conflict.resolution = Some(1);
+                    self.status_message = format!("Chose 'ours' for: {}", conflict.path);
+                }
+            }
+            KeyCode::Char('2') => {
+                if let Some(conflict) = self.conflict_files.get_mut(self.conflict_cursor) {
+                    conflict.resolution = Some(2);
+                    self.status_message = format!("Chose 'theirs' for: {}", conflict.path);
+                }
+            }
+            KeyCode::Char('m') => {
+                if let Some(conflict) = self.conflict_files.get(self.conflict_cursor) {
+                    if conflict.resolution.is_some() {
+                        self.status_message =
+                            format!("Marked as resolved: {}", conflict.path);
+                    } else {
+                        self.error_message = Some(
+                            "Resolve conflict first (choose [1] ours or [2] theirs)"
+                                .to_string(),
+                        );
+                    }
+                }
+            }
+            _ => {}
+        }
+        false
+    }
+
     fn handle_branches_key(&mut self, key: KeyEvent) -> bool {
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => {
@@ -616,16 +933,26 @@ impl App {
                 self.status_message = "Enter new branch name (Enter to confirm, Esc to cancel)".to_string();
             }
             KeyCode::Char('x') => {
-                // Checkout selected branch
+                // Checkout selected branch (with confirmation)
                 let branch_name = self.branch_list.get(self.branch_cursor).map(|(n, _)| n.clone());
                 if let Some(name) = branch_name {
-                    if let Err(e) = self.repo.checkout(&name) {
-                        self.error_message = Some(format!("Checkout failed: {e}"));
-                    } else if let Err(e) = self.refresh() {
-                        self.error_message = Some(format!("Refresh failed: {e}"));
-                    } else {
-                        self.status_message = format!("Checked out: {name}");
+                    if self.head_branch.as_deref() == Some(name.as_str()) {
+                        self.error_message = Some("Already on this branch".to_string());
+                        return false;
                     }
+                    let current = self.head_branch.clone().unwrap_or_default();
+                    let diff_entries = self
+                        .repo
+                        .diff(Some(&current), Some(&name))
+                        .unwrap_or_default();
+                    let changed_files: Vec<String> =
+                        diff_entries.iter().map(|e| e.path.clone()).collect();
+
+                    self.checkout_confirm_mode = true;
+                    self.checkout_target = Some(name);
+                    self.checkout_changed_files = changed_files;
+                    self.status_message =
+                        "Confirm checkout? [y] Yes  [n] No".to_string();
                 }
             }
             KeyCode::Char('d') => {
@@ -999,6 +1326,49 @@ impl App {
     pub fn branch_input(&self) -> &str {
         &self.branch_input
     }
+
+    // --- Remote view accessors ---
+    pub fn remote_list(&self) -> &[(String, String)] {
+        &self.remote_list
+    }
+    pub fn remote_cursor(&self) -> usize {
+        self.remote_cursor
+    }
+    pub fn remote_input_mode(&self) -> bool {
+        self.remote_input_mode
+    }
+    pub fn remote_input_step(&self) -> usize {
+        self.remote_input_step
+    }
+    pub fn remote_input_name(&self) -> &str {
+        &self.remote_input_name
+    }
+    pub fn remote_input_url(&self) -> &str {
+        &self.remote_input_url
+    }
+
+    // --- Checkout confirmation accessors ---
+    pub fn checkout_confirm_mode(&self) -> bool {
+        self.checkout_confirm_mode
+    }
+    pub fn checkout_target(&self) -> Option<&str> {
+        self.checkout_target.as_deref()
+    }
+    pub fn checkout_changed_files(&self) -> &[String] {
+        &self.checkout_changed_files
+    }
+
+    // --- Merge conflict accessors ---
+    pub fn conflict_mode(&self) -> bool {
+        self.conflict_mode
+    }
+    pub fn conflict_files(&self) -> &[ConflictFileState] {
+        &self.conflict_files
+    }
+    pub fn conflict_cursor(&self) -> usize {
+        self.conflict_cursor
+    }
+
     pub fn repo(&self) -> &Repository {
         &self.repo
     }
@@ -1016,6 +1386,18 @@ fn format_timestamp(ts: u64) -> String {
     // Compute year/month/day from days since epoch
     let (year, month, day) = days_to_date(days as i64);
     format!("{year:04}-{month:02}-{day:02} {hours:02}:{minutes:02}")
+}
+
+/// Parse conflict markers from file content.
+/// Returns (ours_content, theirs_content) if markers found, None otherwise.
+fn parse_conflict_markers(content: &str) -> Option<(String, String)> {
+    let ours_start = content.find("<<<<<<< ours\n")?;
+    let separator = content.find("=======\n")?;
+    let theirs_end = content.find(">>>>>>> theirs\n")?;
+
+    let ours = content[ours_start + "<<<<<<< ours\n".len()..separator].to_string();
+    let theirs = content[separator + "=======\n".len()..theirs_end].to_string();
+    Some((ours, theirs))
 }
 
 /// Convert days since Unix epoch to (year, month, day).
@@ -1251,8 +1633,10 @@ mod tests {
         assert_eq!(app.current_tab(), Tab::Status);
         app.handle_key(key(KeyCode::Char('5'), KeyModifiers::ALT));
         assert_eq!(app.current_tab(), Tab::Branches);
-        app.handle_key(key(KeyCode::Char('6'), KeyModifiers::ALT));
+        app.handle_key(key(KeyCode::Char('7'), KeyModifiers::ALT));
         assert_eq!(app.current_tab(), Tab::Help);
+        app.handle_key(key(KeyCode::Char('6'), KeyModifiers::ALT));
+        assert_eq!(app.current_tab(), Tab::Remote);
         app.handle_key(key(KeyCode::Char('2'), KeyModifiers::ALT));
         assert_eq!(app.current_tab(), Tab::Log);
         app.handle_key(key(KeyCode::Char('4'), KeyModifiers::ALT));

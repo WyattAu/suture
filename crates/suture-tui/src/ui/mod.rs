@@ -1,9 +1,13 @@
 //! UI rendering for the Suture TUI.
 
 mod branches;
+mod checkout;
 mod diff_view;
 mod help;
+mod log_graph;
 mod log_view;
+mod merge_conflict;
+mod remote;
 mod staging;
 mod status;
 
@@ -61,12 +65,23 @@ pub fn draw(f: &mut Frame, app: &App) {
     };
 
     match app.current_tab() {
-        Tab::Status => status::draw(f, app, content_area),
+        Tab::Status => {
+            if app.conflict_mode() {
+                merge_conflict::draw(f, app, content_area);
+            } else {
+                status::draw(f, app, content_area);
+            }
+        }
         Tab::Log => log_view::draw(f, app, content_area),
         Tab::Staging => staging::draw(f, app, content_area),
         Tab::Diff => diff_view::draw(f, app, content_area),
         Tab::Branches => branches::draw(f, app, content_area),
+        Tab::Remote => remote::draw(f, app, content_area),
         Tab::Help => help::draw(f, app, content_area),
+    }
+
+    if app.checkout_confirm_mode() {
+        checkout::draw(f, app, content_area);
     }
 
     // Bottom: status bar
@@ -100,6 +115,27 @@ pub fn draw(f: &mut Frame, app: &App) {
         Line::from(Span::styled(
             msg,
             Style::default().fg(Color::Black).bg(Color::Magenta),
+        ))
+    } else if app.remote_input_mode() {
+        let (label, value) = if app.remote_input_step() == 0 {
+            ("Name", app.remote_input_name())
+        } else {
+            ("URL", app.remote_input_url())
+        };
+        let msg = format!(" Remote {}: {}█ ", label, value);
+        Line::from(Span::styled(
+            msg,
+            Style::default().fg(Color::Black).bg(Color::Magenta),
+        ))
+    } else if app.conflict_mode() {
+        Line::from(Span::styled(
+            format!(" CONFLICT RESOLUTION │ {} ", app.status_message()),
+            Style::default().fg(Color::White).bg(Color::Red),
+        ))
+    } else if app.checkout_confirm_mode() {
+        Line::from(Span::styled(
+            " Checkout Confirmation ",
+            Style::default().fg(Color::Black).bg(Color::Yellow),
         ))
     } else {
         let branch = app.head_branch().unwrap_or("HEAD");

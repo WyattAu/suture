@@ -128,7 +128,7 @@ pub fn draw(f: &mut Frame, _app: &App, area: Rect) {
     ]));
     lines.push(Line::from(vec![
         Span::styled("  [x]    ", key_style),
-        Span::styled("Checkout selected branch", desc_style),
+        Span::styled("Checkout selected branch (with confirmation)", desc_style),
     ]));
     lines.push(Line::from(vec![
         Span::styled("  [d]    ", key_style),
@@ -141,6 +141,69 @@ pub fn draw(f: &mut Frame, _app: &App, area: Rect) {
     lines.push(Line::from(vec![
         Span::styled("  [g/G]  ", key_style),
         Span::styled("Top / Bottom", desc_style),
+    ]));
+    lines.push(Line::from(""));
+
+    lines.push(Line::from(Span::styled("REMOTE TAB", header_style)));
+    lines.push(Line::from(vec![
+        Span::styled("  [↑/k]  ", key_style),
+        Span::styled("Move up", desc_style),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("  [↓/j]  ", key_style),
+        Span::styled("Move down", desc_style),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("  [a]    ", key_style),
+        Span::styled("Add remote (name, then URL)", desc_style),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("  [d]    ", key_style),
+        Span::styled("Remove selected remote", desc_style),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("  [g/G]  ", key_style),
+        Span::styled("Top / Bottom", desc_style),
+    ]));
+    lines.push(Line::from(""));
+
+    lines.push(Line::from(Span::styled(
+        "CONFLICT RESOLUTION",
+        header_style,
+    )));
+    lines.push(Line::from(vec![
+        Span::styled("  [↑/k]  ", key_style),
+        Span::styled("Navigate conflicted files", desc_style),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("  [1]    ", key_style),
+        Span::styled("Choose 'ours' for selected file", desc_style),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("  [2]    ", key_style),
+        Span::styled("Choose 'theirs' for selected file", desc_style),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("  [m]    ", key_style),
+        Span::styled("Mark selected file as resolved", desc_style),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("  [Esc]  ", key_style),
+        Span::styled("Exit conflict resolution", desc_style),
+    ]));
+    lines.push(Line::from(""));
+
+    lines.push(Line::from(Span::styled(
+        "CHECKOUT CONFIRMATION",
+        header_style,
+    )));
+    lines.push(Line::from(vec![
+        Span::styled("  [y]        ", key_style),
+        Span::styled("Confirm checkout", desc_style),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("  [n]/[Esc]  ", key_style),
+        Span::styled("Cancel checkout", desc_style),
     ]));
     lines.push(Line::from(""));
 

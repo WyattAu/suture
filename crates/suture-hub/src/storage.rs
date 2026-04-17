@@ -886,6 +886,77 @@ impl HubStorage {
         Ok(ids)
     }
 
+    pub fn get_patches_at(
+        &self,
+        repo_id: &str,
+        tip_id: &str,
+    ) -> Result<Vec<PatchProto>, StorageError> {
+        let mut visited = std::collections::HashSet::new();
+        let mut queue = std::collections::VecDeque::new();
+        queue.push_back(tip_id.to_string());
+        visited.insert(tip_id.to_string());
+
+        while let Some(current_id) = queue.pop_front() {
+            if let Some(patch) = self.get_patch(repo_id, &current_id)? {
+                for parent in &patch.parent_ids {
+                    if !visited.contains(&parent.value) {
+                        visited.insert(parent.value.clone());
+                        queue.push_back(parent.value.clone());
+                    }
+                }
+            }
+        }
+
+        let mut patches = Vec::new();
+        for id in &visited {
+            if let Some(patch) = self.get_patch(repo_id, id)? {
+                patches.push(patch);
+            }
+        }
+        Ok(patches)
+    }
+
+    pub fn get_tree_at_branch(
+        &self,
+        repo_id: &str,
+        branch: &str,
+    ) -> Result<Vec<crate::types::TreeEntry>, StorageError> {
+        use crate::types::TreeEntry;
+
+        let tip_id = match self.get_branch_target(repo_id, branch)? {
+            Some(id) => id,
+            None => return Ok(Vec::new()),
+        };
+
+        let mut patches = self.get_patches_at(repo_id, &tip_id)?;
+        patches.sort_by_key(|p| p.timestamp);
+
+        let mut tree: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+
+        for patch in &patches {
+            let path = match &patch.target_path {
+                Some(p) => p.clone(),
+                None => continue,
+            };
+            match patch.operation_type.as_str() {
+                "Create" | "Modify" => {
+                    tree.insert(path, patch.payload.clone());
+                }
+                "Delete" => {
+                    tree.remove(&path);
+                }
+                _ => {}
+            }
+        }
+
+        let mut entries: Vec<TreeEntry> = tree
+            .into_iter()
+            .map(|(path, content_hash)| TreeEntry { path, content_hash })
+            .collect();
+        entries.sort_by(|a, b| a.path.cmp(&b.path));
+        Ok(entries)
+    }
+
     pub fn search_patches(
         &self,
         repo_id: &str,

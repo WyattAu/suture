@@ -1874,6 +1874,31 @@ pub async fn repo_patches_handler(
     (StatusCode::OK, Json(patches))
 }
 
+pub async fn repo_tree_handler(
+    State(hub): State<Arc<SutureHubServer>>,
+    Path((repo_id, branch)): Path<(String, String)>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    let store = hub.storage.read().await;
+    match store.get_tree_at_branch(&repo_id, &branch) {
+        Ok(entries) => {
+            let files: Vec<serde_json::Value> = entries
+                .into_iter()
+                .map(|e| {
+                    serde_json::json!({
+                        "path": e.path,
+                        "content_hash": e.content_hash,
+                    })
+                })
+                .collect();
+            (StatusCode::OK, Json(serde_json::json!({"success": true, "files": files})))
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"success": false, "error": e.to_string()})),
+        ),
+    }
+}
+
 pub async fn protect_branch_handler(
     State(hub): State<Arc<SutureHubServer>>,
     Path((repo_id, branch)): Path<(String, String)>,
@@ -2668,6 +2693,7 @@ pub async fn run_server(
         .route("/repos/{repo_id}/branches", axum::routing::post(create_branch_handler))
         .route("/repos/{repo_id}/branches/{branch}", axum::routing::delete(delete_branch_handler))
         .route("/repos/{repo_id}/blobs/{hash}", axum::routing::get(get_blob_handler))
+        .route("/repos/{repo_id}/tree/{branch}", axum::routing::get(repo_tree_handler))
         .route("/auth/login", axum::routing::post(login_handler))
         .route("/search", axum::routing::get(search_handler))
         .route("/activity", axum::routing::get(activity_handler))
@@ -2768,6 +2794,7 @@ mod tests {
             .route("/repos/{repo_id}/branches", axum::routing::post(create_branch_handler))
             .route("/repos/{repo_id}/branches/{branch}", axum::routing::delete(delete_branch_handler))
             .route("/repos/{repo_id}/blobs/{hash}", axum::routing::get(get_blob_handler))
+            .route("/repos/{repo_id}/tree/{branch}", axum::routing::get(repo_tree_handler))
             .route("/auth/login", axum::routing::post(login_handler))
             .route("/search", axum::routing::get(search_handler))
             .route("/activity", axum::routing::get(activity_handler))
@@ -3776,6 +3803,101 @@ mod tests {
         assert_eq!(resp.status(), 200);
         let data: serde_json::Value = resp.json().await.unwrap();
         assert!(data["mirrors"].is_array());
+    }
+
+    #[tokio::test]
+    async fn test_http_repo_tree() {
+        let (hub, _port, base) = start_test_hub().await;
+        let client = reqwest::Client::new();
+        let a_hex = "a".repeat(64);
+        let b_hex = "b".repeat(64);
+        let c_hex = "c".repeat(64);
+        let d_hex = "d".repeat(64);
+
+        hub.handle_push(PushRequest {
+            repo_id: "tree-repo".to_string(),
+            patches: vec![
+                PatchProto {
+                    id: make_hash_proto(&a_hex),
+                    operation_type: "Create".to_string(),
+                    touch_set: vec!["src/main.rs".to_string()],
+                    target_path: Some("src/main.rs".to_string()),
+                    payload: "blob_aaa".to_string(),
+                    parent_ids: vec![],
+                    author: "alice".to_string(),
+                    message: "create main".to_string(),
+                    timestamp: 100,
+                },
+                PatchProto {
+                    id: make_hash_proto(&b_hex),
+                    operation_type: "Create".to_string(),
+                    touch_set: vec!["src/lib.rs".to_string()],
+                    target_path: Some("src/lib.rs".to_string()),
+                    payload: "blob_bbb".to_string(),
+                    parent_ids: vec![make_hash_proto(&a_hex)],
+                    author: "alice".to_string(),
+                    message: "create lib".to_string(),
+                    timestamp: 200,
+                },
+                PatchProto {
+                    id: make_hash_proto(&c_hex),
+                    operation_type: "Delete".to_string(),
+                    touch_set: vec!["src/main.rs".to_string()],
+                    target_path: Some("src/main.rs".to_string()),
+                    payload: String::new(),
+                    parent_ids: vec![make_hash_proto(&b_hex)],
+                    author: "alice".to_string(),
+                    message: "delete main".to_string(),
+                    timestamp: 300,
+                },
+                PatchProto {
+                    id: make_hash_proto(&d_hex),
+                    operation_type: "Modify".to_string(),
+                    touch_set: vec!["src/lib.rs".to_string()],
+                    target_path: Some("src/lib.rs".to_string()),
+                    payload: "blob_ddd".to_string(),
+                    parent_ids: vec![make_hash_proto(&c_hex)],
+                    author: "bob".to_string(),
+                    message: "modify lib".to_string(),
+                    timestamp: 400,
+                },
+            ],
+            branches: vec![make_branch("main", &d_hex)],
+            blobs: vec![],
+            signature: None,
+            known_branches: None,
+            force: false,
+        }).await.unwrap();
+
+        let resp = client
+            .get(format!("{}/repos/tree-repo/tree/main", &base))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        let data: serde_json::Value = resp.json().await.unwrap();
+        assert_eq!(data["success"], true);
+        let files = data["files"].as_array().unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0]["path"], "src/lib.rs");
+        assert_eq!(files[0]["content_hash"], "blob_ddd");
+    }
+
+    #[tokio::test]
+    async fn test_http_repo_tree_empty() {
+        let (_hub, _port, base) = start_test_hub().await;
+        let client = reqwest::Client::new();
+
+        let resp = client
+            .get(format!("{}/repos/nonexistent/tree/main", &base))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        let data: serde_json::Value = resp.json().await.unwrap();
+        assert_eq!(data["success"], true);
+        let files = data["files"].as_array().unwrap();
+        assert_eq!(files.len(), 0);
     }
 
 }

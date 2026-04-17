@@ -169,3 +169,9 @@ pub struct LoginRequest {
 pub struct SearchParams {
     pub q: String,
 }
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct TreeEntry {
+    pub path: String,
+    pub content_hash: String,
+}

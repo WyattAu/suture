@@ -8,9 +8,12 @@ use ratatui::Frame;
 
 use crate::app::App;
 
+use super::log_graph;
+
 pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     let entries = app.log_entries();
     let cursor = app.log_cursor();
+    let graph_rows = log_graph::compute_graph(entries);
 
     let mut lines: Vec<Line> = Vec::new();
 
@@ -22,17 +25,12 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     } else {
         for (i, entry) in entries.iter().enumerate() {
             let is_selected = i == cursor;
+            let graph = graph_rows.get(i);
 
-            // Graph column: simple vertical line + commit marker
-            let graph_char = if entry.is_merge { "◆" } else { "●" };
-            let graph_line = if i < entries.len() - 1 { "│" } else { " " };
-            let graph_color = if is_selected {
-                Color::Yellow
-            } else {
-                Color::DarkGray
-            };
+            let commit_prefix =
+                graph.map_or_else(|| "│ ● ".to_string(), |g| g.commit_prefix.clone());
+            let info_prefix = graph.map_or_else(|| "  │ ".to_string(), |g| g.info_prefix.clone());
 
-            // Branch heads
             let branch_tag = if entry.branch_heads.is_empty() {
                 String::new()
             } else {
@@ -44,7 +42,6 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                 branches.join("")
             };
 
-            // Commit hash
             let hash_style = if is_selected {
                 Style::default()
                     .fg(Color::Yellow)
@@ -53,7 +50,6 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                 Style::default().fg(Color::Cyan)
             };
 
-            // Message
             let msg_style = if is_selected {
                 Style::default()
                     .fg(Color::White)
@@ -62,12 +58,14 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                 Style::default().fg(Color::White)
             };
 
-            // Build the line
+            let graph_color = if is_selected {
+                Color::Yellow
+            } else {
+                Color::DarkGray
+            };
+
             lines.push(Line::from(vec![
-                Span::styled(
-                    format!("{graph_line} {graph_char} "),
-                    Style::default().fg(graph_color),
-                ),
+                Span::styled(commit_prefix, Style::default().fg(graph_color)),
                 Span::styled(&entry.short_id, hash_style),
                 Span::raw(" "),
                 Span::styled(&entry.message, msg_style),
@@ -79,23 +77,38 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                 ),
             ]));
 
-            // Author + timestamp on second line
             lines.push(Line::from(vec![
-                Span::styled("  │ ", Style::default().fg(Color::DarkGray)),
+                Span::styled(info_prefix, Style::default().fg(Color::DarkGray)),
                 Span::styled(
                     format!("{}  {}", entry.author, entry.timestamp),
                     Style::default().fg(Color::DarkGray),
                 ),
             ]));
+
+            if let Some(g) = graph {
+                for extra in &g.extra_lines {
+                    lines.push(Line::from(Span::styled(
+                        extra.as_str(),
+                        Style::default().fg(Color::DarkGray),
+                    )));
+                }
+            }
         }
     }
 
-    // Navigation hints
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
         " [↑/k] Up  [↓/j] Down  [d] Diff  [PgUp/PgDn] Page  [g] Top  [G] Bottom",
         Style::default().fg(Color::DarkGray),
     )));
+
+    let mut scroll_offset = 0usize;
+    for i in 0..cursor {
+        scroll_offset += 2;
+        if let Some(g) = graph_rows.get(i) {
+            scroll_offset += g.extra_lines.len();
+        }
+    }
 
     let log_widget = Paragraph::new(lines)
         .block(
@@ -104,7 +117,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                 .title(format!(" Log ({} commits) ", entries.len())),
         )
         .wrap(Wrap { trim: false })
-        .scroll((u16::try_from(cursor * 2).unwrap_or(u16::MAX), 0));
+        .scroll((u16::try_from(scroll_offset).unwrap_or(u16::MAX), 0));
 
     f.render_widget(log_widget, area);
 }
