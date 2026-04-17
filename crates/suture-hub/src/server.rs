@@ -56,6 +56,24 @@ impl PartialOrd for Role {
 pub struct PaginationParams {
     pub offset: Option<u32>,
     pub limit: Option<u32>,
+    pub cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct CursorData {
+    offset: u64,
+}
+
+fn decode_cursor(cursor: &str) -> Option<u64> {
+    let bytes = base64_decode(cursor).ok()?;
+    let data: CursorData = serde_json::from_slice(&bytes).ok()?;
+    Some(data.offset)
+}
+
+fn encode_cursor(offset: u64) -> String {
+    let data = CursorData { offset };
+    let json = serde_json::to_vec(&data).unwrap_or_default();
+    base64_encode(&json)
 }
 
 pub struct SutureHubServer {
@@ -248,17 +266,31 @@ impl SutureHubServer {
         Ok(())
     }
 
-    pub async fn handle_repo_patches(
+    pub async fn handle_repo_patches_cursor(
         &self,
         repo_id: &str,
-        offset: u32,
+        offset: u64,
         limit: u32,
-    ) -> Vec<PatchProto> {
+    ) -> (Vec<PatchProto>, Option<String>) {
         let store = self.storage.read().await;
         let patches = store.get_all_patches(repo_id).unwrap_or_default();
-        let offset = offset as usize;
         let limit = limit.min(200) as usize;
-        patches.into_iter().skip(offset).take(limit).collect()
+        let offset = offset as usize;
+        let mut collected: Vec<PatchProto> = patches
+            .into_iter()
+            .skip(offset)
+            .take(limit + 1)
+            .collect();
+        let has_more = collected.len() > limit;
+        if has_more {
+            collected.truncate(limit);
+        }
+        let next_cursor = if has_more {
+            Some(encode_cursor(offset as u64 + limit as u64))
+        } else {
+            None
+        };
+        (collected, next_cursor)
     }
 
     pub async fn add_authorized_key(
@@ -1867,11 +1899,18 @@ pub async fn repo_patches_handler(
     State(hub): State<Arc<SutureHubServer>>,
     Path(repo_id): Path<String>,
     Query(params): Query<PaginationParams>,
-) -> (StatusCode, Json<Vec<PatchProto>>) {
-    let offset = params.offset.unwrap_or(0);
+) -> (StatusCode, Json<serde_json::Value>) {
+    let offset = params
+        .cursor
+        .as_deref()
+        .and_then(decode_cursor)
+        .unwrap_or_else(|| params.offset.unwrap_or(0) as u64);
     let limit = params.limit.unwrap_or(50);
-    let patches = hub.handle_repo_patches(&repo_id, offset, limit).await;
-    (StatusCode::OK, Json(patches))
+    let (patches, next_cursor) = hub.handle_repo_patches_cursor(&repo_id, offset, limit).await;
+    (StatusCode::OK, Json(serde_json::json!({
+        "patches": patches,
+        "next_cursor": next_cursor.unwrap_or_default(),
+    })))
 }
 
 pub async fn repo_tree_handler(
@@ -2035,13 +2074,42 @@ pub async fn search_handler(
     (StatusCode::OK, Json(serde_json::json!({"repos": repos, "patches": patches})))
 }
 
+#[derive(serde::Deserialize)]
+pub struct ActivityPaginationParams {
+    pub limit: Option<u32>,
+    pub cursor: Option<String>,
+}
+
 pub async fn activity_handler(
     State(hub): State<Arc<SutureHubServer>>,
+    Query(params): Query<ActivityPaginationParams>,
 ) -> (StatusCode, Json<serde_json::Value>) {
+    let offset = params
+        .cursor
+        .as_deref()
+        .and_then(decode_cursor)
+        .unwrap_or(0);
+    let limit = params.limit.unwrap_or(50).min(200) as usize;
     let store = hub.storage.read().await;
     let entries = store.get_replication_log(0).unwrap_or_default();
-    let limited: Vec<_> = entries.into_iter().take(50).collect();
-    (StatusCode::OK, Json(serde_json::json!({"entries": limited})))
+    let mut collected: Vec<_> = entries
+        .into_iter()
+        .skip(offset as usize)
+        .take(limit + 1)
+        .collect();
+    let has_more = collected.len() > limit;
+    if has_more {
+        collected.truncate(limit);
+    }
+    let next_cursor = if has_more {
+        Some(encode_cursor(offset + limit as u64))
+    } else {
+        None
+    };
+    (StatusCode::OK, Json(serde_json::json!({
+        "entries": collected,
+        "next_cursor": next_cursor.unwrap_or_default(),
+    })))
 }
 
 pub async fn delete_mirror_handler(
@@ -2996,7 +3064,34 @@ mod tests {
             .unwrap();
         assert_eq!(resp.status(), 200);
         let data: serde_json::Value = resp.json().await.unwrap();
-        assert_eq!(data.as_array().unwrap().len(), 1);
+        assert_eq!(data["patches"].as_array().unwrap().len(), 1);
+        assert!(!data["next_cursor"].as_str().unwrap().is_empty());
+
+        let resp2 = client
+            .get(format!(
+                "{}/repos/patch-repo/patches?limit=1&cursor={}",
+                &base,
+                data["next_cursor"].as_str().unwrap()
+            ))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp2.status(), 200);
+        let data2: serde_json::Value = resp2.json().await.unwrap();
+        assert_eq!(data2["patches"].as_array().unwrap().len(), 1);
+
+        let resp3 = client
+            .get(format!(
+                "{}/repos/patch-repo/patches?limit=50",
+                &base,
+            ))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp3.status(), 200);
+        let data3: serde_json::Value = resp3.json().await.unwrap();
+        assert_eq!(data3["patches"].as_array().unwrap().len(), 3);
+        assert!(data3["next_cursor"].as_str().unwrap().is_empty());
     }
 
     #[tokio::test]
