@@ -1,7 +1,7 @@
 # Suture Version
 
-- **Current Version:** 2.5.0
-- **Current Phase:** Direction C — Ecosystem Growth (v2.5)
+- **Current Version:** 2.6.0
+- **Current Phase:** Hardening — All scaffolds wired to real implementations
 - **Status:** Complete
 - **Last Updated:** 2026-04-17
 - **Rust Edition:** 2024
@@ -14,6 +14,7 @@
 | **A** | Product Polish | Hub as self-hosted GitLab/Gitea portal | v1.3 – v1.4 | ✅ Complete |
 | **B** | Enterprise Infra | VFS mount + Daemon + SHM + gRPC | v2.0 – v2.5 | ✅ Complete |
 | **C** | Ecosystem Growth | Drivers, plugins, language bindings | v2.5+ | ✅ Complete |
+| **D** | Hardening | Wire scaffolds, Raft, S3, mount manager, JetBrains, Python | v2.6 | ✅ Complete |
 
 ### Direction A — Product Polish (v1.3–v1.4) ✅
 
@@ -37,11 +38,22 @@
 - Neovim plugin: 10 commands, gutter signs, float windows
 - Node.js bindings: napi-rs native addon with TypeScript declarations
 
+### Direction D — Hardening (v2.6) ✅
+
+- gRPC server wired: all 14 RPCs with real tonic service
+- Cursor-based pagination for hub API (backward compatible)
+- Mount manager: FUSE/WebDAV lifecycle management in daemon
+- Raft consensus: leader election, log replication, commit (suture-raft crate)
+- S3 blob storage: AWS SigV4, path/virtual-hosted, MinIO compatible (suture-s3 crate)
+- JetBrains IntelliJ plugin: 10 actions, VCS root detection, Kotlin/Gradle
+- Python bindings enhanced: notes, worktree, blame, bisect, remotes, utilities
+- `suture add .` bug fix: recursive directory expansion
+
 ## Quality Gate Compliance
 
 | Gate | Status | Details |
 |------|--------|---------|
-| Tests | ✅ 834 passing | 0 failures across 26 crates (2 ignored: FUSE root-only) |
+| Tests | ✅ 872 passing | 0 failures across 28 crates (2 ignored: FUSE root-only) |
 | Property-based tests | ✅ 21 proptest suites | 10K+ cases via proptest |
 | Benchmarks | ✅ 28 Criterion functions | repo ops, semantic merge, protocol, compression |
 | Clippy | ✅ Zero warnings | `cargo clippy --workspace -- -D warnings` clean |
@@ -50,8 +62,8 @@
 | Lean 4 proofs | ✅ 23 theorems | TouchSet, commutativity, DAG, LCA, merge properties |
 | HTTP integration | ✅ 38 tests | handshake, repos, patches, push/pull, V2, auth, mirrors, CRUD, search |
 | Semantic drivers | ✅ 16 drivers | JSON, YAML, TOML, CSV, XML, Markdown, DOCX, XLSX, PPTX, OTIO, SQL, PDF, Image, Example, Properties |
-| Editor plugins | ✅ 1 plugin | Neovim (Lua) |
-| Language bindings | ✅ 1 binding | Node.js (napi-rs) |
+| Editor plugins | ✅ 2 plugins | Neovim (Lua), JetBrains IntelliJ (Kotlin) |
+| Language bindings | ✅ 2 bindings | Node.js (napi-rs), Python (PyO3) |
 
 ## Workspace Crates
 
@@ -63,7 +75,7 @@
 | suture-cli | 25 | CLI binary (37 commands) |
 | suture-tui | 31 | Terminal UI (7 tabs: status, log, staging, diff, branches, remote, help) |
 | suture-hub | 38 | Hub daemon with SQLite, auth, replication, mirrors, branch protection, CRUD, search, cursor-based pagination, gRPC (14 RPCs) |
-| suture-daemon | 27 | File watcher, auto-commit, auto-sync, SHM status, PID management, signal handling |
+| suture-daemon | 33 | File watcher, auto-commit, auto-sync, SHM status, PID management, signal handling, mount manager (FUSE/WebDAV lifecycle) |
 | suture-driver | 8 | SutureDriver trait, DriverRegistry, semantic diff/merge types |
 | suture-ooxml | 4 | Shared OOXML infrastructure (ZIP, part navigation) |
 | suture-driver-otio | 13 | OpenTimelineIO reference driver |
@@ -85,12 +97,23 @@
 | suture-e2e | 27 | End-to-end workflow integration tests |
 | suture-fuzz | 6 | Fuzz testing (CAS hash, patch serialization, merge, touch-set) |
 | suture-bench | — | Criterion benchmarks (28 functions) |
+| suture-raft | 13 | Raft consensus protocol (leader election, log replication, commit) |
+| suture-s3 | 19 | S3-compatible blob storage (AWS SigV4, path/virtual-hosted, MinIO) |
 | desktop-app | — | Tauri v2 scaffold (9 IPC commands) |
+| jetbrains-plugin | — | IntelliJ Platform plugin (10 actions, VCS root detection, Kotlin) |
+| suture-py | — | Python bindings (PyO3, notes, worktree, blame, bisect, remotes) |
 
 ## Git History
 
 | Commit | Version | Description |
 |--------|---------|-------------|
+| `42677f7` | v2.6.0 | Update Cargo.lock for new crates |
+| `52ea825` | v2.6.0 | Enhance Python bindings: notes, worktree, blame, bisect, remotes |
+| `016d1ae` | v2.6.0 | JetBrains IntelliJ plugin (10 actions, VCS root detection) |
+| `64033e6` | v2.6.0 | S3 blob storage backend (AWS SigV4, MinIO compatible) |
+| `92519cf` | v2.6.0 | Raft consensus protocol (election, replication, commit) |
+| `2834ce4` | v2.6.0 | Mount manager for FUSE/WebDAV lifecycle management |
+| `dedcbed` | v2.5.0-post | Update VERSION.md: gRPC wired, cursor pagination |
 | `fb73de5` | v2.5.0-post | Cursor-based pagination for hub API endpoints |
 | `042800d` | v2.5.0-post | Wire up gRPC server with all 14 RPCs |
 | `213aa2a` | v2.5.0-post | Fix: suture add . directory expansion |
