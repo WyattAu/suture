@@ -2,17 +2,17 @@
   "$schema": "https://raw.githubusercontent.com/nickel-org/nickel.rs/master/nickel/schema.json",
   "productName": "Suture",
   "version": "1.2.0",
-  "identifier": "com.suture.desktop",
+  "identifier": "dev.suture.app",
   "build": {
     "beforeDevCommand": "",
     "beforeBuildCommand": "",
-    "frontendDist": "../desktop-app/ui"
+    "frontendDist": "../ui"
   },
   "app": {
-    "title": "Suture USVCS",
+    "title": "Suture — Patch-based Version Control",
     "windows": [
       {
-        "title": "Suture — Universal Semantic Version Control",
+        "title": "Suture — Patch-based Version Control",
         "width": 1200,
         "height": 800,
         "minWidth": 800,

@@ -19,6 +19,17 @@ pub struct RepoInfo {
     pub unstaged_count: usize,
 }
 
+/// Full status response for the frontend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StatusResponse {
+    pub head_branch: Option<String>,
+    pub patch_count: usize,
+    pub branch_count: usize,
+    pub staged_count: usize,
+    pub staged_files: Vec<FileEntry>,
+    pub last_commit: Option<LogEntry>,
+}
+
 /// A branch entry for the frontend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BranchEntry {
@@ -114,22 +125,67 @@ mod tauri_commands {
     /// Initialize a new repository at the given path.
     #[tauri::command]
     pub fn init_repo(path: String, state: State<'_, AppState>) -> CmdResult<RepoInfo> {
-        let repo = match Repository::init(std::path::Path::new(&path)) {
+        let repo = match Repository::init(std::path::Path::new(&path), "desktop") {
             Ok(r) => r,
             Err(e) => return CmdResult::err(format!("Failed to init repo: {e}")),
         };
 
         let info = RepoInfo {
             path,
-            head_branch: None,
-            patch_count: 0,
-            branch_count: 0,
+            head_branch: Some("main".to_string()),
+            patch_count: 1,
+            branch_count: 1,
             staged_count: 0,
             unstaged_count: 0,
         };
 
         *state.repo.lock().unwrap() = Some(repo);
         CmdResult::ok(info)
+    }
+
+    /// Get full repository status.
+    #[tauri::command]
+    pub fn get_status(state: State<'_, AppState>) -> CmdResult<StatusResponse> {
+        let guard = state.repo.lock().unwrap();
+        let Some(repo) = guard.as_ref() else {
+            return CmdResult::err("No repository open");
+        };
+
+        let s = match repo.status() {
+            Ok(s) => s,
+            Err(e) => return CmdResult::err(format!("Failed to get status: {e}")),
+        };
+
+        let last_commit = match repo.log(None) {
+            Ok(patches) => patches.first().map(|p| LogEntry {
+                id: p.id.to_hex(),
+                short_id: format!("{:.12}…", p.id),
+                author: p.author.clone(),
+                message: p.message.clone(),
+                timestamp: format_timestamp(p.timestamp),
+                is_merge: p.parent_ids.len() > 1,
+            }),
+            Err(_) => None,
+        };
+
+        let staged_files: Vec<FileEntry> = s
+            .staged_files
+            .iter()
+            .map(|(path, status)| FileEntry {
+                path: path.clone(),
+                status: format!("{:?}", status),
+                staged: true,
+            })
+            .collect();
+
+        CmdResult::ok(StatusResponse {
+            head_branch: s.head_branch,
+            patch_count: s.patch_count,
+            branch_count: s.branch_count,
+            staged_count: s.staged_files.len(),
+            staged_files,
+            last_commit,
+        })
     }
 
     /// Get the list of branches.
@@ -299,6 +355,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             tauri_commands::open_repo,
             tauri_commands::init_repo,
+            tauri_commands::get_status,
             tauri_commands::list_branches,
             tauri_commands::create_branch,
             tauri_commands::delete_branch,

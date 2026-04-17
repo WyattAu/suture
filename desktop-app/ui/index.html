@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Suture</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg: #1a1b26;
+      --surface: #24283b;
+      --border: #3b4261;
+      --text: #c0caf5;
+      --text-dim: #565f89;
+      --accent: #7aa2f7;
+      --green: #9ece6a;
+      --red: #f7768e;
+      --yellow: #e0af68;
+      --orange: #ff9e64;
+      --magenta: #bb9af7;
+    }
+
+    body {
+      font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 20px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+    .header-left { display: flex; align-items: center; gap: 16px; }
+    .logo { font-size: 18px; font-weight: bold; color: var(--accent); }
+    .repo-name { font-size: 13px; color: var(--text-dim); }
+    .repo-name.active { color: var(--text); }
+    .header-actions { display: flex; gap: 8px; }
+
+    button {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 6px 14px;
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: 12px;
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+    button:hover { border-color: var(--accent); }
+    button:disabled { opacity: 0.4; cursor: default; }
+    button.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+
+    /* Tab bar */
+    .tab-bar {
+      display: flex;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 16px;
+    }
+    .tab {
+      padding: 10px 20px;
+      font-size: 13px;
+      color: var(--text-dim);
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+      user-select: none;
+    }
+    .tab:hover { color: var(--text); }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    /* Main content */
+    .content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+    }
+
+    .panel { display: none; }
+    .panel.active { display: block; }
+
+    /* Welcome / empty state */
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      gap: 16px;
+      color: var(--text-dim);
+    }
+    .empty-state .icon { font-size: 48px; opacity: 0.3; }
+    .empty-state p { font-size: 14px; max-width: 400px; text-align: center; line-height: 1.6; }
+
+    /* Status panel */
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .status-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 16px;
+    }
+    .status-card .label {
+      font-size: 11px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
+    }
+    .status-card .value { font-size: 16px; font-weight: bold; }
+    .status-card .value.branch { color: var(--magenta); }
+    .status-card .value.staged { color: var(--green); }
+    .status-card .value.unstaged { color: var(--orange); }
+    .status-card .value.patches { color: var(--accent); }
+
+    .last-commit {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 16px;
+      margin-bottom: 24px;
+    }
+    .last-commit .label {
+      font-size: 11px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
+    }
+    .last-commit .hash { color: var(--yellow); font-size: 13px; }
+    .last-commit .msg { color: var(--text); font-size: 13px; margin-top: 4px; }
+    .last-commit .meta { color: var(--text-dim); font-size: 12px; margin-top: 4px; }
+
+    /* Log panel */
+    .log-list { display: flex; flex-direction: column; gap: 2px; }
+    .log-entry {
+      display: grid;
+      grid-template-columns: 14ch 20ch 1fr 14ch;
+      gap: 16px;
+      padding: 8px 12px;
+      background: var(--surface);
+      border-radius: 4px;
+      font-size: 13px;
+      align-items: center;
+    }
+    .log-entry .hash { color: var(--yellow); }
+    .log-entry .author { color: var(--magenta); }
+    .log-entry .message { color: var(--text); }
+    .log-entry .date { color: var(--text-dim); text-align: right; }
+
+    /* Branches panel */
+    .branch-list { display: flex; flex-direction: column; gap: 2px; }
+    .branch-entry {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 12px;
+      background: var(--surface);
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    .branch-entry.current { border-left: 3px solid var(--green); }
+    .branch-entry .name { color: var(--text); }
+    .branch-entry.current .name { color: var(--green); font-weight: bold; }
+    .branch-entry .target { color: var(--text-dim); font-size: 12px; }
+    .branch-entry .star { color: var(--yellow); }
+    .branch-actions { margin-left: auto; display: flex; gap: 6px; }
+    .branch-actions button { padding: 2px 8px; font-size: 11px; }
+    .branch-actions button.delete { color: var(--red); border-color: var(--red); }
+
+    .new-branch-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .new-branch-row input {
+      flex: 1;
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: 13px;
+    }
+    .new-branch-row input:focus { outline: none; border-color: var(--accent); }
+
+    /* Commit bar */
+    .commit-bar {
+      display: flex;
+      gap: 8px;
+      padding: 12px 20px;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+    }
+    .commit-bar input {
+      flex: 1;
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: 13px;
+    }
+    .commit-bar input:focus { outline: none; border-color: var(--accent); }
+
+    .error { color: var(--red); font-size: 12px; padding: 4px 0; }
+
+    /* Staging area */
+    .staging-section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 16px;
+      margin-bottom: 24px;
+    }
+    .staging-section .label {
+      font-size: 11px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
+    }
+    .staging-section .files { font-size: 13px; color: var(--text); }
+    .staging-section .file-item { padding: 2px 0; }
+    .staging-section .file-status { margin-left: 8px; }
+    .staging-section .file-status.added { color: var(--green); }
+    .staging-section .file-status.modified { color: var(--yellow); }
+    .staging-section .file-status.deleted { color: var(--red); }
+    .staging-section .empty { color: var(--text-dim); font-size: 12px; }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <span class="logo">Suture</span>
+      <span class="repo-name" id="repoName">No repository open</span>
+    </div>
+    <div class="header-actions">
+      <button id="btnOpenRepo">Open Repository</button>
+      <button id="btnInitRepo">Init New</button>
+    </div>
+  </div>
+
+  <!-- Tab bar -->
+  <div class="tab-bar">
+    <div class="tab active" data-tab="status">Status</div>
+    <div class="tab" data-tab="log">Log</div>
+    <div class="tab" data-tab="branches">Branches</div>
+  </div>
+
+  <!-- Content -->
+  <div class="content" id="content">
+
+    <!-- Empty state (shown when no repo is open) -->
+    <div class="panel active" id="panel-empty">
+      <div class="empty-state">
+        <div class="icon">&#x1f5c3;</div>
+        <p>Desktop app — connect a Suture repository to get started.<br/>
+        Click <strong>Open Repository</strong> to browse, or <strong>Init New</strong> to create one.</p>
+      </div>
+    </div>
+
+    <!-- Status panel -->
+    <div class="panel" id="panel-status">
+      <div class="status-grid">
+        <div class="status-card">
+          <div class="label">Branch</div>
+          <div class="value branch" id="statusBranch">—</div>
+        </div>
+        <div class="status-card">
+          <div class="label">Staged</div>
+          <div class="value staged" id="statusStaged">0</div>
+        </div>
+        <div class="status-card">
+          <div class="label">Patches</div>
+          <div class="value patches" id="statusPatches">0</div>
+        </div>
+        <div class="status-card">
+          <div class="label">Branches</div>
+          <div class="value" id="statusBranches">0</div>
+        </div>
+      </div>
+
+      <div class="staging-section">
+        <div class="label">Staged Files</div>
+        <div class="files" id="stagedFiles">
+          <div class="empty">No staged changes</div>
+        </div>
+      </div>
+
+      <div class="last-commit" id="lastCommitSection" style="display:none;">
+        <div class="label">Last Commit</div>
+        <div class="hash" id="lastCommitHash"></div>
+        <div class="msg" id="lastCommitMsg"></div>
+        <div class="meta" id="lastCommitMeta"></div>
+      </div>
+
+      <div class="error" id="statusError"></div>
+    </div>
+
+    <!-- Log panel -->
+    <div class="panel" id="panel-log">
+      <div class="log-list" id="logList">
+        <div class="empty-state">
+          <p>No commits to show</p>
+        </div>
+      </div>
+      <div class="error" id="logError"></div>
+    </div>
+
+    <!-- Branches panel -->
+    <div class="panel" id="panel-branches">
+      <div class="new-branch-row">
+        <input type="text" id="newBranchName" placeholder="New branch name..." />
+        <button class="primary" id="btnCreateBranch">Create</button>
+      </div>
+      <div class="branch-list" id="branchList">
+        <div class="empty-state">
+          <p>No branches</p>
+        </div>
+      </div>
+      <div class="error" id="branchError"></div>
+    </div>
+
+  </div>
+
+  <!-- Commit bar -->
+  <div class="commit-bar" id="commitBar" style="display:none;">
+    <input type="text" id="commitMsg" placeholder="Commit message..." />
+    <button id="btnStageAll">Stage All</button>
+    <button class="primary" id="btnCommit">Commit</button>
+  </div>
+
+  <script>
+    const { invoke } = window.__TAURI__.core;
+    const { open } = window.__TAURI__.dialog;
+
+    let repoOpen = false;
+
+    // --- Tab switching ---
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+        tab.classList.add('active');
+        const panel = document.getElementById('panel-' + tab.dataset.tab);
+        if (panel) panel.classList.add('active');
+      });
+    });
+
+    // --- Helpers ---
+    function clearErrors() {
+      document.querySelectorAll('.error').forEach(e => e.textContent = '');
+    }
+
+    function showError(id, msg) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = msg;
+    }
+
+    function showRepoUI() {
+      repoOpen = true;
+      document.getElementById('panel-empty').classList.remove('active');
+      document.querySelector('.tab[data-tab="status"]').click();
+      document.getElementById('commitBar').style.display = 'flex';
+    }
+
+    function updateRepoName(path) {
+      const el = document.getElementById('repoName');
+      const name = path.split(/[/\\]/).filter(Boolean).pop() || path;
+      el.textContent = name;
+      el.classList.add('active');
+    }
+
+    // --- Open repo ---
+    document.getElementById('btnOpenRepo').addEventListener('click', async () => {
+      clearErrors();
+      try {
+        const selected = await open({ directory: true, multiple: false });
+        if (!selected) return;
+        const result = await invoke('open_repo', { path: selected });
+        if (!result.success) return showError('statusError', result.error);
+        updateRepoName(result.data.path);
+        showRepoUI();
+        refreshStatus();
+      } catch (e) {
+        showError('statusError', String(e));
+      }
+    });
+
+    // --- Init repo ---
+    document.getElementById('btnInitRepo').addEventListener('click', async () => {
+      clearErrors();
+      try {
+        const selected = await open({ directory: true, multiple: false });
+        if (!selected) return;
+        const result = await invoke('init_repo', { path: selected });
+        if (!result.success) return showError('statusError', result.error);
+        updateRepoName(result.data.path);
+        showRepoUI();
+        refreshStatus();
+      } catch (e) {
+        showError('statusError', String(e));
+      }
+    });
+
+    // --- Refresh status ---
+    async function refreshStatus() {
+      clearErrors();
+      try {
+        const result = await invoke('get_status');
+        if (!result.success) return showError('statusError', result.error);
+        const s = result.data;
+        document.getElementById('statusBranch').textContent = s.head_branch || '(detached)';
+        document.getElementById('statusStaged').textContent = s.staged_count;
+        document.getElementById('statusPatches').textContent = s.patch_count;
+        document.getElementById('statusBranches').textContent = s.branch_count;
+
+        const stagedEl = document.getElementById('stagedFiles');
+        if (s.staged_files && s.staged_files.length > 0) {
+          stagedEl.innerHTML = s.staged_files.map(f =>
+            '<div class="file-item">' +
+              '<span>' + escHtml(f.path) + '</span>' +
+              '<span class="file-status ' + f.status.toLowerCase() + '">' + escHtml(f.status) + '</span>' +
+            '</div>'
+          ).join('');
+        } else {
+          stagedEl.innerHTML = '<div class="empty">No staged changes</div>';
+        }
+
+        if (s.last_commit) {
+          document.getElementById('lastCommitSection').style.display = 'block';
+          document.getElementById('lastCommitHash').textContent = s.last_commit.short_id;
+          document.getElementById('lastCommitMsg').textContent = s.last_commit.message;
+          document.getElementById('lastCommitMeta').textContent =
+            s.last_commit.author + ' · ' + s.last_commit.timestamp;
+        } else {
+          document.getElementById('lastCommitSection').style.display = 'none';
+        }
+      } catch (e) {
+        showError('statusError', String(e));
+      }
+    }
+
+    // --- Get log ---
+    async function refreshLog() {
+      clearErrors();
+      try {
+        const result = await invoke('get_log');
+        if (!result.success) return showError('logError', result.error);
+        const list = document.getElementById('logList');
+        if (!result.data || result.data.length === 0) {
+          list.innerHTML = '<div class="empty-state"><p>No commits to show</p></div>';
+          return;
+        }
+        list.innerHTML = result.data.map(e =>
+          '<div class="log-entry">' +
+            '<span class="hash">' + escHtml(e.short_id) + '</span>' +
+            '<span class="author">' + escHtml(e.author) + '</span>' +
+            '<span class="message">' + escHtml(e.message) + '</span>' +
+            '<span class="date">' + escHtml(e.timestamp) + '</span>' +
+          '</div>'
+        ).join('');
+      } catch (e) {
+        showError('logError', String(e));
+      }
+    }
+
+    // --- List branches ---
+    async function refreshBranches() {
+      clearErrors();
+      try {
+        const result = await invoke('list_branches');
+        if (!result.success) return showError('branchError', result.error);
+        const list = document.getElementById('branchList');
+        if (!result.data || result.data.length === 0) {
+          list.innerHTML = '<div class="empty-state"><p>No branches</p></div>';
+          return;
+        }
+        list.innerHTML = result.data.map(b =>
+          '<div class="branch-entry' + (b.is_current ? ' current' : '') + '">' +
+            (b.is_current ? '<span class="star">*</span>' : '<span style="width:14px;display:inline-block"></span>') +
+            '<span class="name">' + escHtml(b.name) + '</span>' +
+            '<span class="target">' + escHtml(b.target.substring(0, 12)) + '...</span>' +
+            (!b.is_current ? '<div class="branch-actions"><button class="delete" onclick="deleteBranch(\'' +
+              escAttr(b.name) + '\')">Delete</button></div>' : '') +
+          '</div>'
+        ).join('');
+      } catch (e) {
+        showError('branchError', String(e));
+      }
+    }
+
+    // --- Delete branch ---
+    window.deleteBranch = async function(name) {
+      clearErrors();
+      try {
+        const result = await invoke('delete_branch', { name });
+        if (!result.success) return showError('branchError', result.error);
+        refreshBranches();
+      } catch (e) {
+        showError('branchError', String(e));
+      }
+    };
+
+    // --- Create branch ---
+    document.getElementById('btnCreateBranch').addEventListener('click', async () => {
+      clearErrors();
+      const name = document.getElementById('newBranchName').value.trim();
+      if (!name) return;
+      try {
+        const result = await invoke('create_branch', { name });
+        if (!result.success) return showError('branchError', result.error);
+        document.getElementById('newBranchName').value = '';
+        refreshBranches();
+      } catch (e) {
+        showError('branchError', String(e));
+      }
+    });
+
+    // --- Stage all ---
+    document.getElementById('btnStageAll').addEventListener('click', async () => {
+      clearErrors();
+      try {
+        const result = await invoke('stage_all');
+        if (!result.success) return showError('statusError', result.error);
+        refreshStatus();
+      } catch (e) {
+        showError('statusError', String(e));
+      }
+    });
+
+    // --- Commit ---
+    document.getElementById('btnCommit').addEventListener('click', async () => {
+      clearErrors();
+      const msg = document.getElementById('commitMsg').value.trim();
+      if (!msg) return;
+      try {
+        const result = await invoke('commit', { message: msg });
+        if (!result.success) return showError('statusError', result.error);
+        document.getElementById('commitMsg').value = '';
+        refreshStatus();
+        refreshLog();
+      } catch (e) {
+        showError('statusError', String(e));
+      }
+    });
+
+    // --- Refresh on tab switch ---
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        if (!repoOpen) return;
+        if (tab.dataset.tab === 'status') refreshStatus();
+        if (tab.dataset.tab === 'log') refreshLog();
+        if (tab.dataset.tab === 'branches') refreshBranches();
+      });
+    });
+
+    function escHtml(s) {
+      const d = document.createElement('div');
+      d.textContent = s;
+      return d.innerHTML;
+    }
+
+    function escAttr(s) {
+      return s.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    }
+  </script>
+
+</body>
+</html>

@@ -119,9 +119,10 @@ mod tests {
         let root_entries = t.list_dir("");
         assert_eq!(root_entries.len(), 2);
         assert_eq!(root_entries[0].name, "src");
-        assert_eq!(root_entries[0].is_dir, true);
+        assert!(root_entries[0].is_dir);
+        assert_eq!(root_entries[0].name, "src");
         assert_eq!(root_entries[1].name, "README.md");
-        assert_eq!(root_entries[1].is_dir, false);
+        assert!(!root_entries[1].is_dir);
 
         let src_entries = t.list_dir("src");
         assert_eq!(src_entries.len(), 2);
