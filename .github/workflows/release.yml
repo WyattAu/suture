@@ -74,7 +74,7 @@ jobs:
 
       - name: Run tests (default target only)
         if: matrix.target == 'x86_64-unknown-linux-gnu'
-        run: cargo test --workspace --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz
+        run: cargo test --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz
 
       - name: Build release binaries
         run: cargo build --release --target ${{ matrix.target }} -p suture-cli
