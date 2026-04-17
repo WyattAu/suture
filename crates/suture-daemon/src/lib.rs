@@ -1,6 +1,9 @@
+mod shm;
+
 use std::collections::HashMap;
 use std::error::Error;
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 use std::time::Duration;
 
 use base64::Engine;
@@ -602,6 +605,19 @@ impl Daemon {
     }
 
     pub async fn run(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let pid = std::process::id();
+        shm::write_pid_file(pid)?;
+
+        let (head_branch, patch_count) = {
+            let repo = Repository::open(&self.config.repo_path)?;
+            let head = repo.head().map(|(b, _)| b).unwrap_or_default();
+            let status = repo.status()?;
+            (head, status.patch_count as u32)
+        };
+
+        let shm_path = shm::create_shm_segment(1, patch_count, 0, &head_branch, pid)?;
+        info!("SHM segment created at {:?}", shm_path);
+
         let (shutdown_tx, _) = broadcast::channel::<()>(2);
         let (change_tx, mut change_rx) = mpsc::channel::<Vec<FileChangeEvent>>(64);
 
@@ -627,6 +643,10 @@ impl Daemon {
             auto_sync.run(sync_shutdown).await;
         });
 
+        let shm_path_ref = shm_path.clone();
+        let mut last_commit_ts: u64 = 0;
+        let mut last_sync_ts: u64 = 0;
+
         loop {
             tokio::select! {
                 Some(changes) = change_rx.recv() => {
@@ -634,6 +654,12 @@ impl Daemon {
                     match auto_commit.handle_changes(&changes).await {
                         Ok(Some(patch_id)) => {
                             info!("created patch: {patch_id}");
+                            last_commit_ts = now_nanos();
+                            if let Ok(mut status) = shm::read_shm_status(&shm_path_ref) {
+                                status.total_patches += 1;
+                                status.last_commit_ts = last_commit_ts;
+                                let _ = shm::update_shm_status(&shm_path_ref, &status);
+                            }
                         }
                         Ok(None) => {
                             debug!("no changes to commit");
@@ -653,8 +679,20 @@ impl Daemon {
             }
         }
 
+        if last_sync_ts == 0 {
+            last_sync_ts = now_nanos();
+        }
+        if let Ok(mut status) = shm::read_shm_status(&shm_path_ref) {
+            status.last_commit_ts = last_commit_ts;
+            status.last_sync_ts = last_sync_ts;
+            let _ = shm::update_shm_status(&shm_path_ref, &status);
+        }
+
         let _ = shutdown_tx.send(());
         let _ = sync_handle.await;
+
+        let _ = shm::cleanup_shm(&shm_path);
+        let _ = shm::remove_pid_file();
         info!("daemon stopped");
         Ok(())
     }
@@ -746,6 +784,9 @@ pub enum DaemonCommand {
         #[arg(long, default_value_t = 60)]
         interval: u64,
     },
+    Stop,
+    Status,
+    Reload,
 }
 
 pub async fn execute_command(cmd: DaemonCommand) -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -770,7 +811,80 @@ pub async fn execute_command(cmd: DaemonCommand) -> Result<(), Box<dyn Error + S
             let daemon = Daemon::new(repo_path, remote, Duration::from_secs(interval));
             daemon.run().await
         }
+        DaemonCommand::Stop => {
+            let pid = shm::read_pid_file()?;
+            println!("stopping daemon (pid {pid})...");
+            signal_process(pid, libc::SIGTERM);
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            let shm_path = shm::shm_path_for_pid(pid);
+            let _ = shm::cleanup_shm(&shm_path);
+            let _ = shm::remove_pid_file();
+            println!("daemon stopped");
+            Ok(())
+        }
+        DaemonCommand::Status => {
+            let pid = shm::read_pid_file()?;
+            let shm_path = shm::shm_path_for_pid(pid);
+            let status = shm::read_shm_status(&shm_path)?;
+            print_status(&status);
+            Ok(())
+        }
+        DaemonCommand::Reload => {
+            let pid = shm::read_pid_file()?;
+            println!("reloading daemon (pid {pid})...");
+            signal_process(pid, libc::SIGHUP);
+            println!("reload signal sent");
+            Ok(())
+        }
     }
+}
+
+fn print_status(status: &shm::ShmStatus) {
+    println!("suture-daemon status:");
+    println!("  pid:          {}", status.pid);
+    println!("  version:      {}", status.version);
+    println!("  repo_count:   {}", status.repo_count);
+    println!("  patches:      {}", status.total_patches);
+    println!("  blobs:        {}", status.total_blobs);
+    println!("  head_branch:  {}", status.head_branch_str());
+    println!("  mounted:      {}", status.is_mounted == 1);
+    println!(
+        "  last_commit:  {}",
+        if status.last_commit_ts > 0 {
+            format_timestamp(status.last_commit_ts)
+        } else {
+            "never".to_string()
+        }
+    );
+    println!(
+        "  last_sync:    {}",
+        if status.last_sync_ts > 0 {
+            format_timestamp(status.last_sync_ts)
+        } else {
+            "never".to_string()
+        }
+    );
+}
+
+fn format_timestamp(ts: u64) -> String {
+    let secs = ts / 1_000_000_000;
+    let nanos = ts % 1_000_000_000;
+    let dt = UNIX_EPOCH + Duration::from_secs(secs);
+    let datetime = humantime::format_rfc3339_seconds(dt);
+    format!("{}.{:09}", datetime, nanos)
+}
+
+fn signal_process(pid: u32, sig: libc::c_int) {
+    unsafe {
+        libc::kill(pid as libc::pid_t, sig);
+    }
+}
+
+fn now_nanos() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0)
 }
 
 struct PushData {
@@ -1147,7 +1261,7 @@ mod tests {
         let (_tmp, repo_path) = create_test_repo();
 
         let bad_url = "http://127.0.0.1:1".to_string();
-        let mut repo = Repository::open(&repo_path).unwrap();
+        let repo = Repository::open(&repo_path).unwrap();
         repo.add_remote("origin", &bad_url).unwrap();
         drop(repo);
 
@@ -1244,7 +1358,6 @@ mod tests {
         assert!(result1.is_ok(), "first sync should succeed: {:?}", result1.err());
 
         let repo = Repository::open(&repo_path).unwrap();
-        let log1 = repo.log(None).unwrap();
         let _log1 = repo.log(None).unwrap();
 
         let mut repo = Repository::open(&repo_path).unwrap();
