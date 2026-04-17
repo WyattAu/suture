@@ -4,9 +4,31 @@ build-backend = "maturin"
 
 [project]
 name = "suture"
-version = "0.1.0"
+version = "1.1.0"
 description = "Python bindings for Suture version control"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
+license = "MIT"
+authors = [
+    { name = "Wyatt Au" },
+]
+readme = "README.md"
+keywords = ["vcs", "version-control", "suture"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Version Control",
+]
+
+[project.urls]
+Homepage = "https://github.com/WyattAu/suture"
+Repository = "https://github.com/WyattAu/suture"
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
