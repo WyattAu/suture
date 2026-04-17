@@ -1,3 +1,4 @@
+mod mount;
 mod shm;
 
 use std::collections::HashMap;
@@ -23,12 +24,20 @@ const DEFAULT_SYNC_INTERVAL: Duration = Duration::from_secs(60);
 const DEBOUNCE_WINDOW: Duration = Duration::from_millis(500);
 
 #[derive(Debug, Clone)]
+pub struct AutoMountConfig {
+    pub mount_type: String,
+    pub path: Option<String>,
+    pub port: Option<u16>,
+}
+
+#[derive(Debug, Clone)]
 pub struct DaemonConfig {
     pub repo_path: PathBuf,
     pub remote_url: Option<String>,
     pub sync_interval: Duration,
     pub commit_template: String,
     pub author: String,
+    pub auto_mounts: Vec<AutoMountConfig>,
 }
 
 impl Default for DaemonConfig {
@@ -39,6 +48,7 @@ impl Default for DaemonConfig {
             sync_interval: DEFAULT_SYNC_INTERVAL,
             commit_template: "auto: {count} file(s) changed".to_string(),
             author: "suture-daemon".to_string(),
+            auto_mounts: Vec::new(),
         }
     }
 }
@@ -787,6 +797,20 @@ pub enum DaemonCommand {
     Stop,
     Status,
     Reload,
+    Mount {
+        #[arg(default_value = ".")]
+        repo_path: PathBuf,
+        #[arg(long, default_value = "fuse")]
+        mount_type: String,
+        #[arg(long)]
+        path: Option<PathBuf>,
+        #[arg(long)]
+        port: Option<u16>,
+    },
+    Unmount {
+        #[arg(long)]
+        id: String,
+    },
 }
 
 pub async fn execute_command(cmd: DaemonCommand) -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -834,6 +858,38 @@ pub async fn execute_command(cmd: DaemonCommand) -> Result<(), Box<dyn Error + S
             println!("reloading daemon (pid {pid})...");
             signal_process(pid, libc::SIGHUP);
             println!("reload signal sent");
+            Ok(())
+        }
+        DaemonCommand::Mount {
+            repo_path,
+            mount_type,
+            path,
+            port,
+        } => {
+            let mut manager = mount::MountManager::new(repo_path);
+            match mount_type.as_str() {
+                "fuse" => {
+                    let mount_path = path
+                        .ok_or_else(|| "missing --path for FUSE mount".to_string())?;
+                    let id = manager.mount_fuse(&mount_path)?;
+                    println!("FUSE mounted: {id}");
+                }
+                "webdav" => {
+                    let port = port
+                        .ok_or_else(|| "missing --port for WebDAV mount".to_string())?;
+                    let id = manager.mount_webdav(port)?;
+                    println!("WebDAV mounted: {id}");
+                }
+                other => {
+                    return Err(
+                        format!("unknown mount type '{other}', use 'fuse' or 'webdav'").into(),
+                    );
+                }
+            }
+            Ok(())
+        }
+        DaemonCommand::Unmount { id } => {
+            println!("unmount {id}: mount management requires a running daemon");
             Ok(())
         }
     }
