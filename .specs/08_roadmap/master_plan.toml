@@ -1,22 +1,25 @@
 # Suture USVCS — Master Execution Plan
-# Generated: 2026-03-27
-# Version: 1.0.0
-# Status: DRAFT
+# Updated: 2026-04-17
+# Version: 2.0.0
+# Status: ACTIVE
 #
-# This roadmap serializes the build process into a topologically-sorted DAG
-# of atomic tasks. Each phase produces verified artifacts before the next
-# phase begins. No phase may begin without sign-off on all quality gates
-# from the preceding phase.
+# Strategy: A → B → C
+#   A: Product Polish — Hub as self-hosted GitLab/Gitea portal (v1.3–v1.4)
+#   B: Enterprise Infrastructure — VFS + Daemon + SHM (v2.0–v2.1)
+#   C: Ecosystem Growth — Drivers, plugins, bindings (v2.5+)
+#
+# Phases -1 through 8 (v0.1) are COMPLETE as of v1.2.0.
+# This plan covers the active and future work.
 
 [metadata]
 project = "Suture"
 project_id = "SUTURE-USVCS"
-version = "1.0.0"
-generated = "2026-03-27T00:00:00Z"
+version = "2.0.0"
+generated = "2026-04-17T00:00:00Z"
 generator = "Nexus (Principal Systems Architect)"
-total_phases = 13
-current_phase = -1
-formal_verification_required = true
+total_phases = 8
+current_phase = "v1.3"
+strategy = "A -> B -> C"
 applicable_standards = [
     "ISO/IEC 12207",
     "IEEE 1016",
@@ -27,663 +30,316 @@ applicable_standards = [
 ]
 
 # =============================================================================
-# PHASE -1: Context Discovery
+# COMPLETED PHASES (v0.1 through v1.2)
 # =============================================================================
+# Phases -1 through 8 from the original plan are all complete.
+# Shipped: core engine, 12 format drivers, CLI (37 cmds), TUI (6 tabs),
+# Hub server (auth, replication, mirrors), Hub web UI (6 tabs),
+# desktop app scaffold, VS Code scaffold, GitHub Action,
+# 843 tests, 23 Lean4 theorems, 28 benchmarks.
+# =============================================================================
+# =============================================================================
+# DIRECTION A: PRODUCT POLISH
+# =============================================================================
+# Goal: Make Suture usable as a self-hosted GitLab/Gitea alternative
+# with semantic merge as the killer feature.
+# =============================================================================
+
 [[phase]]
-id = "phase_-1"
-title = "Context Discovery & Domain Analysis"
-agent = "Domain Analyst"
-status = "pending"
+id = "v1.3"
+title = "Hub Portal Completion"
+agent = "Construct"
+status = "in_progress"
 depends_on = []
 
 [phase.objectives]
-description = "Analyze the Suture domain, identify applicable standards, multi-lingual requirements, capability requirements, and domain-specific risks."
+description = "Build the Hub web UI into a full self-hosted portal with file browsing, repo detail pages, diff viewer, and user registration/login flow."
 
 [phase.outputs]
 artifacts = [
-    ".specs/00_requirements/domain_analysis.md",
-    ".specs/00_requirements/applicable_standards.md",
-    ".specs/00_requirements/capability_requirements.md",
+    "crates/suture-hub/static/index.html (redesigned)",
+    "crates/suture-hub/static/app.js (file browser, diff viewer, user flows)",
+    "crates/suture-hub/static/style.css (light theme, responsive)",
+    "crates/suture-hub/src/server.rs (new API routes)",
 ]
-report = ".reports/phase_-1_context_discovery_report.md"
+report = ".reports/phase_v13_hub_portal_report.md"
 
 [phase.quality_gates]
 gates = [
-    "Domain analysis complete with HFT/financial-media domain characterization",
-    "Applicable standards identified and prioritized",
-    "Multi-lingual requirements determined (EN primary; ZH/JP/KO for Asian media markets)",
-    "Capability requirements defined (Lean4, loom, proptest, criterion)",
-    "Domain-specific risks assessed (CPR catalog)",
+    "File browser: navigate repo tree, view file contents at any commit",
+    "Repo detail page: branches, patches, settings in one view",
+    "Diff viewer: side-by-side or unified diff in browser",
+    "User registration: sign-up form, login form, session management",
+    "URL-based routing: /repo/:id/branches, /repo/:id/patches, /repo/:id/tree/:ref",
+    "Search: search repos by name, search patches by message",
+    "Pagination: all list endpoints support cursor-based pagination",
+    "Activity feed: recent pushes, branch creates, user joins on dashboard",
+    "Accessibility: ARIA labels, keyboard navigation, focus management",
+    "API coverage: >60% of server routes exposed in web UI",
 ]
 
-# =============================================================================
-# PHASE 0: Requirements Engineering
-# =============================================================================
 [[phase]]
-id = "phase_0"
-title = "Requirements Engineering"
-agent = "Requirements Engineer"
-status = "pending"
-depends_on = ["phase_-1"]
-
-[phase.objectives]
-description = "Establish formal, testable requirements from the existing README, requirements.md, and architectural_spec.md. Produce EARS-compliant requirements with measurable acceptance criteria."
-
-[phase.outputs]
-artifacts = [
-    ".specs/00_requirements/requirements.md",
-    ".specs/00_requirements/acceptance_criteria.md",
-    ".specs/00_requirements/traceability_matrix.md",
-    ".specs/00_requirements/standard_conflicts.md",
-    ".specs/00_requirements/tool_requirements.toml",
-]
-report = ".reports/phase_00_requirements_report.md"
-
-[phase.quality_gates]
-gates = [
-    "All requirements EARS-compliant with measurable acceptance criteria",
-    "MoSCoW priority matrix complete (Must: CAS, Patch-DAG, CLI; Should: VFS, Drivers; Won't: Raft Hub in v0.1)",
-    "Performance requirements quantified (hash >2GB/s, merge <10ms, lookup <500ns)",
-    "Safety/integrity requirements identified (data loss prevention for mission-critical media)",
-    "Bidirectional traceability initialized",
-]
-
-# =============================================================================
-# PHASE 1: Epistemological Discovery (Yellow Phase)
-# =============================================================================
-[[phase]]
-id = "phase_1"
-title = "Epistemological Discovery — Patch Theory & Algebra"
-agent = "DeepThought (Researcher)"
-status = "pending"
-depends_on = ["phase_0"]
-
-[phase.objectives]
-description = "Establish the theoretical ground truth for Suture's core mathematical foundations. This phase produces the Yellow Papers that define what 'correct' means for the entire system."
-
-[phase.outputs]
-artifacts = [
-    ".specs/01_research/yellow_paper_registry.toml",
-    ".specs/01_research/YP-ALGEBRA-PATCH-001.md",          # Commutative Patch Algebra
-    ".specs/01_research/YP-ALGEBRA-PATCH-002.md",          # Serialization & Content Addressing
-    ".specs/01_research/YP-DIST-CONSENSUS-001.md",         # Distributed Consensus (future reference)
-    ".specs/01_research/test_vectors/test_vectors_patch.toml",
-    ".specs/01_research/test_vectors/test_vectors_cas.toml",
-    ".specs/01_research/domain_constraints/domain_constraints_vcs.toml",
-    ".specs/01_research/domain_constraints/domain_constraints_crypto.toml",
-    ".specs/01_research/bibliography.md",
-]
-report = ".reports/phase_01_research_summary.md"
-
-[phase.quality_gates]
-gates = [
-    "YP-ALGEBRA-PATCH-001 contains formal definitions of: Patch, TouchSet, PatchSet, PatchDAG",
-    "Commutativity theorem (THM-COMM-001) stated and proof strategy documented",
-    "Merge determinism theorem (THM-MERGE-001) stated and proof strategy documented",
-    "Conflict preservation theorem (THM-CONF-001) stated and proof strategy documented",
-    "DAG construction termination theorem (THM-DAG-001) stated and proof strategy documented",
-    "Test vectors cover: nominal patches, boundary (empty touch-set, full overlap), adversarial (malformed patches, cycles)",
-    "Domain constraints specify: hash tolerance (exact), merge latency (<10ms), lookup latency (<500ns)",
-    "Bibliography includes: Pijul theory, Darcs patch theory, Category Theory references, BLAKE3 spec",
-    "Yellow Paper Registry complete with cross-paper dependencies",
-    "No circular dependencies between Yellow Papers",
-]
-
-# =============================================================================
-# PHASE 1.25: Knowledge Integration
-# =============================================================================
-[[phase]]
-id = "phase_1_25"
-title = "Cross-Lingual Knowledge Integration"
-agent = "Knowledge Integrator"
-status = "pending"
-depends_on = ["phase_1"]
-
-[phase.objectives]
-description = "Synthesize findings from multi-lingual research sources. Map equivalent concepts across EN/ZH/JP terminology. Resolve any conflicts in the patch theory literature."
-
-[phase.outputs]
-artifacts = [
-    ".specs/01_25_knowledge_integration/integrated_findings.md",
-    ".specs/01_25_knowledge_integration/concept_mappings.md",
-    ".specs/01_25_knowledge_integration/gap_analysis.md",
-]
-report = ".reports/phase_01_25_integration_report.md"
-
-[phase.quality_gates]
-gates = [
-    "Concept mappings for: Patch (EN), 补丁 (ZH), パッチ (JP) established",
-    "Conflicts in patch commutativity literature documented and resolved",
-    "Confidence scores assigned to all key theoretical claims",
-    "Gap analysis identifies any missing theoretical foundations",
-]
-
-# =============================================================================
-# PHASE 2: Architectural Specification (Blue Phase)
-# =============================================================================
-[[phase]]
-id = "phase_2"
-title = "Architectural Specification — Core Engine Design"
-agent = "Construct (Systems Architect)"
-status = "pending"
-depends_on = ["phase_1", "phase_1_25"]
-
-[phase.objectives]
-description = "Transmute Yellow Paper theory into IEEE 1016-compliant Blue Papers for each component. Define interfaces, data structures, and module boundaries. Produce Lean 4 proof files for core theorems."
-
-[phase.outputs]
-artifacts = [
-    ".specs/02_architecture/blue_paper_registry.toml",
-    ".specs/02_architecture/BP-CAS-001.md",                    # Content Addressable Storage
-    ".specs/02_architecture/BP-PATCH-ALGEBRA-001.md",          # Patch Algebra Engine
-    ".specs/02_architecture/BP-PATCH-DAG-001.md",              # Patch DAG Data Structure
-    ".specs/02_architecture/BP-METADATA-001.md",               # SQLite Metadata Store
-    ".specs/02_architecture/BP-DRIVER-SDK-001.md",             # SutureDriver Trait
-    ".specs/02_architecture/BP-CLI-001.md",                    # CLI Interface
-    ".specs/02_architecture/interface_contracts/interface_cas.toml",
-    ".specs/02_architecture/interface_contracts/interface_patch.toml",
-    ".specs/02_architecture/interface_contracts/interface_dag.toml",
-    ".specs/02_architecture/interface_contracts/interface_driver.toml",
-    ".specs/02_architecture/interface_contracts/interface_cli.toml",
-    ".specs/02_architecture/proofs/proof_commutativity.lean",
-    ".specs/02_architecture/proofs/proof_merge_determinism.lean",
-    ".specs/02_architecture/proofs/proof_conflict_preservation.lean",
-    ".specs/02_architecture/proofs/proof_dag_construction.lean",
-    ".specs/02_architecture/proofs/proof_cas_integrity.lean",
-    ".specs/09_compliance/compliance_matrix.md",
-    ".specs/TRACEABILITY_MATRIX.md",
-]
-report = ".reports/phase_02_architecture_report.md"
-
-[phase.quality_gates]
-gates = [
-    "All Blue Papers IEEE 1016 compliant (sections BP-1 through BP-12)",
-    "Every Blue Paper references >= 1 Yellow Paper theorem or algorithm",
-    "CAS interface: put_blob, get_blob, has_blob, delete_blob specified with pre/postconditions",
-    "Patch interface: create, serialize, deserialize, commute, merge specified",
-    "DAG interface: add_node, add_edge, find_ancestors, compute_merge, detect_conflict specified",
-    "Driver SDK interface: SutureDriver trait with serialize/deserialize/visualize specified",
-    "CLI interface: init, status, add, commit, branch, merge, log, diff specified",
-    "Lean 4 proof files generated for all 5 core theorems",
-    "Traceability matrix maps every requirement to component to interface to test",
-    "No circular dependencies between Blue Papers",
-]
-
-# =============================================================================
-# PHASE 3: Security Engineering
-# =============================================================================
-[[phase]]
-id = "phase_3"
-title = "Security Engineering"
-agent = "Security Engineer"
-status = "pending"
-depends_on = ["phase_2"]
-
-[phase.objectives]
-description = "STRIDE threat modeling for the core engine. Identify attack surfaces in CAS, Patch-DAG, CLI, and future VFS/Hub. Define cryptographic identity requirements."
-
-[phase.outputs]
-artifacts = [
-    ".specs/03_security/threat_model.md",
-    ".specs/03_security/security_test_plan.md",
-    ".specs/03_security/compliance_matrix.md",
-]
-report = ".reports/phase_03_security_report.md"
-
-[phase.quality_gates]
-gates = [
-    "STRIDE model covers: CAS poisoning, Patch-DAG manipulation, metadata tampering, CLI injection",
-    "Ed25519 signing requirement for all patch nodes specified",
-    "Audit logging requirement (append-only) specified",
-    "Supply chain security: Cargo.lock, dependency audit baseline",
-]
-
-# =============================================================================
-# PHASE 4: Performance Engineering
-# =============================================================================
-[[phase]]
-id = "phase_4"
-title = "Performance Engineering"
-agent = "Performance Engineer"
-status = "pending"
-depends_on = ["phase_2"]
-
-[phase.objectives]
-description = "Establish performance baselines and benchmark suite. Define targets for hashing throughput, merge latency, and metadata lookup."
-
-[phase.outputs]
-artifacts = [
-    ".specs/04_performance/performance_requirements.md",
-    ".specs/04_performance/benchmark_suite.md",
-    ".specs/04_performance/optimization_roadmap.md",
-]
-report = ".reports/phase_04_performance_report.md"
-
-[phase.quality_gates]
-gates = [
-    "BLAKE3 throughput target: > 2 GB/s (single thread, SIMD)",
-    "Merge latency target: < 10ms for 10,000-patch histories",
-    "Metadata lookup target: < 500ns via SHM",
-    "CAS write target: > 500 MB/s with Zstd compression",
-    "Benchmark suite defined with Criterion.rs integration",
-]
-
-# =============================================================================
-# PHASE 5: Adversarial Spike — CAS Layer
-# =============================================================================
-[[phase]]
-id = "phase_5_cas"
-title = "Feasibility Spike: Content Addressable Storage"
-agent = "Breaker (Prototyper)"
-status = "pending"
-depends_on = ["phase_2", "phase_3", "phase_4"]
-
-[phase.objectives]
-description = "Implement the CAS layer in suture-core. Verify BLAKE3 hashing, Zstd compression round-trips, blob storage/retrieval, and deduplication. This is the first code that ships."
-
-[phase.outputs]
-artifacts = [
-    ".specs/06_prototypes/cas_implementation.md",
-    "crates/suture-core/src/cas/mod.rs",
-    "crates/suture-core/src/cas/store.rs",
-    "crates/suture-core/src/cas/hasher.rs",
-    "crates/suture-core/src/cas/compressor.rs",
-    "crates/suture-core/tests/cas_integration.rs",
-]
-report = ".reports/phase_05_cas_spike_results.md"
-
-[phase.quality_gates]
-gates = [
-    "BLAKE3 hash: deterministic, matches reference implementation for all test vectors",
-    "Zstd compress/decompress: lossless round-trip verified",
-    "CAS put/get/delete: all pass with property-based testing (proptest, 10,000 cases)",
-    "Deduplication: identical blobs stored once, verified via BLAKE3 collision test",
-    "Branch coverage > 95% on CAS module",
-    "No resource leaks (verified via Valgrind or AddressSanitizer)",
-    "Performance: BLAKE3 throughput > 1 GB/s on test hardware",
-]
-
-# =============================================================================
-# PHASE 5: Adversarial Spike — Patch Algebra
-# =============================================================================
-[[phase]]
-id = "phase_5_patch"
-title = "Feasibility Spike: Patch Algebra Engine"
-agent = "Breaker (Prototyper)"
-status = "pending"
-depends_on = ["phase_5_cas"]
-
-[phase.objectives]
-description = "Implement the Patch data structure, commutativity check, merge algorithm, and conflict detection. This is the mathematical heart of the system."
-
-[phase.outputs]
-artifacts = [
-    ".specs/06_prototypes/patch_implementation.md",
-    "crates/suture-core/src/patch/mod.rs",
-    "crates/suture-core/src/patch/types.rs",
-    "crates/suture-core/src/patch/commute.rs",
-    "crates/suture-core/src/patch/merge.rs",
-    "crates/suture-core/src/patch/conflict.rs",
-    "crates/suture-core/tests/patch_integration.rs",
-]
-report = ".reports/phase_05_patch_spike_results.md"
-
-[phase.quality_gates]
-gates = [
-    "Commutativity: disjoint patches commute (proptest, 100,000 random pairs)",
-    "Non-commutativity: overlapping patches correctly identified as non-commutative",
-    "Merge: two branches with disjoint touch-sets produce deterministic merged state",
-    "Conflict: overlapping patches produce conflict nodes preserving both versions",
-    "Identity patch: P ∘ identity = identity ∘ P = P",
-    "Associativity: (P1 ∘ P2) ∘ P3 = P1 ∘ (P2 ∘ P3) where commutative",
-    "Branch coverage > 95% on patch module",
-    "Formal proof cross-validation: Lean 4 theorems agree with implementation behavior",
-]
-
-# =============================================================================
-# PHASE 5: Adversarial Spike — Patch DAG
-# =============================================================================
-[[phase]]
-id = "phase_5_dag"
-title = "Feasibility Spike: Patch DAG"
-agent = "Breaker (Prototyper)"
-status = "pending"
-depends_on = ["phase_5_patch"]
-
-[phase.objectives]
-description = "Implement the Patch-DAG: a directed acyclic graph of patches with branch management, ancestor queries, and merge computation."
-
-[phase.outputs]
-artifacts = [
-    ".specs/06_prototypes/dag_implementation.md",
-    "crates/suture-core/src/dag/mod.rs",
-    "crates/suture-core/src/dag/graph.rs",
-    "crates/suture-core/src/dag/merge.rs",
-    "crates/suture-core/src/dag/branch.rs",
-    "crates/suture-core/tests/dag_integration.rs",
-]
-report = ".reports/phase_05_dag_spike_results.md"
-
-[phase.quality_gates]
-gates = [
-    "DAG invariant: no cycles ever created (verified via proptest with random operation sequences)",
-    "Branch creation: instant, correct parent pointer",
-    "Ancestor query: correct for all topologies (linear, fork, diamond)",
-    "Merge computation: produces correct merged patch set with conflict nodes where needed",
-    "Concurrent mutation: no data races under loom testing (if lock-free) or correct under RwLock",
-    "Termination: all DAG operations terminate (proven in Lean 4, tested empirically)",
-    "Branch coverage > 95% on DAG module",
-]
-
-# =============================================================================
-# PHASE 5: Adversarial Spike — Metadata Store
-# =============================================================================
-[[phase]]
-id = "phase_5_meta"
-title = "Feasibility Spike: SQLite Metadata Store"
-agent = "Breaker (Prototyper)"
-status = "pending"
-depends_on = ["phase_5_dag"]
-
-[phase.objectives]
-description = "Implement the SQLite metadata store: schema for tracking the Patch-DAG state, branch pointers, configuration, and working set."
-
-[phase.outputs]
-artifacts = [
-    ".specs/06_prototypes/metadata_implementation.md",
-    "crates/suture-core/src/metadata/mod.rs",
-    "crates/suture-core/src/metadata/schema.rs",
-    "crates/suture-core/src/metadata/store.rs",
-    "crates/suture-core/tests/metadata_integration.rs",
-]
-report = ".reports/phase_05_metadata_spike_results.md"
-
-[phase.quality_gates]
-gates = [
-    "Schema: normalized, indexed for common query patterns",
-    "WAL mode: concurrent readers + single writer verified",
-    "Migration: schema version tracking, upgrade paths defined",
-    "Integrity: foreign keys enforced, no orphaned records",
-    "Performance: metadata operations < 1ms on 100,000-patch repository",
-    "Branch coverage > 90% on metadata module",
-]
-
-# =============================================================================
-# PHASE 5: Integration Spike — Core Engine
-# =============================================================================
-[[phase]]
-id = "phase_5_core_integration"
-title = "Integration Spike: Core Engine Assembly"
-agent = "Breaker (Prototyper)"
-status = "pending"
-depends_on = ["phase_5_meta"]
-
-[phase.objectives]
-description = "Wire together CAS + Patch Algebra + DAG + Metadata into a working core engine. Verify end-to-end: init → add → commit → branch → commit → merge."
-
-[phase.outputs]
-artifacts = [
-    ".specs/06_prototypes/core_integration.md",
-    "crates/suture-core/src/lib.rs (rewritten)",
-    "crates/suture-core/src/repository.rs",
-    "crates/suture-core/tests/core_integration.rs",
-]
-report = ".reports/phase_05_core_integration_results.md"
-
-[phase.quality_gates]
-gates = [
-    "End-to-end: suture init → add file → commit → branch → modify → commit → merge succeeds",
-    "No silent data loss in any scenario",
-    "CAS deduplication verified across commits",
-    "DAG correctly tracks all patches",
-    "Metadata correctly reflects repository state",
-    "Overall branch coverage > 90% on suture-core",
-]
-
-# =============================================================================
-# PHASE 5: Adversarial Spike — CLI
-# =============================================================================
-[[phase]]
-id = "phase_5_cli"
-title = "Feasibility Spike: CLI Interface"
-agent = "Breaker (Prototyper)"
-status = "pending"
-depends_on = ["phase_5_core_integration"]
-
-[phase.objectives]
-description = "Implement the CLI using clap. Provide init, status, add, commit, branch, merge, log, diff commands. This makes the system usable for local testing."
-
-[phase.outputs]
-artifacts = [
-    ".specs/06_prototypes/cli_implementation.md",
-    "crates/suture-cli/Cargo.toml (updated)",
-    "crates/suture-cli/src/main.rs (rewritten)",
-    "crates/suture-cli/src/commands/mod.rs",
-    "crates/suture-cli/src/commands/init.rs",
-    "crates/suture-cli/src/commands/status.rs",
-    "crates/suture-cli/src/commands/add.rs",
-    "crates/suture-cli/src/commands/commit.rs",
-    "crates/suture-cli/src/commands/branch.rs",
-    "crates/suture-cli/src/commands/merge.rs",
-    "crates/suture-cli/src/commands/log.rs",
-    "crates/suture-cli/src/commands/diff.rs",
-]
-report = ".reports/phase_05_cli_spike_results.md"
-
-[phase.quality_gates]
-gates = [
-    "All 9 commands implemented and functional",
-    "Error messages actionable and human-readable",
-    "Exit codes follow Unix conventions",
-    "CLI tests cover happy paths and error paths for all commands",
-]
-
-# =============================================================================
-# PHASE 5: Adversarial Spike — OTIO Driver
-# =============================================================================
-[[phase]]
-id = "phase_5_otio"
-title = "Feasibility Spike: OpenTimelineIO Driver"
-agent = "Breaker (Prototyper)"
-status = "pending"
-depends_on = ["phase_5_core_integration"]
-
-[phase.objectives]
-description = "Implement the reference SutureDriver for OpenTimelineIO (.otio) files. This is the proof-of-concept for semantic versioning of video timelines."
-
-[phase.outputs]
-artifacts = [
-    ".specs/06_prototypes/otio_driver_implementation.md",
-    "crates/suture-driver-otio/src/lib.rs (rewritten)",
-    "crates/suture-driver-otio/src/parser.rs",
-    "crates/suture-driver-otio/src/serializer.rs",
-    "crates/suture-driver-otio/src/touch_set.rs",
-    "crates/suture-driver-otio/src/visual_diff.rs",
-    "crates/suture-driver-otio/tests/otio_integration.rs",
-    "crates/suture-driver-otio/tests/fixtures/",
-]
-report = ".reports/phase_05_otio_spike_results.md"
-
-[phase.quality_gates]
-gates = [
-    "Parse .otio files into intermediate representation",
-    "Generate patches for timeline modifications (move clip, trim, add transition)",
-    "Touch-set correctly identifies affected timeline elements",
-    "Commutativity verified: editing clip A and clip B commute",
-    "Non-commutativity detected: two edits to same clip flagged as conflict",
-    "Round-trip: serialize → patch → deserialize produces valid .otio",
-    "Branch coverage > 85% on OTIO driver",
-]
-
-# =============================================================================
-# PHASE 6: CI/CD Engineering
-# =============================================================================
-[[phase]]
-id = "phase_6"
-title = "CI/CD Pipeline"
-agent = "DevOps Engineer"
-status = "pending"
-depends_on = ["phase_5_cli", "phase_5_otio"]
-
-[phase.objectives]
-description = "Set up automated CI/CD: build, test, lint, security audit, formal verification check, benchmark regression."
-
-[phase.outputs]
-artifacts = [
-    ".specs/07_ci_cd/pipeline_config.toml",
-    ".github/workflows/ci.yml (or Gitea equivalent)",
-    "Makefile or justfile for common tasks",
-]
-report = ".reports/phase_06_ci_cd_report.md"
-
-[phase.quality_gates]
-gates = [
-    "CI runs on every push: cargo build, cargo test, cargo clippy, cargo audit",
-    "Formal verification step: lean check (if available, else skip with warning)",
-    "Benchmark regression: criterion results compared against baseline",
-    "Security audit: cargo audit with zero critical vulnerabilities",
-    "Release pipeline: cargo build --release with LTO, codegen-units=1",
-]
-
-# =============================================================================
-# PHASE 7: Documentation & Knowledge Capture
-# =============================================================================
-[[phase]]
-id = "phase_7"
-title = "Documentation & Knowledge Capture"
-agent = "Zeitgeist (Brand Strategist)"
-status = "pending"
-depends_on = ["phase_6"]
-
-[phase.objectives]
-description = "Generate user-facing documentation, API reference, and capture patterns/lessons learned from the implementation."
-
-[phase.outputs]
-artifacts = [
-    "docs/getting_started.md",
-    "docs/api_reference.md",
-    "docs/driver_sdk.md",
-    ".specs/08_5_knowledge_base/pattern_library.md",
-    ".specs/08_5_knowledge_base/lessons_learned.md",
-]
-report = ".reports/phase_07_documentation_report.md"
-
-[phase.quality_gates]
-gates = [
-    "Getting started guide: clone → build → init → commit → branch → merge",
-    "API reference: all public types and functions documented",
-    "Driver SDK guide: how to implement SutureDriver for a new format",
-    "Pattern library: reusable patterns from implementation",
-    "README.md updated to reflect actual state",
-]
-
-# =============================================================================
-# PHASE 8: v0.1 Release Preparation
-# =============================================================================
-[[phase]]
-id = "phase_8"
-title = "v0.1 Release: Local Semantic VCS"
-agent = "Project Manager"
-status = "pending"
-depends_on = ["phase_7"]
-
-[phase.objectives]
-description = "Prepare the v0.1 release: a fully functional local semantic version control system with CAS, Patch-DAG, CLI, and OTIO driver. No VFS, no Hub, no distributed features."
-
-[phase.outputs]
-artifacts = [
-    "CHANGELOG.md",
-    "VERSION.md",
-    "crates/suture-common/src/lib.rs (shared types and error definitions)",
-    "crates/suture-daemon/src/lib.rs (placeholder for v0.2)",
-]
-report = ".reports/phase_08_v01_release_report.md"
-
-[phase.quality_gates]
-gates = [
-    "All unit tests pass",
-    "All integration tests pass",
-    "No critical or high security vulnerabilities",
-    "Branch coverage > 80% overall, > 95% on critical paths",
-    "Performance targets met (or documented deviations)",
-    "Documentation complete and accurate",
-    "Semantic versioning: v0.1.0 tag ready",
-]
-
-# =============================================================================
-# FUTURE PHASES (v0.2+)
-# =============================================================================
-[[phase]]
-id = "phase_v02_vfs"
-title = "[v0.2] VFS Layer: NFSv4 Loopback + Path Translation"
-agent = "TBD"
+id = "v1.3_tui"
+title = "TUI Completion"
+agent = "Construct"
 status = "planned"
-depends_on = ["phase_8"]
+depends_on = []
 
 [phase.objectives]
-description = "Implement the user-space NFSv4 server for loopback mounting. Implement the path translation engine. This makes Suture 'invisible' to NLEs."
+description = "Fill remaining TUI gaps: checkout confirmation, merge conflict resolution view, log graph visualization, push/pull to remote."
+
+[phase.outputs]
+artifacts = [
+    "crates/suture-tui/src/ui/merge.rs (new)",
+    "crates/suture-tui/src/ui/remote.rs (new)",
+]
+report = ".reports/phase_v13_tui_report.md"
+
+[phase.quality_gates]
+gates = [
+    "Merge conflict view: show both sides, allow manual resolution",
+    "Remote view: push/pull status, remote list, add/remove remote",
+    "Log graph: ASCII branch/merge visualization (like git log --graph)",
+    "Checkout confirmation: show changed files before switching branches",
+    "Tests: >40 tests across TUI modules",
+]
 
 [[phase]]
-id = "phase_v02_daemon"
-title = "[v0.2] Daemon: Background Service + SHM IPC"
-agent = "TBD"
+id = "v1.4"
+title = "Desktop App"
+agent = "Construct"
 status = "planned"
-depends_on = ["phase_v02_vfs"]
+depends_on = ["v1.3"]
 
 [phase.objectives]
-description = "Implement the Suture daemon that manages VFS mounts, SHM for nanosecond lookups, and background sync."
+description = "Finish the Tauri v2 scaffold into a working cross-platform desktop application with web-based frontend."
 
-[[phase]]
-id = "phase_v03_drivers"
-title = "[v0.3] Driver SDK Release + XLSX/DOCX Drivers"
-agent = "TBD"
-status = "planned"
-depends_on = ["phase_8"]
+[phase.outputs]
+artifacts = [
+    "desktop-app/src-tauri/ (Tauri project structure)",
+    "desktop-app/ui/ (web frontend — HTML/CSS/JS or SvelteKit)",
+    "desktop-app/src/main.rs (complete IPC commands)",
+]
+report = ".reports/phase_v14_desktop_report.md"
 
-[phase.objectives]
-description = "Stabilize the SutureDriver trait. Implement first-party drivers for Excel (.xlsx) and Word (.docx). Release SDK documentation."
-
-[[phase]]
-id = "phase_v04_hub"
-title = "[v0.4] Suture Hub: Raft Coordination + gRPC/QUIC"
-agent = "TBD"
-status = "planned"
-depends_on = ["phase_v02_daemon"]
-
-[phase.objectives]
-description = "Implement the distributed Hub: Raft consensus, gRPC/QUIC sync, S3 blob backend, PostgreSQL metadata, lease management."
-
-[[phase]]
-id = "phase_v05_enterprise"
-title = "[v0.5] Enterprise: SSO/RBAC + Web UI + WASM"
-agent = "TBD"
-status = "planned"
-depends_on = ["phase_v04_hub"]
-
-[phase.objectives]
-description = "Enterprise features: SSO (SAML/OIDC), RBAC, Web-based visual diff UI (SvelteKit + WASM), Tauri desktop app."
+[phase.quality_gates]
+gates = [
+    "Open repo: file dialog → repo browser",
+    "Init repo: create new repo from desktop",
+    "Commit graph: visual patch DAG",
+    "Staging: drag-and-drop or checkbox staging",
+    "Diff viewer: syntax-highlighted side-by-side diff",
+    "Branch management: create/checkout/delete/rename",
+    "Push/pull: configure remote, sync from desktop",
+    "Cross-platform builds: macOS .dmg, Windows .msi, Linux .AppImage",
+]
 
 # =============================================================================
-# DEPENDENCY GRAPH SUMMARY
+# DIRECTION B: ENTERPRISE INFRASTRUCTURE
 # =============================================================================
-# phase_-1
-#   └── phase_0
-#         ├── phase_1
-#         │     └── phase_1_25
-#         │           └── phase_2
-#         │                 ├── phase_3
-#         │                 └── phase_4
-#         │                       └── phase_5_cas
-#         │                             └── phase_5_patch
-#         │                                   └── phase_5_dag
-#         │                                         └── phase_5_meta
-#         │                                               └── phase_5_core_integration
-#         │                                                     ├── phase_5_cli ──────────┐
-#         │                                                     └── phase_5_otio ─────────┤
-#         │                                                                               └── phase_6
-#         │                                                                                     └── phase_7
-#         │                                                                                           └── phase_8 (v0.1)
-#         │                                                                                                 ├── phase_v02_vfs
-#         │                                                                                                 ├── phase_v03_drivers
-#         │                                                                                                 └── ...
+# Goal: Make Suture invisible to NLEs via VFS mount.
+# This is the unique differentiator — no other VCS does this.
+# =============================================================================
+
+[[phase]]
+id = "v2.0_vfs_proto"
+title = "VFS Prototype — FUSE Read-Only Mount (Linux)"
+agent = "Breaker"
+status = "planned"
+depends_on = ["v1.4"]
+
+[phase.objectives]
+description = "Implement a read-only FUSE mount that exposes a Suture repo as a regular directory tree. Files are read from CAS on demand. This proves the VFS concept on the simplest platform first."
+
+[phase.outputs]
+artifacts = [
+    "crates/suture-vfs/Cargo.toml (new crate)",
+    "crates/suture-vfs/src/fuse/mod.rs",
+    "crates/suture-vfs/src/fuse/read_only.rs",
+    "crates/suture-vfs/src/path_translation.rs",
+]
+report = ".reports/phase_v20_vfs_proto_report.md"
+
+[phase.quality_gates]
+gates = [
+    "Read-only mount: ls, cat, stat work on mounted Suture repo",
+    "Branch switching: unmount/remount shows different branch contents",
+    "Performance: file read latency <10ms for files in CAS",
+    "No data corruption: CAS integrity verified after 1000 random read sequences",
+    "Clean unmount: no resource leaks on unmount",
+    "Tests: unit tests for path translation, integration tests for mount/unmount",
+]
+
+[[phase]]
+id = "v2.0_vfs_rw"
+title = "VFS Read-Write Mount"
+agent = "Breaker"
+status = "planned"
+depends_on = ["v2.0_vfs_proto"]
+
+[phase.objectives]
+description = "Extend the FUSE mount to support writes. File saves create patches automatically. Conflict detection on concurrent writes."
+
+[phase.outputs]
+artifacts = [
+    "crates/suture-vfs/src/fuse/read_write.rs",
+    "crates/suture-vfs/src/conflict_detector.rs",
+]
+report = ".reports/phase_v20_vfs_rw_report.md"
+
+[phase.quality_gates]
+gates = [
+    "Write: echo 'hello' > mounted_file creates a patch",
+    "Auto-commit: file save triggers patch creation",
+    "Conflict: concurrent writes to same file detected and flagged",
+    "NLE compatibility: DaVinci Resolve can open/save files on mount",
+    "Performance: write latency <50ms (patch creation + CAS store)",
+]
+
+[[phase]]
+id = "v2.0_nfs"
+title = "NFSv4 Loopback Mount (macOS/Windows)"
+agent = "Breaker"
+status = "planned"
+depends_on = ["v2.0_vfs_rw"]
+
+[phase.objectives]
+description = "Implement NFSv4 server for platforms where FUSE is unavailable or restricted (macOS, Windows). Uses nfs-serve-rs or custom implementation."
+
+[phase.outputs]
+artifacts = [
+    "crates/suture-vfs/src/nfs/mod.rs",
+    "crates/suture-vfs/src/nfs/server.rs",
+]
+report = ".reports/phase_v20_nfs_report.md"
+
+[phase.quality_gates]
+gates = [
+    "NFSv4 mount: mount -t nfs localhost:/repo /mnt/suture works",
+    "Cross-platform: macOS and Linux verified",
+    "Feature parity with FUSE implementation",
+]
+
+[[phase]]
+id = "v2.1_daemon"
+title = "Daemon + SHM IPC"
+agent = "Construct"
+status = "planned"
+depends_on = ["v2.0_vfs_rw"]
+
+[phase.objectives]
+description = "Implement the Suture daemon as a persistent background service. Manages VFS mounts, provides SHM for nanosecond status queries, handles auto-sync."
+
+[phase.outputs]
+artifacts = [
+    "crates/suture-daemon/src/lib.rs (rewritten)",
+    "crates/suture-daemon/src/shm.rs (new)",
+    "crates/suture-daemon/src/mount_manager.rs (new)",
+]
+report = ".reports/phase_v21_daemon_report.md"
+
+[phase.quality_gates]
+gates = [
+    "SHM lookup: 'is file X locked?' query <1 microsecond",
+    "Auto-mount: daemon mounts repos on startup",
+    "Auto-sync: file saves via VFS trigger push to remote",
+    "Crash recovery: daemon restart restores all mounts",
+    "Lifecycle: start/stop/status/reload commands",
+]
+
+[[phase]]
+id = "v2.5_transport"
+title = "Transport Upgrade — gRPC/QUIC + Raft + S3"
+agent = "Construct"
+status = "planned"
+depends_on = ["v2.1_daemon"]
+
+[phase.objectives]
+description = "Replace HTTP with gRPC over QUIC for hub communication. Add Raft consensus for multi-node hubs. Add S3 blob backend option."
+
+[phase.outputs]
+artifacts = [
+    "crates/suture-hub/src/grpc/mod.rs (new)",
+    "crates/suture-hub/src/raft/mod.rs (new)",
+    "crates/suture-hub/src/s3_backend.rs (new)",
+]
+report = ".reports/phase_v25_transport_report.md"
+
+[phase.quality_gates]
+gates = [
+    "gRPC: all hub operations work over gRPC/QUIC",
+    "Raft: 3-node cluster survives leader failure",
+    "S3: blobs stored/retrieved from S3-compatible backend",
+    "Backward compatibility: HTTP API still works alongside gRPC",
+    "Performance: sync latency <100ms on LAN",
+]
+
+# =============================================================================
+# DIRECTION C: ECOSYSTEM GROWTH
+# =============================================================================
+# Goal: Grow the user base through more integrations and format support.
+# =============================================================================
+
+[[phase]]
+id = "v2.5_drivers"
+title = "Extended Format Drivers"
+agent = "Construct"
+status = "planned"
+depends_on = ["v1.4"]
+
+[phase.objectives]
+description = "Add format drivers for PDF, database schemas, image metadata, and video metadata. Stabilize the driver SDK."
+
+[phase.outputs]
+artifacts = [
+    "crates/suture-driver-pdf/Cargo.toml (new)",
+    "crates/suture-driver-sql/Cargo.toml (new)",
+    "crates/suture-driver-image/Cargo.toml (new)",
+]
+report = ".reports/phase_v25_drivers_report.md"
+
+[phase.quality_gates]
+gates = [
+    "PDF driver: detect text changes, page additions/removals",
+    "SQL driver: detect schema changes (ALTER TABLE), data diffs",
+    "Image driver: detect EXIF changes, dimension changes",
+    "Driver SDK: documented trait with 3+ example implementations",
+]
+
+[[phase]]
+id = "v2.5_plugins"
+title = "Editor Plugins + Language Bindings"
+agent = "Construct"
+status = "planned"
+depends_on = ["v2.5_drivers"]
+
+[phase.objectives]
+description = "Build JetBrains plugin, Neovim plugin. Ship Python bindings (PyO3) and Node.js bindings (napi-rs)."
+
+[phase.outputs]
+artifacts = [
+    "editors/jetbrains/ (new)",
+    "editors/neovim/ (new)",
+    "bindings/python/ (new)",
+    "bindings/node/ (new)",
+]
+report = ".reports/phase_v25_plugins_report.md"
+
+[phase.quality_gates]
+gates = [
+    "JetBrains: open repo, view status, stage/commit from IDE",
+    "Neovim: suture.nvim plugin with statusline integration",
+    "Python: pip install suture-core works, can open repo and list branches",
+    "Node.js: npm install @suture/core works",
+]
+
+# =============================================================================
+# DEPENDENCY GRAPH
+# =============================================================================
+# v1.3 (Hub Portal) ──── v1.3_tui (TUI) ──┐
+#                                         ├── v1.4 (Desktop) ──┐
+# v1.3 (Hub Portal) ──────────────────────┘                      │
+#                                                                ├── v2.0_vfs_proto ── v2.0_vfs_rw ──┬── v2.0_nfs
+#                                                                │                                 └── v2.1_daemon ── v2.5_transport
+# v1.4 (Desktop) ── v2.5_drivers ── v2.5_plugins
 # =============================================================================

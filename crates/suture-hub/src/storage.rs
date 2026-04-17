@@ -839,6 +839,101 @@ impl HubStorage {
         Ok(())
     }
 
+    pub fn delete_repo(&self, repo_id: &str) -> Result<(), StorageError> {
+        self.conn
+            .execute("DELETE FROM patches WHERE repo_id = ?1", params![repo_id])?;
+        self.conn
+            .execute("DELETE FROM branches WHERE repo_id = ?1", params![repo_id])?;
+        self.conn
+            .execute("DELETE FROM blobs WHERE repo_id = ?1", params![repo_id])?;
+        self.conn.execute(
+            "DELETE FROM branch_protection WHERE repo_id = ?1",
+            params![repo_id],
+        )?;
+        self.conn
+            .execute("DELETE FROM repos WHERE repo_id = ?1", params![repo_id])?;
+        Ok(())
+    }
+
+    pub fn delete_branch(&self, repo_id: &str, branch_name: &str) -> Result<(), StorageError> {
+        self.conn.execute(
+            "DELETE FROM branches WHERE repo_id = ?1 AND name = ?2",
+            params![repo_id, branch_name],
+        )?;
+        self.conn.execute(
+            "DELETE FROM branch_protection WHERE repo_id = ?1 AND branch_name = ?2",
+            params![repo_id, branch_name],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_mirror(&self, mirror_id: i64) -> Result<(), StorageError> {
+        self.conn
+            .execute("DELETE FROM mirrors WHERE id = ?1", params![mirror_id])?;
+        Ok(())
+    }
+
+    pub fn search_repos(&self, query: &str) -> Result<Vec<String>, StorageError> {
+        let pattern = format!("%{query}%");
+        let mut stmt = self
+            .conn
+            .prepare("SELECT repo_id FROM repos WHERE repo_id LIKE ?1 ORDER BY repo_id")?;
+        let rows = stmt.query_map(params![pattern], |row| row.get::<_, String>(0))?;
+        let mut ids = Vec::new();
+        for row in rows {
+            ids.push(row?);
+        }
+        Ok(ids)
+    }
+
+    pub fn search_patches(
+        &self,
+        repo_id: &str,
+        query: &str,
+    ) -> Result<Vec<PatchProto>, StorageError> {
+        let pattern = format!("%{query}%");
+        let mut stmt = self.conn.prepare(
+            "SELECT patch_id, operation_type, touch_set, target_path, payload, parent_ids, author, message, timestamp
+             FROM patches WHERE repo_id = ?1 AND (author LIKE ?2 OR message LIKE ?3) LIMIT 50",
+        )?;
+        let rows = stmt.query_map(params![repo_id, pattern, pattern], |row| {
+            let id_hex: String = row.get(0)?;
+            let operation_type: String = row.get(1)?;
+            let touch_set_json: String = row.get(2)?;
+            let target_path: Option<String> = row.get(3)?;
+            let payload: String = row.get(4)?;
+            let parent_ids_json: String = row.get(5)?;
+            let author: String = row.get(6)?;
+            let message: String = row.get(7)?;
+            let timestamp: i64 = row.get(8)?;
+
+            let touch_set: Vec<String> = serde_json::from_str(&touch_set_json).unwrap_or_default();
+            let parent_ids: Vec<String> =
+                serde_json::from_str(&parent_ids_json).unwrap_or_default();
+
+            Ok(PatchProto {
+                id: HashProto { value: id_hex },
+                operation_type,
+                touch_set,
+                target_path,
+                payload,
+                parent_ids: parent_ids
+                    .into_iter()
+                    .map(|h| HashProto { value: h })
+                    .collect(),
+                author,
+                message,
+                timestamp: timestamp as u64,
+            })
+        })?;
+
+        let mut patches = Vec::new();
+        for row in rows {
+            patches.push(row?);
+        }
+        Ok(patches)
+    }
+
     // === Replication ===
 
     pub fn add_replication_peer(&self, peer_url: &str, role: &str) -> Result<i64, StorageError> {

@@ -307,8 +307,8 @@ document.addEventListener('click', async function (e) {
     var action = isProtected ? 'unprotect' : 'protect';
 
     try {
-        await fetchJSON(API_BASE + '/repos/' + encodeURIComponent(repoId) + '/branches/' +
-            encodeURIComponent(branchName) + '/' + action, { method: 'POST' });
+        await fetchJSON(API_BASE + '/repos/' + encodeURIComponent(repoId) + '/' + action + '/' +
+            encodeURIComponent(branchName), { method: 'POST' });
         toast('Branch "' + branchName + '" ' + (isProtected ? 'unprotected' : 'protected'), 'success');
         badge.classList.toggle('protected', !isProtected);
         badge.classList.toggle('unprotected', isProtected);
@@ -369,14 +369,14 @@ async function loadUsers() {
 
         users.forEach(function (user) {
             var tr = document.createElement('tr');
-            var role = (user.role || 'user').toLowerCase();
+            var role = (user.role || 'member').toLowerCase();
             tr.innerHTML =
                 '<td class="mono">' + escapeHtml(user.username) + '</td>' +
                 '<td>' + escapeHtml(user.display_name) + '</td>' +
                 '<td><select class="role-select" data-user="' + escapeHtml(user.username) + '">' +
                 '<option value="admin"' + (role === 'admin' ? ' selected' : '') + '>admin</option>' +
-                '<option value="user"' + (role === 'user' ? ' selected' : '') + '>user</option>' +
-                '<option value="readonly"' + (role === 'readonly' ? ' selected' : '') + '>readonly</option>' +
+                '<option value="member"' + (role === 'member' ? ' selected' : '') + '>member</option>' +
+                '<option value="reader"' + (role === 'reader' ? ' selected' : '') + '>reader</option>' +
                 '</select></td>' +
                 '<td>' + formatTimestamp(user.created_at) + '</td>' +
                 '<td class="actions-cell">' +
@@ -406,8 +406,7 @@ document.getElementById('form-create-user').addEventListener('submit', async fun
     e.preventDefault();
     var username = document.getElementById('new-user-username').value.trim();
     var displayName = document.getElementById('new-user-display').value.trim();
-    var password = document.getElementById('new-user-password').value;
-    if (!username || !password) return;
+    if (!username) return;
 
     try {
         await fetchJSON(API_BASE + '/auth/register', {
@@ -416,7 +415,6 @@ document.getElementById('form-create-user').addEventListener('submit', async fun
             body: JSON.stringify({
                 username: username,
                 display_name: displayName || username,
-                password: password,
             }),
         });
         toast('User "' + username + '" created', 'success');
@@ -495,7 +493,8 @@ async function loadMirrors() {
                 '<td class="mono">' + escapeHtml(m.remote_url || m.url || '') + '</td>' +
                 '<td>' + formatTimestamp(m.last_sync) + '</td>' +
                 '<td class="actions-cell">' +
-                '<button class="btn btn-primary btn-sm mirror-sync" data-repo="' + escapeHtml(m.local_repo || m.repo_id || '') +
+                '<button class="btn btn-primary btn-sm mirror-sync" data-id="' + (m.id || '') +
+                '" data-repo="' + escapeHtml(m.local_repo || m.repo_id || '') +
                 '" data-url="' + escapeHtml(m.remote_url || m.url || '') + '">Sync</button>' +
                 '</td>';
             tbody.appendChild(tr);
@@ -543,8 +542,8 @@ document.getElementById('mirrors-tbody').addEventListener('click', async functio
     var btn = e.target.closest('.mirror-sync');
     if (!btn) return;
 
+    var id = btn.dataset.id;
     var repo = btn.dataset.repo;
-    var url = btn.dataset.url;
     btn.disabled = true;
     btn.textContent = 'Syncing...';
 
@@ -552,7 +551,7 @@ document.getElementById('mirrors-tbody').addEventListener('click', async functio
         await fetchJSON(API_BASE + '/mirror/sync', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ local_repo: repo, remote_url: url }),
+            body: JSON.stringify({ mirror_id: Number(id) }),
         });
         toast('Sync completed for "' + repo + '"', 'success');
         loadMirrors();
@@ -611,7 +610,7 @@ async function loadReplication() {
                     '<td><span class="status-badge ' + peerStatus + '">' + escapeHtml(peerStatus) + '</span></td>' +
                     '<td class="mono">' + peer.last_sync_seq + '</td>' +
                     '<td class="actions-cell">' +
-                    '<button class="btn btn-danger btn-sm peer-remove" data-url="' + escapeHtml(peer.peer_url) + '">Remove</button>' +
+                    '<button class="btn btn-danger btn-sm peer-remove" data-id="' + (peer.id || '') + '" data-url="' + escapeHtml(peer.peer_url) + '">Remove</button>' +
                     '</td>';
                 tbody.appendChild(tr);
             });
@@ -659,12 +658,13 @@ document.getElementById('replication-tbody').addEventListener('click', async fun
     var btn = e.target.closest('.peer-remove');
     if (!btn) return;
 
+    var id = btn.dataset.id;
     var url = btn.dataset.url;
     var ok = await confirmDialog('Remove Peer', 'Are you sure you want to remove peer "' + url + '"?');
     if (!ok) return;
 
     try {
-        await fetchJSON(API_BASE + '/replication/peers/' + encodeURIComponent(url), {
+        await fetchJSON(API_BASE + '/replication/peers/' + encodeURIComponent(id), {
             method: 'DELETE',
         });
         toast('Peer removed', 'success');

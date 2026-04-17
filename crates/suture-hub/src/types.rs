@@ -75,7 +75,10 @@ pub struct MirrorSetupResponse {
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct MirrorSyncRequest {
+    #[serde(default)]
     pub mirror_id: i64,
+    pub local_repo: Option<String>,
+    pub remote_url: Option<String>,
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -143,4 +146,26 @@ pub struct SyncResponse {
     pub success: bool,
     pub applied: usize,
     pub error: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct CreateRepoRequest {
+    pub repo_id: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct CreateBranchRequest {
+    pub name: String,
+    pub target: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct LoginRequest {
+    pub username: String,
+    pub token: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct SearchParams {
+    pub q: String,
 }
