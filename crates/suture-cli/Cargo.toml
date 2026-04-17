@@ -1,6 +1,6 @@
 [package]
 name = "suture-cli"
-version = "1.1.0"
+version = "2.5.0"
 edition = "2024"
 description = "A patch-based version control system with semantic merge for structured files"
 license.workspace = true
