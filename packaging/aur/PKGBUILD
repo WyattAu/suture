@@ -1,0 +1,34 @@
+# Maintainer: Wyatt Au <wyatt@au.gg>
+pkgname=suture
+pkgver=2.6.0
+pkgrel=1
+pkgdesc="Patch-based version control system with semantic merge"
+arch=('x86_64' 'aarch64')
+url="https://github.com/WyattAu/suture"
+license=('Apache-2.0')
+depends=('gcc-libs' 'openssl')
+makedepends=('cargo' 'git')
+provides=('suture')
+conflicts=('suture-git')
+options=('!lto')
+source=("$pkgname-$pkgver.tar.gz::https://github.com/WyattAu/suture/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+prepare() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  cargo build --frozen --release -p suture-cli
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  install -Dm755 target/release/suture "$pkgdir/usr/bin/suture"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
