@@ -27,6 +27,9 @@ suture-driver-docx = { path = "../suture-driver-docx", version = "1.1.0" }
 suture-driver-xlsx = { path = "../suture-driver-xlsx", version = "1.1.0" }
 suture-driver-pptx = { path = "../suture-driver-pptx", version = "1.1.0" }
 suture-driver-markdown = { path = "../suture-driver-markdown", version = "1.1.0" }
+suture-driver-sql = { path = "../suture-driver-sql", version = "1.1.0" }
+suture-driver-image = { path = "../suture-driver-image", version = "1.1.0" }
+suture-driver-pdf = { path = "../suture-driver-pdf", version = "1.1.0" }
 suture-tui = { path = "../suture-tui", version = "1.1.0" }
 clap = { version = "4.5", features = ["derive"] }
 clap_complete = "4.6"
