@@ -1,11 +1,45 @@
+use std::path::Path;
 use tokio::io::AsyncBufReadExt;
+
+/// Expand paths: if a path is a directory, recursively collect all files in it.
+fn expand_paths(paths: &[String]) -> Vec<String> {
+    let mut result = Vec::new();
+    for path_str in paths {
+        let path = Path::new(path_str);
+        if path.is_dir() {
+            if let Ok(entries) = std::fs::read_dir(path) {
+                for entry in entries.flatten() {
+                    let entry_path = entry.path();
+                    if !entry_path.is_file() {
+                        continue;
+                    }
+                    // Skip if any ancestor is .suture
+                    let is_suture = entry_path.ancestors().any(|a| {
+                        a.file_name() == Some(std::ffi::OsStr::new(".suture"))
+                    });
+                    if is_suture {
+                        continue;
+                    }
+                    if let Some(s) = entry_path.to_str() {
+                        result.push(s.to_string());
+                    }
+                }
+            }
+        } else if path.is_file()
+            && let Some(s) = path.to_str()
+        {
+            result.push(s.to_string());
+        }
+    }
+    result
+}
 
 pub(crate) async fn cmd_add(
     paths: &[String],
     all: bool,
     patch: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+    let repo = suture_core::repository::Repository::open(Path::new("."))?;
 
     if all {
         let count = repo.add_all()?;
@@ -13,11 +47,11 @@ pub(crate) async fn cmd_add(
         return Ok(());
     }
 
-    let file_paths: Vec<String> = if paths.is_empty() {
-        return Err("no paths specified (use --all to stage everything)".into());
-    } else {
-        paths.to_vec()
-    };
+    let file_paths = expand_paths(paths);
+
+    if file_paths.is_empty() {
+        return Err("no files to stage (use --all to stage everything)".into());
+    }
 
     if patch {
         cmd_add_patch(&repo, &file_paths).await
