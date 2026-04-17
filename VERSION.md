@@ -1,7 +1,7 @@
 # Suture Version
 
-- **Current Version:** 1.3.0
-- **Current Phase:** Direction A — Hub Portal Completion (v1.3)
+- **Current Version:** 2.0.0-alpha.1
+- **Current Phase:** Direction B — VFS Prototype (v2.0)
 - **Status:** In Progress
 - **Last Updated:** 2026-04-17
 - **Rust Edition:** 2024
