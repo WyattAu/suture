@@ -1,7 +1,7 @@
 # Suture Version
 
-- **Current Version:** 2.6.0
-- **Current Phase:** Hardening — All scaffolds wired to real implementations
+- **Current Version:** 2.7.0
+- **Current Phase:** Direction E — Ship It (Distribution & Discoverability)
 - **Status:** Complete
 - **Last Updated:** 2026-04-17
 - **Rust Edition:** 2024
@@ -15,6 +15,7 @@
 | **B** | Enterprise Infra | VFS mount + Daemon + SHM + gRPC | v2.0 – v2.5 | ✅ Complete |
 | **C** | Ecosystem Growth | Drivers, plugins, language bindings | v2.5+ | ✅ Complete |
 | **D** | Hardening | Wire scaffolds, Raft, S3, mount manager, JetBrains, Python | v2.6 | ✅ Complete |
+| **E** | Ship It | Distribution, docs, packaging, release automation | v2.7 | ✅ Complete |
 
 ### Direction A — Product Polish (v1.3–v1.4) ✅
 
@@ -48,6 +49,17 @@
 - JetBrains IntelliJ plugin: 10 actions, VCS root detection, Kotlin/Gradle
 - Python bindings enhanced: notes, worktree, blame, bisect, remotes, utilities
 - `suture add .` bug fix: recursive directory expansion
+
+### Direction E — Ship It (v2.7) ✅
+
+- User documentation: quickstart, semantic merge guide, CLI reference, hub guide
+- GitHub Pages landing page (dark terminal aesthetic)
+- CONTRIBUTING.md updated for v2.7.0
+- PR template with quality gate checklist
+- Release workflow: 5-platform matrix (Linux x86/ARM, macOS x86/ARM, Windows)
+- Homebrew formula with test block
+- AUR PKGBUILD for Arch Linux
+- crates.io publish guide with dependency order
 
 ## Quality Gate Compliance
 
@@ -107,6 +119,9 @@
 
 | Commit | Version | Description |
 |--------|---------|-------------|
+| `b1440c6` | v2.7.0 | Packaging: Homebrew, AUR, crates.io publish guide |
+| `d0410c0` | v2.7.0 | User docs: quickstart, semantic merge, CLI reference, hub, landing page |
+| `116d7a6` | v2.7.0 | CONTRIBUTING.md, PR template, release workflow fix |
 | `42677f7` | v2.6.0 | Update Cargo.lock for new crates |
 | `52ea825` | v2.6.0 | Enhance Python bindings: notes, worktree, blame, bisect, remotes |
 | `016d1ae` | v2.6.0 | JetBrains IntelliJ plugin (10 actions, VCS root detection) |
