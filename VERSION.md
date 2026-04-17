@@ -27,7 +27,7 @@
 - WebDAV cross-platform mount (macOS Finder, Windows Explorer)
 - Background daemon with SHM for nanosecond status queries
 - PID file management and signal handling (SIGTERM, SIGHUP)
-- gRPC transport scaffold with proto definition (14 RPCs)
+- gRPC transport with 14 RPCs (Handshake, ListRepos, GetRepoInfo, CreateRepo, DeleteRepo, ListBranches, CreateBranch, DeleteBranch, ListPatches, GetBlob, Push, Pull, GetTree, Search)
 
 ### Direction C — Ecosystem Growth (v2.5) ✅
 
@@ -41,7 +41,7 @@
 
 | Gate | Status | Details |
 |------|--------|---------|
-| Tests | ✅ 835 passing | 0 failures across 26 crates |
+| Tests | ✅ 834 passing | 0 failures across 26 crates (2 ignored: FUSE root-only) |
 | Property-based tests | ✅ 21 proptest suites | 10K+ cases via proptest |
 | Benchmarks | ✅ 28 Criterion functions | repo ops, semantic merge, protocol, compression |
 | Clippy | ✅ Zero warnings | `cargo clippy --workspace -- -D warnings` clean |
@@ -62,7 +62,7 @@
 | suture-protocol | 55 | Wire protocol, V2 handshake, delta encoding, compression |
 | suture-cli | 25 | CLI binary (37 commands) |
 | suture-tui | 31 | Terminal UI (7 tabs: status, log, staging, diff, branches, remote, help) |
-| suture-hub | 38 | Hub daemon with SQLite, auth, replication, mirrors, branch protection, CRUD, search, gRPC scaffold |
+| suture-hub | 38 | Hub daemon with SQLite, auth, replication, mirrors, branch protection, CRUD, search, cursor-based pagination, gRPC (14 RPCs) |
 | suture-daemon | 27 | File watcher, auto-commit, auto-sync, SHM status, PID management, signal handling |
 | suture-driver | 8 | SutureDriver trait, DriverRegistry, semantic diff/merge types |
 | suture-ooxml | 4 | Shared OOXML infrastructure (ZIP, part navigation) |
@@ -91,6 +91,10 @@
 
 | Commit | Version | Description |
 |--------|---------|-------------|
+| `fb73de5` | v2.5.0-post | Cursor-based pagination for hub API endpoints |
+| `042800d` | v2.5.0-post | Wire up gRPC server with all 14 RPCs |
+| `213aa2a` | v2.5.0-post | Fix: suture add . directory expansion |
+| `5cfcbbf` | v2.5.0-post | Polish: README rewrite, CI migration, CLI version |
 | `02f603d` | v2.5.0-alpha.3 | gRPC transport scaffold with proto definition |
 | `df1980d` | v2.5.0-alpha.2 | Neovim plugin + Node.js bindings (napi-rs) |
 | `fe95255` | v2.5.0-alpha.1 | Three new semantic drivers — SQL, PDF, Image |
