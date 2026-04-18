@@ -9,6 +9,16 @@ tempfile = "3"
 
 [dev-dependencies]
 suture-hub = { path = "../suture-hub" }
+suture-driver = { path = "../suture-driver" }
+suture-driver-docx = { path = "../suture-driver-docx" }
+suture-driver-xlsx = { path = "../suture-driver-xlsx" }
+suture-driver-pptx = { path = "../suture-driver-pptx" }
+suture-driver-otio = { path = "../suture-driver-otio" }
+suture-driver-image = { path = "../suture-driver-image" }
+suture-driver-pdf = { path = "../suture-driver-pdf" }
 tokio = { version = "1", features = ["full"] }
 axum = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+zip = "2.2"
+image = "0.25"
+lopdf = "0.34"

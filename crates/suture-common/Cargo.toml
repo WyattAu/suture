@@ -8,6 +8,7 @@ description.workspace = true
 homepage.workspace = true
 keywords.workspace = true
 readme.workspace = true
+categories.workspace = true
 
 [dependencies]
 blake3 = "1.8"

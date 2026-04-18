@@ -2,6 +2,13 @@
 name = "suture-s3"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
+repository.workspace = true
+description = "S3-compatible blob storage backend for Suture"
+homepage.workspace = true
+keywords.workspace = true
+readme.workspace = true
+categories.workspace = true
 
 [dependencies]
 suture-common = { path = "../suture-common", version = "1.1.0" }

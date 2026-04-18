@@ -14,6 +14,7 @@ repository = "https://github.com/WyattAu/suture"
 description = "A patch-based version control system with semantic merge and format-aware drivers"
 readme = "README.md"
 homepage = "https://github.com/WyattAu/suture"
+categories = ["development-tools"]
 keywords = ["vcs", "version-control", "patch", "semantic-merge", "dvcs"]
 
 [profile.release]

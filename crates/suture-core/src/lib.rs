@@ -34,7 +34,9 @@
 
 pub mod cas;
 pub mod dag;
+pub mod diff;
 pub mod engine;
+pub mod file_type;
 pub mod hooks;
 pub mod metadata;
 pub mod patch;

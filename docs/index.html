@@ -35,11 +35,6 @@ code{font-family:var(--mono);font-size:.9em}
 .btn-secondary{border:1px solid var(--border);color:var(--fg)}
 .btn-secondary:hover{border-color:var(--accent);color:var(--accent);text-decoration:none}
 
-/* About */
-.about-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:24px}
-.about-card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:24px}
-.about-card h3{color:var(--accent)}
-
 /* Semantic merge */
 .merge-demo{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:24px}
 .merge-box{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:20px;position:relative}
@@ -50,6 +45,15 @@ code{font-family:var(--mono);font-size:.9em}
 .merge-label.pass{color:var(--accent)}
 .merge-box pre{border:none;background:var(--bg);padding:16px;margin:0}
 
+/* Domain cards */
+.domain-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;margin-top:24px}
+.domain-card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:24px;transition:border-color .15s}
+.domain-card:hover{border-color:var(--accent)}
+.domain-card h3{margin-bottom:4px}
+.domain-card .domain-icon{font-size:1.5rem;margin-bottom:8px;display:block}
+.domain-card p{font-size:.875rem;color:var(--fg2);margin-bottom:12px}
+.domain-card .domain-link{font-size:.85rem;color:var(--accent);font-weight:600}
+
 /* Features */
 .features-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;margin-top:24px}
 .feature-card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:20px;transition:border-color .15s}
@@ -58,11 +62,6 @@ code{font-family:var(--mono);font-size:.9em}
 .feature-card h3{margin-bottom:4px}
 .feature-card p{font-size:.875rem;color:var(--fg2)}
 
-/* Quick start */
-.install-row{display:flex;gap:12px;margin-top:16px;flex-wrap:wrap}
-.install-tab{background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:6px 16px;font-family:var(--mono);font-size:.8rem;color:var(--fg2);cursor:pointer;transition:all .15s}
-.install-tab.active,.install-tab:hover{border-color:var(--accent);color:var(--accent)}
-
 /* Footer */
 footer{border-top:1px solid var(--border);padding:32px 0;text-align:center;color:var(--fg2);font-size:.85rem}
 footer a{margin:0 8px}
@@ -70,8 +69,8 @@ footer a{margin:0 8px}
 /* Responsive */
 @media(max-width:640px){
   .logo{font-size:2.5rem}
-  .about-grid,.merge-demo{grid-template-columns:1fr}
-  .features-grid{grid-template-columns:1fr}
+  .merge-demo{grid-template-columns:1fr}
+  .domain-grid,.features-grid{grid-template-columns:1fr}
   section{padding:48px 0}
   .hero{padding:64px 0 48px}
 }
@@ -82,42 +81,17 @@ footer a{margin:0 8px}
 <section class="hero">
   <div class="container">
     <div class="logo">/suture<span>/</span></div>
-    <p class="tagline">Version control that understands your files. Semantic merge for JSON, YAML, SQL, DOCX, and 13+ formats.</p>
+    <p class="tagline">Version control that understands your files. Git is to text files what Suture is to Word docs, spreadsheets, and video timelines.</p>
     <div class="hero-actions">
       <a class="btn btn-primary" href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">GitHub</a>
-      <a class="btn btn-secondary" href="./demo.html">Interactive Demo</a>
       <a class="btn btn-secondary" href="./quickstart.html">Quick Start</a>
+      <a class="btn btn-secondary" href="./why-suture.html">Why Suture?</a>
     </div>
     <p style="margin-top:24px"><code class="inline-code">cargo install suture-cli</code></p>
     <div style="margin-top:16px">
       <a class="badge" href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">Apache 2.0</a>
       <a class="badge" href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">Rust</a>
-      <a class="badge" href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">26 crates</a>
-    </div>
-  </div>
-</section>
-
-<section>
-  <div class="container">
-    <h2>What is Suture?</h2>
-    <p style="color:var(--fg2);max-width:680px">Suture is a patch-based version control system that goes beyond line-level diffing. It uses semantic drivers to understand the structure of your files &mdash; JSON objects, YAML maps, SQL schemas, Word documents &mdash; and merges changes at the logical level. Two edits to different JSON keys? No conflict. Two people editing different slides in a PPTX? No conflict.</p>
-    <div class="about-grid">
-      <div class="about-card">
-        <h3>Patch DAG</h3>
-        <p style="color:var(--fg2);font-size:.9rem">Changes are modeled as patches in a directed acyclic graph. Two patches conflict only when their logical address sets overlap &mdash; not when they happen to touch nearby lines.</p>
-      </div>
-      <div class="about-card">
-        <h3>16 Format Drivers</h3>
-        <p style="color:var(--fg2);font-size:.9rem">Native support for JSON, YAML, TOML, CSV, XML, Markdown, DOCX, XLSX, PPTX, SQL, PDF, images, and OTIO. Files without a driver fall back to line-based merge.</p>
-      </div>
-      <div class="about-card">
-        <h3>Drop-in Workflow</h3>
-        <p style="color:var(--fg2);font-size:.9rem">Init, add, commit, branch, merge, rebase, push, pull &mdash; the commands you already know. Or use Suture as a <a href="./git_merge_driver.html">Git merge driver</a> in your existing repos.</p>
-      </div>
-      <div class="about-card">
-        <h3>Mount as a Filesystem</h3>
-        <p style="color:var(--fg2);font-size:.9rem">FUSE and WebDAV mounts let editors save files directly into a Suture repo. Every save creates a patch automatically.</p>
-      </div>
+      <a class="badge" href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">16 format drivers</a>
     </div>
   </div>
 </section>
@@ -130,20 +104,20 @@ footer a{margin:0 8px}
       <div class="merge-box conflict">
         <span class="merge-label fail">git merge</span>
 <pre>{
-  <<<<<<< HEAD
+  &lt;&lt;&lt;&lt;&lt;&lt;&lt; HEAD
   "host": "prod",
   "port": 8080
   =======
   "host": "staging"
   "port": 3000
-  >>>>>>> staging
+  &gt;&gt;&gt;&gt;&gt; staging
 }</pre>
       </div>
       <div class="merge-box clean">
         <span class="merge-label pass">suture merge</span>
 <pre>{
-  "host": "staging",   ← theirs
-  "port": 8080         ← ours
+  "host": "staging",   &larr; theirs
+  "port": 8080         &larr; ours
 }</pre>
       </div>
     </div>
@@ -153,17 +127,49 @@ footer a{margin:0 8px}
 
 <section>
   <div class="container">
+    <h2>Who Is Suture For?</h2>
+    <div class="domain-grid">
+      <div class="domain-card">
+        <span class="domain-icon">&square;</span>
+        <h3>Video Editors</h3>
+        <p>Version control for NLE timelines. Track clip edits, grade changes, and reorders at the semantic level.</p>
+        <a class="domain-link" href="./video-editors.html">Suture for Video Editors &rarr;</a>
+      </div>
+      <div class="domain-card">
+        <span class="domain-icon">Aa</span>
+        <h3>Document Authors</h3>
+        <p>Merge Word docs at the paragraph level, Excel at the cell level, PowerPoint at the slide level.</p>
+        <a class="domain-link" href="./document-authors.html">Suture for Document Authors &rarr;</a>
+      </div>
+      <div class="domain-card">
+        <span class="domain-icon">{ }</span>
+        <h3>Data Science</h3>
+        <p>Branch and merge experiments. Semantic merge for YAML configs, CSV results, and JSON pipelines.</p>
+        <a class="domain-link" href="./data-science.html">Suture for Data Science &rarr;</a>
+      </div>
+      <div class="domain-card">
+        <span class="domain-icon">&lt;/&gt;</span>
+        <h3>DevOps &amp; Config</h3>
+        <p>Kubernetes YAML, Docker Compose, CI configs &mdash; concurrent edits to different keys never conflict.</p>
+        <a class="domain-link" href="./quickstart.html">Get started &rarr;</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="container">
     <h2>Features</h2>
     <div class="features-grid">
       <div class="feature-card">
-        <span class="icon">{ }</span>
-        <h3>16 Semantic Drivers</h3>
+        <span class="icon">16</span>
+        <h3>Semantic Drivers</h3>
         <p>JSON, YAML, TOML, CSV, XML, Markdown, DOCX, XLSX, PPTX, SQL, PDF, images, OTIO.</p>
       </div>
       <div class="feature-card">
         <span class="icon">mount</span>
         <h3>FUSE + WebDAV</h3>
-        <p>Mount repos as filesystems. Editors save directly; patches are created automatically.</p>
+        <p>Mount repos as filesystems. Any editor saves directly; patches are created automatically.</p>
       </div>
       <div class="feature-card">
         <span class="icon">hub</span>
@@ -171,34 +177,19 @@ footer a{margin:0 8px}
         <p>Self-hosted collaboration server with web UI, auth, push/pull, mirrors, and search.</p>
       </div>
       <div class="feature-card">
-        <span class="icon">daemon</span>
-        <h3>Background Daemon</h3>
-        <p>Watches for file changes, auto-commits, auto-syncs. SHM for nanosecond status queries.</p>
-      </div>
-      <div class="feature-card">
-        <span class="icon">tui</span>
-        <h3>Terminal UI</h3>
-        <p>7-tab TUI: status, log, staging, diff, branches, remote, help. Full keyboard workflow.</p>
-      </div>
-      <div class="feature-card">
-        <span class="icon">lsp</span>
-        <h3>Language Server</h3>
-        <p>Hover blame data and diagnostics for any editor that speaks LSP.</p>
-      </div>
-      <div class="feature-card">
         <span class="icon">cli</span>
         <h3>37 CLI Commands</h3>
         <p>init, add, commit, branch, merge, rebase, cherry-pick, push, pull, tag, blame, and more.</p>
       </div>
       <div class="feature-card">
-        <span class="icon">edit</span>
-        <h3>Editor Integration</h3>
-        <p>Neovim plugin, VS Code extension, JetBrains plugin, and Node.js bindings.</p>
+        <span class="icon">tui</span>
+        <h3>Terminal UI</h3>
+        <p>7-tab TUI: status, log, staging, diff, branches, remote, help.</p>
       </div>
       <div class="feature-card">
-        <span class="icon">raft</span>
-        <h3>Replication</h3>
-        <p>Raft-based replication in Suture Hub for high-availability repos.</p>
+        <span class="icon">git</span>
+        <h3>Git Merge Driver</h3>
+        <p>Use Suture for semantic merging inside your existing Git repos.</p>
       </div>
     </div>
   </div>
@@ -211,11 +202,9 @@ footer a{margin:0 8px}
 <span style="color:var(--fg2)">$</span> <span style="color:var(--accent)">suture config</span> user.name "Your Name"
 
 <span style="color:var(--fg2)">$</span> <span style="color:var(--accent)">echo</span> '{"host": "localhost", "port": 3000}' > config.json
-<span style="color:var(--fg2)">$</span> <span style="color:var(--accent)">suture add</span> .
-<span style="color:var(--fg2)">$</span> <span style="color:var(--accent)">suture commit</span> "base config"
+<span style="color:var(--fg2)">$</span> <span style="color:var(--accent)">suture add</span> . && <span style="color:var(--accent)">suture commit</span> "base config"
 
-<span style="color:var(--fg2)">$</span> <span style="color:var(--accent)">suture branch</span> staging
-<span style="color:var(--fg2)">$</span> <span style="color:var(--accent)">suture checkout</span> staging
+<span style="color:var(--fg2)">$</span> <span style="color:var(--accent)">suture branch</span> staging && <span style="color:var(--accent)">suture checkout</span> staging
 <span style="color:var(--fg2)">$</span> <span style="color:var(--accent)">echo</span> '{"host": "staging", "port": 3000}' > config.json
 <span style="color:var(--fg2)">$</span> <span style="color:var(--accent)">suture add</span> . && <span style="color:var(--accent)">suture commit</span> "point to staging"
 
@@ -225,7 +214,7 @@ footer a{margin:0 8px}
 
 <span style="color:var(--fg2)">$</span> <span style="color:var(--accent)">suture merge</span> staging
 <span style="color:var(--fg2)">$</span> cat config.json
-{"host": "staging", "port": 8080}   <span style="color:var(--fg2)">← both changes, zero conflicts</span></code></pre>
+{"host": "staging", "port": 8080}   <span style="color:var(--fg2)">&larr; both changes, zero conflicts</span></code></pre>
     <p style="margin-top:16px"><a href="./quickstart.html">Full quickstart guide &rarr;</a></p>
   </div>
 </section>
@@ -233,13 +222,7 @@ footer a{margin:0 8px}
 <section>
   <div class="container">
     <h2>Install</h2>
-    <div class="install-row">
-      <span class="install-tab active">Cargo</span>
-      <span class="install-tab">Binary</span>
-      <span class="install-tab">Homebrew</span>
-      <span class="install-tab">AUR</span>
-    </div>
-    <pre><code><span style="color:var(--fg2)"># From crates.io (requires Rust 1.85+)</span>
+<pre><code><span style="color:var(--fg2)"># From crates.io (requires Rust 1.85+)</span>
 cargo install suture-cli
 
 <span style="color:var(--fg2)"># Build from source</span>
@@ -257,11 +240,14 @@ paru -S suture-git</code></pre>
 <footer>
   <div class="container">
     <a href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">GitHub</a>
-    <a href="./demo.html">Interactive Demo</a>
+    <a href="./why-suture.html">Why Suture?</a>
+    <a href="./comparing-with-git.html">Suture vs. Git</a>
+    <a href="./video-editors.html">Video Editors</a>
+    <a href="./document-authors.html">Document Authors</a>
+    <a href="./data-science.html">Data Science</a>
     <a href="./quickstart.html">Quick Start</a>
     <a href="./cli-reference.html">CLI Reference</a>
     <a href="./semantic-merge.html">Semantic Merge</a>
-    <a href="./comparison.html">Comparison</a>
     <a href="https://github.com/WyattAu/suture/blob/main/LICENSE" target="_blank" rel="noopener">Apache 2.0</a>
     <p style="margin-top:12px">&copy; 2025 WyattAu &middot; Suture VCS</p>
   </div>

@@ -27,12 +27,18 @@ enum Commands {
     /// Initialize a new Suture repository
     #[command(after_long_help = "\
 EXAMPLES:
-    suture init                # Initialize in current directory
-    suture init my-project     # Initialize in a new directory")]
+    suture init                         # Initialize in current directory (auto-detect type)
+    suture init my-project              # Initialize in a new directory
+    suture init --type video            # Configure for video workflows (OTIO-aware)
+    suture init --type document         # Configure for document workflows (DOCX/XLSX/PPTX-aware)
+    suture init --type data             # Configure for data workflows (CSV/JSON/XML-aware)")]
     Init {
         /// Repository path (default: current directory)
         #[arg(default_value = ".")]
         path: String,
+        /// Repository type: video, document, or data (default: auto-detect)
+        #[arg(short, long)]
+        r#type: Option<String>,
     },
     /// Show repository status
     #[command(after_long_help = "\
@@ -184,10 +190,15 @@ EXAMPLES:
     /// Show differences between commits or branches
     #[command(after_long_help = "\
 EXAMPLES:
-    suture diff                # Working tree vs staging area
-    suture diff --cached       # Staging area vs HEAD
-    suture diff --from main    # Compare main branch to working tree
-    suture diff --from main --to feature  # Compare two branches")]
+    suture diff                              # Working tree vs staging area
+    suture diff --cached                     # Staging area vs HEAD
+    suture diff --from main                  # Compare main branch to working tree
+    suture diff --from main --to feature     # Compare two branches
+    suture diff report.docx                  # DOCX semantic diff (auto-detected)
+    suture diff budget.xlsx                  # XLSX semantic diff (auto-detected)
+    suture diff timeline.otio                # OTIO timeline diff (auto-detected)
+    suture diff photo.png                    # Image metadata diff (auto-detected)
+    suture diff config.yaml                  # YAML semantic diff (auto-detected)")]
     Diff {
         /// From ref (commit hash or branch name). Omit for HEAD.
         #[arg(short, long)]
@@ -708,7 +719,9 @@ async fn main() {
     }
 
     let result = match cli.command {
-        Commands::Init { path } => cmd::init::cmd_init(&path).await,
+        Commands::Init { path, r#type } => {
+            cmd::init::cmd_init(&path, r#type.as_deref()).await
+        }
         Commands::Status => cmd::status::cmd_status().await,
         Commands::Ignore { action } => {
             let args = match action {
@@ -965,7 +978,10 @@ mod tests {
     fn test_init_default() {
         let cli = parse(&["suture", "init"]);
         match cli.command {
-            Commands::Init { path } => assert_eq!(path, "."),
+            Commands::Init { path, r#type } => {
+                assert_eq!(path, ".");
+                assert!(r#type.is_none());
+            }
             other => panic!("expected Init, got {other:?}"),
         }
     }
@@ -974,7 +990,33 @@ mod tests {
     fn test_init_with_path() {
         let cli = parse(&["suture", "init", "/tmp/myrepo"]);
         match cli.command {
-            Commands::Init { path } => assert_eq!(path, "/tmp/myrepo"),
+            Commands::Init { path, r#type } => {
+                assert_eq!(path, "/tmp/myrepo");
+                assert!(r#type.is_none());
+            }
+            other => panic!("expected Init, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_init_with_type() {
+        let cli = parse(&["suture", "init", "--type", "video"]);
+        match cli.command {
+            Commands::Init { r#type, .. } => {
+                assert_eq!(r#type.as_deref(), Some("video"));
+            }
+            other => panic!("expected Init, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_init_with_type_and_path() {
+        let cli = parse(&["suture", "init", "my-project", "-t", "document"]);
+        match cli.command {
+            Commands::Init { path, r#type } => {
+                assert_eq!(path, "my-project");
+                assert_eq!(r#type.as_deref(), Some("document"));
+            }
             other => panic!("expected Init, got {other:?}"),
         }
     }

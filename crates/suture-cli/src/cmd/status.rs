@@ -1,7 +1,8 @@
 use crate::display::walk_repo_files;
+use std::path::Path as StdPath;
 
 pub(crate) async fn cmd_status() -> Result<(), Box<dyn std::error::Error>> {
-    let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+    let repo = suture_core::repository::Repository::open(StdPath::new("."))?;
     let status = repo.status()?;
 
     println!(
@@ -19,7 +20,8 @@ pub(crate) async fn cmd_status() -> Result<(), Box<dyn std::error::Error>> {
     if !status.staged_files.is_empty() {
         println!("\nStaged changes:");
         for (path, file_status) in &status.staged_files {
-            println!("  {:?} {}", file_status, path);
+            let icon = file_type_icon(path);
+            println!("  {:?} {} {}", file_status, icon, path);
         }
     }
 
@@ -36,7 +38,7 @@ pub(crate) async fn cmd_status() -> Result<(), Box<dyn std::error::Error>> {
     let mut unstaged_deleted: Vec<String> = Vec::new();
     let mut untracked: Vec<String> = Vec::new();
 
-    let repo_dir = std::path::Path::new(".");
+    let repo_dir = StdPath::new(".");
     let disk_files = walk_repo_files(repo_dir);
 
     for rel_path in &disk_files {
@@ -62,20 +64,26 @@ pub(crate) async fn cmd_status() -> Result<(), Box<dyn std::error::Error>> {
     if !unstaged_modified.is_empty() || !unstaged_deleted.is_empty() || !untracked.is_empty() {
         println!("\nUnstaged changes:");
         for path in &unstaged_modified {
+            let icon = file_type_icon(path);
             let marker = if staged_paths.contains(path.as_str()) {
                 " [staged+unstaged]"
             } else {
                 ""
             };
-            println!("  modified: {}{}", path, marker);
+            println!("  modified: {}{}{}", icon, path, marker);
         }
         for path in &unstaged_deleted {
             println!("  deleted:  {}", path);
         }
         for path in &untracked {
-            println!("  untracked: {}", path);
+            let icon = file_type_icon(path);
+            println!("  untracked: {}{}", icon, path);
         }
     }
 
     Ok(())
+}
+
+fn file_type_icon(path: &str) -> &'static str {
+    suture_core::file_type::detect_file_type(StdPath::new(path)).icon()
 }

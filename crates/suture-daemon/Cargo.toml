@@ -8,6 +8,7 @@ description = "Suture background daemon for file watching and automatic sync"
 homepage.workspace = true
 keywords.workspace = true
 readme.workspace = true
+categories.workspace = true
 
 [dependencies]
 suture-core = { path = "../suture-core", version = "1.1.0" }

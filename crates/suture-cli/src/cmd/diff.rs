@@ -27,6 +27,8 @@ pub(crate) async fn cmd_diff(
     let registry = crate::driver_registry::builtin_registry();
 
     for entry in &entries {
+        let file_type = suture_core::file_type::detect_file_type(StdPath::new(&entry.path));
+
         match &entry.diff_type {
             DiffType::Renamed { old_path, new_path } => {
                 println!(
@@ -42,7 +44,10 @@ pub(crate) async fn cmd_diff(
                         .ok()
                         .or_else(|| std::fs::read(repo.root().join(&entry.path)).ok());
                     let Some(new_blob) = new_blob else {
-                        println!("{ANSI_BOLD_CYAN}added {} (binary){ANSI_RESET}", entry.path);
+                        println!(
+                            "{ANSI_BOLD_CYAN}added {} (binary){ANSI_RESET}",
+                            entry.path
+                        );
                         continue;
                     };
                     let new_str = String::from_utf8_lossy(&new_blob);
@@ -52,11 +57,21 @@ pub(crate) async fn cmd_diff(
                         && !semantic.is_empty()
                         && semantic != "no changes"
                     {
-                        println!(
-                            "\n{ANSI_BOLD_CYAN}--- Semantic diff for {} ---{ANSI_RESET}",
-                            entry.path
-                        );
-                        println!("{semantic}");
+                        let formatted = if file_type == suture_core::file_type::FileType::Image {
+                            suture_core::diff::semantic_formatter::SemanticDiffFormatter::format_image_diff(
+                                &entry.path,
+                                None,
+                                Some(new_blob.len()),
+                                &semantic,
+                            )
+                        } else {
+                            suture_core::diff::semantic_formatter::SemanticDiffFormatter::format(
+                                &entry.path,
+                                file_type,
+                                &semantic,
+                            )
+                        };
+                        println!("\n{ANSI_BOLD_CYAN}{formatted}{ANSI_RESET}");
                         continue;
                     }
 
@@ -98,15 +113,28 @@ pub(crate) async fn cmd_diff(
                             let new_str = String::from_utf8_lossy(&new_blob);
 
                             if let Ok(driver) = registry.get_for_path(StdPath::new(&entry.path))
-                                && let Ok(semantic) = driver.format_diff(Some(&old_str), &new_str)
+                                && let Ok(semantic) =
+                                    driver.format_diff(Some(&old_str), &new_str)
                                 && !semantic.is_empty()
                                 && semantic != "no changes"
                             {
-                                println!(
-                                    "\n{ANSI_BOLD_CYAN}--- Semantic diff for {} ---{ANSI_RESET}",
-                                    entry.path
-                                );
-                                println!("{semantic}");
+                                let formatted = if file_type
+                                    == suture_core::file_type::FileType::Image
+                                {
+                                    suture_core::diff::semantic_formatter::SemanticDiffFormatter::format_image_diff(
+                                        &entry.path,
+                                        Some(old_blob.len()),
+                                        Some(new_blob.len()),
+                                        &semantic,
+                                    )
+                                } else {
+                                    suture_core::diff::semantic_formatter::SemanticDiffFormatter::format(
+                                        &entry.path,
+                                        file_type,
+                                        &semantic,
+                                    )
+                                };
+                                println!("\n{ANSI_BOLD_CYAN}{formatted}{ANSI_RESET}");
                                 continue;
                             }
 

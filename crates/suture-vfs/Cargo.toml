@@ -8,6 +8,7 @@ description = "Read-only FUSE3 mount exposing a Suture repository as a regular d
 homepage.workspace = true
 keywords.workspace = true
 readme.workspace = true
+categories.workspace = true
 
 [dependencies]
 suture-core = { path = "../suture-core", version = "1.1.0" }

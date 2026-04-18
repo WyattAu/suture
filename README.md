@@ -1,195 +1,126 @@
 # Suture
 
-A version control system that understands your file formats.
+Version control that understands your files.
 
-[![CI](https://github.com/WyattAu/suture/actions/workflows/ci.yml/badge.svg)](https://github.com/WyattAu/suture/actions)
-[![Rust: Stable](https://img.shields.io/badge/Rust-Stable-orange.svg)](https://www.rust-lang.org)
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-
-Unlike Git, which treats every file as opaque bytes, Suture uses semantic drivers to perform intelligent merges on JSON, YAML, CSV, XML, TOML, Markdown, DOCX, XLSX, PPTX, SQL, PDF, and image files.
+Git is to text files what Suture is to Word docs, spreadsheets, and video timelines.
 
 ```text
-  Git merge on JSON:                    Suture merge on JSON:
-  ┌─────────────────────┐              ┌─────────────────────┐
-  │ <<<<<<< HEAD        │              │ {                   │
-  │   "host": "prod",   │              │   "host": "prod",   │  ← from theirs
-  │   "port": 8080      │              │   "port": 3000,     │  ← from ours  
-  │ =======             │              │   "debug": true     │  ← from theirs
-  │   "host": "staging" │              │ }                   │
-  │   "port": 8080      │              └─────────────────────┘
-  │ >>>>>>> staging     │              No conflict. Both changes applied.
-  │   "debug": true     │
-  └─────────────────────┘
-  Conflict markers in your file.
+  Before (Git)                              After (Suture)
+  ─────────────────────                     ─────────────────────
+  Two people edit config.json:              Same scenario:
+  one changes "host", the other "port".     Suture merges both keys — zero conflicts.
+
+  $ git merge staging                       $ suture merge staging
+  CONFLICT (content): Merge conflict        Clean merge. 2 patches applied.
+  in config.json
+  <<<<<<< HEAD
+    "host": "prod",
+    "port": 8080
+  =======
+    "host": "staging"
+    "port": 3000
+  >>>>>>> staging
 ```
 
-## Who is this for?
-
-- **DevOps teams** collaborating on Kubernetes YAML, Docker Compose, CI/CD configs, SQL schemas
-- **Data teams** editing JSON/YAML/CSV pipelines and database migrations
-- **Documentation teams** working with DOCX, XLSX, PPTX where Git's line merge is catastrophic
-- **Config-as-code teams** managing TOML, XML, properties files across environments
-- **Media teams** using NLEs (DaVinci Resolve, Premiere) via FUSE or WebDAV mount
-
-## Install
-
-**From source (requires Rust 1.85+):**
-```bash
-cargo install --path crates/suture-cli
-```
-
-This produces the `suture` binary. See [rustup.rs](https://rustup.rs) to install Rust.
-
-**Build from repo:**
-```bash
-git clone https://github.com/WyattAu/suture.git
-cd suture
-cargo build --release --bin suture
-# Binary at target/release/suture
-```
+Suture uses semantic drivers to merge JSON, YAML, TOML, CSV, XML, Markdown, DOCX, XLSX, PPTX, SQL, PDF, images, and video timelines at the structural level — not the line level. Two edits to different JSON keys, different DOCX paragraphs, or different spreadsheet cells never conflict.
 
 ## Quick Start
 
 ```bash
-# Init a repo
+cargo install suture-cli
+
 suture init
 suture config user.name "Your Name"
 
-# Create a JSON config and commit it
 echo '{"host": "localhost", "port": 3000}' > config.json
-suture add .
-suture commit "base config"
+suture add . && suture commit "base config"
 
-# Branch, edit a different key, commit
-suture branch staging
-suture checkout staging
-echo '{"host": "staging.example.com", "port": 3000}' > config.json
-suture add .
-suture commit "point to staging"
+suture branch staging && suture checkout staging
+echo '{"host": "staging", "port": 3000}' > config.json
+suture add . && suture commit "point to staging"
 
-# Switch back, change a different key
 suture checkout main
 echo '{"host": "localhost", "port": 8080}' > config.json
-suture add .
-suture commit "change port"
+suture add . && suture commit "change port"
 
-# Merge — both changes combined, zero conflicts
 suture merge staging
-cat config.json
-# {"host": "staging.example.com", "port": 8080}
+# {"host": "staging", "port": 8080}  ← both changes, no conflict
 ```
 
-Suture understood the JSON structure and merged both sides — `host` from `staging`, `port` from `main` — without conflict markers. The same semantic merge works for YAML, TOML, CSV, XML, Markdown, DOCX, XLSX, PPTX, SQL, and PDF files.
+## Who Is This For?
 
-## Features
+| Domain | Pain point Suture solves |
+|--------|--------------------------|
+| [Video editors](docs/video-editors.md) | Version control for NLE timelines (Premiere, DaVinci Resolve) |
+| [Document authors](docs/document-authors.md) | Merge Word docs, Excel sheets, PowerPoint decks |
+| [Data science](docs/data-science.md) | Branch and merge Jupyter notebooks, CSVs, configs |
+| DevOps | Semantic merge for Kubernetes YAML, Docker Compose, CI configs |
+| Config-as-code | TOML, XML, properties files across environments |
 
-### Semantic Merge (16 format drivers)
+## What Makes Suture Different
 
-| Format | Extensions | What it does |
-|--------|-----------|-------------|
-| JSON | `.json` | Field-level diff and merge via RFC 6901 paths |
-| YAML | `.yaml`, `.yml` | Key-level structural merge |
-| TOML | `.toml` | Table and key-aware merge |
-| CSV | `.csv` | Row-level merge with header detection |
-| XML | `.xml` | Element/attribute-aware structural merge |
-| Markdown | `.md` | Section-aware merge |
-| DOCX | `.docx` | Paragraph-level Word document merge |
-| XLSX | `.xlsx` | Cell-level spreadsheet merge |
-| PPTX | `.pptx` | Slide-level presentation merge |
-| SQL | `.sql` | DDL schema diff (CREATE/ALTER/DROP TABLE) |
-| PDF | `.pdf` | Page-level text diff and merge |
-| Image | `.png` `.jpg` `.gif` `.bmp` `.webp` `.tiff` `.ico` `.avif` | Metadata diff (dimensions, color type) |
+**Semantic merge for 16 formats:**
+
+| Format | Extensions | Merge granularity |
+|--------|-----------|-------------------|
+| JSON | `.json` | Field-level (RFC 6901 paths) |
+| YAML | `.yaml` `.yml` | Key-level |
+| TOML | `.toml` | Table and key-aware |
+| CSV | `.csv` | Row-level with header detection |
+| XML | `.xml` | Element/attribute-aware |
+| Markdown | `.md` | Section-aware |
+| DOCX | `.docx` | Paragraph-level |
+| XLSX | `.xlsx` | Cell-level |
+| PPTX | `.pptx` | Slide-level |
+| SQL | `.sql` | DDL schema diff |
+| PDF | `.pdf` | Page-level text diff |
+| Image | `.png` `.jpg` `.gif` `.bmp` `.webp` `.tiff` `.ico` `.avif` | Metadata diff |
 | OTIO | `.otio` | OpenTimelineIO editorial merge |
 
-Files without a matching driver fall back to line-based diff and merge, same as Git.
+Files without a driver fall back to line-based merge, same as Git.
 
-### VFS Mount (FUSE + WebDAV)
+**Full version control workflow:** init, add, commit, branch, merge, rebase, cherry-pick, push, pull, tag, blame, stash, worktree, and 25+ more commands.
 
-Mount a Suture repo as a regular directory. File saves create patches automatically.
+**Mount as a filesystem:** FUSE and WebDAV mounts let any editor save directly into a Suture repo — every save creates a patch.
 
-```bash
-# Linux: FUSE mount (read-write)
-suture vfs mount /path/to/repo /mnt/repo
+**Self-hosted collaboration:** Suture Hub provides a web UI, auth, push/pull, mirrors, and search.
 
-# Cross-platform: WebDAV mount
-# macOS: Finder → Connect to Server → http://localhost:8080
-# Windows: Map Network Drive → http://localhost:8080
-```
-
-### Hub (Self-hosted collaboration server)
+## Install
 
 ```bash
-suture-hub --db suture.db
-# Web UI at http://localhost:50051
-# API at http://localhost:50051/api/v2
+cargo install suture-cli          # crates.io (Rust 1.85+)
+brew install wyattau/tap/suture   # macOS / Linux
+paru -S suture-git                # Arch Linux (AUR)
 ```
 
-Features: repository browsing, file tree viewer, user auth, push/pull, branch protection, mirrors, replication, search.
-
-### Daemon (Background service)
+Or build from source:
 
 ```bash
-suture daemon start /path/to/repo
-# Watches for file changes, auto-commits, auto-syncs to remote
-# SHM at /tmp/suture-shm-<pid> for nanosecond status queries
+git clone https://github.com/WyattAu/suture.git
+cd suture && cargo build --release --bin suture
 ```
 
-### TUI (Terminal UI)
+## Use With Git
 
-```bash
-suture tui
-# 7 tabs: Status, Log, Staging, Diff, Branches, Remote, Help
-# Log graph, checkout confirmation, merge conflict view
-```
-
-### LSP (Language Server)
-
-Provides hover information (blame data) and diagnostics to editors that support the Language Server Protocol.
-
-### CLI (37 commands)
-
-Full Git-compatible workflow: init, add, commit, status, diff, log, branch, checkout, merge, rebase (interactive), cherry-pick, revert, stash, push, pull, remote, tag, blame, fsck, bisect, notes, worktree, gc, key, sign, and more.
-
-Run `suture --help` for the full list.
-
-### Editor Integration
-
-- **Neovim**: [suture.nvim](editors/neovim/suture.nvim/) — gutter signs, 10 commands, float windows
-- **Node.js**: `@suture/core` — native bindings via napi-rs with TypeScript declarations
-
-### Git Merge Driver
-
-Use Suture as a [Git merge driver](docs/git_merge_driver.md) for semantic merging inside existing Git workflows:
+Suture works as a [Git merge driver](docs/git_merge_driver.md) — add semantic merging to your existing Git repos:
 
 ```bash
 git config merge.suture.name "suture"
 git config merge.suture.driver "suture merge-file --driver %s %O %A %B -o %A"
 ```
 
-## Architecture
+## Learn More
 
-Suture stores content as BLAKE3-hashed blobs (with Zstd compression) and models changes as patches in a directed acyclic graph, persisted to SQLite in WAL mode. Each patch records the logical addresses it modifies; two patches conflict only when those address sets overlap.
-
-The codebase is 26 focused crates — core engine, CLI, semantic drivers (one per format), Hub server, daemon, VFS, TUI, LSP, and more. See [docs/](docs/) for detailed design documentation.
-
-## Comparison
-
-| | Suture | Git | Pijul |
-|---|---|---|---|
-| **Merge model** | Patch DAG with semantic drivers | Line-based three-way merge | Patch DAG, line-level only |
-| **Structured data** | Native support for 13+ formats | Opaque bytes | Opaque bytes |
-| **Office documents** | DOCX/XLSX/PPTX/PDF merge | Binary blob conflicts | Binary blob conflicts |
-| **VFS mount** | FUSE + WebDAV | None | None |
-| **Conflict detection** | Logical address overlap | Line overlap | Line overlap |
-| **Language** | Rust | C | Rust |
-| **Maturity** | Early | Production | Early |
-
-See [docs/comparison.md](docs/comparison.md) for a detailed feature comparison.
+- [Why Suture?](docs/why-suture.md) — the problem with binary version control
+- [Suture vs. Git](docs/comparing-with-git.md) — honest comparison
+- [Semantic merge explained](docs/semantic-merge.md) — how it works under the hood
+- [Full CLI reference](docs/cli-reference.md)
+- [Comparison with other VCS](docs/comparison.md)
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding conventions, and pull request workflow.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
+Apache License 2.0. See [LICENSE](LICENSE).
