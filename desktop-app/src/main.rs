@@ -26,7 +26,9 @@ pub struct StatusResponse {
     pub patch_count: usize,
     pub branch_count: usize,
     pub staged_count: usize,
+    pub unstaged_count: usize,
     pub staged_files: Vec<FileEntry>,
+    pub unstaged_files: Vec<FileEntry>,
     pub last_commit: Option<LogEntry>,
 }
 
@@ -90,7 +92,7 @@ impl<T: Serialize> CmdResult<T> {
 mod tauri_commands {
     use super::*;
     use std::sync::Mutex;
-    use suture_core::repository::Repository;
+    use suture_core::repository::{Repository, ResetMode};
     use tauri::State;
 
     /// Application state holding the open repository.
@@ -183,7 +185,9 @@ mod tauri_commands {
             patch_count: s.patch_count,
             branch_count: s.branch_count,
             staged_count: s.staged_files.len(),
+            unstaged_count: 0,
             staged_files,
+            unstaged_files: vec![],
             last_commit,
         })
     }
@@ -311,6 +315,50 @@ mod tauri_commands {
             Err(e) => CmdResult::err(format!("Failed to commit: {e}")),
         }
     }
+
+    /// Checkout a branch.
+    #[tauri::command]
+    pub fn checkout_branch(name: String, state: State<'_, AppState>) -> CmdResult<String> {
+        let mut guard = state.repo.lock().unwrap();
+        let Some(repo) = guard.as_mut() else {
+            return CmdResult::err("No repository open");
+        };
+
+        match repo.checkout(&name) {
+            Ok(_) => CmdResult::ok(format!("Checked out: {name}")),
+            Err(e) => CmdResult::err(format!("Failed to checkout: {e}")),
+        }
+    }
+
+    /// Unstage all files (soft reset HEAD).
+    #[tauri::command]
+    pub fn unstage_all(state: State<'_, AppState>) -> CmdResult<String> {
+        let mut guard = state.repo.lock().unwrap();
+        let Some(repo) = guard.as_mut() else {
+            return CmdResult::err("No repository open");
+        };
+
+        match repo.reset("HEAD", ResetMode::Mixed) {
+            Ok(_) => CmdResult::ok("Unstaged all files".to_string()),
+            Err(e) => CmdResult::err(format!("Failed to unstage: {e}")),
+        }
+    }
+
+    /// Execute a suture CLI command and return its output.
+    #[tauri::command]
+    pub async fn suture_command(args: Vec<String>) -> Result<String, String> {
+        let output = tokio::process::Command::new("suture")
+            .args(&args)
+            .output()
+            .await
+            .map_err(|e| format!("Failed to execute suture: {e}"))?;
+
+        if output.status.success() {
+            Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        } else {
+            Err(String::from_utf8_lossy(&output.stderr).to_string())
+        }
+    }
 }
 
 fn format_timestamp(ts: u64) -> String {
@@ -363,6 +411,9 @@ fn main() {
             tauri_commands::stage_file,
             tauri_commands::stage_all,
             tauri_commands::commit,
+            tauri_commands::checkout_branch,
+            tauri_commands::unstage_all,
+            tauri_commands::suture_command,
         ])
         .run(tauri::generate_context!())
         .expect("error while running suture-desktop");
