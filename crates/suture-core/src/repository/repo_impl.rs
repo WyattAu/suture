@@ -5268,4 +5268,54 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_log_performance_100_commits() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_path = dir.path().to_path_buf();
+        let mut repo = Repository::init(&repo_path, "perf-test").unwrap();
+
+        for i in 0..100 {
+            let file = format!("file_{i}.txt");
+            std::fs::write(repo_path.join(&file), format!("content {i}")).unwrap();
+            repo.add(&file).unwrap();
+            repo.commit(&format!("commit {i}")).unwrap();
+        }
+
+        let start = std::time::Instant::now();
+        let log = repo.log(None).unwrap();
+        let elapsed = start.elapsed();
+
+        assert_eq!(log.len(), 101); // 100 commits + 1 root "Initial commit"
+        assert!(
+            elapsed.as_secs() < 1,
+            "log() took {:?}",
+            elapsed
+        );
+    }
+
+    #[test]
+    fn test_log_performance_with_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_path = dir.path().to_path_buf();
+        let mut repo = Repository::init(&repo_path, "perf-test").unwrap();
+
+        for i in 0..200 {
+            let file = format!("file_{i}.txt");
+            std::fs::write(repo_path.join(&file), format!("content {i}")).unwrap();
+            repo.add(&file).unwrap();
+            repo.commit(&format!("commit {i}")).unwrap();
+        }
+
+        let start = std::time::Instant::now();
+        let log = repo.log(None).unwrap();
+        let elapsed = start.elapsed();
+
+        assert_eq!(log.len(), 201); // 200 commits + 1 root "Initial commit"
+        assert!(
+            elapsed.as_secs() < 2,
+            "log() took {:?}",
+            elapsed
+        );
+    }
 }

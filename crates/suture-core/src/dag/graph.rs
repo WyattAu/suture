@@ -357,11 +357,12 @@ impl PatchDag {
     /// Get patches from a specific node back to root (inclusive).
     pub fn patch_chain(&self, id: &PatchId) -> Vec<PatchId> {
         let mut chain = Vec::new();
+        let mut seen = HashSet::new();
         let mut current = Some(*id);
 
         while let Some(curr_id) = current {
-            if chain.contains(&curr_id) {
-                break; // Safety: shouldn't happen in a valid DAG
+            if !seen.insert(curr_id) {
+                break;
             }
             chain.push(curr_id);
             current = self
