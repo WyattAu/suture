@@ -1,9 +1,9 @@
 # Suture Version
 
-- **Current Version:** 2.9.0
-- **Current Phase:** Direction G — Growth
+- **Current Version:** 2.10.0
+- **Current Phase:** Direction H+I — Validate & Ship + Depth over Breadth
 - **Status:** Complete
-- **Last Updated:** 2026-04-17
+- **Last Updated:** 2026-04-18
 - **Rust Edition:** 2024
 - **Lean 4:** v4.29.1 (23 theorems proved)
 
@@ -18,6 +18,8 @@
 | **E** | Ship It | Distribution, docs, packaging, release automation | v2.7 | ✅ Complete |
 | **F** | Production Hardening | S3/Raft integration, benchmarks, integration tests | v2.8 | ✅ Complete |
 | **G** | Growth | VS Code, webhooks, desktop UI, perf fix | v2.9 | ✅ Complete |
+| **H** | Validate & Ship | Release prep, shipping checklist, release script | v2.10 | ✅ Complete |
+| **I** | Depth over Breadth | Wire S3 and Raft into hub's actual runtime | v2.10 | ✅ Complete |
 
 ### Direction A — Product Polish (v1.3–v1.4) ✅
 
@@ -63,14 +65,6 @@
 - AUR PKGBUILD for Arch Linux
 - crates.io publish guide with dependency order
 
-### Direction G — Growth (v2.9) ✅
-
-- VS Code extension: 14 commands, SutureHelper class, output channel, quick pick, SVG icon
-- Webhook system: CRUD routes, async fire-and-forget delivery, HMAC-SHA256 signing, push/branch events
-- Desktop app: real web UI with 6 views, dark theme, commit modal, branch management
-- Performance fix: repo_log O(n²) → O(n) via HashSet cycle detection
-- Key benchmark finding: repo_log/1000 now completes (was timeout)
-
 ### Direction F — Production Hardening (v2.8) ✅
 
 - S3 blob backend wired into hub: `BlobBackend` trait, `SqliteBlobBackend`, `S3BlobBackendAdapter`
@@ -79,29 +73,41 @@
 - FUSE integration tests: mount read/write/modify/delete/stat, WebDAV serve test
 - S3 integration tests: 7 MinIO-compatible tests gated on env vars
 - Benchmark analysis: 28 functions profiled, 5 optimization opportunities identified
-- Key finding: `repo_log` O(n²) at scale, commit 652ms for 1000 files
 
-- User documentation: quickstart, semantic merge guide, CLI reference, hub guide
-- GitHub Pages landing page (dark terminal aesthetic)
-- CONTRIBUTING.md updated for v2.7.0
-- PR template with quality gate checklist
-- Release workflow: 5-platform matrix (Linux x86/ARM, macOS x86/ARM, Windows)
-- Homebrew formula with test block
-- AUR PKGBUILD for Arch Linux
-- crates.io publish guide with dependency order
+### Direction G — Growth (v2.9) ✅
+
+- VS Code extension: 14 commands, SutureHelper class, output channel, quick pick, SVG icon
+- Webhook system: CRUD routes, async fire-and-forget delivery, HMAC-SHA256 signing, push/branch events
+- Desktop app: real web UI with 6 views, dark theme, commit modal, branch management
+- Performance fix: repo_log O(n²) → O(n) via HashSet cycle detection
+
+### Direction H — Validate & Ship (v2.10) ✅
+
+- Shipping checklist: step-by-step pre-ship verification (tests, clippy, docs, features)
+- Release notes: v2.9.0 changelog
+- Release script: automated quality gates + git tagging
+
+### Direction I — Depth over Breadth (v2.10) ✅
+
+- S3 blob backend runtime wiring: CLI flags (--blob-backend, --s3-endpoint, --s3-bucket, etc.), server startup creates S3BlobBackendAdapter
+- Raft TCP transport: `RaftTcpTransport` with 4-byte BE length + JSON wire format, listen/send_to_peer/receive, 4 unit tests
+- Raft runtime manager: `RaftRuntime` with background tick loop, propose/apply channels, leader tracking, 3 tests
+- Raft CLI flags: --raft, --raft-node-id, --raft-peers, --raft-port, --raft-election-timeout, --raft-heartbeat-interval
+- Server blob routing: all blob store/get operations route through BlobBackend when set, fall back to SQLite
+- All gated on opt-in features: `s3-backend`, `raft-cluster`
 
 ## Quality Gate Compliance
 
 | Gate | Status | Details |
 |------|--------|---------|
-| Tests | ✅ 898 passing | 0 failures across 28 crates (2 ignored: FUSE root-only) |
+| Tests | ✅ 897 passing | 0 failures across 28 crates (2 ignored: FUSE root-only) |
 | Property-based tests | ✅ 21 proptest suites | 10K+ cases via proptest |
 | Benchmarks | ✅ 28 Criterion functions | repo ops, semantic merge, protocol, compression |
 | Clippy | ✅ Zero warnings | `cargo clippy --workspace -- -D warnings` clean |
 | Ed25519 signing | ✅ Wired into push | `suture key generate`, auto-sign on push |
 | E2E tests | ✅ 27 integration tests | init→commit→branch→merge→gc→fsck→bisect→tag→stash |
 | Lean 4 proofs | ✅ 23 theorems | TouchSet, commutativity, DAG, LCA, merge properties |
-| HTTP integration | ✅ 38 tests | handshake, repos, patches, push/pull, V2, auth, mirrors, CRUD, search |
+| HTTP integration | ✅ 59 tests (with features) | handshake, repos, patches, push/pull, V2, auth, mirrors, CRUD, search |
 | Semantic drivers | ✅ 16 drivers | JSON, YAML, TOML, CSV, XML, Markdown, DOCX, XLSX, PPTX, OTIO, SQL, PDF, Image, Example, Properties |
 | Editor plugins | ✅ 3 plugins | Neovim (Lua), JetBrains IntelliJ (Kotlin), VS Code (TypeScript) |
 | Language bindings | ✅ 2 bindings | Node.js (napi-rs), Python (PyO3) |
@@ -111,11 +117,11 @@
 | Crate | Tests | Description |
 |-------|-------|-------------|
 | suture-common | 8 | Shared types (Hash, BranchName, RepoPath) |
-| suture-core | 271 | Core engine (CAS, DAG, patches, repo, engine, signing, merge, stash, reset, cherry-pick, rebase, blame, reflog, rm, mv, notes, gc, fsck, squash, patch composition, conflict classification) |
+| suture-core | 273 | Core engine (CAS, DAG, patches, repo, engine, signing, merge, stash, reset, cherry-pick, rebase, blame, reflog, rm, mv, notes, gc, fsck, squash, patch composition, conflict classification) |
 | suture-protocol | 55 | Wire protocol, V2 handshake, delta encoding, compression |
 | suture-cli | 25 | CLI binary (37 commands) |
 | suture-tui | 31 | Terminal UI (7 tabs: status, log, staging, diff, branches, remote, help) |
-| suture-hub | 46 | Hub daemon with SQLite, auth, replication, mirrors, branch protection, CRUD, search, cursor-based pagination, gRPC (14 RPCs), S3 blob backend (opt-in), Raft consensus (opt-in), webhooks (push/branch events) |
+| suture-hub | 59 | Hub daemon with SQLite, auth, replication, mirrors, branch protection, CRUD, search, cursor-based pagination, gRPC (14 RPCs), S3 blob backend (opt-in), Raft consensus (opt-in), webhooks (push/branch events) |
 | suture-daemon | 33 | File watcher, auto-commit, auto-sync, SHM status, PID management, signal handling, mount manager (FUSE/WebDAV lifecycle) |
 | suture-driver | 8 | SutureDriver trait, DriverRegistry, semantic diff/merge types |
 | suture-ooxml | 4 | Shared OOXML infrastructure (ZIP, part navigation) |
@@ -148,11 +154,15 @@
 
 | Commit | Version | Description |
 |--------|---------|-------------|
+| `546ee5c` | v2.10.0 | Add shipping checklist, release notes, release script |
+| `525bb08` | v2.10.0 | Wire S3 and Raft runtime into suture-hub binary |
+| `b4249a4` | v2.9.0 | Release v2.9.0: Direction G Growth complete |
 | `42c6162` | v2.9.0 | Update Cargo.lock for hub dependencies |
 | `3167aad` | v2.9.0 | Desktop app: real web UI with 6 views |
 | `fed070c` | v2.9.0 | VS Code extension (14 commands, TypeScript) |
 | `c1727ae` | v2.9.0 | Webhook system (push/branch events, HMAC signing) |
 | `cfb7f4d` | v2.9.0 | Fix repo_log O(n²) → O(n) performance |
+| `852302b` | v2.8.0 | Release v2.8.0: Direction F Production Hardening complete |
 | `f2be791` | v2.8.0 | Update Cargo.lock for new dependencies |
 | `eddcedd` | v2.8.0 | S3 integration tests (MinIO-compatible) |
 | `16aa2e4` | v2.8.0 | FUSE and WebDAV integration tests |
