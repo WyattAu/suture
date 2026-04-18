@@ -1,7 +1,7 @@
 # Suture Version
 
-- **Current Version:** 3.1.0
-- **Current Phase:** Directions O–S — Validation & Release
+- **Current Version:** 3.2.0
+- **Current Phase:** Directions T–X — Ship, Validate, Iterate
 - **Status:** Complete
 - **Last Updated:** 2026-04-18
 - **Rust Edition:** 2024
@@ -30,6 +30,11 @@
 | **Q** | Semantic Diff | File-type-aware diff, structured output, icons | v3.1 | ✅ Complete |
 | **R** | Domain Workflows | --type flag, file-type icons, domain-aware init/status | v3.1 | ✅ Complete |
 | **S** | Domain Marketing | README rewrite, 5 domain pages, why-suture, vs-git | v3.1 | ✅ Complete |
+| **T** | Actually Ship | Publish prep, release build script, binary verification | v3.2 | ✅ Complete |
+| **U** | CI/CD | GitHub Actions CI, release workflow, dependabot, issue templates | v3.2 | ✅ Complete |
+| **V** | Driver Validation | 58 realistic tests for DOCX/XLSX/PPTX/PDF/OTIO/Image | v3.2 | ✅ Complete |
+| **W** | Workflow Reliability | 7 E2E workflow tests (basic, merge, conflict, branch, history, stash) | v3.2 | ✅ Complete |
+| **X** | Performance Baseline | 16 benchmarks, docs/performance.md, quick optimizations | v3.2 | ✅ Complete |
 
 ### Direction A — Product Polish (v1.3–v1.4) ✅
 
@@ -185,7 +190,7 @@
 
 | Gate | Status | Details |
 |------|--------|---------|
-| Tests | ✅ 991 passing | 0 failures across 28 crates (2 ignored: FUSE root-only) |
+| Tests | ✅ 1056 passing | 0 failures across 28 crates (2 ignored: FUSE root-only) |
 | Property-based tests | ✅ 21 proptest suites | 10K+ cases via proptest |
 | Benchmarks | ✅ 28 Criterion functions | repo ops, semantic merge, protocol, compression |
 | Clippy | ✅ Zero warnings | `cargo clippy --workspace -- -D warnings` clean |
@@ -226,9 +231,9 @@
 | suture-vfs | 28 | FUSE3 read/write mount, WebDAV server, inode allocation, path translation (2 ignored integration) |
 | suture-node | 0 | Node.js native addon (napi-rs) |
 | suture-lsp | 11 | Language Server Protocol (hover, diagnostics) |
-| suture-e2e | 90 | End-to-end workflow integration tests + 63 driver correctness tests |
+| suture-e2e | 197 | End-to-end workflow tests + 121 driver correctness tests (realistic + unit) |
 | suture-fuzz | 6 | Fuzz testing (CAS hash, patch serialization, merge, touch-set) |
-| suture-bench | — | Criterion benchmarks (28 functions) |
+| suture-bench | — | Criterion benchmarks (44 functions: 28 core + 16 perf baselines) |
 | suture-raft | 30 | Raft consensus protocol (election, replication, commit, 3-node cluster simulation, persisted log) |
 | suture-s3 | 26 | S3-compatible blob storage (AWS SigV4, path/virtual-hosted, MinIO, integration tests) |
 | desktop-app | — | Tauri v2 scaffold (9 IPC commands) |
@@ -239,6 +244,7 @@
 
 | Commit | Version | Description |
 |--------|---------|-------------|
+| `77ad798` | v3.2.0 | Directions T–X: ship, CI/CD, real-world drivers, workflow tests, benchmarks |
 | `50526ec` | v3.1.0 | Directions O–S: publish prep, driver audits, semantic diff, domain docs |
 | `6a389a4` | v3.0.0 | Directions J–N: Raft E2E, production readiness, perf, desktop, ecosystem |
 | `356b7e8` | v2.10.0 | Release v2.10.0: Directions H+I complete |
