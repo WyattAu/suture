@@ -1,7 +1,7 @@
 # Suture Version
 
-- **Current Version:** 3.0.0
-- **Current Phase:** Directions J–N — Production Maturity
+- **Current Version:** 3.1.0
+- **Current Phase:** Directions O–S — Validation & Release
 - **Status:** Complete
 - **Last Updated:** 2026-04-18
 - **Rust Edition:** 2024
@@ -25,6 +25,11 @@
 | **L** | Performance & Scale | Batch patches, scale benchmarks | v3.0 | ✅ Complete |
 | **M** | Real Desktop App | CLI commands, system tray, repo integration | v3.0 | ✅ Complete |
 | **N** | Ecosystem Polish | VS Code LSP, interactive demo | v3.0 | ✅ Complete |
+| **O** | Publish & Distribute | crates.io, Homebrew, AUR, install verification | v3.1 | ✅ Complete |
+| **P** | Driver Audits | 63 correctness tests for DOCX/XLSX/PPTX/PDF/OTIO/Image | v3.1 | ✅ Complete |
+| **Q** | Semantic Diff | File-type-aware diff, structured output, icons | v3.1 | ✅ Complete |
+| **R** | Domain Workflows | --type flag, file-type icons, domain-aware init/status | v3.1 | ✅ Complete |
+| **S** | Domain Marketing | README rewrite, 5 domain pages, why-suture, vs-git | v3.1 | ✅ Complete |
 
 ### Direction A — Product Polish (v1.3–v1.4) ✅
 
@@ -133,11 +138,54 @@
 - VS Code extension: LSP client connection, workspace activation for `.suture` dirs
 - Interactive demo: 10-step animated workflow with SVG DAG visualization
 
+### Direction O — Publish & Distribute (v3.1) ✅
+
+- All 28 publishable crates have proper metadata (description, license, categories)
+- Publish script (`scripts/publish.sh`) with dry-run and --real modes, dependency order
+- Install verification script (`scripts/verify-install.sh`)
+- Homebrew formula and AUR PKGBUILD updated to v3.0.0
+- `packaging/PUBLISH.md` rewritten with correct dependency order
+
+### Direction P — Driver Correctness Audits (v3.1) ✅
+
+- 63 new correctness tests across 6 driver test files
+- DOCX: two-editor merge, conflict detection, diff formatting (11 tests)
+- XLSX: cell-level merge, conflict detection, diff formatting (9 tests)
+- PPTX: slide-level merge, addition/removal detection (10 tests)
+- OTIO: multi-track timeline, JSON diff, touch set cascade (10 tests)
+- Image: metadata diff, binary change detection, dimension merge (11 tests)
+- PDF: text extraction, page-level diff, multi-page merge (12 tests)
+- Known limitations documented: PPTX/XLSX single-line XML, DOCX positional diff
+
+### Direction Q — Semantic Diff Visualization (v3.1) ✅
+
+- `FileType` detection module: 14 types + `auto_detect_repo_type()`
+- `SemanticDiffFormatter`: file-type-aware headers, structured output
+- CLI diff shows driver type label (e.g., `=== data.json [JSON]`)
+- Image diffs include file size comparison
+- `suture diff` auto-selects semantic driver when available
+
+### Direction R — Domain-Specific Workflows (v3.1) ✅
+
+- `suture init --type video|document|data` with auto-detect from existing files
+- `suture status` shows file-type icons: 📄📊📽️🎬🖼️📋
+- `.suture/config` stores repo type for workflow customization
+
+### Direction S — Domain Marketing (v3.1) ✅
+
+- README rewritten: semantic-merge-first narrative (126 lines)
+- `docs/why-suture.md`: problem statement, ASCII diagrams, 16 supported formats
+- `docs/video-editors.md`: OTIO timeline version control for NLE workflows
+- `docs/document-authors.md`: DOCX/XLSX/PPTX merge for document collaboration
+- `docs/data-science.md`: experiment branching with semantic merge
+- `docs/comparing-with-git.md`: honest comparison, positioned as complementary
+- `docs/index.html`: updated with domain cards and semantic diff visual
+
 ## Quality Gate Compliance
 
 | Gate | Status | Details |
 |------|--------|---------|
-| Tests | ✅ 898 passing | 0 failures across 28 crates (2 ignored: FUSE root-only) |
+| Tests | ✅ 991 passing | 0 failures across 28 crates (2 ignored: FUSE root-only) |
 | Property-based tests | ✅ 21 proptest suites | 10K+ cases via proptest |
 | Benchmarks | ✅ 28 Criterion functions | repo ops, semantic merge, protocol, compression |
 | Clippy | ✅ Zero warnings | `cargo clippy --workspace -- -D warnings` clean |
@@ -154,7 +202,7 @@
 | Crate | Tests | Description |
 |-------|-------|-------------|
 | suture-common | 8 | Shared types (Hash, BranchName, RepoPath) |
-| suture-core | 273 | Core engine (CAS, DAG, patches, repo, engine, signing, merge, stash, reset, cherry-pick, rebase, blame, reflog, rm, mv, notes, gc, fsck, squash, patch composition, conflict classification) |
+| suture-core | 279 | Core engine (CAS, DAG, patches, repo, engine, signing, merge, stash, reset, cherry-pick, rebase, blame, reflog, rm, mv, notes, gc, fsck, squash, patch composition, conflict classification, file-type detection, semantic diff formatter) |
 | suture-protocol | 55 | Wire protocol, V2 handshake, delta encoding, compression |
 | suture-cli | 25 | CLI binary (37 commands) |
 | suture-tui | 31 | Terminal UI (7 tabs: status, log, staging, diff, branches, remote, help) |
@@ -178,7 +226,7 @@
 | suture-vfs | 28 | FUSE3 read/write mount, WebDAV server, inode allocation, path translation (2 ignored integration) |
 | suture-node | 0 | Node.js native addon (napi-rs) |
 | suture-lsp | 11 | Language Server Protocol (hover, diagnostics) |
-| suture-e2e | 27 | End-to-end workflow integration tests |
+| suture-e2e | 90 | End-to-end workflow integration tests + 63 driver correctness tests |
 | suture-fuzz | 6 | Fuzz testing (CAS hash, patch serialization, merge, touch-set) |
 | suture-bench | — | Criterion benchmarks (28 functions) |
 | suture-raft | 30 | Raft consensus protocol (election, replication, commit, 3-node cluster simulation, persisted log) |
@@ -191,6 +239,7 @@
 
 | Commit | Version | Description |
 |--------|---------|-------------|
+| `50526ec` | v3.1.0 | Directions O–S: publish prep, driver audits, semantic diff, domain docs |
 | `6a389a4` | v3.0.0 | Directions J–N: Raft E2E, production readiness, perf, desktop, ecosystem |
 | `356b7e8` | v2.10.0 | Release v2.10.0: Directions H+I complete |
 | `546ee5c` | v2.10.0 | Add shipping checklist, release notes, release script |
