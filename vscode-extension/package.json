@@ -1,0 +1,39 @@
+{
+  "name": "suture",
+  "displayName": "Suture VCS",
+  "description": "Suture patch-based version control system integration",
+  "version": "1.0.0",
+  "publisher": "suture",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["SCM Providers", "Other"],
+  "activationEvents": ["workspaceContains:.suture"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      { "command": "suture.init", "title": "Suture: Initialize Repository", "category": "Suture" },
+      { "command": "suture.status", "title": "Suture: Status", "category": "Suture" },
+      { "command": "suture.add", "title": "Suture: Stage Current File", "category": "Suture" },
+      { "command": "suture.addAll", "title": "Suture: Stage All", "category": "Suture" },
+      { "command": "suture.commit", "title": "Suture: Commit", "category": "Suture" },
+      { "command": "suture.push", "title": "Suture: Push", "category": "Suture" },
+      { "command": "suture.pull", "title": "Suture: Pull", "category": "Suture" },
+      { "command": "suture.branches", "title": "Suture: Branches", "category": "Suture" },
+      { "command": "suture.log", "title": "Suture: Log", "category": "Suture" },
+      { "command": "suture.diff", "title": "Suture: Diff", "category": "Suture" },
+      { "command": "suture.checkout", "title": "Suture: Checkout Branch", "category": "Suture" },
+      { "command": "suture.blame", "title": "Suture: Blame", "category": "Suture" },
+      { "command": "suture.stash", "title": "Suture: Stash", "category": "Suture" },
+      { "command": "suture.tags", "title": "Suture: Tags", "category": "Suture" }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.0"
+  }
+}
