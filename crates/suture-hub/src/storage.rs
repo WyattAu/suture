@@ -8,6 +8,7 @@ use std::path::Path;
 use thiserror::Error;
 
 use crate::types::{BlobRef, BranchProto, HashProto, PatchProto, UserInfo};
+use crate::webhooks::Webhook;
 
 #[derive(Error, Debug)]
 pub enum StorageError {
@@ -158,6 +159,19 @@ impl HubStorage {
                 data TEXT,
                 timestamp INTEGER NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS webhooks (
+                id TEXT PRIMARY KEY,
+                repo_id TEXT NOT NULL,
+                url TEXT NOT NULL,
+                events TEXT NOT NULL,
+                secret TEXT,
+                created_at INTEGER NOT NULL,
+                active INTEGER NOT NULL DEFAULT 1,
+                FOREIGN KEY (repo_id) REFERENCES repos(repo_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_webhooks_repo ON webhooks(repo_id);
             ",
         )?;
 
@@ -1144,6 +1158,82 @@ impl HubStorage {
             peers,
         })
     }
+
+    // === Webhooks ===
+
+    pub fn create_webhook(&self, webhook: &Webhook) -> Result<(), StorageError> {
+        let events_json = serde_json::to_string(&webhook.events).unwrap_or_default();
+        self.conn.execute(
+            "INSERT INTO webhooks (id, repo_id, url, events, secret, created_at, active) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                webhook.id,
+                webhook.repo_id,
+                webhook.url,
+                events_json,
+                webhook.secret,
+                webhook.created_at as i64,
+                webhook.active as i32,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_webhooks(&self, repo_id: &str) -> Result<Vec<Webhook>, StorageError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, repo_id, url, events, secret, created_at, active FROM webhooks WHERE repo_id = ?1 ORDER BY created_at",
+        )?;
+        let rows = stmt.query_map(params![repo_id], |row| {
+            let events_json: String = row.get(3)?;
+            let events: Vec<String> = serde_json::from_str(&events_json).unwrap_or_default();
+            Ok(Webhook {
+                id: row.get(0)?,
+                repo_id: row.get(1)?,
+                url: row.get(2)?,
+                events,
+                secret: row.get(4)?,
+                created_at: row.get::<_, i64>(5)? as u64,
+                active: row.get::<_, i32>(6)? != 0,
+            })
+        })?;
+        let mut webhooks = Vec::new();
+        for row in rows {
+            webhooks.push(row?);
+        }
+        Ok(webhooks)
+    }
+
+    pub fn get_webhook(&self, id: &str) -> Result<Webhook, StorageError> {
+        self.conn.query_row(
+            "SELECT id, repo_id, url, events, secret, created_at, active FROM webhooks WHERE id = ?1",
+            params![id],
+            |row| {
+                let events_json: String = row.get(3)?;
+                let events: Vec<String> = serde_json::from_str(&events_json).unwrap_or_default();
+                Ok(Webhook {
+                    id: row.get(0)?,
+                    repo_id: row.get(1)?,
+                    url: row.get(2)?,
+                    events,
+                    secret: row.get(4)?,
+                    created_at: row.get::<_, i64>(5)? as u64,
+                    active: row.get::<_, i32>(6)? != 0,
+                })
+            },
+        ).map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => StorageError::Custom(format!("webhook not found: {id}")),
+            e => StorageError::Database(e),
+        })
+    }
+
+    pub fn delete_webhook(&self, id: &str) -> Result<(), StorageError> {
+        let changes = self
+            .conn
+            .execute("DELETE FROM webhooks WHERE id = ?1", params![id])?;
+        if changes == 0 {
+            return Err(StorageError::Custom(format!("webhook not found: {id}")));
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -1281,5 +1371,37 @@ mod tests {
 
         let repos = store.list_repos().unwrap();
         assert_eq!(repos.len(), 2);
+    }
+
+    #[test]
+    fn test_webhook_crud() {
+        let store = HubStorage::open_in_memory().unwrap();
+        store.ensure_repo("test-repo").unwrap();
+
+        let webhook = Webhook {
+            id: "wh-1".to_string(),
+            repo_id: "test-repo".to_string(),
+            url: "https://example.com/hook".to_string(),
+            events: vec!["push".to_string(), "branch.create".to_string()],
+            secret: Some("secret123".to_string()),
+            created_at: 1000,
+            active: true,
+        };
+        store.create_webhook(&webhook).unwrap();
+
+        let listed = store.list_webhooks("test-repo").unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, "wh-1");
+        assert_eq!(listed[0].events.len(), 2);
+
+        let fetched = store.get_webhook("wh-1").unwrap();
+        assert_eq!(fetched.url, "https://example.com/hook");
+        assert_eq!(fetched.secret, Some("secret123".to_string()));
+        assert!(fetched.active);
+
+        assert!(store.list_webhooks("other-repo").unwrap().is_empty());
+
+        store.delete_webhook("wh-1").unwrap();
+        assert!(store.list_webhooks("test-repo").unwrap().is_empty());
     }
 }

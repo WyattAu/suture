@@ -3,6 +3,7 @@ pub mod grpc;
 pub mod server;
 pub mod storage;
 pub mod types;
+pub mod webhooks;
 
 #[cfg(feature = "raft-cluster")]
 pub mod raft;

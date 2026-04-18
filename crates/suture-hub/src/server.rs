@@ -10,6 +10,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::storage::HubStorage;
+use crate::webhooks::{Webhook, WebhookManager};
 pub use crate::types::*;
 use crate::storage::{ReplicationEntry, ReplicationStatus};
 
@@ -85,6 +86,7 @@ pub struct SutureHubServer {
     max_token_creates_per_minute: u32,
     rate_limit_window: std::time::Duration,
     replication_role: Arc<std::sync::RwLock<String>>,
+    webhook_manager: Arc<WebhookManager>,
 }
 
 impl Default for SutureHubServer {
@@ -110,6 +112,7 @@ impl SutureHubServer {
             max_token_creates_per_minute: 5,
             rate_limit_window: std::time::Duration::from_secs(60),
             replication_role: Arc::new(std::sync::RwLock::new("standalone".to_string())),
+            webhook_manager: Arc::new(WebhookManager::new()),
         }
     }
 
@@ -123,6 +126,7 @@ impl SutureHubServer {
             max_token_creates_per_minute: 5,
             rate_limit_window: std::time::Duration::from_secs(60),
             replication_role: Arc::new(std::sync::RwLock::new("standalone".to_string())),
+            webhook_manager: Arc::new(WebhookManager::new()),
         })
     }
 
@@ -466,6 +470,24 @@ impl SutureHubServer {
             let target_hex = hash_to_hex(&branch.target_id);
             let _ = store.log_operation("set", "branches", &format!("{}:{}", req.repo_id, branch.name), Some(&target_hex));
         }
+
+        let repo_id = req.repo_id.clone();
+        let patch_data = serde_json::json!({
+            "patch_count": req.patches.len(),
+            "branch_count": req.branches.len(),
+            "existing_patches": existing_patches.clone(),
+        });
+        let manager = Arc::clone(&self.webhook_manager);
+        let storage = Arc::clone(&self.storage);
+        tokio::spawn(async move {
+            let hooks = {
+                let store = storage.read().await;
+                store.list_webhooks(&repo_id).unwrap_or_default()
+            };
+            if !hooks.is_empty() {
+                let _ = manager.trigger(&hooks, "push", &repo_id, patch_data).await;
+            }
+        });
 
         Ok(PushResponse {
             success: true,
@@ -1155,6 +1177,24 @@ impl SutureHubServer {
             let target_hex = hash_to_hex(&branch.target_id);
             let _ = store.log_operation("set", "branches", &format!("{}:{}", req.repo_id, branch.name), Some(&target_hex));
         }
+
+        let repo_id = req.repo_id.clone();
+        let patch_data = serde_json::json!({
+            "patch_count": req.patches.len(),
+            "branch_count": req.branches.len(),
+            "existing_patches": existing_patches.clone(),
+        });
+        let manager = Arc::clone(&self.webhook_manager);
+        let storage = Arc::clone(&self.storage);
+        tokio::spawn(async move {
+            let hooks = {
+                let store = storage.read().await;
+                store.list_webhooks(&repo_id).unwrap_or_default()
+            };
+            if !hooks.is_empty() {
+                let _ = manager.trigger(&hooks, "push", &repo_id, patch_data).await;
+            }
+        });
 
         Ok(PushResponse {
             success: true,
@@ -2007,7 +2047,23 @@ pub async fn create_branch_handler(
     }
     let store = hub.storage.write().await;
     match store.set_branch(&repo_id, &req.name, &req.target) {
-        Ok(()) => (StatusCode::CREATED, Json(serde_json::json!({"success": true}))),
+        Ok(()) => {
+            let branch_data = serde_json::json!({"name": req.name, "target": req.target});
+            let manager = Arc::clone(&hub.webhook_manager);
+            let storage = Arc::clone(&hub.storage);
+            let rid = repo_id.clone();
+            drop(store);
+            tokio::spawn(async move {
+                let hooks = {
+                    let store = storage.read().await;
+                    store.list_webhooks(&rid).unwrap_or_default()
+                };
+                if !hooks.is_empty() {
+                    let _ = manager.trigger(&hooks, "branch.create", &rid, branch_data).await;
+                }
+            });
+            (StatusCode::CREATED, Json(serde_json::json!({"success": true})))
+        }
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"success": false, "error": e.to_string()}))),
     }
 }
@@ -2022,7 +2078,23 @@ pub async fn delete_branch_handler(
     }
     let store = hub.storage.write().await;
     match store.delete_branch(&repo_id, &branch_name) {
-        Ok(()) => (StatusCode::OK, Json(serde_json::json!({"success": true}))),
+        Ok(()) => {
+            let branch_data = serde_json::json!({"name": branch_name});
+            let manager = Arc::clone(&hub.webhook_manager);
+            let storage = Arc::clone(&hub.storage);
+            let rid = repo_id.clone();
+            drop(store);
+            tokio::spawn(async move {
+                let hooks = {
+                    let store = storage.read().await;
+                    store.list_webhooks(&rid).unwrap_or_default()
+                };
+                if !hooks.is_empty() {
+                    let _ = manager.trigger(&hooks, "branch.delete", &rid, branch_data).await;
+                }
+            });
+            (StatusCode::OK, Json(serde_json::json!({"success": true})))
+        }
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"success": false, "error": e.to_string()}))),
     }
 }
@@ -2689,6 +2761,77 @@ async fn replication_background_task(hub: Arc<SutureHubServer>) {
     }
 }
 
+#[derive(serde::Deserialize)]
+pub struct CreateWebhookRequest {
+    pub url: String,
+    pub events: Vec<String>,
+    pub secret: Option<String>,
+}
+
+pub async fn create_webhook_handler(
+    State(hub): State<Arc<SutureHubServer>>,
+    headers: HeaderMap,
+    Path(repo_id): Path<String>,
+    Json(req): Json<CreateWebhookRequest>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    if let Err(status) = check_auth(&hub, &headers).await {
+        return (status, Json(serde_json::json!({"success": false, "error": "unauthorized"})));
+    }
+    if req.events.is_empty() {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"success": false, "error": "events must not be empty"})));
+    }
+    let random_bytes: [u8; 16] = rand::random();
+    let id = format!("wh_{}", hex::encode(random_bytes));
+    let created_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let webhook = Webhook {
+        id: id.clone(),
+        repo_id: repo_id.clone(),
+        url: req.url,
+        events: req.events,
+        secret: req.secret,
+        created_at,
+        active: true,
+    };
+    let store = hub.storage.write().await;
+    match store.create_webhook(&webhook) {
+        Ok(()) => (StatusCode::CREATED, Json(serde_json::json!({"success": true, "id": id}))),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"success": false, "error": e.to_string()}))),
+    }
+}
+
+pub async fn list_webhooks_handler(
+    State(hub): State<Arc<SutureHubServer>>,
+    headers: HeaderMap,
+    Path(repo_id): Path<String>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    if let Err(status) = check_auth(&hub, &headers).await {
+        return (status, Json(serde_json::json!({"success": false, "error": "unauthorized"})));
+    }
+    let store = hub.storage.read().await;
+    match store.list_webhooks(&repo_id) {
+        Ok(hooks) => (StatusCode::OK, Json(serde_json::json!({"success": true, "webhooks": hooks}))),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"success": false, "error": e.to_string()}))),
+    }
+}
+
+pub async fn delete_webhook_handler(
+    State(hub): State<Arc<SutureHubServer>>,
+    headers: HeaderMap,
+    Path((_repo_id, id)): Path<(String, String)>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    if let Err(status) = check_auth(&hub, &headers).await {
+        return (status, Json(serde_json::json!({"success": false, "error": "unauthorized"})));
+    }
+    let store = hub.storage.write().await;
+    match store.delete_webhook(&id) {
+        Ok(()) => (StatusCode::OK, Json(serde_json::json!({"success": true}))),
+        Err(e) => (StatusCode::NOT_FOUND, Json(serde_json::json!({"success": false, "error": e.to_string()}))),
+    }
+}
+
 pub async fn run_server(
     hub: SutureHubServer,
     addr: &str,
@@ -2766,6 +2909,9 @@ pub async fn run_server(
         .route("/search", axum::routing::get(search_handler))
         .route("/activity", axum::routing::get(activity_handler))
         .route("/mirrors/{id}", axum::routing::delete(delete_mirror_handler))
+        .route("/webhooks/{repo_id}", axum::routing::post(create_webhook_handler))
+        .route("/webhooks/{repo_id}", axum::routing::get(list_webhooks_handler))
+        .route("/webhooks/{repo_id}/{id}", axum::routing::delete(delete_webhook_handler))
         .with_state(hub);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -2867,6 +3013,9 @@ mod tests {
             .route("/search", axum::routing::get(search_handler))
             .route("/activity", axum::routing::get(activity_handler))
             .route("/mirrors/{id}", axum::routing::delete(delete_mirror_handler))
+            .route("/webhooks/{repo_id}", axum::routing::post(create_webhook_handler))
+            .route("/webhooks/{repo_id}", axum::routing::get(list_webhooks_handler))
+            .route("/webhooks/{repo_id}/{id}", axum::routing::delete(delete_webhook_handler))
             .with_state(Arc::clone(&hub));
 
         tokio::spawn(async move {
