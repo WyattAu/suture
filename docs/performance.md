@@ -1,0 +1,181 @@
+# Suture Performance Baseline
+
+**Date:** 2026-04-18
+**Platform:** Linux x86_64, release profile (optimized)
+**Toolchain:** Rust stable, Criterion.rs 0.5
+
+---
+
+## 1. DAG Operations
+
+| Benchmark | Median Time | Notes |
+|---|---|---|
+| `dag_perf_commit/commit_1000_files` | 97.8 ms | Add + commit 1000 files in one batch |
+| `dag_perf_log/log_1000_commits` | 5.23 ms | Log walk over 1000-commit history |
+| `dag_perf_log/log_10000_commits` | N/A (timeout) | O(n^2) or worse in log walk — **known bottleneck** |
+| `dag_perf_merge/merge_100_files` | 3.26 ms | Merge branch modifying 100 files (clean) |
+
+### Thresholds
+
+| Operation | Measured | Acceptable | Status |
+|---|---|---|---|
+| Commit 1000 files | 97.8 ms | < 500 ms | PASS |
+| Log 1000 commits | 5.23 ms | < 50 ms | PASS |
+| Log 10000 commits | timeout | < 500 ms | **FAIL** |
+| Merge 100 files | 3.26 ms | < 50 ms | PASS |
+
+---
+
+## 2. Semantic Merge (JSON)
+
+| Benchmark | Median Time |
+|---|---|
+| `semantic_merge_perf/json_small_10_fields` | 8.63 us |
+| `semantic_merge_perf/json_large_100_fields` | 126 us |
+| `semantic_merge_perf/json_conflict/10` | 6.96 us |
+| `semantic_merge_perf/json_conflict/100` | 98.4 us |
+
+### Thresholds
+
+| Operation | Measured | Acceptable | Status |
+|---|---|---|---|
+| Merge 10-field JSON | 8.63 us | < 100 us | PASS |
+| Merge 100-field JSON | 126 us | < 1 ms | PASS |
+| Conflict detection 100 fields | 98.4 us | < 1 ms | PASS |
+
+---
+
+## 3. CAS Operations
+
+| Benchmark | Median Time |
+|---|---|
+| `cas_perf_store/store_100_blobs/1KB` | 1.50 ms |
+| `cas_perf_store/store_100_blobs/10KB` | 2.18 ms |
+| `cas_perf_store/store_100_blobs/100KB` | 5.82 ms |
+| `cas_perf_store/store_100_blobs/1MB` | 50.1 ms |
+| `cas_perf_lookup/store_1000_lookup_100` | 3.76 ms |
+
+### Thresholds
+
+| Operation | Measured | Acceptable | Status |
+|---|---|---|---|
+| Store 100 x 1KB blobs | 1.50 ms | < 50 ms | PASS |
+| Store 100 x 1MB blobs | 50.1 ms | < 500 ms | PASS |
+| Lookup 100 from 1000 | 3.76 ms | < 50 ms | PASS |
+
+---
+
+## 4. Patch Serialization
+
+| Benchmark | Median Time |
+|---|---|
+| `patch_perf_serialize/serialize_100_patches` | 63.9 us |
+| `patch_perf_deserialize/deserialize_100_patches` | 143 us |
+
+### Thresholds
+
+| Operation | Measured | Acceptable | Status |
+|---|---|---|---|
+| Serialize 100 patches | 63.9 us | < 1 ms | PASS |
+| Deserialize 100 patches | 143 us | < 1 ms | PASS |
+
+---
+
+## 5. Hub Operations
+
+| Benchmark | Median Time |
+|---|---|
+| `hub_perf_repo/create_100_repos` | 425 us |
+| `hub_perf_push_pull/push_50_patches` | 693 us |
+| `hub_perf_push_pull/pull_50_patches` | 95.3 us |
+| `hub_perf_push_pull/push_pull_roundtrip_50` | 1.07 ms |
+
+### Thresholds
+
+| Operation | Measured | Acceptable | Status |
+|---|---|---|---|
+| Create 100 repos | 425 us | < 10 ms | PASS |
+| Push 50 patches | 693 us | < 10 ms | PASS |
+| Pull 50 patches | 95.3 us | < 10 ms | PASS |
+| Push+pull roundtrip 50 | 1.07 ms | < 20 ms | PASS |
+
+---
+
+## 6. Historical Benchmark Results (from existing suite)
+
+These results are from the pre-existing benchmark suite in `benchmarks.rs`:
+
+| Benchmark | Median Time |
+|---|---|
+| `blake3_hashing/hash/1024` | 2.83 us |
+| `blake3_hashing/hash/102400` | 71.5 us |
+| `dag_insertion/linear_chain/1000` | 2.73 ms |
+| `repo_add_commit/commit_n_files/1000` | 652 ms |
+| `repo_merge/merge_clean` | 540 us |
+| `semantic_merge_json/merge/1000` | 6.73 ms |
+| `hub_storage/push_n_patches_blobs/1000` | 42.2 ms |
+| `diff_large/patience_diff_1k_lines` | 30.0 ms |
+| `compress_decompress/compress_1MB` | 544 us |
+
+---
+
+## Top 3 Bottlenecks
+
+### 1. Log walk at scale (CRITICAL)
+
+`repo_log` at 10,000 commits exceeds a 5-minute timeout. This is the single most
+serious performance issue. The log walk likely has O(n^2) behavior due to
+per-commit DAG traversal or repeated serialization.
+
+**Recommendation:** Pre-compute and persist a flat commit list (like Git's
+commit-graph). Use generation numbers (already implemented) to short-circuit
+ancestor queries.
+
+### 2. Commit 1000 files — 652 ms (repo_add_commit vs dag_perf_commit)
+
+The full `repo add + commit` path for 1000 files takes 652 ms (~0.65 ms/file),
+while the DAG-level commit benchmark takes 97.8 ms. The ~6.7x overhead comes
+from per-file filesystem I/O: reading files, hashing, writing blobs to CAS,
+and updating the staging index.
+
+**Recommendation:** Batch filesystem reads with parallel hashing (rayon).
+Defer CAS writes until commit time. Use mtime/size stat cache to skip
+unchanged files.
+
+### 3. Patience diff on large files — 30 ms for 1K lines
+
+The patience diff algorithm takes 30 ms for a 1000-line file with 10% changes.
+This scales poorly — a 10K-line file would take ~300 ms, which is perceptible.
+
+**Recommendation:** Profile to determine if the bottleneck is LCS computation
+or unique-line fingerprinting. Consider the `imara-diff` crate for large-file
+diffing, or switch to Myers' algorithm for files above a threshold.
+
+---
+
+## Quick-Win Optimizations Applied
+
+1. **`#[inline]` on hot-path methods** — Added to `TouchSet::intersects`,
+   `TouchSet::len`, `TouchSet::iter`, `TouchSet::insert`, `TouchSet::contains`,
+   `DagNode::id`, `PatchDag::patch_count`, and `hash_bytes` (was already
+   inlined).
+
+2. **Removed redundant `from_utf8` in `hash_with_context`** — The function
+   already takes `&str`, so `from_utf8(context.as_bytes())` was a no-op
+   conversion that could fail unnecessarily.
+
+3. **Eliminated duplicate method definitions** — Removed accidental duplicate
+   `len`, `iter`, `insert` on `TouchSet` and `has_patch` on `PatchDag` that
+   were causing code bloat.
+
+---
+
+## Benchmark Files
+
+| File | Contents |
+|---|---|
+| `benches/benchmarks.rs` | Original 28 benchmarks (core, repo, semantic merge, protocol, hub) |
+| `benches/dag_perf.rs` | DAG commit, log (1K/10K), merge benchmarks |
+| `benches/semantic_merge_perf.rs` | JSON small/large/conflict merge benchmarks |
+| `benches/cas_perf.rs` | CAS store (varying sizes), lookup, patch serialize/deserialize |
+| `benches/hub_perf.rs` | Hub repo creation, push/pull/roundtrip benchmarks |

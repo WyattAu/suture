@@ -6,6 +6,10 @@ publish = false
 
 [dependencies]
 tempfile = "3"
+zip = "2.2"
+image = "0.25"
+lopdf = "0.34"
+serde_json = "1"
 
 [dev-dependencies]
 suture-hub = { path = "../suture-hub" }
@@ -19,6 +23,3 @@ suture-driver-pdf = { path = "../suture-driver-pdf" }
 tokio = { version = "1", features = ["full"] }
 axum = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
-zip = "2.2"
-image = "0.25"
-lopdf = "0.34"

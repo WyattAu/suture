@@ -21,3 +21,19 @@ serde_json = "1"
 [[bench]]
 name = "benchmarks"
 harness = false
+
+[[bench]]
+name = "dag_perf"
+harness = false
+
+[[bench]]
+name = "semantic_merge_perf"
+harness = false
+
+[[bench]]
+name = "cas_perf"
+harness = false
+
+[[bench]]
+name = "hub_perf"
+harness = false

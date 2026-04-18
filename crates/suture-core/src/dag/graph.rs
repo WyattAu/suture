@@ -61,7 +61,7 @@ pub struct DagNode {
 }
 
 impl DagNode {
-    /// Returns the ID of this node's patch.
+    #[inline]
     pub fn id(&self) -> &PatchId {
         &self.patch.id
     }
@@ -344,7 +344,7 @@ impl PatchDag {
         branches
     }
 
-    /// Get the total number of patches in the DAG.
+    #[inline]
     pub fn patch_count(&self) -> usize {
         self.nodes.len()
     }

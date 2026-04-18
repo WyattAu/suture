@@ -99,7 +99,22 @@ impl TouchSet {
         self.inner.is_empty()
     }
 
-    /// Check if this touch set intersects with another.
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    #[inline]
+    pub fn iter(&self) -> impl Iterator<Item = &String> {
+        self.inner.iter()
+    }
+
+    #[inline]
+    pub fn insert(&mut self, addr: impl Into<String>) {
+        self.inner.insert(addr.into());
+    }
+
+    #[inline]
     pub fn intersects(&self, other: &TouchSet) -> bool {
         self.inner.intersection(&other.inner).next().is_some()
     }
@@ -111,21 +126,6 @@ impl TouchSet {
         }
     }
 
-    /// Get the number of addresses in this touch set.
-    pub fn len(&self) -> usize {
-        self.inner.len()
-    }
-
-    /// Iterate over the addresses in this touch set.
-    pub fn iter(&self) -> impl Iterator<Item = &String> {
-        self.inner.iter()
-    }
-
-    /// Add an address to the touch set.
-    pub fn insert(&mut self, addr: impl Into<String>) {
-        self.inner.insert(addr.into());
-    }
-
     /// Get all addresses as a sorted Vec.
     pub fn addresses(&self) -> Vec<String> {
         let mut addrs: Vec<String> = self.inner.iter().cloned().collect();
@@ -133,7 +133,7 @@ impl TouchSet {
         addrs
     }
 
-    /// Check if the touch set contains a specific address.
+    #[inline]
     pub fn contains(&self, addr: &str) -> bool {
         self.inner.contains(addr)
     }

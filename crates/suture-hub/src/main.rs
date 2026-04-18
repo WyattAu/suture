@@ -136,16 +136,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         args.blob_backend
     };
-    let _s3_endpoint = args.s3_endpoint.or(cfg.s3_endpoint);
-    let _s3_bucket = args.s3_bucket.or(cfg.s3_bucket);
-    let _s3_region = if args.s3_region == "us-east-1" {
+    #[cfg_attr(not(feature = "s3-backend"), allow(unused_variables))]
+    let s3_endpoint = args.s3_endpoint.or(cfg.s3_endpoint);
+    #[cfg_attr(not(feature = "s3-backend"), allow(unused_variables))]
+    let s3_bucket = args.s3_bucket.or(cfg.s3_bucket);
+    #[cfg_attr(not(feature = "s3-backend"), allow(unused_variables))]
+    let s3_region = if args.s3_region == "us-east-1" {
         cfg.s3_region.unwrap_or(args.s3_region)
     } else {
         args.s3_region
     };
-    let _s3_access_key = args.s3_access_key.or(cfg.s3_access_key);
-    let _s3_secret_key = args.s3_secret_key.or(cfg.s3_secret_key);
-    let _s3_prefix = if args.s3_prefix == "suture/blobs/" {
+    #[cfg_attr(not(feature = "s3-backend"), allow(unused_variables))]
+    let s3_access_key = args.s3_access_key.or(cfg.s3_access_key);
+    #[cfg_attr(not(feature = "s3-backend"), allow(unused_variables))]
+    let s3_secret_key = args.s3_secret_key.or(cfg.s3_secret_key);
+    #[cfg_attr(not(feature = "s3-backend"), allow(unused_variables))]
+    let s3_prefix = if args.s3_prefix == "suture/blobs/" {
         cfg.s3_prefix.unwrap_or(args.s3_prefix)
     } else {
         args.s3_prefix

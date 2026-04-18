@@ -4379,6 +4379,7 @@ dependencies = [
  "image",
  "lopdf",
  "reqwest",
+ "serde_json",
  "suture-driver",
  "suture-driver-docx",
  "suture-driver-image",

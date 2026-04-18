@@ -1,4 +1,5 @@
 name: CI
+
 on:
   push:
     branches: [main]
@@ -10,17 +11,68 @@ env:
 
 jobs:
   build-and-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        features:
+          - ""
+          - "suture-hub/raft-cluster"
+          - "suture-hub/s3-backend"
+          - "suture-raft/persist"
+        exclude:
+          - features: "suture-hub/raft-cluster"
+            os: macos-latest
+          - features: "suture-hub/s3-backend"
+            os: macos-latest
+          - features: "suture-raft/persist"
+            os: macos-latest
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.features }}
+
+      - name: Check
+        run: |
+          if [ -n "${{ matrix.features }}" ]; then
+            cargo check --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --features "${{ matrix.features }}"
+          else
+            cargo check --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz
+          fi
+
+      - name: Test
+        run: |
+          if [ -n "${{ matrix.features }}" ]; then
+            cargo test --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --features "${{ matrix.features }}" -- --test-threads=4
+          else
+            cargo test --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz -- --test-threads=4
+          fi
+
+      - name: Clippy
+        run: |
+          if [ -n "${{ matrix.features }}" ]; then
+            cargo clippy --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --features "${{ matrix.features }}" -- -D warnings
+          else
+            cargo clippy --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz -- -D warnings
+          fi
+
+  lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
       - uses: Swatinem/rust-cache@v2
-      - name: Check
-        run: cargo check --workspace --exclude suture-py
-      - name: Test
-        run: cargo test --workspace --exclude suture-py -- --test-threads=4
-      - name: Clippy
-        run: cargo clippy --workspace --exclude suture-py -- -D warnings
       - name: Format
         run: cargo fmt --all -- --check
 

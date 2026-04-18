@@ -62,19 +62,13 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Cache Cargo artifacts
-        uses: actions/cache@v4
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-${{ matrix.target }}-
+          key: ${{ matrix.target }}
 
       - name: Run tests (default target only)
         if: matrix.target == 'x86_64-unknown-linux-gnu'
-        run: cargo test --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz
+        run: cargo test --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz -- --test-threads=4
 
       - name: Build release binaries
         run: cargo build --release --target ${{ matrix.target }} -p suture-cli
@@ -98,8 +92,29 @@ jobs:
           name: suture-${{ matrix.asset_suffix }}
           path: suture-${{ matrix.asset_suffix }}.*
 
+  source-tarball:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create source tarball
+        run: |
+          tar czf suture-src.tar.gz \
+            --exclude='.git' \
+            --exclude='target' \
+            --exclude='.direnv' \
+            --exclude='.ruff_cache' \
+            --exclude='node_modules' \
+            .
+
+      - name: Upload source artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: suture-source
+          path: suture-src.tar.gz
+
   release:
-    needs: build
+    needs: [build, source-tarball]
     runs-on: ubuntu-latest
 
     steps:

@@ -1,5 +1,8 @@
 # Suture
 
+![Build](https://github.com/WyattAu/suture/actions/workflows/ci.yml/badge.svg)
+![Release](https://github.com/WyattAu/suture/actions/workflows/release.yml/badge.svg)
+
 Version control that understands your files.
 
 Git is to text files what Suture is to Word docs, spreadsheets, and video timelines.
