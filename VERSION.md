@@ -1,7 +1,7 @@
 # Suture Version
 
-- **Current Version:** 2.8.0
-- **Current Phase:** Direction F — Production Hardening
+- **Current Version:** 2.9.0
+- **Current Phase:** Direction G — Growth
 - **Status:** Complete
 - **Last Updated:** 2026-04-17
 - **Rust Edition:** 2024
@@ -17,6 +17,7 @@
 | **D** | Hardening | Wire scaffolds, Raft, S3, mount manager, JetBrains, Python | v2.6 | ✅ Complete |
 | **E** | Ship It | Distribution, docs, packaging, release automation | v2.7 | ✅ Complete |
 | **F** | Production Hardening | S3/Raft integration, benchmarks, integration tests | v2.8 | ✅ Complete |
+| **G** | Growth | VS Code, webhooks, desktop UI, perf fix | v2.9 | ✅ Complete |
 
 ### Direction A — Product Polish (v1.3–v1.4) ✅
 
@@ -62,6 +63,14 @@
 - AUR PKGBUILD for Arch Linux
 - crates.io publish guide with dependency order
 
+### Direction G — Growth (v2.9) ✅
+
+- VS Code extension: 14 commands, SutureHelper class, output channel, quick pick, SVG icon
+- Webhook system: CRUD routes, async fire-and-forget delivery, HMAC-SHA256 signing, push/branch events
+- Desktop app: real web UI with 6 views, dark theme, commit modal, branch management
+- Performance fix: repo_log O(n²) → O(n) via HashSet cycle detection
+- Key benchmark finding: repo_log/1000 now completes (was timeout)
+
 ### Direction F — Production Hardening (v2.8) ✅
 
 - S3 blob backend wired into hub: `BlobBackend` trait, `SqliteBlobBackend`, `S3BlobBackendAdapter`
@@ -85,7 +94,7 @@
 
 | Gate | Status | Details |
 |------|--------|---------|
-| Tests | ✅ 890 passing | 0 failures across 28 crates (2 ignored: FUSE root-only) |
+| Tests | ✅ 898 passing | 0 failures across 28 crates (2 ignored: FUSE root-only) |
 | Property-based tests | ✅ 21 proptest suites | 10K+ cases via proptest |
 | Benchmarks | ✅ 28 Criterion functions | repo ops, semantic merge, protocol, compression |
 | Clippy | ✅ Zero warnings | `cargo clippy --workspace -- -D warnings` clean |
@@ -94,7 +103,7 @@
 | Lean 4 proofs | ✅ 23 theorems | TouchSet, commutativity, DAG, LCA, merge properties |
 | HTTP integration | ✅ 38 tests | handshake, repos, patches, push/pull, V2, auth, mirrors, CRUD, search |
 | Semantic drivers | ✅ 16 drivers | JSON, YAML, TOML, CSV, XML, Markdown, DOCX, XLSX, PPTX, OTIO, SQL, PDF, Image, Example, Properties |
-| Editor plugins | ✅ 2 plugins | Neovim (Lua), JetBrains IntelliJ (Kotlin) |
+| Editor plugins | ✅ 3 plugins | Neovim (Lua), JetBrains IntelliJ (Kotlin), VS Code (TypeScript) |
 | Language bindings | ✅ 2 bindings | Node.js (napi-rs), Python (PyO3) |
 
 ## Workspace Crates
@@ -106,7 +115,7 @@
 | suture-protocol | 55 | Wire protocol, V2 handshake, delta encoding, compression |
 | suture-cli | 25 | CLI binary (37 commands) |
 | suture-tui | 31 | Terminal UI (7 tabs: status, log, staging, diff, branches, remote, help) |
-| suture-hub | 44 | Hub daemon with SQLite, auth, replication, mirrors, branch protection, CRUD, search, cursor-based pagination, gRPC (14 RPCs), S3 blob backend (opt-in), Raft consensus (opt-in) |
+| suture-hub | 46 | Hub daemon with SQLite, auth, replication, mirrors, branch protection, CRUD, search, cursor-based pagination, gRPC (14 RPCs), S3 blob backend (opt-in), Raft consensus (opt-in), webhooks (push/branch events) |
 | suture-daemon | 33 | File watcher, auto-commit, auto-sync, SHM status, PID management, signal handling, mount manager (FUSE/WebDAV lifecycle) |
 | suture-driver | 8 | SutureDriver trait, DriverRegistry, semantic diff/merge types |
 | suture-ooxml | 4 | Shared OOXML infrastructure (ZIP, part navigation) |
@@ -139,6 +148,11 @@
 
 | Commit | Version | Description |
 |--------|---------|-------------|
+| `42c6162` | v2.9.0 | Update Cargo.lock for hub dependencies |
+| `3167aad` | v2.9.0 | Desktop app: real web UI with 6 views |
+| `fed070c` | v2.9.0 | VS Code extension (14 commands, TypeScript) |
+| `c1727ae` | v2.9.0 | Webhook system (push/branch events, HMAC signing) |
+| `cfb7f4d` | v2.9.0 | Fix repo_log O(n²) → O(n) performance |
 | `f2be791` | v2.8.0 | Update Cargo.lock for new dependencies |
 | `eddcedd` | v2.8.0 | S3 integration tests (MinIO-compatible) |
 | `16aa2e4` | v2.8.0 | FUSE and WebDAV integration tests |
