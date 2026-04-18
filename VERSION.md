@@ -1,7 +1,7 @@
 # Suture Version
 
-- **Current Version:** 2.7.0
-- **Current Phase:** Direction E — Ship It (Distribution & Discoverability)
+- **Current Version:** 2.8.0
+- **Current Phase:** Direction F — Production Hardening
 - **Status:** Complete
 - **Last Updated:** 2026-04-17
 - **Rust Edition:** 2024
@@ -16,6 +16,7 @@
 | **C** | Ecosystem Growth | Drivers, plugins, language bindings | v2.5+ | ✅ Complete |
 | **D** | Hardening | Wire scaffolds, Raft, S3, mount manager, JetBrains, Python | v2.6 | ✅ Complete |
 | **E** | Ship It | Distribution, docs, packaging, release automation | v2.7 | ✅ Complete |
+| **F** | Production Hardening | S3/Raft integration, benchmarks, integration tests | v2.8 | ✅ Complete |
 
 ### Direction A — Product Polish (v1.3–v1.4) ✅
 
@@ -61,11 +62,30 @@
 - AUR PKGBUILD for Arch Linux
 - crates.io publish guide with dependency order
 
+### Direction F — Production Hardening (v2.8) ✅
+
+- S3 blob backend wired into hub: `BlobBackend` trait, `SqliteBlobBackend`, `S3BlobBackendAdapter`
+- Raft consensus wired into hub: `RaftHub` wrapper, `HubCommand` enum, cluster config (both opt-in features)
+- Raft 3-node cluster simulation with 8 integration tests
+- FUSE integration tests: mount read/write/modify/delete/stat, WebDAV serve test
+- S3 integration tests: 7 MinIO-compatible tests gated on env vars
+- Benchmark analysis: 28 functions profiled, 5 optimization opportunities identified
+- Key finding: `repo_log` O(n²) at scale, commit 652ms for 1000 files
+
+- User documentation: quickstart, semantic merge guide, CLI reference, hub guide
+- GitHub Pages landing page (dark terminal aesthetic)
+- CONTRIBUTING.md updated for v2.7.0
+- PR template with quality gate checklist
+- Release workflow: 5-platform matrix (Linux x86/ARM, macOS x86/ARM, Windows)
+- Homebrew formula with test block
+- AUR PKGBUILD for Arch Linux
+- crates.io publish guide with dependency order
+
 ## Quality Gate Compliance
 
 | Gate | Status | Details |
 |------|--------|---------|
-| Tests | ✅ 872 passing | 0 failures across 28 crates (2 ignored: FUSE root-only) |
+| Tests | ✅ 890 passing | 0 failures across 28 crates (2 ignored: FUSE root-only) |
 | Property-based tests | ✅ 21 proptest suites | 10K+ cases via proptest |
 | Benchmarks | ✅ 28 Criterion functions | repo ops, semantic merge, protocol, compression |
 | Clippy | ✅ Zero warnings | `cargo clippy --workspace -- -D warnings` clean |
@@ -86,7 +106,7 @@
 | suture-protocol | 55 | Wire protocol, V2 handshake, delta encoding, compression |
 | suture-cli | 25 | CLI binary (37 commands) |
 | suture-tui | 31 | Terminal UI (7 tabs: status, log, staging, diff, branches, remote, help) |
-| suture-hub | 38 | Hub daemon with SQLite, auth, replication, mirrors, branch protection, CRUD, search, cursor-based pagination, gRPC (14 RPCs) |
+| suture-hub | 44 | Hub daemon with SQLite, auth, replication, mirrors, branch protection, CRUD, search, cursor-based pagination, gRPC (14 RPCs), S3 blob backend (opt-in), Raft consensus (opt-in) |
 | suture-daemon | 33 | File watcher, auto-commit, auto-sync, SHM status, PID management, signal handling, mount manager (FUSE/WebDAV lifecycle) |
 | suture-driver | 8 | SutureDriver trait, DriverRegistry, semantic diff/merge types |
 | suture-ooxml | 4 | Shared OOXML infrastructure (ZIP, part navigation) |
@@ -109,8 +129,8 @@
 | suture-e2e | 27 | End-to-end workflow integration tests |
 | suture-fuzz | 6 | Fuzz testing (CAS hash, patch serialization, merge, touch-set) |
 | suture-bench | — | Criterion benchmarks (28 functions) |
-| suture-raft | 13 | Raft consensus protocol (leader election, log replication, commit) |
-| suture-s3 | 19 | S3-compatible blob storage (AWS SigV4, path/virtual-hosted, MinIO) |
+| suture-raft | 21 | Raft consensus protocol (election, replication, commit, 3-node cluster simulation) |
+| suture-s3 | 26 | S3-compatible blob storage (AWS SigV4, path/virtual-hosted, MinIO, integration tests) |
 | desktop-app | — | Tauri v2 scaffold (9 IPC commands) |
 | jetbrains-plugin | — | IntelliJ Platform plugin (10 actions, VCS root detection, Kotlin) |
 | suture-py | — | Python bindings (PyO3, notes, worktree, blame, bisect, remotes) |
@@ -119,6 +139,13 @@
 
 | Commit | Version | Description |
 |--------|---------|-------------|
+| `f2be791` | v2.8.0 | Update Cargo.lock for new dependencies |
+| `eddcedd` | v2.8.0 | S3 integration tests (MinIO-compatible) |
+| `16aa2e4` | v2.8.0 | FUSE and WebDAV integration tests |
+| `e0eb423` | v2.8.0 | Benchmark analysis with optimization recommendations |
+| `b36642d` | v2.8.0 | Raft 3-node cluster simulation (8 tests) |
+| `ed90f7c` | v2.8.0 | Wire S3 and Raft into hub (pluggable backends) |
+| `30bcc51` | v2.7.0 | Release v2.7.0: Direction E Ship It complete |
 | `b1440c6` | v2.7.0 | Packaging: Homebrew, AUR, crates.io publish guide |
 | `d0410c0` | v2.7.0 | User docs: quickstart, semantic merge, CLI reference, hub, landing page |
 | `116d7a6` | v2.7.0 | CONTRIBUTING.md, PR template, release workflow fix |
