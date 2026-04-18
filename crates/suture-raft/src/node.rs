@@ -445,8 +445,9 @@ impl RaftNode {
         }
     }
 
+    #[allow(clippy::manual_div_ceil)]
     fn majority(&self) -> usize {
-        self.peers.len().div_ceil(2)
+        (self.peers.len() + 1) / 2 + 1
     }
 }
 
