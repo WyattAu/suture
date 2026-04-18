@@ -7,6 +7,10 @@ pub mod webhooks;
 
 #[cfg(feature = "raft-cluster")]
 pub mod raft;
+#[cfg(feature = "raft-cluster")]
+pub mod raft_network;
+#[cfg(feature = "raft-cluster")]
+pub mod raft_runtime;
 
 pub use server::SutureHubServer;
 pub use storage::HubStorage;

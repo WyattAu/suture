@@ -9,6 +9,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+use crate::blob_backend::BlobBackend;
 use crate::storage::HubStorage;
 use crate::webhooks::{Webhook, WebhookManager};
 pub use crate::types::*;
@@ -79,6 +80,7 @@ fn encode_cursor(offset: u64) -> String {
 
 pub struct SutureHubServer {
     storage: Arc<RwLock<HubStorage>>,
+    blob_backend: Option<Arc<dyn BlobBackend>>,
     no_auth: bool,
     rate_limits: Arc<std::sync::RwLock<std::collections::HashMap<String, (u32, std::time::Instant)>>>,
     max_pushes_per_hour: u32,
@@ -105,6 +107,7 @@ impl SutureHubServer {
             storage: Arc::new(RwLock::new(
                 HubStorage::open_in_memory().expect("in-memory storage must open"),
             )),
+            blob_backend: None,
             no_auth: false,
             rate_limits: Arc::new(std::sync::RwLock::new(std::collections::HashMap::new())),
             max_pushes_per_hour: 100,
@@ -119,6 +122,7 @@ impl SutureHubServer {
     pub fn with_db(path: &std::path::Path) -> Result<Self, crate::storage::StorageError> {
         Ok(Self {
             storage: Arc::new(RwLock::new(HubStorage::open(path)?)),
+            blob_backend: None,
             no_auth: false,
             rate_limits: Arc::new(std::sync::RwLock::new(std::collections::HashMap::new())),
             max_pushes_per_hour: 100,
@@ -159,6 +163,37 @@ impl SutureHubServer {
 
     pub fn get_replication_role(&self) -> String {
         self.replication_role.read().unwrap().clone()
+    }
+
+    pub fn set_blob_backend(&mut self, backend: Arc<dyn BlobBackend>) {
+        self.blob_backend = Some(backend);
+    }
+
+    fn blob_store(
+        &self,
+        store: &HubStorage,
+        repo_id: &str,
+        hash_hex: &str,
+        data: &[u8],
+    ) -> Result<(), String> {
+        if let Some(backend) = &self.blob_backend {
+            backend.store_blob(repo_id, hash_hex, data)
+        } else {
+            store.store_blob(repo_id, hash_hex, data).map_err(|e| e.to_string())
+        }
+    }
+
+    fn blob_get(
+        &self,
+        store: &HubStorage,
+        repo_id: &str,
+        hash_hex: &str,
+    ) -> Result<Option<Vec<u8>>, String> {
+        if let Some(backend) = &self.blob_backend {
+            backend.get_blob(repo_id, hash_hex)
+        } else {
+            store.get_blob(repo_id, hash_hex).map_err(|e| e.to_string())
+        }
     }
 
     pub async fn log_write(
@@ -338,6 +373,8 @@ impl SutureHubServer {
             }
         }
 
+        let mut existing_patches = Vec::new();
+
         let store = self.storage.write().await;
         if let Err(e) = store.ensure_repo(&req.repo_id) {
             return Err((
@@ -349,8 +386,6 @@ impl SutureHubServer {
                 },
             ));
         }
-
-        let mut existing_patches = Vec::new();
 
         for blob in &req.blobs {
             let hex = hash_to_hex(&blob.hash);
@@ -367,7 +402,7 @@ impl SutureHubServer {
                     ));
                 }
             };
-            if let Err(e) = store.store_blob(&req.repo_id, &hex, &data) {
+            if let Err(e) = self.blob_store(&store, &req.repo_id, &hex, &data) {
                 return Err((
                     StatusCode::INTERNAL_SERVER_ERROR,
                     PushResponse {
@@ -744,7 +779,7 @@ impl SutureHubServer {
                 Ok(d) => d,
                 Err(_) => continue,
             };
-            let _ = store.store_blob(&local_repo, &hex, &data);
+            let _ = self.blob_store(&store, &local_repo, &hex, &data);
         }
 
         for patch in &pull_result.patches {
@@ -883,7 +918,7 @@ impl SutureHubServer {
 
         if req.capabilities.supports_delta {
             for needed_hash in &needed_hashes {
-                let target_data = match store.get_blob(&req.repo_id, needed_hash) {
+                let target_data = match self.blob_get(&store, &req.repo_id, needed_hash) {
                     Ok(Some(d)) => d,
                     _ => {
                         if let Ok(b) = store.get_blobs(
@@ -898,7 +933,7 @@ impl SutureHubServer {
                 };
 
                 if known_hash_set.contains(needed_hash) {
-                    let base_data = match store.get_blob(&req.repo_id, needed_hash) {
+                    let base_data = match self.blob_get(&store, &req.repo_id, needed_hash) {
                         Ok(Some(d)) => d,
                         _ => {
                             blobs.push(BlobRef {
@@ -1012,7 +1047,7 @@ impl SutureHubServer {
             if matches!(delta.encoding, DeltaEncoding::BinaryPatch) {
                 let base_hex = hash_to_hex(&delta.base_hash);
                 let target_hex = hash_to_hex(&delta.target_hash);
-                let base_data = match store.get_blob(&req.repo_id, &base_hex) {
+                let base_data = match self.blob_get(&store, &req.repo_id, &base_hex) {
                     Ok(Some(d)) => d,
                     _ => continue,
                 };
@@ -1021,7 +1056,7 @@ impl SutureHubServer {
                     Err(_) => continue,
                 };
                 let reconstructed = suture_protocol::apply_delta(&base_data, &delta_bytes);
-                if let Err(e) = store.store_blob(&req.repo_id, &target_hex, &reconstructed) {
+                if let Err(e) = self.blob_store(&store, &req.repo_id, &target_hex, &reconstructed) {
                     return Err((
                         StatusCode::INTERNAL_SERVER_ERROR,
                         PushResponse {
@@ -1046,7 +1081,7 @@ impl SutureHubServer {
                         ));
                     }
                 };
-                if let Err(e) = store.store_blob(&req.repo_id, &target_hex, &data) {
+                if let Err(e) = self.blob_store(&store, &req.repo_id, &target_hex, &data) {
                     return Err((
                         StatusCode::INTERNAL_SERVER_ERROR,
                         PushResponse {
@@ -1074,7 +1109,7 @@ impl SutureHubServer {
                     ));
                 }
             };
-            if let Err(e) = store.store_blob(&req.repo_id, &hex, &data) {
+            if let Err(e) = self.blob_store(&store, &req.repo_id, &hex, &data) {
                 return Err((
                     StatusCode::INTERNAL_SERVER_ERROR,
                     PushResponse {
@@ -2104,7 +2139,7 @@ pub async fn get_blob_handler(
     Path((repo_id, hash)): Path<(String, String)>,
 ) -> (StatusCode, Json<serde_json::Value>) {
     let store = hub.storage.read().await;
-    match store.get_blob(&repo_id, &hash) {
+    match hub.blob_get(&store, &repo_id, &hash) {
         Ok(Some(data)) => {
             use base64::Engine;
             let encoded = base64::engine::general_purpose::STANDARD.encode(&data);
@@ -4142,6 +4177,60 @@ mod tests {
         assert_eq!(data["success"], true);
         let files = data["files"].as_array().unwrap();
         assert_eq!(files.len(), 0);
+    }
+
+    #[cfg(feature = "s3-backend")]
+    #[test]
+    fn test_blob_backend_used_when_set() {
+        use crate::blob_backend::BlobBackend;
+
+        struct MockBackend {
+            store_called: std::sync::atomic::AtomicBool,
+            get_called: std::sync::atomic::AtomicBool,
+        }
+
+        impl MockBackend {
+            fn new() -> Self {
+                Self {
+                    store_called: std::sync::atomic::AtomicBool::new(false),
+                    get_called: std::sync::atomic::AtomicBool::new(false),
+                }
+            }
+        }
+
+        impl BlobBackend for MockBackend {
+            fn store_blob(&self, _repo_id: &str, _hash_hex: &str, _data: &[u8]) -> Result<(), String> {
+                self.store_called.store(true, std::sync::atomic::Ordering::Relaxed);
+                Ok(())
+            }
+            fn get_blob(&self, _repo_id: &str, _hash_hex: &str) -> Result<Option<Vec<u8>>, String> {
+                self.get_called.store(true, std::sync::atomic::Ordering::Relaxed);
+                Ok(None)
+            }
+            fn has_blob(&self, _repo_id: &str, _hash_hex: &str) -> Result<bool, String> {
+                Ok(false)
+            }
+            fn delete_blob(&self, _repo_id: &str, _hash_hex: &str) -> Result<(), String> {
+                Ok(())
+            }
+            fn list_blobs(&self, _repo_id: &str) -> Result<Vec<String>, String> {
+                Ok(vec![])
+            }
+        }
+
+        let mock = Arc::new(MockBackend::new());
+        let mut hub = SutureHubServer::new();
+        hub.set_blob_backend(mock.clone());
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let store = hub.storage.read().await;
+            hub.blob_store(&store, "test-repo", &"a".repeat(64), b"data").unwrap();
+            assert!(mock.store_called.load(std::sync::atomic::Ordering::Relaxed));
+
+            hub.blob_get(&store, "test-repo", &"a".repeat(64)).unwrap();
+            assert!(mock.get_called.load(std::sync::atomic::Ordering::Relaxed));
+        });
     }
 
 }
