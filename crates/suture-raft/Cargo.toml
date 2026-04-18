@@ -5,8 +5,13 @@ edition = "2024"
 
 [dependencies]
 async-trait = "0.1"
+rand = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["sync", "time", "macros", "rt"] }
 tracing = "0.1"
 thiserror = "2"
+rusqlite = { version = "0.39", features = ["bundled"], optional = true }
+
+[features]
+persist = ["dep:rusqlite"]

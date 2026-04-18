@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Suture — Interactive Demo</title>
+<meta name="description" content="Interactive demo of Suture's patch-based version control workflow with DAG visualization.">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0d1117;--bg2:#161b22;--bg3:#1c2333;--fg:#c9d1d9;--fg2:#8b949e;--accent:#00d4aa;--accent2:#00ffcc;--border:#30363d;--green:#3fb950;--red:#f85149;--yellow:#d29922;--blue:#58a6ff;--mono:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;--sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);line-height:1.7;overflow-x:hidden}
+a{color:var(--accent);text-decoration:none}
+a:hover{color:var(--accent2);text-decoration:underline}
+.container{max-width:960px;margin:0 auto;padding:0 24px}
+section{padding:72px 0}
+h1,h2,h3{color:#e6edf3;font-weight:700}
+h2{font-size:1.75rem;margin-bottom:16px;letter-spacing:-0.02em}
+pre{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:20px;overflow-x:auto;font-size:.875rem;line-height:1.6;color:var(--fg)}
+code{font-family:var(--mono);font-size:.9em}
+.btn{display:inline-block;padding:10px 24px;border-radius:6px;font-size:.95rem;font-weight:600;transition:all .15s;cursor:pointer;border:none;font-family:inherit}
+.btn-primary{background:var(--accent);color:#0d1117}
+.btn-primary:hover{background:var(--accent2);text-decoration:none}
+.btn-primary:disabled{opacity:.4;cursor:default;background:var(--accent)}
+.btn-secondary{border:1px solid var(--border);color:var(--fg);background:transparent}
+.btn-secondary:hover{border-color:var(--accent);color:var(--accent);text-decoration:none}
+.btn-secondary:disabled{opacity:.4;cursor:default}
+
+.demo-layout{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:24px}
+.demo-panel{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:20px;min-height:300px}
+.demo-panel h3{font-size:.9rem;color:var(--fg2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px}
+
+.step-list{display:flex;flex-direction:column;gap:6px}
+.step-btn{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--fg);font-family:var(--mono);font-size:.8rem;cursor:pointer;transition:all .2s;text-align:left;width:100%}
+.step-btn:hover:not(:disabled){border-color:var(--accent);background:var(--bg3)}
+.step-btn:disabled{opacity:.3;cursor:default}
+.step-btn.active{border-color:var(--accent);background:rgba(0,212,170,.08);color:var(--accent)}
+.step-btn.done{border-color:var(--green);color:var(--green)}
+.step-num{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--border);font-size:.7rem;font-weight:700;flex-shrink:0}
+.step-btn.done .step-num{background:var(--green);color:#0d1117}
+.step-btn.active .step-num{background:var(--accent);color:#0d1117}
+
+.terminal{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:16px;font-family:var(--mono);font-size:.8rem;line-height:1.8;overflow-y:auto;max-height:420px;min-height:200px}
+.terminal .prompt{color:var(--accent)}
+.terminal .cmd{color:var(--fg)}
+.terminal .output{color:var(--fg2)}
+.terminal .highlight{color:var(--blue)}
+.terminal .success{color:var(--green)}
+.terminal .error{color:var(--red)}
+
+.dag-canvas{width:100%;height:280px}
+.dag-canvas svg{width:100%;height:100%}
+
+.reset-row{margin-top:16px;display:flex;gap:8px}
+.file-tree{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px;font-family:var(--mono);font-size:.8rem;margin-top:12px}
+.file-tree .file{padding:2px 0;color:var(--fg2)}
+.file-tree .file.modified{color:var(--yellow)}
+.file-tree .file.added{color:var(--green)}
+
+.explanation{margin-top:16px;padding:16px;background:var(--bg);border:1px solid var(--border);border-radius:6px;font-size:.875rem;color:var(--fg2);line-height:1.6}
+.explanation strong{color:var(--fg)}
+
+@media(max-width:768px){
+  .demo-layout{grid-template-columns:1fr}
+  section{padding:48px 0}
+}
+
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.fade-in{animation:fadeIn .3s ease-out}
+@keyframes pulseGlow{0%,100%{filter:drop-shadow(0 0 2px var(--accent))}50%{filter:drop-shadow(0 0 8px var(--accent))}}
+.glow{animation:pulseGlow 1.5s ease-in-out}
+</style>
+</head>
+<body>
+
+<section style="padding-top:48px">
+  <div class="container">
+    <a href="./index.html">&larr; Back to Suture</a>
+    <h1 style="margin-top:16px">Interactive Demo</h1>
+    <p style="color:var(--fg2);max-width:600px;margin-bottom:24px">
+      Walk through a typical Suture workflow: initialize a repo, make commits, create branches, and merge &mdash; with a live DAG visualization.
+    </p>
+
+    <div class="demo-layout">
+      <div class="demo-panel">
+        <h3>Workflow Steps</h3>
+        <div class="step-list" id="stepList"></div>
+        <div class="reset-row">
+          <button class="btn btn-secondary" onclick="resetDemo()">Reset</button>
+        </div>
+      </div>
+
+      <div class="demo-panel">
+        <h3>Terminal Output</h3>
+        <div class="terminal" id="terminal">
+          <div class="output" style="color:var(--fg2)">Click a step to begin...</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="demo-layout" style="margin-top:16px">
+      <div class="demo-panel">
+        <h3>Commit DAG</h3>
+        <div class="dag-canvas" id="dagCanvas">
+          <svg viewBox="0 0 400 260" xmlns="http://www.w3.org/2000/svg">
+            <line x1="200" y1="20" x2="200" y2="240" stroke="var(--border)" stroke-width="2" stroke-dasharray="4"/>
+          </svg>
+        </div>
+      </div>
+
+      <div class="demo-panel">
+        <h3>Working Tree</h3>
+        <div class="file-tree" id="fileTree">
+          <div class="file" style="color:var(--fg2)">(empty)</div>
+        </div>
+        <div class="explanation" id="explanation">
+          <strong>Suture</strong> uses a <strong>patch DAG</strong> instead of a linear history. Each commit is a patch that can have multiple parents, enabling true merge semantics with semantic conflict detection.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer style="border-top:1px solid var(--border);padding:32px 0;text-align:center;color:var(--fg2);font-size:.85rem">
+  <a href="./index.html">Home</a> &middot; <a href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">GitHub</a>
+  <p style="margin-top:8px">&copy; 2025 WyattAu &middot; Suture VCS</p>
+</footer>
+
+<script>
+const steps = [
+  {
+    id: 'init',
+    label: 'suture init',
+    cmd: '$ suture init my-project',
+    output: [
+      'Initialized empty Suture repository in my-project',
+      'Hint: run `suture config user.name "Your Name"` to set your identity',
+    ],
+    explanation: '<strong>Init</strong> creates a new Suture repository with a patch DAG. The initial empty commit is the root of the DAG.',
+    files: [],
+    dagAdd: [{ id: 'C0', label: 'init', x: 200, y: 220, color: 'var(--blue)', parent: null }],
+  },
+  {
+    id: 'config',
+    label: 'suture config user.name',
+    cmd: '$ suture config user.name "Alice"',
+    output: [],
+    explanation: '<strong>Config</strong> sets repository-local identity. This author name will be attached to all subsequent patches.',
+    files: [],
+    dagAdd: [],
+  },
+  {
+    id: 'add',
+    label: 'suture add .',
+    cmd: '$ echo \'{"host":"localhost","port":3000}\' > config.json',
+    output: [],
+    explanation: '<strong>Staging</strong> prepares files for the next patch. Suture computes a content hash for each file and records it in the staging area.',
+    files: [{ name: 'config.json', status: 'modified', content: '{"host":"localhost","port":3000}' }],
+    dagAdd: [],
+  },
+  {
+    id: 'commit1',
+    label: 'suture commit "base config"',
+    cmd: '$ suture commit "base config"',
+    output: ['Committed: a1b2c3d4'],
+    explanation: '<strong>Commit</strong> creates a patch containing all staged changes. The patch stores the full snapshot and is addressable by its content hash.',
+    files: [{ name: 'config.json', status: '', content: '{"host":"localhost","port":3000}' }],
+    dagAdd: [{ id: 'C1', label: 'base config', x: 200, y: 170, color: 'var(--green)', parent: 'C0' }],
+  },
+  {
+    id: 'branch',
+    label: 'suture branch staging',
+    cmd: '$ suture branch staging',
+    output: ["Created branch 'staging'"],
+    explanation: '<strong>Branches</strong> in Suture are lightweight labels pointing to patches. Creating a branch does not create a new patch &mdash; it just adds a movable pointer.',
+    files: [{ name: 'config.json', status: '', content: '{"host":"localhost","port":3000}' }],
+    dagAdd: [{ id: 'BR_STAGING', label: 'staging', x: 100, y: 170, color: 'var(--yellow)', parent: 'C1', isBranch: true }],
+  },
+  {
+    id: 'checkout',
+    label: 'suture checkout staging',
+    cmd: '$ suture checkout staging',
+    output: ["Switched to branch 'staging'"],
+    explanation: '<strong>Checkout</strong> moves the working tree to match the target branch. The staging area is updated to reflect the new HEAD.',
+    files: [{ name: 'config.json', status: '', content: '{"host":"localhost","port":3000}' }],
+    dagAdd: [],
+  },
+  {
+    id: 'edit_staging',
+    label: 'edit config.json (staging)',
+    cmd: "$ echo '{\"host\":\"staging\",\"port\":3000}' > config.json\n$ suture add . && suture commit \"point to staging\"",
+    output: ['Committed: e5f6a7b8'],
+    explanation: '<strong>Patch e5f6a7b8</strong> changes only the "host" key. Because Suture understands JSON structure, a parallel edit to "port" would <strong>not conflict</strong>.',
+    files: [{ name: 'config.json', status: '', content: '{"host":"staging","port":3000}' }],
+    dagAdd: [{ id: 'C2', label: 'point to staging', x: 100, y: 110, color: 'var(--green)', parent: 'C1' }],
+  },
+  {
+    id: 'checkout_main',
+    label: 'suture checkout main',
+    cmd: '$ suture checkout main',
+    output: ["Switched to branch 'main'"],
+    explanation: '<strong>Switching back</strong> restores the working tree to main\'s state. Notice config.json reverts &mdash; Suture applies the inverse patch automatically.',
+    files: [{ name: 'config.json', status: '', content: '{"host":"localhost","port":3000}' }],
+    dagAdd: [],
+  },
+  {
+    id: 'edit_main',
+    label: 'edit config.json (main)',
+    cmd: "$ echo '{\"host\":\"localhost\",\"port\":8080}' > config.json\n$ suture add . && suture commit \"change port\"",
+    output: ['Committed: c9d0e1f2'],
+    explanation: '<strong>Patch c9d0e1f2</strong> changes only "port". Two branches modified different keys in the same file &mdash; Suture will merge them cleanly.',
+    files: [{ name: 'config.json', status: '', content: '{"host":"localhost","port":8080}' }],
+    dagAdd: [{ id: 'C3', label: 'change port', x: 200, y: 110, color: 'var(--green)', parent: 'C1' }],
+  },
+  {
+    id: 'merge',
+    label: 'suture merge staging',
+    cmd: '$ suture merge staging',
+    output: ['Merge successful: 0 conflicts'],
+    explanation: '<strong>Semantic merge!</strong> Suture\'s JSON driver detects that "host" and "port" are different keys. No overlap = no conflict. The result combines both changes.',
+    files: [{ name: 'config.json', status: '', content: '{"host":"staging","port":8080}' }],
+    dagAdd: [
+      { id: 'C4', label: 'merge staging', x: 150, y: 50, color: 'var(--accent)', parent: 'C3' },
+    ],
+    dagExtraEdge: { from: 'C2', to: 'C4' },
+  },
+];
+
+let currentStep = -1;
+let dagNodes = [];
+let dagEdges = [];
+
+function $(id) { return document.getElementById(id); }
+
+function renderStepList() {
+  const list = $('stepList');
+  list.innerHTML = '';
+  steps.forEach((step, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'step-btn';
+    if (i < currentStep) btn.classList.add('done');
+    if (i === currentStep) btn.classList.add('active');
+    btn.disabled = i > currentStep + 1;
+    btn.innerHTML = `<span class="step-num">${i < currentStep ? '&#10003;' : (i + 1)}</span><span>${step.label}</span>`;
+    btn.onclick = () => runStep(i);
+    list.appendChild(btn);
+  });
+}
+
+function renderTerminal(step) {
+  const term = $('terminal');
+  let html = '';
+  if (step.cmd) {
+    html += `<div><span class="prompt">$ </span><span class="cmd">${escapeHtml(step.cmd)}</span></div>`;
+  }
+  step.output.forEach(line => {
+    html += `<div class="output">${escapeHtml(line)}</div>`;
+  });
+  if (step.output.length === 0 && step.cmd) {
+    html += `<div class="output" style="opacity:.5">(no output)</div>`;
+  }
+  term.innerHTML = html;
+  term.classList.remove('fade-in');
+  void term.offsetWidth;
+  term.classList.add('fade-in');
+}
+
+function renderFiles(step) {
+  const tree = $('fileTree');
+  if (!step.files || step.files.length === 0) {
+    tree.innerHTML = `<div class="file" style="color:var(--fg2)">(no files)</div>`;
+    return;
+  }
+  tree.innerHTML = step.files.map(f => {
+    const cls = f.status ? ` ${f.status}` : '';
+    return `<div class="file${cls}">${f.status ? '<span style="opacity:.6">[' + f.status + ']</span> ' : ''}${escapeHtml(f.name)}</div>`;
+  }).join('');
+  tree.classList.remove('fade-in');
+  void tree.offsetWidth;
+  tree.classList.add('fade-in');
+}
+
+function renderDag() {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 400 260');
+
+  const bgLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  bgLine.setAttribute('x1', '200');
+  bgLine.setAttribute('y1', '20');
+  bgLine.setAttribute('x2', '200');
+  bgLine.setAttribute('y2', '240');
+  bgLine.setAttribute('stroke', 'var(--border)');
+  bgLine.setAttribute('stroke-width', '2');
+  bgLine.setAttribute('stroke-dasharray', '4');
+  svg.appendChild(bgLine);
+
+  dagEdges.forEach(edge => {
+    const from = dagNodes.find(n => n.id === edge.from);
+    const to = dagNodes.find(n => n.id === edge.to);
+    if (!from || !to) return;
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', from.x);
+    line.setAttribute('y1', from.y);
+    line.setAttribute('x2', to.x);
+    line.setAttribute('y2', to.y);
+    line.setAttribute('stroke', edge.highlight ? 'var(--accent)' : 'var(--border)');
+    line.setAttribute('stroke-width', edge.highlight ? '2.5' : '2');
+    if (edge.highlight) {
+      line.setAttribute('class', 'glow');
+    }
+    svg.appendChild(line);
+  });
+
+  dagNodes.forEach(node => {
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.setAttribute('class', node.isNew ? 'glow' : '');
+
+    if (node.isBranch) {
+      const tag = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      tag.setAttribute('x', node.x - 40);
+      tag.setAttribute('y', node.y - 10);
+      tag.setAttribute('width', '80');
+      tag.setAttribute('height', '20');
+      tag.setAttribute('rx', '4');
+      tag.setAttribute('fill', 'var(--bg)');
+      tag.setAttribute('stroke', node.color);
+      tag.setAttribute('stroke-width', '1.5');
+      g.appendChild(tag);
+
+      const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      text.setAttribute('x', node.x);
+      text.setAttribute('y', node.y + 4);
+      text.setAttribute('text-anchor', 'middle');
+      text.setAttribute('fill', node.color);
+      text.setAttribute('font-size', '11');
+      text.setAttribute('font-family', 'var(--mono)');
+      text.textContent = node.label;
+      g.appendChild(text);
+    } else {
+      const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      circle.setAttribute('cx', node.x);
+      circle.setAttribute('cy', node.y);
+      circle.setAttribute('r', '10');
+      circle.setAttribute('fill', node.color);
+      circle.setAttribute('opacity', '0.9');
+      g.appendChild(circle);
+
+      const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      text.setAttribute('x', node.x);
+      text.setAttribute('y', node.y + 28);
+      text.setAttribute('text-anchor', 'middle');
+      text.setAttribute('fill', 'var(--fg2)');
+      text.setAttribute('font-size', '10');
+      text.setAttribute('font-family', 'var(--mono)');
+      text.textContent = node.label;
+      g.appendChild(text);
+    }
+
+    svg.appendChild(g);
+  });
+
+  $('dagCanvas').innerHTML = '';
+  $('dagCanvas').appendChild(svg);
+}
+
+function escapeHtml(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function runStep(index) {
+  if (index !== currentStep + 1 && index !== currentStep) return;
+  currentStep = index;
+  const step = steps[index];
+
+  renderStepList();
+  renderTerminal(step);
+  renderFiles(step);
+  $('explanation').innerHTML = step.explanation;
+
+  step.dagAdd.forEach(node => {
+    const existing = dagNodes.find(n => n.id === node.id);
+    if (existing) {
+      existing.x = node.x;
+      existing.y = node.y;
+      existing.color = node.color;
+      existing.label = node.label;
+      existing.isBranch = node.isBranch;
+      existing.isNew = true;
+      setTimeout(() => { existing.isNew = false; renderDag(); }, 1500);
+    } else {
+      dagNodes.push({ ...node, isNew: true });
+      setTimeout(() => {
+        const n = dagNodes.find(nn => nn.id === node.id);
+        if (n) n.isNew = false;
+        renderDag();
+      }, 1500);
+    }
+    if (node.parent) {
+      dagEdges.push({ from: node.parent, to: node.id, highlight: true });
+    }
+  });
+
+  if (step.dagExtraEdge) {
+    dagEdges.push({ from: step.dagExtraEdge.from, to: step.dagExtraEdge.to, highlight: true });
+  }
+
+  renderDag();
+
+  if (index < steps.length - 1) {
+    const nextBtn = $('stepList').children[index + 1];
+    if (nextBtn) nextBtn.classList.add('active');
+  }
+}
+
+function resetDemo() {
+  currentStep = -1;
+  dagNodes = [];
+  dagEdges = [];
+  renderStepList();
+  $('terminal').innerHTML = '<div class="output" style="color:var(--fg2)">Click a step to begin...</div>';
+  $('fileTree').innerHTML = '<div class="file" style="color:var(--fg2)">(empty)</div>';
+  $('explanation').innerHTML = '<strong>Suture</strong> uses a <strong>patch DAG</strong> instead of a linear history. Each commit is a patch that can have multiple parents, enabling true merge semantics with semantic conflict detection.';
+  renderDag();
+}
+
+renderStepList();
+renderDag();
+</script>
+</body>
+</html>

@@ -4,6 +4,7 @@ use std::time::Duration;
 use crate::error::RaftError;
 use crate::log::{LogEntry, RaftLog};
 use crate::message::RaftMessage;
+use rand::Rng;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NodeState {
@@ -32,6 +33,15 @@ pub struct RaftNode {
 
 impl RaftNode {
     pub fn new(id: u64, peers: Vec<u64>) -> Self {
+        let election_timeout = Duration::from_millis(10);
+        // Randomize initial tick offset to prevent simultaneous elections
+        // (Raft paper §5.2: randomized stagger within election timeout window)
+        let max_offset = election_timeout.as_millis() as u64;
+        let initial_offset = if max_offset > 0 {
+            rand::thread_rng().gen_range(0..max_offset)
+        } else {
+            0
+        };
         Self {
             id,
             state: NodeState::Follower,
@@ -44,9 +54,9 @@ impl RaftNode {
             match_index: HashMap::new(),
             leader_id: None,
             peers,
-            election_timeout: Duration::from_millis(10),
+            election_timeout,
             heartbeat_interval: Duration::from_millis(3),
-            ticks_since_reset: 0,
+            ticks_since_reset: initial_offset,
             votes_received: HashSet::new(),
         }
     }

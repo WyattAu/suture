@@ -28,13 +28,9 @@ struct WireFrame {
 pub struct RaftTcpTransport {
     node_id: u64,
     peers: HashMap<u64, SocketAddr>,
-    recv_rx: std::sync::Mutex<mpsc::Receiver<(u64, RaftMessage)>>,
+    recv_rx: tokio::sync::Mutex<mpsc::Receiver<(u64, RaftMessage)>>,
     recv_tx: mpsc::Sender<(u64, RaftMessage)>,
 }
-
-// Safety: recv_rx is protected by std::sync::Mutex, recv_tx is Send.
-unsafe impl Send for RaftTcpTransport {}
-unsafe impl Sync for RaftTcpTransport {}
 
 impl RaftTcpTransport {
     /// Create a new TCP transport.
@@ -46,7 +42,7 @@ impl RaftTcpTransport {
         Self {
             node_id,
             peers,
-            recv_rx: std::sync::Mutex::new(recv_rx),
+            recv_rx: tokio::sync::Mutex::new(recv_rx),
             recv_tx,
         }
     }
@@ -124,9 +120,8 @@ impl RaftTcpTransport {
     /// Receive the next incoming Raft message.
     ///
     /// Returns the sender's node ID and the message.
-    #[allow(clippy::await_holding_lock)]
     pub async fn receive(&self) -> Result<(u64, RaftMessage), RaftError> {
-        let mut rx = self.recv_rx.lock().unwrap();
+        let mut rx = self.recv_rx.lock().await;
         rx.recv().await.ok_or_else(|| {
             RaftError::Transport("receive channel closed".to_string())
         })

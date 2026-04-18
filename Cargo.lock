@@ -827,6 +827,7 @@ dependencies = [
  "ciborium",
  "clap",
  "criterion-plot",
+ "futures",
  "is-terminal",
  "itertools 0.10.5",
  "num-traits",
@@ -839,6 +840,7 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "tinytemplate",
+ "tokio",
  "walkdir",
 ]
 
@@ -4283,6 +4285,7 @@ dependencies = [
  "base64 0.22.1",
  "blake3",
  "clap",
+ "criterion",
  "ed25519-dalek",
  "hex",
  "hmac",
@@ -4301,11 +4304,14 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
+ "toml",
  "tonic",
  "tonic-build",
+ "tower-http",
  "tracing",
  "tracing-subscriber",
  "url",
+ "uuid",
  "zstd",
 ]
 
@@ -4361,6 +4367,8 @@ name = "suture-raft"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "rand 0.8.5",
+ "rusqlite",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -4801,6 +4809,7 @@ dependencies = [
  "tower 0.5.3",
  "tower-layer",
  "tower-service",
+ "uuid",
 ]
 
 [[package]]
@@ -5024,6 +5033,7 @@ version = "1.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5ac8b6f42ead25368cf5b098aeb3dc8a1a2c05a3eee8a9a1a68c640edbfc79d9"
 dependencies = [
+ "getrandom 0.4.2",
  "js-sys",
  "wasm-bindgen",
 ]

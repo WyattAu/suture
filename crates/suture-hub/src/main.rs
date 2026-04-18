@@ -1,5 +1,26 @@
 use clap::Parser;
 use suture_hub::SutureHubServer;
+use serde::Deserialize;
+
+#[derive(Deserialize, Default)]
+struct HubConfig {
+    addr: Option<String>,
+    db: Option<String>,
+    blob_backend: Option<String>,
+    s3_endpoint: Option<String>,
+    s3_bucket: Option<String>,
+    s3_region: Option<String>,
+    s3_access_key: Option<String>,
+    s3_secret_key: Option<String>,
+    s3_prefix: Option<String>,
+    replication_role: Option<String>,
+}
+
+fn load_config(path: &str) -> Result<HubConfig, Box<dyn std::error::Error>> {
+    let content = std::fs::read_to_string(path)?;
+    let config: HubConfig = toml::from_str(&content)?;
+    Ok(config)
+}
 
 #[derive(Parser)]
 #[command(
@@ -8,6 +29,10 @@ use suture_hub::SutureHubServer;
     about = "Suture Hub — distributed patch sync server"
 )]
 struct Args {
+    /// Path to TOML configuration file.
+    #[arg(long)]
+    config: Option<String>,
+
     #[arg(long, default_value = "0.0.0.0:50051")]
     addr: String,
 
@@ -80,43 +105,85 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
     let args = Args::parse();
 
+    let cfg: HubConfig = if let Some(ref config_path) = args.config {
+        match load_config(config_path) {
+            Ok(c) => {
+                tracing::info!("loaded config from {}", config_path);
+                c
+            }
+            Err(e) => {
+                tracing::warn!("failed to load config file {}: {e}", config_path);
+                HubConfig::default()
+            }
+        }
+    } else {
+        HubConfig::default()
+    };
+
+    let addr = if args.addr == "0.0.0.0:50051" {
+        cfg.addr.unwrap_or(args.addr)
+    } else {
+        args.addr
+    };
+    let db = args.db.or(cfg.db);
+    let replication_role = if args.replication_role == "standalone" {
+        cfg.replication_role.unwrap_or(args.replication_role)
+    } else {
+        args.replication_role
+    };
+    let blob_backend = if args.blob_backend == "sqlite" {
+        cfg.blob_backend.unwrap_or(args.blob_backend)
+    } else {
+        args.blob_backend
+    };
+    let _s3_endpoint = args.s3_endpoint.or(cfg.s3_endpoint);
+    let _s3_bucket = args.s3_bucket.or(cfg.s3_bucket);
+    let _s3_region = if args.s3_region == "us-east-1" {
+        cfg.s3_region.unwrap_or(args.s3_region)
+    } else {
+        args.s3_region
+    };
+    let _s3_access_key = args.s3_access_key.or(cfg.s3_access_key);
+    let _s3_secret_key = args.s3_secret_key.or(cfg.s3_secret_key);
+    let _s3_prefix = if args.s3_prefix == "suture/blobs/" {
+        cfg.s3_prefix.unwrap_or(args.s3_prefix)
+    } else {
+        args.s3_prefix
+    };
+
     #[allow(unused_mut)]
-    let mut hub = if let Some(db_path) = args.db {
+    let mut hub = if let Some(db_path) = db {
         SutureHubServer::with_db(std::path::Path::new(&db_path))?
     } else {
         SutureHubServer::new()
     };
 
-    hub.set_replication_role(&args.replication_role);
+    hub.set_replication_role(&replication_role);
 
     // S3 blob backend setup
-    if args.blob_backend == "s3" {
+    if blob_backend == "s3" {
         #[cfg(feature = "s3-backend")]
         {
-            let endpoint = args
-                .s3_endpoint
+            let endpoint = s3_endpoint
                 .as_deref()
                 .ok_or("--s3-endpoint is required when --blob-backend s3")?;
-            let bucket = args
-                .s3_bucket
+            let bucket = s3_bucket
                 .as_deref()
                 .ok_or("--s3-bucket is required when --blob-backend s3")?;
-            let access_key = args
-                .s3_access_key
+            let access_key = s3_access_key
                 .as_deref()
                 .ok_or("--s3-access-key is required when --blob-backend s3")?;
-            let secret_key = args
-                .s3_secret_key
+            let secret_key = s3_secret_key
                 .as_deref()
                 .ok_or("--s3-secret-key is required when --blob-backend s3")?;
 
             let config = suture_s3::S3Config {
                 endpoint: endpoint.to_string(),
                 bucket: bucket.to_string(),
-                region: args.s3_region.clone(),
+                region: s3_region.clone(),
                 access_key: access_key.to_string(),
                 secret_key: secret_key.to_string(),
-                prefix: args.s3_prefix.clone(),
+                prefix: s3_prefix.clone(),
                 force_path_style: true,
             };
             let validation_err = match config.validate() {
@@ -136,7 +203,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "blob backend: s3 (endpoint={}, bucket={}, prefix={})",
                 endpoint,
                 bucket,
-                args.s3_prefix
+                s3_prefix
             );
         }
         #[cfg(not(feature = "s3-backend"))]
@@ -230,7 +297,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tracing::info!("raft runtime started (single-node mode; TCP transport ready for multi-node)");
     }
 
-    suture_hub::server::run_server(hub, &args.addr).await?;
+    suture_hub::server::run_server(hub, &addr).await?;
 
     Ok(())
 }

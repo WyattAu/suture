@@ -170,6 +170,16 @@ pub struct SearchParams {
     pub q: String,
 }
 
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct BatchPatchRequest {
+    pub repo_id: String,
+    pub patches: Vec<PatchProto>,
+    pub branches: Vec<BranchProto>,
+    pub blobs: Vec<BlobRef>,
+    pub signature: Option<Vec<u8>>,
+    pub force: bool,
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct TreeEntry {
     pub path: String,

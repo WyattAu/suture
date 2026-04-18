@@ -427,6 +427,14 @@ impl HubStorage {
         Ok(())
     }
 
+    pub fn delete_blob(&self, repo_id: &str, hash_hex: &str) -> Result<(), StorageError> {
+        self.conn.execute(
+            "DELETE FROM blobs WHERE repo_id = ?1 AND blob_hash = ?2",
+            params![repo_id, hash_hex],
+        )?;
+        Ok(())
+    }
+
     /// Get a blob by hash.
     pub fn get_blob(&self, repo_id: &str, hash_hex: &str) -> Result<Option<Vec<u8>>, StorageError> {
         let result = self.conn.query_row(

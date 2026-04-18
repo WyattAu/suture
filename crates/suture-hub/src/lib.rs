@@ -1,5 +1,6 @@
 pub mod blob_backend;
 pub mod grpc;
+pub mod middleware;
 pub mod server;
 pub mod storage;
 pub mod types;

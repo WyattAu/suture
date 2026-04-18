@@ -35,11 +35,19 @@ prost = "0.13"
 suture-raft = { path = "../suture-raft", version = "0.1.0", optional = true }
 suture-s3 = { path = "../suture-s3", version = "0.1.0", optional = true }
 async-trait = { version = "0.1", optional = true }
+toml = "0.8"
+uuid = { version = "1", features = ["v4"] }
+tower-http = { version = "0.6", features = ["request-id"] }
 
 [dev-dependencies]
 blake3 = "1"
 tempfile = "3"
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
+criterion = { version = "0.5", features = ["async_tokio"] }
+
+[[bench]]
+name = "scale_bench"
+harness = false
 
 [build-dependencies]
 tonic-build = "0.13"

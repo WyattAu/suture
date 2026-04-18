@@ -1,6 +1,12 @@
 import * as vscode from 'vscode';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import {
+    LanguageClient,
+    LanguageClientOptions,
+    ServerOptions,
+    TransportKind,
+} from 'vscode-languageclient/node';
 
 const execFileAsync = promisify(execFile);
 
@@ -17,6 +23,14 @@ function getSuturePath(): string {
     return vscode.workspace.getConfiguration('suture').get<string>('path') || 'suture';
 }
 
+function getLspEnabled(): boolean {
+    return vscode.workspace.getConfiguration('suture').get<boolean>('lsp.enabled') ?? true;
+}
+
+function getLspPath(): string {
+    return vscode.workspace.getConfiguration('suture').get<string>('lsp.path') || 'suture-lsp';
+}
+
 async function runSuture(args: string[], cwd?: string): Promise<string> {
     const suturePath = getSuturePath();
     const result = await execFileAsync(suturePath, args, {
@@ -26,8 +40,52 @@ async function runSuture(args: string[], cwd?: string): Promise<string> {
     return result.stdout;
 }
 
+let lspClient: LanguageClient | undefined;
+
+function startLspClient(context: vscode.ExtensionContext): void {
+    if (!getLspEnabled()) {
+        return;
+    }
+
+    const lspPath = getLspPath();
+    const serverOptions: ServerOptions = {
+        run: { command: lspPath, transport: TransportKind.stdio },
+        debug: { command: lspPath, transport: TransportKind.stdio },
+    };
+
+    const clientOptions: LanguageClientOptions = {
+        documentSelector: [
+            { scheme: 'file' },
+        ],
+        synchronize: {
+            fileEvents: vscode.workspace.createFileSystemWatcher('**/.suture/**'),
+        },
+    };
+
+    lspClient = new LanguageClient(
+        'suture-lsp',
+        'Suture Language Server',
+        serverOptions,
+        clientOptions,
+    );
+
+    lspClient.start().then(() => {
+        vscode.window.setStatusBarMessage('Suture LSP started', 3000);
+    }, (err) => {
+        vscode.window.showWarningMessage(`Suture LSP failed to start: ${err}`);
+    });
+
+    context.subscriptions.push(
+        new vscode.Disposable(() => {
+            if (lspClient) {
+                lspClient.stop();
+                lspClient = undefined;
+            }
+        }),
+    );
+}
+
 export function activate(context: vscode.ExtensionContext) {
-    // Blame command
     const blameDisposable = vscode.commands.registerCommand('suture.blame', async () => {
         const editor = vscode.window.activeTextEditor;
         if (!editor) {
@@ -48,7 +106,6 @@ export function activate(context: vscode.ExtensionContext) {
         }
     });
 
-    // Log command
     const logDisposable = vscode.commands.registerCommand('suture.log', async () => {
         try {
             const output = await runSuture(['log', '--oneline']);
@@ -79,7 +136,6 @@ ${output.split('\n').map(line => {
         }
     });
 
-    // Init command
     const initDisposable = vscode.commands.registerCommand('suture.init', async () => {
         const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
         if (!workspaceRoot) {
@@ -94,7 +150,6 @@ ${output.split('\n').map(line => {
         }
     });
 
-    // Status bar - current branch
     const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
     statusBarItem.command = 'suture.log';
     context.subscriptions.push(statusBarItem);
@@ -121,6 +176,12 @@ ${output.split('\n').map(line => {
     vscode.workspace.onDidSaveTextDocument(() => updateBranch());
 
     context.subscriptions.push(blameDisposable, logDisposable, initDisposable);
+
+    startLspClient(context);
 }
 
-export function deactivate() {}
+export async function deactivate(): Promise<void> {
+    if (lspClient) {
+        await lspClient.stop();
+    }
+}

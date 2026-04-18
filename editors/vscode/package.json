@@ -14,7 +14,8 @@
   "activationEvents": [
     "onCommand:suture.blame",
     "onCommand:suture.log",
-    "onCommand:suture.init"
+    "onCommand:suture.init",
+    "workspaceContains:.suture"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -39,6 +40,16 @@
           "type": "string",
           "default": "suture",
           "description": "Path to the suture binary"
+        },
+        "suture.lsp.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable the Suture Language Server for diagnostics and blame hover"
+        },
+        "suture.lsp.path": {
+          "type": "string",
+          "default": "suture-lsp",
+          "description": "Path to the suture-lsp binary"
         }
       }
     },
@@ -62,6 +73,9 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.0"
   },
   "devDependencies": {
     "@types/vscode": "^1.85.0",

@@ -85,6 +85,144 @@ impl Default for RaftLog {
     }
 }
 
+#[cfg(feature = "persist")]
+pub struct SqliteRaftLog {
+    conn: rusqlite::Connection,
+}
+
+#[cfg(feature = "persist")]
+impl SqliteRaftLog {
+    pub fn new(path: &std::path::Path) -> Result<Self, rusqlite::Error> {
+        let conn = rusqlite::Connection::open(path)?;
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS raft_log (
+                \"index\" INTEGER PRIMARY KEY,
+                term INTEGER NOT NULL,
+                command BLOB NOT NULL
+            );",
+        )?;
+        Ok(Self { conn })
+    }
+
+    pub fn append(&mut self, term: u64, command: Vec<u8>) -> u64 {
+        let index = self.last_index() + 1;
+        self.conn
+            .execute(
+                "INSERT INTO raft_log (\"index\", term, command) VALUES (?1, ?2, ?3)",
+                rusqlite::params![index as i64, term as i64, command],
+            )
+            .expect("insert into raft_log must succeed");
+        index
+    }
+
+    pub fn append_entry(&mut self, entry: LogEntry) {
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO raft_log (\"index\", term, command) VALUES (?1, ?2, ?3)",
+                rusqlite::params![entry.index as i64, entry.term as i64, entry.command],
+            )
+            .expect("insert into raft_log must succeed");
+    }
+
+    pub fn get(&self, index: u64) -> Option<LogEntry> {
+        if index == 0 {
+            return None;
+        }
+        let result = self.conn.query_row(
+            "SELECT \"index\", term, command FROM raft_log WHERE \"index\" = ?1",
+            rusqlite::params![index as i64],
+            |row| {
+                Ok(LogEntry {
+                    index: row.get::<_, i64>(0)? as u64,
+                    term: row.get::<_, i64>(1)? as u64,
+                    command: row.get(2)?,
+                })
+            },
+        );
+        result.ok()
+    }
+
+    pub fn last_index(&self) -> u64 {
+        let result = self
+            .conn
+            .query_row("SELECT MAX(\"index\") FROM raft_log", [], |row| {
+                row.get::<_, Option<i64>>(0)
+            });
+        result.unwrap_or(None).unwrap_or(0) as u64
+    }
+
+    pub fn last_term(&self) -> u64 {
+        let idx = self.last_index();
+        if idx == 0 {
+            return 0;
+        }
+        self.get(idx).map(|e| e.term).unwrap_or(0)
+    }
+
+    pub fn term_for(&self, index: u64) -> Option<u64> {
+        self.get(index).map(|e| e.term)
+    }
+
+    pub fn entries_from(&self, index: u64) -> Vec<LogEntry> {
+        if index == 0 {
+            return Vec::new();
+        }
+        let mut stmt = self
+            .conn
+            .prepare("SELECT \"index\", term, command FROM raft_log WHERE \"index\" >= ?1 ORDER BY \"index\"")
+            .expect("prepare entries_from must succeed");
+        let rows = stmt
+            .query_map(rusqlite::params![index as i64], |row| {
+                Ok(LogEntry {
+                    index: row.get::<_, i64>(0)? as u64,
+                    term: row.get::<_, i64>(1)? as u64,
+                    command: row.get(2)?,
+                })
+            })
+            .expect("query_map entries_from must succeed");
+        let mut entries = Vec::new();
+        for row in rows {
+            entries.push(row.expect("row read must succeed"));
+        }
+        entries
+    }
+
+    pub fn truncate_from(&mut self, index: u64) {
+        if index == 0 {
+            return;
+        }
+        let _ = self.conn.execute(
+            "DELETE FROM raft_log WHERE \"index\" >= ?1",
+            rusqlite::params![index as i64],
+        );
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.last_index() == 0
+    }
+
+    pub fn as_slice(&self) -> Vec<LogEntry> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT \"index\", term, command FROM raft_log ORDER BY \"index\"")
+            .expect("prepare as_slice must succeed");
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(LogEntry {
+                    index: row.get::<_, i64>(0)? as u64,
+                    term: row.get::<_, i64>(1)? as u64,
+                    command: row.get(2)?,
+                })
+            })
+            .expect("query_map as_slice must succeed");
+        let mut entries = Vec::new();
+        for row in rows {
+            entries.push(row.expect("row read must succeed"));
+        }
+        entries
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -160,5 +298,184 @@ mod tests {
         assert_eq!(log.term_for(3), Some(3));
         assert_eq!(log.term_for(4), None);
         assert_eq!(log.term_for(0), None);
+    }
+}
+
+#[cfg(feature = "persist")]
+#[cfg(test)]
+mod persist_tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn temp_path(name: &str) -> PathBuf {
+        std::env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .join(format!("test_{name}_{}.db", std::process::id()))
+    }
+
+    #[test]
+    fn test_sqlite_log_append_and_get() {
+        let path = temp_path("append_get");
+        let _ = std::fs::remove_file(&path);
+        let mut log = SqliteRaftLog::new(&path).expect("open");
+        let idx = log.append(1, vec![1, 2, 3]);
+        assert_eq!(idx, 1);
+
+        let entry = log.get(1).unwrap();
+        assert_eq!(entry.term, 1);
+        assert_eq!(entry.command, vec![1, 2, 3]);
+        assert_eq!(entry.index, 1);
+
+        let idx2 = log.append(2, vec![4, 5]);
+        assert_eq!(idx2, 2);
+        assert_eq!(log.get(2).unwrap().term, 2);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_sqlite_log_empty() {
+        let path = temp_path("empty");
+        let _ = std::fs::remove_file(&path);
+        let log = SqliteRaftLog::new(&path).expect("open");
+        assert!(log.is_empty());
+        assert_eq!(log.last_index(), 0);
+        assert_eq!(log.last_term(), 0);
+        assert!(log.get(0).is_none());
+        assert!(log.get(1).is_none());
+        assert!(log.entries_from(1).is_empty());
+        assert!(log.term_for(1).is_none());
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_sqlite_log_last_entry() {
+        let path = temp_path("last_entry");
+        let _ = std::fs::remove_file(&path);
+        let mut log = SqliteRaftLog::new(&path).expect("open");
+        log.append(1, vec![1]);
+        log.append(1, vec![2]);
+        log.append(3, vec![3]);
+
+        assert_eq!(log.last_index(), 3);
+        assert_eq!(log.last_term(), 3);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_sqlite_log_entries_from() {
+        let path = temp_path("entries_from");
+        let _ = std::fs::remove_file(&path);
+        let mut log = SqliteRaftLog::new(&path).expect("open");
+        log.append(1, vec![1]);
+        log.append(1, vec![2]);
+        log.append(2, vec![3]);
+        log.append(2, vec![4]);
+
+        let entries = log.entries_from(3);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].index, 3);
+        assert_eq!(entries[1].index, 4);
+
+        let entries = log.entries_from(5);
+        assert!(entries.is_empty());
+
+        let entries = log.entries_from(1);
+        assert_eq!(entries.len(), 4);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_sqlite_log_term_for_index() {
+        let path = temp_path("term_for");
+        let _ = std::fs::remove_file(&path);
+        let mut log = SqliteRaftLog::new(&path).expect("open");
+        log.append(1, vec![1]);
+        log.append(1, vec![2]);
+        log.append(3, vec![3]);
+
+        assert_eq!(log.term_for(1), Some(1));
+        assert_eq!(log.term_for(2), Some(1));
+        assert_eq!(log.term_for(3), Some(3));
+        assert_eq!(log.term_for(4), None);
+        assert_eq!(log.term_for(0), None);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_sqlite_log_truncate_from() {
+        let path = temp_path("truncate");
+        let _ = std::fs::remove_file(&path);
+        let mut log = SqliteRaftLog::new(&path).expect("open");
+        log.append(1, vec![1]);
+        log.append(1, vec![2]);
+        log.append(2, vec![3]);
+        log.append(2, vec![4]);
+
+        log.truncate_from(3);
+        assert_eq!(log.last_index(), 2);
+        assert!(log.get(3).is_none());
+
+        let entries = log.entries_from(1);
+        assert_eq!(entries.len(), 2);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_sqlite_log_persistence() {
+        let path = temp_path("persistence");
+        let _ = std::fs::remove_file(&path);
+        {
+            let mut log = SqliteRaftLog::new(&path).expect("open");
+            log.append(1, vec![10, 20]);
+            log.append(2, vec![30, 40]);
+        }
+        {
+            let log = SqliteRaftLog::new(&path).expect("reopen");
+            assert_eq!(log.last_index(), 2);
+            let entry = log.get(1).unwrap();
+            assert_eq!(entry.term, 1);
+            assert_eq!(entry.command, vec![10, 20]);
+        }
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_sqlite_log_append_entry() {
+        let path = temp_path("append_entry");
+        let _ = std::fs::remove_file(&path);
+        let mut log = SqliteRaftLog::new(&path).expect("open");
+        let entry = LogEntry {
+            index: 1,
+            term: 5,
+            command: vec![99],
+        };
+        log.append_entry(entry);
+        assert_eq!(log.last_index(), 1);
+        assert_eq!(log.last_term(), 5);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_sqlite_log_as_slice() {
+        let path = temp_path("as_slice");
+        let _ = std::fs::remove_file(&path);
+        let mut log = SqliteRaftLog::new(&path).expect("open");
+        log.append(1, vec![1]);
+        log.append(2, vec![2]);
+
+        let slice = log.as_slice();
+        assert_eq!(slice.len(), 2);
+        assert_eq!(slice[0].index, 1);
+        assert_eq!(slice[1].index, 2);
+
+        let _ = std::fs::remove_file(&path);
     }
 }

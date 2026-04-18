@@ -3,6 +3,7 @@ use axum::{
     extract::{ConnectInfo, Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{Html, IntoResponse},
+    routing::get,
 };
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use std::collections::HashSet;
@@ -10,6 +11,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::blob_backend::BlobBackend;
+use crate::middleware::request_id_layer;
 use crate::storage::HubStorage;
 use crate::webhooks::{Webhook, WebhookManager};
 pub use crate::types::*;
@@ -89,6 +91,8 @@ pub struct SutureHubServer {
     rate_limit_window: std::time::Duration,
     replication_role: Arc<std::sync::RwLock<String>>,
     webhook_manager: Arc<WebhookManager>,
+    #[allow(dead_code)]
+    rate_limit_db: Option<Arc<tokio::sync::Mutex<rusqlite::Connection>>>,
 }
 
 impl Default for SutureHubServer {
@@ -116,10 +120,21 @@ impl SutureHubServer {
             rate_limit_window: std::time::Duration::from_secs(60),
             replication_role: Arc::new(std::sync::RwLock::new("standalone".to_string())),
             webhook_manager: Arc::new(WebhookManager::new()),
+            rate_limit_db: None,
         }
     }
 
     pub fn with_db(path: &std::path::Path) -> Result<Self, crate::storage::StorageError> {
+        let rate_limit_db_path = path.with_extension("rate.db");
+        let rate_limit_conn = rusqlite::Connection::open(&rate_limit_db_path)?;
+        rate_limit_conn.execute_batch("PRAGMA journal_mode=WAL;")?;
+        rate_limit_conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS rate_limits (
+                key TEXT PRIMARY KEY,
+                count INTEGER NOT NULL DEFAULT 0,
+                window_start INTEGER NOT NULL
+            );",
+        )?;
         Ok(Self {
             storage: Arc::new(RwLock::new(HubStorage::open(path)?)),
             blob_backend: None,
@@ -131,6 +146,7 @@ impl SutureHubServer {
             rate_limit_window: std::time::Duration::from_secs(60),
             replication_role: Arc::new(std::sync::RwLock::new("standalone".to_string())),
             webhook_manager: Arc::new(WebhookManager::new()),
+            rate_limit_db: Some(Arc::new(tokio::sync::Mutex::new(rate_limit_conn))),
         })
     }
 
@@ -144,6 +160,10 @@ impl SutureHubServer {
 
     pub fn storage(&self) -> &Arc<RwLock<HubStorage>> {
         &self.storage
+    }
+
+    pub fn shutdown(&self) {
+        tracing::info!("shutting down suture-hub");
     }
 
     pub fn set_rate_limit_config(
@@ -1236,6 +1256,219 @@ impl SutureHubServer {
             error: None,
             existing_patches,
         })
+    }
+
+    pub async fn handle_batch_push(
+        &self,
+        req: BatchPatchRequest,
+    ) -> Result<PushResponse, (StatusCode, PushResponse)> {
+        let mut existing_patches = Vec::new();
+
+        let store = self.storage.write().await;
+        if let Err(e) = store.ensure_repo(&req.repo_id) {
+            let msg = format!("storage error: {e}");
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                PushResponse {
+                    success: false,
+                    error: Some(msg),
+                    existing_patches: vec![],
+                },
+            ));
+        }
+
+        for blob in &req.blobs {
+            let hex = hash_to_hex(&blob.hash);
+            let data = match base64_decode(&blob.data) {
+                Ok(d) => d,
+                Err(e) => {
+                    let msg = format!("invalid base64 in blob: {e}");
+                    return Err((
+                        StatusCode::BAD_REQUEST,
+                        PushResponse {
+                            success: false,
+                            error: Some(msg),
+                            existing_patches: vec![],
+                        },
+                    ));
+                }
+            };
+            if let Err(e) = self.blob_store(&store, &req.repo_id, &hex, &data) {
+                let msg = format!("storage error: {e}");
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    PushResponse {
+                        success: false,
+                        error: Some(msg),
+                        existing_patches: vec![],
+                    },
+                ));
+            }
+        }
+
+        for patch in &req.patches {
+            let inserted = match store.insert_patch(&req.repo_id, patch) {
+                Ok(i) => i,
+                Err(e) => {
+                    let msg = format!("storage error: {e}");
+                    return Err((
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        PushResponse {
+                            success: false,
+                            error: Some(msg),
+                            existing_patches: vec![],
+                        },
+                    ));
+                }
+            };
+            if !inserted {
+                existing_patches.push(patch.id.clone());
+            }
+        }
+
+        for patch in &req.patches {
+            let _ = store.log_operation("insert", "patches", &hash_to_hex(&patch.id), None);
+        }
+
+        for branch in &req.branches {
+            let target_hex = hash_to_hex(&branch.target_id);
+
+            if store
+                .is_branch_protected(&req.repo_id, &branch.name)
+                .unwrap_or(false)
+            {
+                let push_authors: std::collections::HashSet<&str> =
+                    req.patches.iter().map(|p| p.author.as_str()).collect();
+                let is_owner =
+                    push_authors.len() == 1 && push_authors.contains(branch.name.as_str());
+                if !is_owner && !req.force {
+                    let msg = format!(
+                        "branch '{}' is protected and can only be updated by its owner",
+                        branch.name
+                    );
+                    return Err((
+                        StatusCode::FORBIDDEN,
+                        PushResponse {
+                            success: false,
+                            error: Some(msg),
+                            existing_patches: vec![],
+                        },
+                    ));
+                }
+            }
+
+            if let Err(e) = store.set_branch(&req.repo_id, &branch.name, &target_hex) {
+                let msg = format!("storage error: {e}");
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    PushResponse {
+                        success: false,
+                        error: Some(msg),
+                        existing_patches: vec![],
+                    },
+                ));
+            }
+        }
+
+        for branch in &req.branches {
+            let target_hex = hash_to_hex(&branch.target_id);
+            let _ = store.log_operation(
+                "set",
+                "branches",
+                &format!("{}:{}", req.repo_id, branch.name),
+                Some(&target_hex),
+            );
+        }
+
+        let repo_id = req.repo_id.clone();
+        let patch_data = serde_json::json!({
+            "patch_count": req.patches.len(),
+            "branch_count": req.branches.len(),
+            "existing_patches": existing_patches.clone(),
+        });
+        let manager = Arc::clone(&self.webhook_manager);
+        let storage = Arc::clone(&self.storage);
+        tokio::spawn(async move {
+            let hooks = {
+                let store = storage.read().await;
+                store.list_webhooks(&repo_id).unwrap_or_default()
+            };
+            if !hooks.is_empty() {
+                let _ = manager.trigger(&hooks, "push", &repo_id, patch_data).await;
+            }
+        });
+
+        Ok(PushResponse {
+            success: true,
+            error: None,
+            existing_patches,
+        })
+    }
+
+    #[cfg(feature = "raft-cluster")]
+    pub async fn apply_raft_command(&self, cmd: crate::raft::HubCommand) -> Result<(), String> {
+        use crate::raft::HubCommand;
+
+        let store = self.storage.write().await;
+
+        match cmd {
+            HubCommand::CreateRepo { repo_id } => {
+                store.ensure_repo(&repo_id).map_err(|e| e.to_string())?;
+                Ok(())
+            }
+            HubCommand::DeleteRepo { repo_id } => {
+                store.delete_repo(&repo_id).map_err(|e| e.to_string())
+            }
+            HubCommand::StoreBlob { hash, data } => {
+                store
+                    .store_blob("_raft_default", &hash, &data)
+                    .map_err(|e| e.to_string())
+            }
+            HubCommand::DeleteBlob { hash } => {
+                let _ = store.delete_blob("_raft_default", &hash);
+                Ok(())
+            }
+            HubCommand::CreateBranch {
+                repo_id,
+                branch,
+                target,
+            }
+            | HubCommand::UpdateBranch {
+                repo_id,
+                branch,
+                target,
+            } => {
+                store
+                    .set_branch(&repo_id, &branch, &target)
+                    .map_err(|e| e.to_string())
+            }
+            HubCommand::DeleteBranch { repo_id, branch } => {
+                store
+                    .delete_branch(&repo_id, &branch)
+                    .map_err(|e| e.to_string())
+            }
+            HubCommand::StorePatch {
+                repo_id,
+                patch_id,
+                patch_data,
+            } => {
+                let patch: crate::types::PatchProto = match serde_json::from_slice(&patch_data) {
+                    Ok(p) => p,
+                    Err(e) => return Err(format!("failed to deserialize patch: {e}")),
+                };
+                let expected_hex = patch_id;
+                let actual_hex = hash_to_hex(&patch.id);
+                if actual_hex != expected_hex {
+                    return Err(format!(
+                        "patch_id mismatch: expected {expected_hex}, got {actual_hex}"
+                    ));
+                }
+                store
+                    .insert_patch(&repo_id, &patch)
+                    .map_err(|e| e.to_string())?;
+                Ok(())
+            }
+        }
     }
 }
 
@@ -2723,6 +2956,48 @@ pub async fn replication_sync_handler(
     (status, Json(resp))
 }
 
+pub async fn batch_push_handler(
+    State(hub): State<Arc<SutureHubServer>>,
+    headers: HeaderMap,
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+    Json(req): Json<BatchPatchRequest>,
+) -> (StatusCode, HeaderMap, Json<PushResponse>) {
+    let ip = addr.ip().to_string();
+    if let Err(retry_after) = hub.check_rate_limit(&ip, "push") {
+        let mut hdrs = HeaderMap::new();
+        hdrs.insert(
+            axum::http::header::RETRY_AFTER,
+            retry_after.to_string().parse().unwrap(),
+        );
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            hdrs,
+            Json(PushResponse {
+                success: false,
+                error: Some("rate limit exceeded".to_string()),
+                existing_patches: vec![],
+            }),
+        );
+    }
+
+    if let Err(status) = check_auth(&hub, &headers).await {
+        return (
+            status,
+            HeaderMap::new(),
+            Json(PushResponse {
+                success: false,
+                error: Some("authentication failed".to_string()),
+                existing_patches: vec![],
+            }),
+        );
+    }
+
+    match hub.handle_batch_push(req).await {
+        Ok(resp) => (StatusCode::OK, HeaderMap::new(), Json(resp)),
+        Err((status, resp)) => (status, HeaderMap::new(), Json(resp)),
+    }
+}
+
 async fn replication_background_task(hub: Arc<SutureHubServer>) {
     let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
     loop {
@@ -2867,6 +3142,10 @@ pub async fn delete_webhook_handler(
     }
 }
 
+pub async fn health_check() -> Json<serde_json::Value> {
+    Json(serde_json::json!({"status": "ok"}))
+}
+
 pub async fn run_server(
     hub: SutureHubServer,
     addr: &str,
@@ -2880,7 +3159,9 @@ pub async fn run_server(
         });
     }
 
+    let (set_request_id, propagate_request_id) = request_id_layer();
     let app = axum::Router::new()
+        .route("/healthz", get(health_check))
         .route("/", axum::routing::get(serve_index))
         .route("/push", axum::routing::post(push_handler))
         .route("/push/compressed", axum::routing::post(push_compressed_handler))
@@ -2933,7 +3214,6 @@ pub async fn run_server(
         .route("/replication/peers/{id}", axum::routing::delete(remove_peer_handler))
         .route("/replication/status", axum::routing::get(replication_status_handler))
         .route("/replication/sync", axum::routing::post(replication_sync_handler))
-        // v1.3 new routes
         .route("/repos", axum::routing::post(create_repo_handler))
         .route("/repos/{repo_id}", axum::routing::delete(delete_repo_handler))
         .route("/repos/{repo_id}/branches", axum::routing::post(create_branch_handler))
@@ -2947,15 +3227,34 @@ pub async fn run_server(
         .route("/webhooks/{repo_id}", axum::routing::post(create_webhook_handler))
         .route("/webhooks/{repo_id}", axum::routing::get(list_webhooks_handler))
         .route("/webhooks/{repo_id}/{id}", axum::routing::delete(delete_webhook_handler))
-        .with_state(hub);
+        .route("/repos/{repo_id}/patches/batch", axum::routing::post(batch_push_handler))
+        .with_state(Arc::clone(&hub))
+        .layer(set_request_id)
+        .layer(propagate_request_id);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!("Suture Hub listening on {addr}");
-    axum::serve(
+
+    let shutdown_tx = tokio::sync::broadcast::channel::<()>(1).0;
+    let shutdown_tx_ctrlc = shutdown_tx.clone();
+
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c().await.ok();
+        tracing::info!("received ctrl-c, initiating graceful shutdown");
+        let _ = shutdown_tx_ctrlc.send(());
+    });
+
+    let server = axum::serve(
         listener,
         app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
-    .await?;
+    .with_graceful_shutdown(async move {
+        let mut rx = shutdown_tx.subscribe();
+        let _ = rx.recv().await;
+        hub.shutdown();
+    });
+
+    server.await?;
     Ok(())
 }
 
@@ -3051,6 +3350,7 @@ mod tests {
             .route("/webhooks/{repo_id}", axum::routing::post(create_webhook_handler))
             .route("/webhooks/{repo_id}", axum::routing::get(list_webhooks_handler))
             .route("/webhooks/{repo_id}/{id}", axum::routing::delete(delete_webhook_handler))
+            .route("/repos/{repo_id}/patches/batch", axum::routing::post(batch_push_handler))
             .with_state(Arc::clone(&hub));
 
         tokio::spawn(async move {
@@ -3552,7 +3852,7 @@ mod tests {
         assert_eq!(resp.status(), 200);
         let data: serde_json::Value = resp.json().await.unwrap();
         assert_eq!(data["success"], true);
-        assert!(data["users"].as_array().unwrap().len() >= 1);
+        assert!(!data["users"].as_array().unwrap().is_empty());
     }
 
     #[tokio::test]
@@ -3999,7 +4299,7 @@ mod tests {
             .unwrap();
         assert_eq!(resp2.status(), 200);
         let data2: serde_json::Value = resp2.json().await.unwrap();
-        assert!(data2["patches"].as_array().unwrap().len() >= 1);
+        assert!(!data2["patches"].as_array().unwrap().is_empty());
 
         // Empty search
         let resp3 = client
@@ -4231,6 +4531,81 @@ mod tests {
             hub.blob_get(&store, "test-repo", &"a".repeat(64)).unwrap();
             assert!(mock.get_called.load(std::sync::atomic::Ordering::Relaxed));
         });
+    }
+
+    #[cfg(feature = "raft-cluster")]
+    #[tokio::test]
+    async fn test_apply_raft_command_create_repo() {
+        use crate::raft::HubCommand;
+
+        let hub = SutureHubServer::new_in_memory();
+        hub.apply_raft_command(HubCommand::CreateRepo {
+            repo_id: "raft-repo".to_string(),
+        })
+        .await
+        .unwrap();
+
+        let store = hub.storage.read().await;
+        assert!(store.repo_exists("raft-repo").unwrap_or(false));
+    }
+
+    #[cfg(feature = "raft-cluster")]
+    #[tokio::test]
+    async fn test_apply_raft_command_delete_repo() {
+        use crate::raft::HubCommand;
+
+        let hub = SutureHubServer::new_in_memory();
+        {
+            let store = hub.storage.write().await;
+            store.ensure_repo("del-repo").unwrap();
+        }
+        hub.apply_raft_command(HubCommand::DeleteRepo {
+            repo_id: "del-repo".to_string(),
+        })
+        .await
+        .unwrap();
+
+        let store = hub.storage.read().await;
+        assert!(!store.repo_exists("del-repo").unwrap_or(false));
+    }
+
+    #[cfg(feature = "raft-cluster")]
+    #[tokio::test]
+    async fn test_apply_raft_command_branch() {
+        use crate::raft::HubCommand;
+
+        let hub = SutureHubServer::new_in_memory();
+        {
+            let store = hub.storage.write().await;
+            store.ensure_repo("br-repo").unwrap();
+        }
+
+        hub.apply_raft_command(HubCommand::CreateBranch {
+            repo_id: "br-repo".to_string(),
+            branch: "main".to_string(),
+            target: "a".repeat(64),
+        })
+        .await
+        .unwrap();
+
+        hub.apply_raft_command(HubCommand::UpdateBranch {
+            repo_id: "br-repo".to_string(),
+            branch: "main".to_string(),
+            target: "b".repeat(64),
+        })
+        .await
+        .unwrap();
+
+        hub.apply_raft_command(HubCommand::DeleteBranch {
+            repo_id: "br-repo".to_string(),
+            branch: "main".to_string(),
+        })
+        .await
+        .unwrap();
+
+        let store = hub.storage.read().await;
+        let branches = store.get_branches("br-repo").unwrap_or_default();
+        assert!(branches.is_empty());
     }
 
 }
