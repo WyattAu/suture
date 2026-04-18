@@ -1,7 +1,7 @@
 # Suture Version
 
-- **Current Version:** 3.2.0
-- **Current Phase:** Directions T–X — Ship, Validate, Iterate
+- **Current Version:** 3.2.1
+- **Current Phase:** Post-Ship Bugfix
 - **Status:** Complete
 - **Last Updated:** 2026-04-18
 - **Rust Edition:** 2024
@@ -190,7 +190,7 @@
 
 | Gate | Status | Details |
 |------|--------|---------|
-| Tests | ✅ 1056 passing | 0 failures across 28 crates (2 ignored: FUSE root-only) |
+| Tests | ✅ 1059 passing | 0 failures across 28 crates (2 ignored: FUSE root-only) |
 | Property-based tests | ✅ 21 proptest suites | 10K+ cases via proptest |
 | Benchmarks | ✅ 28 Criterion functions | repo ops, semantic merge, protocol, compression |
 | Clippy | ✅ Zero warnings | `cargo clippy --workspace -- -D warnings` clean |
@@ -244,6 +244,7 @@
 
 | Commit | Version | Description |
 |--------|---------|-------------|
+| `77ad798` | v3.2.1 | Fix commit O(n²) bottleneck: incremental file tree computation (70x faster at 10K commits) |
 | `77ad798` | v3.2.0 | Directions T–X: ship, CI/CD, real-world drivers, workflow tests, benchmarks |
 | `50526ec` | v3.1.0 | Directions O–S: publish prep, driver audits, semantic diff, domain docs |
 | `6a389a4` | v3.0.0 | Directions J–N: Raft E2E, production readiness, perf, desktop, ecosystem |

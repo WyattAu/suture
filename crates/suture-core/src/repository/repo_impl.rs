@@ -23,7 +23,7 @@
 
 use crate::cas::store::{BlobStore, CasError};
 use crate::dag::graph::{DagError, PatchDag};
-use crate::engine::apply::{ApplyError, apply_patch_chain, resolve_payload_to_hash};
+use crate::engine::apply::{ApplyError, apply_patch, apply_patch_chain, resolve_payload_to_hash};
 use crate::engine::diff::{DiffEntry, DiffType, diff_trees};
 use crate::engine::tree::FileTree;
 use crate::metadata::MetaError;
@@ -955,8 +955,22 @@ impl Repository {
         self.meta.set_branch(&branch, &patch_id)?;
 
         // Persist the file tree for this commit tip (enables O(1) cold-load later).
-        // Build the tree directly from patches (not from the stale cache).
-        if let Ok(tree) = self.snapshot_uncached(&patch_id) {
+        // Incremental computation: apply the new patch to the parent's cached tree
+        // instead of replaying the entire chain (which is O(n) per commit).
+        let tree = if head_id != Hash::ZERO {
+            // Load parent's tree from SQLite (stored on previous commit), then
+            // apply just the new batch patch. Falls back to full replay only if
+            // the parent's tree is missing from cache.
+            match self.snapshot(&head_id) {
+                Ok(parent_tree) => apply_patch(&parent_tree, &batch_patch, resolve_payload_to_hash)
+                    .unwrap_or_else(|_| self.snapshot_uncached(&patch_id).unwrap_or_default()),
+                Err(_) => self.snapshot_uncached(&patch_id).unwrap_or_default(),
+            }
+        } else {
+            // Root commit — no parent tree, must replay from scratch
+            self.snapshot_uncached(&patch_id).unwrap_or_default()
+        };
+        {
             let tree_hash = tree.content_hash();
             let _ = self.meta.set_config("head_tree_hash", &tree_hash.to_hex());
             let _ = self.meta.store_file_tree(&patch_id, &tree);
@@ -5316,6 +5330,36 @@ mod tests {
             elapsed.as_secs() < 2,
             "log() took {:?}",
             elapsed
+        );
+    }
+
+    #[test]
+    fn test_perf_10k_commits_and_log() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_path = dir.path().to_path_buf();
+        let mut repo = Repository::init(&repo_path, "perf-test").unwrap();
+
+        let t0 = std::time::Instant::now();
+        for i in 0..10_000u32 {
+            let path = "file.txt";
+            std::fs::write(repo_path.join(path), format!("content {}", i)).unwrap();
+            repo.add(path).unwrap();
+            repo.commit(&format!("commit {}", i)).unwrap();
+        }
+        let commit_time = t0.elapsed();
+        eprintln!("10K commits: {:?}", commit_time);
+
+        let t1 = std::time::Instant::now();
+        let log = repo.log(None).unwrap();
+        let log_time = t1.elapsed();
+        eprintln!("log() 10001 entries: {:?} ({} entries)", log_time, log.len());
+
+        assert_eq!(log.len(), 10_001); // 10K commits + 1 root
+        // 10K commits should complete in <30s even in debug mode
+        assert!(
+            commit_time.as_secs() < 30,
+            "10K commits took too long: {:?}",
+            commit_time
         );
     }
 }
