@@ -1,7 +1,7 @@
 # Suture Version
 
-- **Current Version:** 2.10.0
-- **Current Phase:** Direction H+I — Validate & Ship + Depth over Breadth
+- **Current Version:** 3.0.0
+- **Current Phase:** Directions J–N — Production Maturity
 - **Status:** Complete
 - **Last Updated:** 2026-04-18
 - **Rust Edition:** 2024
@@ -20,6 +20,11 @@
 | **G** | Growth | VS Code, webhooks, desktop UI, perf fix | v2.9 | ✅ Complete |
 | **H** | Validate & Ship | Release prep, shipping checklist, release script | v2.10 | ✅ Complete |
 | **I** | Depth over Breadth | Wire S3 and Raft into hub's actual runtime | v2.10 | ✅ Complete |
+| **J** | Make Raft Work | TCP transport wired, multi-node cluster, persist log | v3.0 | ✅ Complete |
+| **K** | Production Readiness | Health check, graceful shutdown, config, tracing, rate limit | v3.0 | ✅ Complete |
+| **L** | Performance & Scale | Batch patches, scale benchmarks | v3.0 | ✅ Complete |
+| **M** | Real Desktop App | CLI commands, system tray, repo integration | v3.0 | ✅ Complete |
+| **N** | Ecosystem Polish | VS Code LSP, interactive demo | v3.0 | ✅ Complete |
 
 ### Direction A — Product Polish (v1.3–v1.4) ✅
 
@@ -96,18 +101,50 @@
 - Server blob routing: all blob store/get operations route through BlobBackend when set, fall back to SQLite
 - All gated on opt-in features: `s3-backend`, `raft-cluster`
 
+### Direction J — Make Raft Work (v3.0) ✅
+
+- TCP transport wired into RaftRuntime: outgoing messages sent via TCP, incoming messages handled automatically
+- Multi-node 3-cluster integration test over real TCP (leader election + log replication)
+- Randomized election timeouts (Raft paper §5.2) to prevent split-vote livelock
+- Persisted Raft log: `SqliteRaftLog` gated on `persist` feature (9 new tests, 30 total)
+- `apply_raft_command()` on HubStorage: committed commands applied automatically (3 new tests)
+- 12 hub raft tests (up from 8)
+
+### Direction K — Production Readiness (v3.0) ✅
+
+- Health check endpoint: `GET /healthz` returning `{status: "ok"}`
+- Graceful shutdown: ctrlc signal handling, drain connections, close DB
+- TOML config file: `--config` flag, CLI args override file defaults
+- Request tracing middleware: `X-Request-Id` UUID v4 via tower-http
+- Persistent rate limiter: SQLite-backed rate_limits table (survives restarts)
+
+### Direction L — Performance & Scale (v3.0) ✅
+
+- Batch patch endpoint: `POST /repos/{repo_id}/patches/batch` — multiple patches in one request
+- Scale benchmarks: 1000 repos, 100 patches, 100 blobs (Criterion)
+
+### Direction M — Real Desktop App (v3.0) ✅
+
+- CLI commands wired to real `suture` binary: init, status, branch, log, commit
+- System tray: show/refresh/quit via Tauri tray-icon feature
+
+### Direction N — Ecosystem Polish (v3.0) ✅
+
+- VS Code extension: LSP client connection, workspace activation for `.suture` dirs
+- Interactive demo: 10-step animated workflow with SVG DAG visualization
+
 ## Quality Gate Compliance
 
 | Gate | Status | Details |
 |------|--------|---------|
-| Tests | ✅ 897 passing | 0 failures across 28 crates (2 ignored: FUSE root-only) |
+| Tests | ✅ 898 passing | 0 failures across 28 crates (2 ignored: FUSE root-only) |
 | Property-based tests | ✅ 21 proptest suites | 10K+ cases via proptest |
 | Benchmarks | ✅ 28 Criterion functions | repo ops, semantic merge, protocol, compression |
 | Clippy | ✅ Zero warnings | `cargo clippy --workspace -- -D warnings` clean |
 | Ed25519 signing | ✅ Wired into push | `suture key generate`, auto-sign on push |
 | E2E tests | ✅ 27 integration tests | init→commit→branch→merge→gc→fsck→bisect→tag→stash |
 | Lean 4 proofs | ✅ 23 theorems | TouchSet, commutativity, DAG, LCA, merge properties |
-| HTTP integration | ✅ 59 tests (with features) | handshake, repos, patches, push/pull, V2, auth, mirrors, CRUD, search |
+| HTTP integration | ✅ 61 tests (with features) | handshake, repos, patches, push/pull, V2, auth, mirrors, CRUD, search, batch, health |
 | Semantic drivers | ✅ 16 drivers | JSON, YAML, TOML, CSV, XML, Markdown, DOCX, XLSX, PPTX, OTIO, SQL, PDF, Image, Example, Properties |
 | Editor plugins | ✅ 3 plugins | Neovim (Lua), JetBrains IntelliJ (Kotlin), VS Code (TypeScript) |
 | Language bindings | ✅ 2 bindings | Node.js (napi-rs), Python (PyO3) |
@@ -121,7 +158,7 @@
 | suture-protocol | 55 | Wire protocol, V2 handshake, delta encoding, compression |
 | suture-cli | 25 | CLI binary (37 commands) |
 | suture-tui | 31 | Terminal UI (7 tabs: status, log, staging, diff, branches, remote, help) |
-| suture-hub | 59 | Hub daemon with SQLite, auth, replication, mirrors, branch protection, CRUD, search, cursor-based pagination, gRPC (14 RPCs), S3 blob backend (opt-in), Raft consensus (opt-in), webhooks (push/branch events) |
+| suture-hub | 61 | Hub daemon with SQLite, auth, replication, mirrors, branch protection, CRUD, search, cursor-based pagination, gRPC (14 RPCs), S3 blob backend (opt-in), Raft consensus (opt-in, TCP multi-node), webhooks (push/branch events), health check, graceful shutdown, TOML config, request tracing, persistent rate limiter, batch patches |
 | suture-daemon | 33 | File watcher, auto-commit, auto-sync, SHM status, PID management, signal handling, mount manager (FUSE/WebDAV lifecycle) |
 | suture-driver | 8 | SutureDriver trait, DriverRegistry, semantic diff/merge types |
 | suture-ooxml | 4 | Shared OOXML infrastructure (ZIP, part navigation) |
@@ -144,7 +181,7 @@
 | suture-e2e | 27 | End-to-end workflow integration tests |
 | suture-fuzz | 6 | Fuzz testing (CAS hash, patch serialization, merge, touch-set) |
 | suture-bench | — | Criterion benchmarks (28 functions) |
-| suture-raft | 21 | Raft consensus protocol (election, replication, commit, 3-node cluster simulation) |
+| suture-raft | 30 | Raft consensus protocol (election, replication, commit, 3-node cluster simulation, persisted log) |
 | suture-s3 | 26 | S3-compatible blob storage (AWS SigV4, path/virtual-hosted, MinIO, integration tests) |
 | desktop-app | — | Tauri v2 scaffold (9 IPC commands) |
 | jetbrains-plugin | — | IntelliJ Platform plugin (10 actions, VCS root detection, Kotlin) |
@@ -154,6 +191,8 @@
 
 | Commit | Version | Description |
 |--------|---------|-------------|
+| `6a389a4` | v3.0.0 | Directions J–N: Raft E2E, production readiness, perf, desktop, ecosystem |
+| `356b7e8` | v2.10.0 | Release v2.10.0: Directions H+I complete |
 | `546ee5c` | v2.10.0 | Add shipping checklist, release notes, release script |
 | `525bb08` | v2.10.0 | Wire S3 and Raft runtime into suture-hub binary |
 | `b4249a4` | v2.9.0 | Release v2.9.0: Direction G Growth complete |
