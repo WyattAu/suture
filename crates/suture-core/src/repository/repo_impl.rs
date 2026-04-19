@@ -145,6 +145,18 @@ pub struct Repository {
     is_worktree: bool,
 }
 
+/// A single reflog entry with structured fields.
+pub struct ReflogEntry {
+    /// The HEAD before this operation.
+    pub old_head: PatchId,
+    /// The HEAD after this operation.
+    pub new_head: PatchId,
+    /// Human-readable description of the operation.
+    pub message: String,
+    /// Unix timestamp of when this operation occurred.
+    pub timestamp: i64,
+}
+
 impl Repository {
     /// Initialize a new Suture repository at the given path.
     pub fn init(path: &Path, author: &str) -> Result<Self, RepoError> {
@@ -3298,6 +3310,11 @@ impl Repository {
         &self.meta
     }
 
+    /// Get the current author name.
+    pub fn author(&self) -> &str {
+        &self.author
+    }
+
     /// Get a reference to the CAS.
     pub fn cas(&self) -> &BlobStore {
         &self.cas
@@ -3748,21 +3765,22 @@ impl Repository {
         Ok(())
     }
 
-    /// Get reflog entries as (head_hash, entry_string) pairs.
-    pub fn reflog_entries(&self) -> Result<Vec<(String, String)>, RepoError> {
-        // Try the SQLite reflog table first
+    /// Get all reflog entries (newest first).
+    pub fn reflog_entries(&self) -> Result<Vec<ReflogEntry>, RepoError> {
         let sqlite_entries = self.meta.reflog_list().map_err(RepoError::Meta)?;
 
         if !sqlite_entries.is_empty() {
-            // Convert (old_head, new_head, message) → (new_head, formatted_entry)
-            let entries: Vec<(String, String)> = sqlite_entries
+            let entries: Vec<ReflogEntry> = sqlite_entries
                 .into_iter()
-                .map(|(old_head, new_head, message)| {
-                    let ts = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs();
-                    (new_head, format!("{}:{}:{}", ts, old_head, message))
+                .filter_map(|(old_head, new_head, message, timestamp)| {
+                    let old = Hash::from_hex(&old_head).ok()?;
+                    let new = Hash::from_hex(&new_head).ok()?;
+                    Some(ReflogEntry {
+                        old_head: old,
+                        new_head: new,
+                        message,
+                        timestamp,
+                    })
                 })
                 .collect();
             return Ok(entries);
@@ -3772,7 +3790,6 @@ impl Repository {
         match self.meta.get_config("reflog").map_err(RepoError::Meta)? {
             Some(json) => {
                 let legacy: Vec<(String, String)> = serde_json::from_str(&json).unwrap_or_default();
-                // Migrate legacy entries to SQLite
                 for (new_head, entry) in &legacy {
                     let parts: Vec<&str> = entry.splitn(3, ':').collect();
                     if parts.len() >= 3 {
@@ -3785,20 +3802,32 @@ impl Repository {
                         }
                     }
                 }
-                // Clear legacy config after migration
                 let _ = self.meta.delete_config("reflog");
-                // Reload from SQLite
                 let sqlite_entries = self.meta.reflog_list().map_err(RepoError::Meta)?;
-                let entries: Vec<(String, String)> = sqlite_entries
+                let entries: Vec<ReflogEntry> = sqlite_entries
                     .into_iter()
-                    .map(|(old_head, new_head, message)| {
-                        (new_head, format!("{}:{}:{}", 0, old_head, message))
+                    .filter_map(|(old_head, new_head, message, timestamp)| {
+                        let old = Hash::from_hex(&old_head).ok()?;
+                        let new = Hash::from_hex(&new_head).ok()?;
+                        Some(ReflogEntry {
+                            old_head: old,
+                            new_head: new,
+                            message,
+                            timestamp,
+                        })
                     })
                     .collect();
                 Ok(entries)
             }
             None => Ok(Vec::new()),
         }
+    }
+
+    /// Get the `old_head` from the Nth most recent reflog entry (0-indexed).
+    /// This is used by `undo` to rewind HEAD to a previous state.
+    pub fn reflog_older_head(&self, n: usize) -> Result<Option<PatchId>, RepoError> {
+        let entries = self.reflog_entries()?;
+        Ok(entries.get(n).map(|e| e.old_head))
     }
 }
 

@@ -479,20 +479,29 @@ EXAMPLES:
     Gc,
     /// Verify repository integrity
     Fsck,
+    /// Check repository health and configuration
+    Doctor,
     /// Binary search for bug-introducing commit
     Bisect {
         #[command(subcommand)]
         action: BisectAction,
     },
-    /// Undo the last commit(s) (soft reset to HEAD~N)
+    /// Undo the last operation (commit, merge, checkout, etc.)
+    ///
+    /// Uses the reflog to rewind HEAD to its previous state.
+    /// Unlike `reset HEAD~N`, this can undo merges, checkouts, and cherry-picks.
     #[command(after_long_help = "\
 EXAMPLES:
-    suture undo                # Undo the last commit (soft reset)
-    suture undo --steps 3      # Undo the last 3 commits")]
+    suture undo                # Undo the last operation (soft)
+    suture undo --steps 3      # Undo the last 3 operations
+    suture undo --hard         # Undo and discard working changes")]
     Undo {
-        /// Number of commits to undo (default: 1)
+        /// Number of operations to undo (default: 1)
         #[arg(short, long)]
         steps: Option<usize>,
+        /// Discard working tree changes (like --hard reset)
+        #[arg(long)]
+        hard: bool,
     },
     /// Squash N commits into one
     #[command(after_long_help = "\
@@ -902,11 +911,12 @@ async fn main() {
         Commands::Worktree { action } => cmd::worktree::cmd_worktree(&action).await,
         Commands::Gc => cmd::gc::cmd_gc().await,
         Commands::Fsck => cmd::fsck::cmd_fsck().await,
+        Commands::Doctor => cmd::doctor::cmd_doctor().await,
         Commands::Bisect { action } => cmd::bisect::cmd_bisect(&action).await,
         Commands::Squash { count, message } => {
             cmd::squash::cmd_squash(count, message.as_deref()).await
         }
-        Commands::Undo { steps } => cmd::undo::cmd_undo(steps).await,
+        Commands::Undo { steps, hard } => cmd::undo::cmd_undo(steps, hard).await,
         Commands::Version => cmd::version::cmd_version().await,
         Commands::Tui => cmd::tui::cmd_tui().await,
     };

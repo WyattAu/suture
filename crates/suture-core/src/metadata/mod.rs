@@ -9,7 +9,7 @@ pub(crate) mod repo_config;
 
 use crate::engine::tree::FileTree;
 use crate::patch::types::{Patch, PatchId, TouchSet};
-use rusqlite::{Connection, params};
+use rusqlite::{params, Connection};
 use std::collections::BTreeMap;
 use std::path::Path;
 use suture_common::{BranchName, FileStatus, Hash, RepoPath};
@@ -587,10 +587,11 @@ impl MetadataStore {
     }
 
     /// Get the full reflog (newest first).
-    pub fn reflog_list(&self) -> Result<Vec<(String, String, String)>, MetaError> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT old_head, new_head, message FROM reflog ORDER BY id DESC")?;
+    /// Returns (old_head_hex, new_head_hex, message, timestamp_unix).
+    pub fn reflog_list(&self) -> Result<Vec<(String, String, String, i64)>, MetaError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT old_head, new_head, message, timestamp FROM reflog ORDER BY id DESC",
+        )?;
 
         let entries = stmt
             .query_map([], |row| {
@@ -598,6 +599,7 @@ impl MetadataStore {
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
                     row.get::<_, String>(2)?,
+                    row.get::<_, i64>(3)?,
                 ))
             })?
             .filter_map(|r| r.ok())

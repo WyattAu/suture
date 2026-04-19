@@ -8,6 +8,7 @@ pub mod clone;
 pub mod commit;
 pub mod config;
 pub mod diff;
+pub mod doctor;
 pub mod drivers;
 pub mod fetch;
 pub mod fsck;
