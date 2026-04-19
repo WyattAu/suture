@@ -41,7 +41,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
@@ -95,7 +95,7 @@ jobs:
   source-tarball:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Create source tarball
         run: |
@@ -118,7 +118,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
