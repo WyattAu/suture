@@ -1,11 +1,44 @@
 use crate::style::run_hook_if_exists;
 
+/// Merge conflict resolution strategy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MergeStrategy {
+    /// Try semantic drivers first, fall back to conflict markers (default).
+    Semantic,
+    /// Keep our version for all conflicts.
+    Ours,
+    /// Keep their version for all conflicts.
+    Theirs,
+    /// Leave all conflicts as conflict markers (skip semantic drivers).
+    Manual,
+}
+
+impl MergeStrategy {
+    fn parse(s: &str) -> Option<Self> {
+        match s {
+            "semantic" | "auto" => Some(MergeStrategy::Semantic),
+            "ours" | "keep-ours" => Some(MergeStrategy::Ours),
+            "theirs" | "keep-theirs" => Some(MergeStrategy::Theirs),
+            "manual" | "none" => Some(MergeStrategy::Manual),
+            _ => None,
+        }
+    }
+}
+
 pub(crate) async fn cmd_merge(
     source: &str,
     dry_run: bool,
+    strategy: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use std::path::Path as StdPath;
     use suture_core::repository::ConflictInfo;
+
+    let merge_strategy = MergeStrategy::parse(strategy).ok_or_else(|| {
+        format!(
+            "unknown merge strategy '{}' (expected: semantic, ours, theirs, manual)",
+            strategy
+        )
+    })?;
 
     let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
 
@@ -19,15 +52,14 @@ pub(crate) async fn cmd_merge(
 
     if dry_run {
         println!(
-            "DRY RUN: previewing merge of '{}' into current branch",
-            source
+            "DRY RUN: previewing merge of '{}' into current branch (strategy: {})",
+            source, strategy
         );
     } else {
         run_hook_if_exists(repo.root(), "pre-merge", pre_extra)?;
     }
 
     let result = if dry_run {
-        // Use read-only preview — does not modify the repository
         repo.preview_merge(source)?
     } else {
         repo.execute_merge(source)?
@@ -80,99 +112,156 @@ pub(crate) async fn cmd_merge(
             );
         }
 
-        // Preview semantic driver resolution
-        let registry = crate::driver_registry::builtin_registry();
-        for conflict in &conflicts {
-            let path = StdPath::new(&conflict.path);
-            if registry.get_for_path(path).is_ok() {
-                resolved_count += 1;
-            } else {
-                remaining.push(conflict.clone());
+        // Preview conflict resolution based on strategy
+        match merge_strategy {
+            MergeStrategy::Ours => {
+                println!(
+                    "Would resolve {} conflict(s) by keeping our version",
+                    conflicts.len()
+                );
             }
-        }
-
-        if resolved_count > 0 {
-            println!(
-                "Would resolve {} conflict(s) via semantic drivers",
-                resolved_count
-            );
-        }
-        if remaining.is_empty() && resolved_count > 0 {
-            println!("All conflicts would be resolved via semantic drivers.");
-        } else if !remaining.is_empty() {
-            println!("{} conflict(s) would remain unresolved:", remaining.len());
-            for conflict in &remaining {
-                println!("  CONFLICT in '{}'", conflict.path);
+            MergeStrategy::Theirs => {
+                println!(
+                    "Would resolve {} conflict(s) by keeping their version",
+                    conflicts.len()
+                );
+            }
+            MergeStrategy::Semantic => {
+                let registry = crate::driver_registry::builtin_registry();
+                for conflict in &conflicts {
+                    let path = StdPath::new(&conflict.path);
+                    if registry.get_for_path(path).is_ok() {
+                        resolved_count += 1;
+                    } else {
+                        remaining.push(conflict.clone());
+                    }
+                }
+                if resolved_count > 0 {
+                    println!(
+                        "Would resolve {} conflict(s) via semantic drivers",
+                        resolved_count
+                    );
+                }
+                if remaining.is_empty() && resolved_count > 0 {
+                    println!("All conflicts would be resolved via semantic drivers.");
+                } else if !remaining.is_empty() {
+                    println!("{} conflict(s) would remain unresolved:", remaining.len());
+                    for conflict in &remaining {
+                        println!("  CONFLICT in '{}'", conflict.path);
+                    }
+                }
+            }
+            MergeStrategy::Manual => {
+                println!(
+                    "{} conflict(s) left for manual resolution:",
+                    conflicts.len()
+                );
+                for conflict in &conflicts {
+                    println!("  CONFLICT in '{}'", conflict.path);
+                }
             }
         }
         println!("DRY RUN — no files were modified.");
         return Ok(());
     }
 
-    // Not dry-run — actually perform the merge with semantic driver resolution
-    {
-        let registry = crate::driver_registry::builtin_registry();
-
-        for conflict in &conflicts {
-            let path = StdPath::new(&conflict.path);
-            let Ok(driver) = registry.get_for_path(path) else {
-                remaining.push(conflict.clone());
-                continue;
-            };
-
-            let base_content = conflict
-                .base_content_hash
-                .and_then(|h| repo.cas().get_blob(&h).ok())
-                .map(|b| String::from_utf8_lossy(&b).to_string());
-            let ours_content = conflict
-                .our_content_hash
-                .and_then(|h| repo.cas().get_blob(&h).ok())
-                .map(|b| String::from_utf8_lossy(&b).to_string());
-            let theirs_content = conflict
-                .their_content_hash
-                .and_then(|h| repo.cas().get_blob(&h).ok())
-                .map(|b| String::from_utf8_lossy(&b).to_string());
-
-            let base_str = base_content.as_deref().unwrap_or("");
-            let Some(ours_str) = ours_content.as_deref() else {
-                remaining.push(conflict.clone());
-                continue;
-            };
-            let Some(theirs_str) = theirs_content.as_deref() else {
-                remaining.push(conflict.clone());
-                continue;
-            };
-
-            let Ok(merged) = driver.merge(base_str, ours_str, theirs_str) else {
-                remaining.push(conflict.clone());
-                continue;
-            };
-            let Some(content) = merged else {
-                remaining.push(conflict.clone());
-                continue;
-            };
-
-            if let Err(e) = std::fs::write(&conflict.path, &content) {
-                eprintln!(
-                    "Warning: could not write resolved file '{}': {e}",
-                    conflict.path
-                );
-                remaining.push(conflict.clone());
-                continue;
+    // Not dry-run — actually resolve conflicts
+    match merge_strategy {
+        MergeStrategy::Ours => {
+            // Keep our version for all conflicts — just leave them as-is
+            // (our content is already in the working tree)
+            println!(
+                "Resolved {} conflict(s) by keeping our version",
+                conflicts.len()
+            );
+            resolved_count = conflicts.len();
+        }
+        MergeStrategy::Theirs => {
+            // Take their version for all conflicts
+            for conflict in &conflicts {
+                if let Some(hash) = conflict.their_content_hash
+                    && let Ok(blob) = repo.cas().get_blob(&hash)
+                {
+                    if let Err(e) = std::fs::write(&conflict.path, &blob) {
+                        eprintln!("Warning: could not write '{}': {}", conflict.path, e);
+                    } else {
+                        let _ = repo.add(&conflict.path);
+                        resolved_count += 1;
+                    }
+                }
             }
+            println!(
+                "Resolved {} conflict(s) by keeping their version",
+                resolved_count
+            );
+        }
+        MergeStrategy::Semantic => {
+            let registry = crate::driver_registry::builtin_registry();
+            for conflict in &conflicts {
+                let path = StdPath::new(&conflict.path);
+                let Ok(driver) = registry.get_for_path(path) else {
+                    remaining.push(conflict.clone());
+                    continue;
+                };
 
-            if let Err(e) = repo.add(&conflict.path) {
-                eprintln!(
-                    "Warning: could not stage resolved file '{}': {e}",
-                    conflict.path
-                );
-                remaining.push(conflict.clone());
-                continue;
+                let base_content = conflict
+                    .base_content_hash
+                    .and_then(|h| repo.cas().get_blob(&h).ok())
+                    .map(|b| String::from_utf8_lossy(&b).to_string());
+                let ours_content = conflict
+                    .our_content_hash
+                    .and_then(|h| repo.cas().get_blob(&h).ok())
+                    .map(|b| String::from_utf8_lossy(&b).to_string());
+                let theirs_content = conflict
+                    .their_content_hash
+                    .and_then(|h| repo.cas().get_blob(&h).ok())
+                    .map(|b| String::from_utf8_lossy(&b).to_string());
+
+                let base_str = base_content.as_deref().unwrap_or("");
+                let Some(ours_str) = ours_content.as_deref() else {
+                    remaining.push(conflict.clone());
+                    continue;
+                };
+                let Some(theirs_str) = theirs_content.as_deref() else {
+                    remaining.push(conflict.clone());
+                    continue;
+                };
+
+                let Ok(merged) = driver.merge(base_str, ours_str, theirs_str) else {
+                    remaining.push(conflict.clone());
+                    continue;
+                };
+                let Some(content) = merged else {
+                    remaining.push(conflict.clone());
+                    continue;
+                };
+
+                if let Err(e) = std::fs::write(&conflict.path, &content) {
+                    eprintln!(
+                        "Warning: could not write resolved file '{}': {e}",
+                        conflict.path
+                    );
+                    remaining.push(conflict.clone());
+                    continue;
+                }
+
+                if let Err(e) = repo.add(&conflict.path) {
+                    eprintln!(
+                        "Warning: could not stage resolved file '{}': {e}",
+                        conflict.path
+                    );
+                    remaining.push(conflict.clone());
+                    continue;
+                }
+
+                let driver_name = driver.name().to_lowercase();
+                println!("Resolved {} via {} driver", conflict.path, driver_name);
+                resolved_count += 1;
             }
-
-            let driver_name = driver.name().to_lowercase();
-            println!("Resolved {} via {} driver", conflict.path, driver_name);
-            resolved_count += 1;
+        }
+        MergeStrategy::Manual => {
+            // Leave all conflicts as-is (conflict markers are already written)
+            remaining = conflicts;
         }
     }
 
@@ -195,15 +284,19 @@ pub(crate) async fn cmd_merge(
 
     if remaining.is_empty() {
         println!(
-            "All conflicts resolved. {} via semantic drivers.",
-            resolved_count
+            "All conflicts resolved. {} via {}.",
+            resolved_count,
+            match merge_strategy {
+                MergeStrategy::Semantic => "semantic drivers",
+                MergeStrategy::Ours => "keeping our version",
+                MergeStrategy::Theirs => "keeping their version",
+                MergeStrategy::Manual => unreachable!(),
+            }
         );
         println!("Run `suture commit` to finalize the merge.");
     } else {
         println!("Edit the file(s), then run `suture commit` to resolve");
-        println!(
-            "Hint: resolve conflicts, then run `suture commit`"
-        );
+        println!("Hint: resolve conflicts, then run `suture commit`");
     }
 
     Ok(())
