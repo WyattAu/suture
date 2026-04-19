@@ -364,6 +364,121 @@ mod tests {
     }
 
     #[test]
+    fn test_yaml_diff_multiline_folded_scalar() {
+        let driver = YamlDriver::new();
+        let old = "ref:\n  description: >\n    This is a multiline\n    description block\n";
+        let new =
+            "ref:\n  description: >\n    This is a changed multiline\n    description block\n";
+
+        let changes = driver.diff(Some(old), new).unwrap();
+        assert!(
+            !changes.is_empty(),
+            "should detect change in folded block scalar"
+        );
+    }
+
+    #[test]
+    fn test_yaml_diff_multiline_literal_scalar() {
+        let driver = YamlDriver::new();
+        let old = "ref:\n  description: |\n    Line 1\n    Line 2\n";
+        let new = "ref:\n  description: |\n    Modified Line 1\n    Line 2\n";
+
+        let changes = driver.diff(Some(old), new).unwrap();
+        assert!(
+            !changes.is_empty(),
+            "should detect change in literal block scalar"
+        );
+    }
+
+    #[test]
+    fn test_yaml_diff_folded_strip_scalar() {
+        let driver = YamlDriver::new();
+        let old = "ref:\n  description: >-\n    This is a multiline\n    description block\n";
+        let new =
+            "ref:\n  description: >-\n    This is a changed multiline\n    description block\n";
+
+        let changes = driver.diff(Some(old), new).unwrap();
+        assert!(
+            !changes.is_empty(),
+            "should detect change in strip folded scalar"
+        );
+    }
+
+    #[test]
+    fn test_yaml_diff_literal_keep_scalar() {
+        let driver = YamlDriver::new();
+        let old = "ref:\n  description: |+\n    Line 1\n    Line 2\n\n";
+        let new = "ref:\n  description: |+\n    Modified Line 1\n    Line 2\n\n";
+
+        let changes = driver.diff(Some(old), new).unwrap();
+        assert!(
+            !changes.is_empty(),
+            "should detect change in keep literal scalar"
+        );
+    }
+
+    #[test]
+    fn test_yaml_diff_block_scalar_with_empty_lines() {
+        let driver = YamlDriver::new();
+        let old = "ref:\n  description: >\n    Line 1\n\n    Line 3\n";
+        let new = "ref:\n  description: >\n    Line 1\n\n    Modified Line 3\n";
+
+        let changes = driver.diff(Some(old), new).unwrap();
+        assert!(
+            !changes.is_empty(),
+            "should detect change with empty lines in block scalar"
+        );
+    }
+
+    #[test]
+    fn test_yaml_diff_block_scalar_in_sequence() {
+        let driver = YamlDriver::new();
+        let old = "items:\n  - >\n    First item\n    continues\n  - plain\n";
+        let new = "items:\n  - >\n    Modified first item\n    continues\n  - plain\n";
+
+        let changes = driver.diff(Some(old), new).unwrap();
+        assert!(
+            !changes.is_empty(),
+            "should detect change in block scalar within sequence"
+        );
+    }
+
+    #[test]
+    fn test_yaml_diff_trailing_newline_difference() {
+        let driver = YamlDriver::new();
+        let yaml_with_newline = "description: >\n  Hello\n  World\n";
+        let yaml_without_newline = "description: >\n  Hello\n  World";
+
+        let changes = driver
+            .diff(Some(yaml_with_newline), yaml_without_newline)
+            .unwrap();
+        assert!(
+            !changes.is_empty(),
+            "trailing newline difference should be detected"
+        );
+    }
+
+    #[test]
+    fn test_yaml_diff_block_scalar_value_change_vs_no_change() {
+        let driver = YamlDriver::new();
+        let old = "ref:\n  description: |\n    Line 1\n    Line 2\n";
+        let same = "ref:\n  description: |\n    Line 1\n    Line 2\n";
+        let modified = "ref:\n  description: |\n    Line 1\n    Line 2 modified\n";
+
+        let no_changes = driver.diff(Some(old), same).unwrap();
+        assert!(
+            no_changes.is_empty(),
+            "identical block scalars should have no changes"
+        );
+
+        let with_changes = driver.diff(Some(old), modified).unwrap();
+        assert!(
+            !with_changes.is_empty(),
+            "modified block scalar text should be detected"
+        );
+    }
+
+    #[test]
     fn test_yaml_driver_extensions() {
         let driver = YamlDriver::new();
         assert_eq!(driver.supported_extensions(), &[".yaml", ".yml"]);

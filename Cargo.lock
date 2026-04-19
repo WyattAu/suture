@@ -4163,12 +4163,16 @@ dependencies = [
  "suture-driver",
  "suture-driver-csv",
  "suture-driver-docx",
+ "suture-driver-feed",
+ "suture-driver-html",
+ "suture-driver-ical",
  "suture-driver-image",
  "suture-driver-json",
  "suture-driver-markdown",
  "suture-driver-pdf",
  "suture-driver-pptx",
  "suture-driver-sql",
+ "suture-driver-svg",
  "suture-driver-toml",
  "suture-driver-xlsx",
  "suture-driver-xml",
@@ -4278,6 +4282,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "suture-driver-feed"
+version = "1.2.0"
+dependencies = [
+ "roxmltree",
+ "suture-driver",
+]
+
+[[package]]
+name = "suture-driver-html"
+version = "1.2.0"
+dependencies = [
+ "roxmltree",
+ "suture-driver",
+]
+
+[[package]]
+name = "suture-driver-ical"
+version = "1.2.0"
+dependencies = [
+ "suture-driver",
+]
+
+[[package]]
 name = "suture-driver-image"
 version = "1.2.0"
 dependencies = [
@@ -4334,6 +4361,14 @@ dependencies = [
 name = "suture-driver-sql"
 version = "1.2.0"
 dependencies = [
+ "suture-driver",
+]
+
+[[package]]
+name = "suture-driver-svg"
+version = "1.2.0"
+dependencies = [
+ "roxmltree",
  "suture-driver",
 ]
 

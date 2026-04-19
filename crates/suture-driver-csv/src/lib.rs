@@ -1,3 +1,5 @@
+use std::collections::{HashMap, HashSet};
+
 use suture_driver::{DriverError, SemanticChange, SutureDriver};
 
 pub struct CsvDriver;
@@ -25,6 +27,30 @@ impl CsvDriver {
         Ok((headers, rows))
     }
 
+    fn row_key(row: &[String], occurrence: usize) -> String {
+        let base = row.first().map(|s| s.as_str()).unwrap_or("");
+        if occurrence == 0 {
+            base.to_string()
+        } else {
+            format!("{base}__dup{occurrence}")
+        }
+    }
+
+    fn build_keyed_rows(rows: &[Vec<String>]) -> (Vec<String>, HashMap<String, Vec<String>>) {
+        let mut order = Vec::new();
+        let mut map = HashMap::new();
+        let mut counts: HashMap<String, usize> = HashMap::new();
+        for row in rows {
+            let raw = row.first().cloned().unwrap_or_default();
+            let count = counts.entry(raw).or_insert(0);
+            let key = Self::row_key(row, *count);
+            *count += 1;
+            order.push(key.clone());
+            map.insert(key, row.clone());
+        }
+        (order, map)
+    }
+
     fn diff_rows(
         old_headers: &[String],
         new_headers: &[String],
@@ -33,10 +59,8 @@ impl CsvDriver {
     ) -> Vec<SemanticChange> {
         let mut changes = Vec::new();
 
-        let old_headers_set: std::collections::HashSet<&str> =
-            old_headers.iter().map(|s| s.as_str()).collect();
-        let new_headers_set: std::collections::HashSet<&str> =
-            new_headers.iter().map(|s| s.as_str()).collect();
+        let old_headers_set: HashSet<&str> = old_headers.iter().map(|s| s.as_str()).collect();
+        let new_headers_set: HashSet<&str> = new_headers.iter().map(|s| s.as_str()).collect();
 
         for header in old_headers {
             if !new_headers_set.contains(header.as_str()) {
@@ -61,37 +85,48 @@ impl CsvDriver {
             .filter(|h| old_headers_set.contains(h.as_str()))
             .collect();
 
-        let max_rows = old_rows.len().max(new_rows.len());
+        let (old_order, old_map) = Self::build_keyed_rows(old_rows);
+        let (new_order, new_map) = Self::build_keyed_rows(new_rows);
 
-        for i in 0..max_rows {
-            match (old_rows.get(i), new_rows.get(i)) {
-                (None, Some(new_row)) => {
-                    changes.push(SemanticChange::Added {
-                        path: format!("/rows/{i}"),
-                        value: new_row.join(","),
-                    });
-                }
-                (Some(old_row), None) => {
-                    changes.push(SemanticChange::Removed {
-                        path: format!("/rows/{i}"),
-                        old_value: old_row.join(","),
-                    });
-                }
-                (Some(old_row), Some(new_row)) => {
-                    for (col_idx, col_name) in common_headers.iter().enumerate() {
-                        let old_val = old_row.get(col_idx).map(|s| s.as_str()).unwrap_or("");
-                        let new_val = new_row.get(col_idx).map(|s| s.as_str()).unwrap_or("");
+        let old_keys: HashSet<&str> = old_order.iter().map(|s| s.as_str()).collect();
+        let new_keys: HashSet<&str> = new_order.iter().map(|s| s.as_str()).collect();
 
-                        if old_val != new_val {
-                            changes.push(SemanticChange::Modified {
-                                path: format!("/{col_name}:{i}"),
-                                old_value: old_val.to_string(),
-                                new_value: new_val.to_string(),
-                            });
-                        }
+        for key in &old_order {
+            if !new_keys.contains(key.as_str())
+                && let Some(row) = old_map.get(key)
+            {
+                changes.push(SemanticChange::Removed {
+                    path: format!("/rows:{key}"),
+                    old_value: row.join(","),
+                });
+            }
+        }
+
+        for key in &new_order {
+            if !old_keys.contains(key.as_str())
+                && let Some(row) = new_map.get(key)
+            {
+                changes.push(SemanticChange::Added {
+                    path: format!("/rows:{key}"),
+                    value: row.join(","),
+                });
+            }
+        }
+
+        for key in &old_order {
+            if let (Some(old_row), Some(new_row)) = (old_map.get(key), new_map.get(key)) {
+                for (col_idx, col_name) in common_headers.iter().enumerate() {
+                    let old_val = old_row.get(col_idx).map(|s| s.as_str()).unwrap_or("");
+                    let new_val = new_row.get(col_idx).map(|s| s.as_str()).unwrap_or("");
+
+                    if old_val != new_val {
+                        changes.push(SemanticChange::Modified {
+                            path: format!("/{col_name}:{key}"),
+                            old_value: old_val.to_string(),
+                            new_value: new_val.to_string(),
+                        });
                     }
                 }
-                (None, None) => {}
             }
         }
 
@@ -106,60 +141,61 @@ impl CsvDriver {
         theirs_headers: &[String],
         theirs_rows: &[Vec<String>],
     ) -> Result<Option<String>, DriverError> {
-        let base_set: std::collections::HashSet<&str> =
-            base_headers.iter().map(|s| s.as_str()).collect();
-        let ours_set: std::collections::HashSet<&str> =
-            ours_headers.iter().map(|s| s.as_str()).collect();
-        let theirs_set: std::collections::HashSet<&str> =
-            theirs_headers.iter().map(|s| s.as_str()).collect();
-
-        let all_header_names: std::collections::HashSet<&str> = base_set
-            .iter()
-            .chain(ours_set.iter())
-            .chain(theirs_set.iter())
-            .copied()
-            .collect();
+        let base_set: HashSet<&str> = base_headers.iter().map(|s| s.as_str()).collect();
+        let ours_set: HashSet<&str> = ours_headers.iter().map(|s| s.as_str()).collect();
+        let theirs_set: HashSet<&str> = theirs_headers.iter().map(|s| s.as_str()).collect();
 
         let mut merged_headers: Vec<String> = Vec::new();
-        for &h in &all_header_names {
-            let in_base = base_set.contains(h);
-            let in_ours = ours_set.contains(h);
-            let in_theirs = theirs_set.contains(h);
-            match (in_base, in_ours, in_theirs) {
-                (true, true, false) | (false, true, false) => merged_headers.push(h.to_string()),
-                (true, false, true) | (false, false, true) => merged_headers.push(h.to_string()),
-                (true, true, true) => merged_headers.push(h.to_string()),
-                (false, true, true) => merged_headers.push(h.to_string()),
-                (true, false, false) | (false, false, false) => {}
+        let mut header_seen: HashSet<&str> = HashSet::new();
+
+        for headers in [base_headers, ours_headers, theirs_headers] {
+            for h in headers.iter() {
+                if header_seen.insert(h.as_str()) {
+                    let in_base = base_set.contains(h.as_str());
+                    let in_ours = ours_set.contains(h.as_str());
+                    let in_theirs = theirs_set.contains(h.as_str());
+                    match (in_base, in_ours, in_theirs) {
+                        (true, false, false) | (false, false, false) => {
+                            header_seen.remove(h.as_str());
+                        }
+                        _ => merged_headers.push(h.clone()),
+                    }
+                }
             }
         }
 
-        let max_rows = base_rows.len().max(ours_rows.len()).max(theirs_rows.len());
+        let (base_order, base_map) = Self::build_keyed_rows(base_rows);
+        let (ours_order, ours_map) = Self::build_keyed_rows(ours_rows);
+        let (theirs_order, theirs_map) = Self::build_keyed_rows(theirs_rows);
+
+        let base_keys: HashSet<&str> = base_order.iter().map(|s| s.as_str()).collect();
+        let ours_keys: HashSet<&str> = ours_order.iter().map(|s| s.as_str()).collect();
+        let theirs_keys: HashSet<&str> = theirs_order.iter().map(|s| s.as_str()).collect();
+
+        let mut key_order: Vec<String> = Vec::new();
+        let mut seen_keys: HashSet<String> = HashSet::new();
+        for key in base_order
+            .iter()
+            .chain(ours_order.iter())
+            .chain(theirs_order.iter())
+        {
+            if seen_keys.insert(key.clone()) {
+                key_order.push(key.clone());
+            }
+        }
+
         let mut merged_rows: Vec<Vec<String>> = Vec::new();
 
-        for i in 0..max_rows {
-            let base_row = base_rows.get(i);
-            let ours_row = ours_rows.get(i);
-            let theirs_row = theirs_rows.get(i);
+        for key in &key_order {
+            let in_base = base_keys.contains(key.as_str());
+            let in_ours = ours_keys.contains(key.as_str());
+            let in_theirs = theirs_keys.contains(key.as_str());
 
-            match (base_row, ours_row, theirs_row) {
-                (None, Some(o), None) => merged_rows.push(o.clone()),
-                (None, None, Some(t)) => merged_rows.push(t.clone()),
-                (None, Some(o), Some(t)) => {
-                    if o == t {
-                        merged_rows.push(o.clone());
-                    } else {
-                        // Both sides added different rows at the same position.
-                        // Include both — additions from both sides should be preserved.
-                        merged_rows.push(o.clone());
-                        merged_rows.push(t.clone());
-                    }
-                }
-                (None, None, _) => {}
-                (Some(_), Some(o), None) => merged_rows.push(o.clone()),
-                (Some(_), None, Some(t)) => merged_rows.push(t.clone()),
-                (Some(_), None, None) => {}
-                (Some(b), Some(o), Some(t)) => {
+            match (in_base, in_ours, in_theirs) {
+                (true, true, true) => {
+                    let b = &base_map[key];
+                    let o = &ours_map[key];
+                    let t = &theirs_map[key];
                     if o == t {
                         merged_rows.push(o.clone());
                     } else {
@@ -182,6 +218,39 @@ impl CsvDriver {
                         merged_rows.push(merged_row);
                     }
                 }
+                (true, true, false) => {
+                    let b = &base_map[key];
+                    let o = &ours_map[key];
+                    if o == b {
+                    } else {
+                        return Ok(None);
+                    }
+                }
+                (true, false, true) => {
+                    let b = &base_map[key];
+                    let t = &theirs_map[key];
+                    if t == b {
+                    } else {
+                        return Ok(None);
+                    }
+                }
+                (true, false, false) => {}
+                (false, true, false) => {
+                    merged_rows.push(ours_map[key].clone());
+                }
+                (false, false, true) => {
+                    merged_rows.push(theirs_map[key].clone());
+                }
+                (false, true, true) => {
+                    let o = &ours_map[key];
+                    let t = &theirs_map[key];
+                    if o == t {
+                        merged_rows.push(o.clone());
+                    } else {
+                        return Ok(None);
+                    }
+                }
+                (false, false, false) => {}
             }
         }
 
@@ -258,10 +327,12 @@ impl SutureDriver for CsvDriver {
                     });
                 }
                 for (i, row) in new_rows.iter().enumerate() {
+                    let key = Self::row_key(row, 0);
                     changes.push(SemanticChange::Added {
-                        path: format!("/rows/{i}"),
+                        path: format!("/rows:{key}"),
                         value: row.join(","),
                     });
+                    let _ = i;
                 }
                 Ok(changes)
             }
@@ -331,7 +402,7 @@ mod tests {
 
         let changes = driver.diff(Some(old), new).unwrap();
         assert!(changes.contains(&SemanticChange::Modified {
-            path: "/email:0".to_string(),
+            path: "/email:Alice".to_string(),
             old_value: "alice@old.com".to_string(),
             new_value: "alice@new.com".to_string(),
         }));
@@ -345,7 +416,7 @@ mod tests {
 
         let changes = driver.diff(Some(old), new).unwrap();
         assert!(changes.contains(&SemanticChange::Added {
-            path: "/rows/1".to_string(),
+            path: "/rows:Bob".to_string(),
             value: "Bob,bob@example.com".to_string(),
         }));
     }
@@ -358,7 +429,7 @@ mod tests {
 
         let changes = driver.diff(Some(old), new).unwrap();
         assert!(changes.contains(&SemanticChange::Removed {
-            path: "/rows/1".to_string(),
+            path: "/rows:Bob".to_string(),
             old_value: "Bob,bob@example.com".to_string(),
         }));
     }
@@ -550,9 +621,9 @@ mod tests {
     #[test]
     fn test_correctness_unicode_values() {
         let driver = CsvDriver::new();
-        let base = "名前,都市\n太郎,東京\n";
-        let ours = "名前,都市\n太郎,大阪\n";
-        let theirs = "名前,都市\n次郎,東京\n";
+        let base = "id,名前,都市\n1,太郎,東京\n";
+        let ours = "id,名前,都市\n1,太郎,大阪\n";
+        let theirs = "id,名前,都市\n1,次郎,東京\n";
 
         let result = driver.merge(base, ours, theirs).unwrap();
         assert!(result.is_some());
@@ -637,9 +708,10 @@ mod tests {
         let theirs = "id,name\n1,Alice\n2,Charlie\n";
 
         let result = driver.merge(base, ours, theirs).unwrap();
-        assert!(result.is_some());
-        let merged = result.unwrap();
-        assert!(merged.contains("2,Bob") || merged.contains("2,Charlie"));
+        assert!(
+            result.is_none(),
+            "both sides added a row with the same key but different content → conflict"
+        );
     }
 
     #[test]
@@ -655,8 +727,8 @@ mod tests {
         let (_headers, rows) = CsvDriver::parse_csv(&merged).unwrap();
         assert_eq!(
             rows.len(),
-            2,
-            "CSV positional merge: base row at index 1 deleted by ours but kept by theirs"
+            1,
+            "key-based merge: Bob deleted by ours, unchanged by theirs → deletion wins"
         );
         assert_eq!(rows[0][0], "Alice");
     }
@@ -670,13 +742,8 @@ mod tests {
 
         let result = driver.merge(base, ours, theirs).unwrap();
         assert!(
-            result.is_some(),
-            "CSV positional merge: ours deleted, theirs modified → theirs row kept"
-        );
-        let merged = result.unwrap();
-        assert!(
-            merged.contains("bob@new.com"),
-            "theirs modification should be preserved"
+            result.is_none(),
+            "key-based merge: ours deleted Bob, theirs modified Bob → delete vs modify conflict"
         );
     }
 
@@ -704,5 +771,87 @@ mod tests {
         assert!(result.is_some());
         let merged = result.unwrap();
         assert!(merged.contains("goodbye, world"));
+    }
+
+    #[test]
+    fn test_correctness_both_delete_same_row() {
+        let driver = CsvDriver::new();
+        let base = "id,name\n1,Alice\n2,Bob\n3,Charlie\n";
+        let ours = "id,name\n1,Alice\n3,Charlie\n";
+        let theirs = "id,name\n1,Alice\n3,Charlie\n";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        let (_h, rows) = CsvDriver::parse_csv(&merged).unwrap();
+        assert_eq!(rows.len(), 2, "Bob deleted by both sides should be omitted");
+    }
+
+    #[test]
+    fn test_correctness_key_based_merge_insert_bug() {
+        let driver = CsvDriver::new();
+        let base = "id,name,email,age\n1,Alice,alice@example.com,30\n2,Bob,bob@example.com,25\n3,Carol,carol@example.com,35\n4,Dave,dave@example.com,28\n5,Eve,eve@example.com,22\n";
+        let ours = "id,name,email,age\n1,Alice,alice@example.com,30\n2,Bob,bob@example.com,25\n3,Carol,carol@example.com,36\n4,Dave,dave@example.com,28\n5,Eve,eve@example.com,22\n6,Frank,frank@example.com,40\n";
+        let theirs = "id,name,email,age\n1,Alice,alice@new.com,30\n2,Bob,bob@example.com,25\n3,Carol,carol@example.com,35\n4,Dave,dave@example.com,28\n5,Eve,eve@example.com,22\n7,Grace,grace@example.com,29\n";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(
+            result.is_some(),
+            "inserting rows should not cause misalignment with key-based merge"
+        );
+        let merged = result.unwrap();
+        let (_headers, rows) = CsvDriver::parse_csv(&merged).unwrap();
+
+        assert_eq!(
+            rows.len(),
+            7,
+            "should have all 5 base rows plus 2 additions"
+        );
+
+        let alice = &rows.iter().find(|r| r[0] == "1").unwrap();
+        assert_eq!(
+            alice[2], "alice@new.com",
+            "theirs' modification to row 1 email should be present"
+        );
+
+        let carol = &rows.iter().find(|r| r[0] == "3").unwrap();
+        assert_eq!(
+            carol[3], "36",
+            "ours' modification to row 3 should be present"
+        );
+
+        assert!(
+            rows.iter().any(|r| r[0] == "6" && r[1] == "Frank"),
+            "ours' added row should be present"
+        );
+        assert!(
+            rows.iter().any(|r| r[0] == "7" && r[1] == "Grace"),
+            "theirs' added row should be present"
+        );
+
+        let bob = &rows.iter().find(|r| r[0] == "2").unwrap();
+        assert_eq!(
+            bob[2], "bob@example.com",
+            "unchanged row 2 should be preserved"
+        );
+
+        let dave = &rows.iter().find(|r| r[0] == "4").unwrap();
+        assert_eq!(dave[1], "Dave", "unchanged row 4 should be preserved");
+    }
+
+    #[test]
+    fn test_correctness_duplicate_keys() {
+        let driver = CsvDriver::new();
+        let base = "id,name\n1,Alice\n1,Bob\n";
+        let ours = "id,name\n1,Alice\n1,Robert\n";
+        let theirs = "id,name\n1,Alice\n1,Bob\n";
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some(), "duplicate keys should merge correctly");
+        let merged = result.unwrap();
+        let (_h, rows) = CsvDriver::parse_csv(&merged).unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0][1], "Alice");
+        assert_eq!(rows[1][1], "Robert");
     }
 }

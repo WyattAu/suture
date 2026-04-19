@@ -13,8 +13,12 @@ pub enum FileType {
     Toml,
     Csv,
     Xml,
+    Svg,
     Markdown,
     Sql,
+    Ical,
+    Html,
+    Feed,
     Unknown,
 }
 
@@ -27,9 +31,13 @@ impl FileType {
             FileType::Json | FileType::Yaml | FileType::Toml | FileType::Csv | FileType::Xml => {
                 "data"
             }
+            FileType::Svg => "image",
             FileType::Markdown => "document",
             FileType::Sql => "data",
+            FileType::Ical => "data",
             FileType::Pdf => "document",
+            FileType::Html => "document",
+            FileType::Feed => "data",
             FileType::Unknown => "unknown",
         }
     }
@@ -40,10 +48,13 @@ impl FileType {
             FileType::Xlsx | FileType::Csv => "\u{1F4CA}",
             FileType::Pptx => "\u{1F3A5}",
             FileType::Otio => "\u{1F3AC}",
-            FileType::Image => "\u{1F5BC}",
+            FileType::Image | FileType::Svg => "\u{1F5BC}",
             FileType::Json | FileType::Yaml | FileType::Toml | FileType::Xml | FileType::Sql => {
                 "\u{1F4CB}"
             }
+            FileType::Ical => "\u{1F4C5}",
+            FileType::Html => "\u{1F4C4}",
+            FileType::Feed => "\u{1F4E1}",
             FileType::Unknown => "",
         }
     }
@@ -61,8 +72,12 @@ impl FileType {
             FileType::Toml => "TOML",
             FileType::Csv => "CSV",
             FileType::Xml => "XML",
+            FileType::Svg => "SVG",
             FileType::Markdown => "Markdown",
             FileType::Sql => "SQL",
+            FileType::Ical => "ICAL",
+            FileType::Html => "HTML",
+            FileType::Feed => "FEED",
             FileType::Unknown => "",
         }
     }
@@ -93,9 +108,13 @@ pub fn detect_from_extension(ext: &str) -> FileType {
         "yaml" | "yml" => FileType::Yaml,
         "toml" => FileType::Toml,
         "csv" | "tsv" => FileType::Csv,
-        "xml" | "xsl" | "xsd" | "svg" | "xhtml" => FileType::Xml,
+        "xml" | "xsl" | "xsd" | "xhtml" => FileType::Xml,
+        "svg" => FileType::Svg,
         "md" | "markdown" => FileType::Markdown,
         "sql" => FileType::Sql,
+        "ics" | "ifb" => FileType::Ical,
+        "html" | "htm" => FileType::Html,
+        "rss" | "atom" => FileType::Feed,
         _ => FileType::Unknown,
     }
 }
@@ -144,6 +163,8 @@ impl RepoType {
                     | FileType::Yaml
                     | FileType::Toml
                     | FileType::Sql
+                    | FileType::Ical
+                    | FileType::Feed
             ),
         }
     }

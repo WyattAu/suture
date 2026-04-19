@@ -196,7 +196,9 @@ impl MetadataStore {
         let touch_set_json = serde_json::to_string(&patch.touch_set.iter().collect::<Vec<_>>())
             .map_err(|e| MetaError::Corrupt(e.to_string()))?;
 
-        self.conn.execute(
+        let tx = self.conn.unchecked_transaction()?;
+
+        tx.execute(
             "INSERT OR REPLACE INTO patches (id, parent_ids, operation_type, touch_set, target_path, payload, timestamp, author, message)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
@@ -212,13 +214,14 @@ impl MetadataStore {
             ],
         )?;
 
-        // Store edges
         for parent_id in &patch.parent_ids {
-            self.conn.execute(
+            tx.execute(
                 "INSERT OR IGNORE INTO edges (parent_id, child_id) VALUES (?1, ?2)",
                 params![parent_id.to_hex(), patch.id.to_hex()],
             )?;
         }
+
+        tx.commit()?;
 
         Ok(())
     }
@@ -367,6 +370,20 @@ impl MetadataStore {
         self.conn.execute(
             "DELETE FROM working_set WHERE path = ?1",
             params![path.as_str()],
+        )?;
+        Ok(())
+    }
+
+    /// Remove multiple files from the working set in a single transaction.
+    pub fn clear_working_set_batch(&self, paths: &[&str]) -> Result<(), MetaError> {
+        if paths.is_empty() {
+            return Ok(());
+        }
+        let json = serde_json::to_string(paths)
+            .map_err(|e| MetaError::Custom(e.to_string()))?;
+        self.conn.execute(
+            "DELETE FROM working_set WHERE path IN (SELECT value FROM json_each(?1))",
+            params![json],
         )?;
         Ok(())
     }

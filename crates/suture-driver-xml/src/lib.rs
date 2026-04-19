@@ -9,6 +9,10 @@ impl XmlDriver {
         Self
     }
 
+    fn has_xml_declaration(content: &str) -> bool {
+        content.trim_start().starts_with("<?xml")
+    }
+
     fn escape_xml(s: &str) -> String {
         s.replace('&', "&amp;")
             .replace('<', "&lt;")
@@ -421,13 +425,16 @@ impl SutureDriver for XmlDriver {
         match base_content {
             None => {
                 let mut changes = Vec::new();
-                collect_all_paths(new_doc.root(), &mut changes);
+                collect_all_paths(new_doc.root_element(), &mut changes);
                 Ok(changes)
             }
             Some(base) => {
                 let old_doc = roxmltree::Document::parse(base)
                     .map_err(|e| DriverError::ParseError(e.to_string()))?;
-                Ok(Self::diff_nodes(old_doc.root(), new_doc.root()))
+                Ok(Self::diff_nodes(
+                    old_doc.root_element(),
+                    new_doc.root_element(),
+                ))
             }
         }
     }
@@ -455,11 +462,20 @@ impl SutureDriver for XmlDriver {
         let theirs_doc = roxmltree::Document::parse(theirs)
             .map_err(|e| DriverError::ParseError(e.to_string()))?;
 
+        let has_declaration = Self::has_xml_declaration(base)
+            || Self::has_xml_declaration(ours)
+            || Self::has_xml_declaration(theirs);
+
         let mut result = String::new();
-        result.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
-        if let Some(merged) =
-            Self::merge_elements(base_doc.root(), ours_doc.root(), theirs_doc.root(), 0)?
-        {
+        if has_declaration {
+            result.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+        }
+        if let Some(merged) = Self::merge_elements(
+            base_doc.root_element(),
+            ours_doc.root_element(),
+            theirs_doc.root_element(),
+            0,
+        )? {
             result.push_str(&merged);
             result.push('\n');
             Ok(Some(result))
@@ -791,9 +807,9 @@ mod tests {
     #[test]
     fn test_correctness_output_validity() {
         let driver = XmlDriver::new();
-        let base = r#"<root><a>1</a><b>2</b></root>"#;
-        let ours = r#"<root><a>10</a><b>2</b></root>"#;
-        let theirs = r#"<root><a>1</a><b>20</b></root>"#;
+        let base = r#"<?xml version="1.0"?><root><a>1</a><b>2</b></root>"#;
+        let ours = r#"<?xml version="1.0"?><root><a>10</a><b>2</b></root>"#;
+        let theirs = r#"<?xml version="1.0"?><root><a>1</a><b>20</b></root>"#;
 
         let result = driver.merge(base, ours, theirs).unwrap();
         assert!(result.is_some());

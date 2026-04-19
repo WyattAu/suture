@@ -24,6 +24,7 @@ suture-driver-toml = { path = "../suture-driver-toml", version = "1.2.0" }
 suture-driver-csv = { path = "../suture-driver-csv", version = "1.2.0" }
 suture-driver-yaml = { path = "../suture-driver-yaml", version = "1.2.0" }
 suture-driver-xml = { path = "../suture-driver-xml", version = "1.2.0" }
+suture-driver-svg = { path = "../suture-driver-svg", version = "1.2.0" }
 suture-ooxml = { path = "../suture-ooxml", version = "1.2.0" }
 suture-driver-docx = { path = "../suture-driver-docx", version = "1.2.0" }
 suture-driver-xlsx = { path = "../suture-driver-xlsx", version = "1.2.0" }
@@ -32,6 +33,9 @@ suture-driver-markdown = { path = "../suture-driver-markdown", version = "1.2.0"
 suture-driver-sql = { path = "../suture-driver-sql", version = "1.2.0" }
 suture-driver-image = { path = "../suture-driver-image", version = "1.2.0" }
 suture-driver-pdf = { path = "../suture-driver-pdf", version = "1.2.0" }
+suture-driver-html = { path = "../suture-driver-html", version = "1.2.0" }
+suture-driver-ical = { path = "../suture-driver-ical", version = "1.2.0" }
+suture-driver-feed = { path = "../suture-driver-feed", version = "1.2.0" }
 suture-tui = { path = "../suture-tui", version = "1.2.0" }
 clap = { version = "4.5", features = ["derive"] }
 clap_complete = "4.6"

@@ -956,11 +956,9 @@ impl Repository {
         let patch_id = self.dag.add_patch(batch_patch.clone(), parent_ids)?;
         self.meta.store_patch(&batch_patch)?;
 
-        // Clear working set entries
-        for (path, _) in &staged {
-            let repo_path = RepoPath::new(path.clone())?;
-            self.meta.working_set_remove(&repo_path)?;
-        }
+        // Clear working set entries in a single batch operation
+        let staged_paths: Vec<&str> = staged.iter().map(|(path, _)| path.as_str()).collect();
+        self.meta.clear_working_set_batch(&staged_paths)?;
 
         let branch = BranchName::new(&branch_name)?;
         self.dag.update_branch(&branch, patch_id)?;

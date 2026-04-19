@@ -60,17 +60,17 @@ where
 {
     let mut new_tree = tree.clone();
 
-    // Handle Batch patches — iterate file changes and apply each
+    // Handle Batch patches — iterate file changes and apply each in-place
+    // (avoids O(N²) cloning: clone once, then mutate)
     if patch.operation_type == OperationType::Batch {
         if let Some(changes) = patch.file_changes() {
             for change in &changes {
-                new_tree = apply_single_op(
-                    &new_tree,
+                apply_single_op_mut(
+                    &mut new_tree,
                     &change.op,
                     &change.path,
                     &change.payload,
-                    &mut get_payload_blob,
-                )?;
+                );
             }
         }
         return Ok(new_tree);
@@ -186,16 +186,56 @@ where
     Ok(tree)
 }
 
+fn resolve_hex_to_hash(payload: &[u8]) -> Option<suture_common::Hash> {
+    if payload.is_empty() {
+        return None;
+    }
+    let hex = std::str::from_utf8(payload).ok()?;
+    suture_common::Hash::from_hex(hex).ok()
+}
+
+fn apply_single_op_mut(
+    tree: &mut FileTree,
+    op: &OperationType,
+    target_path: &str,
+    payload: &[u8],
+) {
+    match op {
+        OperationType::Create => {
+            if tree.contains(target_path) {
+                return;
+            }
+            if let Some(blob_hash) = resolve_hex_to_hash(payload) {
+                tree.insert(target_path.to_string(), blob_hash);
+            }
+        }
+        OperationType::Modify => {
+            if !tree.contains(target_path) {
+                return;
+            }
+            if let Some(blob_hash) = resolve_hex_to_hash(payload) {
+                tree.insert(target_path.to_string(), blob_hash);
+            }
+        }
+        OperationType::Delete => {
+            tree.remove(target_path);
+        }
+        OperationType::Move => {
+            if let Ok(new_path) = String::from_utf8(payload.to_vec()) {
+                tree.rename(target_path, new_path);
+            }
+        }
+        OperationType::Metadata => {}
+        OperationType::Merge | OperationType::Identity | OperationType::Batch => {}
+    }
+}
+
 /// Resolve a patch's payload to a CAS blob hash.
 ///
 /// The payload in suture-core patches stores the hex-encoded BLAKE3 hash
 /// of the blob in the CAS. This function parses it back into a Hash.
 pub fn resolve_payload_to_hash(patch: &Patch) -> Option<suture_common::Hash> {
-    if patch.payload.is_empty() {
-        return None;
-    }
-    let hex = String::from_utf8(patch.payload.clone()).ok()?;
-    suture_common::Hash::from_hex(&hex).ok()
+    resolve_hex_to_hash(&patch.payload)
 }
 
 #[cfg(test)]
