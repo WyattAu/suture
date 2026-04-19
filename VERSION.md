@@ -1,8 +1,9 @@
 # Suture Version
 
 - **Current Version:** 3.4.0
-- **Current Phase:** Post-Ship Phase 2–3 Complete
-- **Status:** Complete
+- **Crates.io:** 26/27 crates published (suture-cli requires Node.js build; install from source)
+- **Current Phase:** Post-Ship Complete
+- **Status:** Shipped
 - **Last Updated:** 2026-04-19
 - **Rust Edition:** 2024
 - **Lean 4:** v4.29.1 (23 theorems proved)
