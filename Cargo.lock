@@ -4497,6 +4497,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "suture-merge"
+version = "0.1.0"
+dependencies = [
+ "suture-driver",
+ "suture-driver-csv",
+ "suture-driver-feed",
+ "suture-driver-html",
+ "suture-driver-ical",
+ "suture-driver-json",
+ "suture-driver-markdown",
+ "suture-driver-svg",
+ "suture-driver-toml",
+ "suture-driver-xml",
+ "suture-driver-yaml",
+]
+
+[[package]]
 name = "suture-node"
 version = "0.1.0"
 dependencies = [
