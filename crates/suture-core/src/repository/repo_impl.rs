@@ -3573,15 +3573,20 @@ impl Repository {
     // Garbage Collection
     // =========================================================================
 
-    /// Remove unreachable patches from the repository.
+    /// Remove unreachable patches and orphaned blobs from the repository.
     ///
-    /// Patches not reachable from any branch tip are deleted from the
-    /// metadata store (patches, edges, signatures tables). The in-memory
-    /// DAG is not updated; reopen the repository after GC to get a clean DAG.
+    /// 1. Computes the set of patches reachable from all branch tips.
+    /// 2. Deletes unreachable patches from the metadata store (patches, edges,
+    ///    signatures tables) in a single transaction.
+    /// 3. Collects all blob hashes referenced by reachable patches.
+    /// 4. Deletes orphaned blobs from the CAS store (both loose and packed).
+    ///
+    /// The in-memory DAG is not updated; reopen the repository after GC.
     pub fn gc(&self) -> Result<GcResult, RepoError> {
         let branches = self.dag.list_branches();
         let all_ids: HashSet<PatchId> = self.dag.patch_ids().into_iter().collect();
 
+        // Compute reachable set
         let mut reachable: HashSet<PatchId> = HashSet::new();
         for (_name, tip_id) in &branches {
             reachable.insert(*tip_id);
@@ -3590,30 +3595,83 @@ impl Repository {
             }
         }
 
-        let unreachable: Vec<&PatchId> = all_ids
+        let unreachable: Vec<PatchId> = all_ids
             .iter()
             .filter(|id| !reachable.contains(id))
+            .copied()
             .collect();
+
+        // Delete unreachable patches in a transaction (atomic)
         let conn = self.meta().conn();
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| RepoError::Custom(e.to_string()))?;
 
         for id in &unreachable {
             let hex = id.to_hex();
-            conn.execute(
+            tx.execute(
                 "DELETE FROM signatures WHERE patch_id = ?1",
                 rusqlite::params![hex],
             )
             .map_err(|e| RepoError::Custom(e.to_string()))?;
-            conn.execute(
+            tx.execute(
                 "DELETE FROM edges WHERE parent_id = ?1 OR child_id = ?1",
                 rusqlite::params![hex],
             )
             .map_err(|e| RepoError::Custom(e.to_string()))?;
-            conn.execute("DELETE FROM patches WHERE id = ?1", rusqlite::params![hex])
+            tx.execute("DELETE FROM patches WHERE id = ?1", rusqlite::params![hex])
                 .map_err(|e| RepoError::Custom(e.to_string()))?;
+            // Also clean up file_trees for unreachable patches
+            tx.execute("DELETE FROM file_trees WHERE patch_id = ?1", rusqlite::params![hex])
+                .map_err(|e| RepoError::Custom(e.to_string()))?;
+            // Clean up reflog entries that reference unreachable patches
+            tx.execute(
+                "DELETE FROM reflog WHERE old_head = ?1 OR new_head = ?1",
+                rusqlite::params![hex],
+            )
+            .map_err(|e| RepoError::Custom(e.to_string()))?;
+        }
+
+        tx.commit()
+            .map_err(|e| RepoError::Custom(e.to_string()))?;
+
+        // Collect all blob hashes referenced by reachable patches
+        let mut referenced_blobs: HashSet<Hash> = HashSet::new();
+        for id in &reachable {
+            if let Some(patch) = self.dag.get_patch(id) {
+                if patch.is_batch() {
+                    if let Some(changes) = patch.file_changes() {
+                        for change in &changes {
+                            if !change.payload.is_empty()
+                                && let Ok(hash) = Hash::from_hex(
+                                    &String::from_utf8_lossy(&change.payload),
+                                ) && referenced_blobs.insert(hash)
+                            {
+                                // blob hash collected
+                            }
+                        }
+                    }
+                } else if let Some(hash) = resolve_payload_to_hash(patch) {
+                    referenced_blobs.insert(hash);
+                }
+            }
+        }
+
+        // Prune orphaned blobs from CAS
+        let mut blobs_removed = 0usize;
+        if let Ok(all_blobs) = self.cas().list_blobs() {
+            for blob_hash in &all_blobs {
+                if !referenced_blobs.contains(blob_hash)
+                    && self.cas().delete_blob(blob_hash).is_ok()
+                {
+                    blobs_removed += 1;
+                }
+            }
         }
 
         Ok(GcResult {
             patches_removed: unreachable.len(),
+            blobs_removed,
         })
     }
 
@@ -3628,7 +3686,6 @@ impl Repository {
     /// by patches), and HEAD consistency.
     pub fn fsck(&self) -> Result<FsckResult, RepoError> {
         let mut checks_passed = 0usize;
-        let mut warnings = Vec::new();
         let mut errors = Vec::new();
 
         // 1. DAG consistency: every patch's parents exist in the DAG
@@ -3683,7 +3740,7 @@ impl Repository {
                         if let Ok(hash) = Hash::from_hex(&hex)
                             && !self.cas().has_blob(&hash)
                         {
-                            warnings.push(format!(
+                            errors.push(format!(
                                 "batch patch {} references missing blob {} for path {}",
                                 patch.id.to_hex(),
                                 hash.to_hex(),
@@ -3700,7 +3757,7 @@ impl Repository {
             }
             if let Some(hash) = resolve_payload_to_hash(patch) {
                 if !self.cas().has_blob(&hash) {
-                    warnings.push(format!(
+                    errors.push(format!(
                         "patch {} references missing blob {}",
                         patch.id.to_hex(),
                         hash.to_hex()
@@ -3708,7 +3765,7 @@ impl Repository {
                     blob_ok = false;
                 }
             } else {
-                warnings.push(format!(
+                errors.push(format!(
                     "patch {} has non-UTF-8 payload, cannot verify blob reference",
                     patch.id.to_hex()
                 ));
@@ -3725,7 +3782,6 @@ impl Repository {
             Ok((branch_name, _target_id)) => {
                 if branches.iter().any(|(n, _)| n == &branch_name) {
                     head_ok = true;
-                    checks_passed += 1;
                 } else {
                     errors.push(format!(
                         "HEAD branch '{}' does not exist in branch list",
@@ -3743,7 +3799,7 @@ impl Repository {
 
         Ok(FsckResult {
             checks_passed,
-            warnings,
+            warnings: Vec::new(),
             errors,
         })
     }
@@ -4106,6 +4162,8 @@ pub struct ConflictInfo {
 pub struct GcResult {
     /// Number of unreachable patches removed.
     pub patches_removed: usize,
+    /// Number of orphaned blobs removed from the CAS store.
+    pub blobs_removed: usize,
 }
 
 /// Result of a filesystem check.
