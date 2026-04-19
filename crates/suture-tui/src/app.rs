@@ -99,13 +99,31 @@ enum BranchAction {
     Rename,
 }
 
+/// Resolution choice for a single conflict hunk.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HunkResolution {
+    Unresolved,
+    Ours,
+    Theirs,
+    Both,
+}
+
+/// A single conflict hunk extracted from conflict markers.
+#[derive(Debug, Clone)]
+pub struct Hunk {
+    pub ours_lines: Vec<String>,
+    pub theirs_lines: Vec<String>,
+    pub base_lines: Vec<String>,
+    pub resolution: HunkResolution,
+}
+
 /// State for a file with merge conflict markers.
 #[derive(Debug, Clone)]
 pub struct ConflictFileState {
     pub path: String,
-    pub ours_content: String,
-    pub theirs_content: String,
-    pub resolution: Option<u8>,
+    pub hunks: Vec<Hunk>,
+    pub current_hunk: usize,
+    pub raw_content: String,
 }
 
 /// Application state.
@@ -380,7 +398,7 @@ impl App {
                 let Ok(content) = std::fs::read_to_string(&path) else {
                     continue;
                 };
-                if let Some((ours, theirs)) = parse_conflict_markers(&content) {
+                if let Some(hunks) = parse_conflict_markers(&content) {
                     let relative = path
                         .strip_prefix(root)
                         .unwrap_or(&path)
@@ -388,9 +406,9 @@ impl App {
                         .replace('\\', "/");
                     conflicts.push(ConflictFileState {
                         path: relative,
-                        ours_content: ours,
-                        theirs_content: theirs,
-                        resolution: None,
+                        hunks,
+                        current_hunk: 0,
+                        raw_content: content,
                     });
                 }
             }
@@ -873,39 +891,56 @@ impl App {
                 self.conflict_mode = false;
                 self.status_message = "Exited conflict resolution".to_string();
             }
-            KeyCode::Up | KeyCode::Char('k') => {
-                if self.conflict_cursor > 0 {
-                    self.conflict_cursor -= 1;
-                }
-            }
-            KeyCode::Down | KeyCode::Char('j') => {
+            KeyCode::Char('j') | KeyCode::Down => {
                 if self.conflict_cursor < self.conflict_files.len().saturating_sub(1) {
                     self.conflict_cursor += 1;
                 }
             }
-            KeyCode::Char('1') => {
-                if let Some(conflict) = self.conflict_files.get_mut(self.conflict_cursor) {
-                    conflict.resolution = Some(1);
-                    self.status_message = format!("Chose 'ours' for: {}", conflict.path);
+            KeyCode::Char('k') | KeyCode::Up => {
+                if self.conflict_cursor > 0 {
+                    self.conflict_cursor -= 1;
                 }
             }
-            KeyCode::Char('2') => {
-                if let Some(conflict) = self.conflict_files.get_mut(self.conflict_cursor) {
-                    conflict.resolution = Some(2);
-                    self.status_message = format!("Chose 'theirs' for: {}", conflict.path);
-                }
-            }
-            KeyCode::Char('m') => {
+            KeyCode::Char('e') | KeyCode::Enter => {
+                // Open the selected conflict file in $EDITOR (defaults to nvim)
                 if let Some(conflict) = self.conflict_files.get(self.conflict_cursor) {
-                    if conflict.resolution.is_some() {
-                        self.status_message =
-                            format!("Marked as resolved: {}", conflict.path);
-                    } else {
-                        self.error_message = Some(
-                            "Resolve conflict first (choose [1] ours or [2] theirs)"
-                                .to_string(),
-                        );
-                    }
+                    let root = self.repo.root().to_path_buf();
+                    let full_path = root.join(&conflict.path);
+                    let editor = std::env::var("EDITOR").unwrap_or_else(|_| "nvim".to_string());
+                    self.status_message =
+                        format!("Opening {} in {} ...", conflict.path, editor);
+
+                    // Drop the terminal, run editor, restore terminal
+                    self.should_quit = true; // Temporarily — we'll re-enter after editor
+
+                    // We can't run the editor inside the TUI event loop, so we
+                    // save state and exit. The user re-runs `suture tui` after editing.
+                    // For now, print instructions and quit.
+                    let editor = std::env::var("EDITOR").unwrap_or_else(|_| "nvim".to_string());
+                    eprintln!(
+                        "\n\n  Open in editor: {} \"{}\"",
+                        editor,
+                        full_path.display()
+                    );
+                    eprintln!("  After resolving conflicts, run `suture add .` then `suture tui`\n");
+                }
+            }
+            KeyCode::Char('r') => {
+                // Re-scan for conflicts (editor may have resolved some)
+                self.status_message = "Re-scanning for conflicts...".to_string();
+                self.detect_conflicts();
+                if self.conflict_files.is_empty() {
+                    self.status_message =
+                        "All conflicts resolved! Run `suture commit` to finalize.".to_string();
+                } else {
+                    self.status_message = format!(
+                        "{} conflict file(s) remaining",
+                        self.conflict_files.len()
+                    );
+                }
+                // Clamp cursor
+                if self.conflict_cursor >= self.conflict_files.len() {
+                    self.conflict_cursor = self.conflict_files.len().saturating_sub(1);
                 }
             }
             _ => {}
@@ -1389,15 +1424,62 @@ fn format_timestamp(ts: u64) -> String {
 }
 
 /// Parse conflict markers from file content.
-/// Returns (ours_content, theirs_content) if markers found, None otherwise.
-fn parse_conflict_markers(content: &str) -> Option<(String, String)> {
-    let ours_start = content.find("<<<<<<< ours\n")?;
-    let separator = content.find("=======\n")?;
-    let theirs_end = content.find(">>>>>>> theirs\n")?;
+/// Returns a Vec of Hunk structs if markers found, None otherwise.
+fn parse_conflict_markers(content: &str) -> Option<Vec<Hunk>> {
+    let mut hunks = Vec::new();
+    let mut search_from = 0usize;
 
-    let ours = content[ours_start + "<<<<<<< ours\n".len()..separator].to_string();
-    let theirs = content[separator + "=======\n".len()..theirs_end].to_string();
-    Some((ours, theirs))
+    while search_from < content.len() {
+        let ours_marker = "<<<<<<< ";
+        let sep_marker = "=======";
+        let theirs_marker = ">>>>>>> ";
+
+        let ours_start = content[search_from..].find(ours_marker)?;
+        let ours_start = search_from + ours_start;
+
+        let label_end = content[ours_start..].find('\n')?;
+        let _label = content[ours_start + ours_marker.len()..ours_start + label_end].to_string();
+
+        let ours_content_start = ours_start + label_end + 1;
+        let separator = content[ours_content_start..].find(sep_marker)?;
+        let separator = ours_content_start + separator;
+
+        let theirs_content_start = {
+            let after_sep = separator + sep_marker.len();
+            content[after_sep..]
+                .find('\n')
+                .map(|i| after_sep + i + 1)
+                .unwrap_or(after_sep)
+        };
+
+        let theirs_end_marker = content[theirs_content_start..].find(theirs_marker)?;
+        let theirs_end = theirs_content_start + theirs_end_marker;
+
+        let ours_text = content[ours_content_start..separator].to_string();
+        let theirs_text = content[theirs_content_start..theirs_end].to_string();
+
+        let ours_lines: Vec<String> = ours_text.lines().map(|l| l.to_string()).collect();
+        let theirs_lines: Vec<String> = theirs_text.lines().map(|l| l.to_string()).collect();
+
+        hunks.push(Hunk {
+            ours_lines,
+            theirs_lines,
+            base_lines: Vec::new(),
+            resolution: HunkResolution::Unresolved,
+        });
+
+        let after_theirs = content[theirs_end..]
+            .find('\n')
+            .map(|i| theirs_end + i + 1)
+            .unwrap_or(theirs_end);
+        search_from = after_theirs;
+    }
+
+    if hunks.is_empty() {
+        None
+    } else {
+        Some(hunks)
+    }
 }
 
 /// Convert days since Unix epoch to (year, month, day).

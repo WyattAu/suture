@@ -715,4 +715,386 @@ mod tests {
         assert_eq!(clip_ids.len(), 2);
         assert_ne!(clip_ids[0], clip_ids[1]);
     }
+
+    #[test]
+    fn test_merge_clip_reordering() {
+        let old = r#"{
+            "OTIO_SCHEMA": "otio.schema.Timeline",
+            "name": "ReorderTest",
+            "metadata": {},
+            "tracks": [
+                {
+                    "OTIO_SCHEMA": "otio.schema.Track",
+                    "name": "V1",
+                    "kind": "Video",
+                    "metadata": {},
+                    "children": [
+                        {"OTIO_SCHEMA":"otio.schema.Clip","name":"A","metadata":{},"source_range":{"start_time":{"value":0.0,"rate":24.0},"duration":{"value":100.0,"rate":24.0}}},
+                        {"OTIO_SCHEMA":"otio.schema.Clip","name":"B","metadata":{},"source_range":{"start_time":{"value":100.0,"rate":24.0},"duration":{"value":100.0,"rate":24.0}}},
+                        {"OTIO_SCHEMA":"otio.schema.Clip","name":"C","metadata":{},"source_range":{"start_time":{"value":200.0,"rate":24.0},"duration":{"value":100.0,"rate":24.0}}},
+                        {"OTIO_SCHEMA":"otio.schema.Clip","name":"D","metadata":{},"source_range":{"start_time":{"value":300.0,"rate":24.0},"duration":{"value":100.0,"rate":24.0}}},
+                        {"OTIO_SCHEMA":"otio.schema.Clip","name":"E","metadata":{},"source_range":{"start_time":{"value":400.0,"rate":24.0},"duration":{"value":100.0,"rate":24.0}}}
+                    ]
+                }
+            ]
+        }"#;
+
+        let new = r#"{
+            "OTIO_SCHEMA": "otio.schema.Timeline",
+            "name": "ReorderTest",
+            "metadata": {},
+            "tracks": [
+                {
+                    "OTIO_SCHEMA": "otio.schema.Track",
+                    "name": "V1",
+                    "kind": "Video",
+                    "metadata": {},
+                    "children": [
+                        {"OTIO_SCHEMA":"otio.schema.Clip","name":"A","metadata":{},"source_range":{"start_time":{"value":0.0,"rate":24.0},"duration":{"value":100.0,"rate":24.0}}},
+                        {"OTIO_SCHEMA":"otio.schema.Clip","name":"C","metadata":{},"source_range":{"start_time":{"value":200.0,"rate":24.0},"duration":{"value":100.0,"rate":24.0}}},
+                        {"OTIO_SCHEMA":"otio.schema.Clip","name":"B","metadata":{},"source_range":{"start_time":{"value":100.0,"rate":24.0},"duration":{"value":100.0,"rate":24.0}}},
+                        {"OTIO_SCHEMA":"otio.schema.Clip","name":"D","metadata":{},"source_range":{"start_time":{"value":300.0,"rate":24.0},"duration":{"value":100.0,"rate":24.0}}},
+                        {"OTIO_SCHEMA":"otio.schema.Clip","name":"E","metadata":{},"source_range":{"start_time":{"value":400.0,"rate":24.0},"duration":{"value":100.0,"rate":24.0}}}
+                    ]
+                }
+            ]
+        }"#;
+
+        let driver = OtioDriver::new();
+        let diff = driver.serialize_diff(old, new).unwrap();
+        assert_ne!(diff, "(no differences)", "diff should detect clip reordering");
+        assert!(diff.contains("B"), "diff should reference moved clip B");
+        assert!(diff.contains("C"), "diff should reference moved clip C");
+    }
+
+    #[test]
+    fn test_merge_transition_addition() {
+        let old = r#"{
+            "OTIO_SCHEMA": "otio.schema.Timeline",
+            "name": "TransTest",
+            "metadata": {},
+            "tracks": [
+                {
+                    "OTIO_SCHEMA": "otio.schema.Track",
+                    "name": "V1",
+                    "kind": "Video",
+                    "metadata": {},
+                    "children": [
+                        {"OTIO_SCHEMA":"otio.schema.Clip","name":"Clip1","metadata":{},"source_range":{"start_time":{"value":0.0,"rate":24.0},"duration":{"value":100.0,"rate":24.0}}},
+                        {"OTIO_SCHEMA":"otio.schema.Clip","name":"Clip2","metadata":{},"source_range":{"start_time":{"value":100.0,"rate":24.0},"duration":{"value":200.0,"rate":24.0}}},
+                        {"OTIO_SCHEMA":"otio.schema.Clip","name":"Clip3","metadata":{},"source_range":{"start_time":{"value":300.0,"rate":24.0},"duration":{"value":150.0,"rate":24.0}}}
+                    ]
+                }
+            ]
+        }"#;
+
+        let new = r#"{
+            "OTIO_SCHEMA": "otio.schema.Timeline",
+            "name": "TransTest",
+            "metadata": {},
+            "tracks": [
+                {
+                    "OTIO_SCHEMA": "otio.schema.Track",
+                    "name": "V1",
+                    "kind": "Video",
+                    "metadata": {},
+                    "children": [
+                        {"OTIO_SCHEMA":"otio.schema.Clip","name":"Clip1","metadata":{},"source_range":{"start_time":{"value":0.0,"rate":24.0},"duration":{"value":100.0,"rate":24.0}}},
+                        {"OTIO_SCHEMA":"otio.schema.Transition","name":"CrossDissolve","metadata":{},"in_offset":{"value":12.0,"rate":24.0},"out_offset":{"value":12.0,"rate":24.0}},
+                        {"OTIO_SCHEMA":"otio.schema.Clip","name":"Clip2","metadata":{},"source_range":{"start_time":{"value":100.0,"rate":24.0},"duration":{"value":200.0,"rate":24.0}}},
+                        {"OTIO_SCHEMA":"otio.schema.Clip","name":"Clip3","metadata":{},"source_range":{"start_time":{"value":300.0,"rate":24.0},"duration":{"value":150.0,"rate":24.0}}}
+                    ]
+                }
+            ]
+        }"#;
+
+        let driver = OtioDriver::new();
+        let diff = driver.serialize_diff(old, new).unwrap();
+        assert!(
+            diff.contains("CrossDissolve"),
+            "diff should detect new transition"
+        );
+    }
+
+    #[test]
+    fn test_merge_duration_change() {
+        let old = r#"{
+            "OTIO_SCHEMA": "otio.schema.Timeline",
+            "name": "DurTest",
+            "metadata": {},
+            "tracks": [
+                {
+                    "OTIO_SCHEMA": "otio.schema.Track",
+                    "name": "V1",
+                    "kind": "Video",
+                    "metadata": {},
+                    "children": [
+                        {"OTIO_SCHEMA":"otio.schema.Clip","name":"ClipA","metadata":{},"source_range":{"start_time":{"value":0.0,"rate":24.0},"duration":{"value":100.0,"rate":24.0}}}
+                    ]
+                }
+            ]
+        }"#;
+
+        let new = r#"{
+            "OTIO_SCHEMA": "otio.schema.Timeline",
+            "name": "DurTest",
+            "metadata": {},
+            "tracks": [
+                {
+                    "OTIO_SCHEMA": "otio.schema.Track",
+                    "name": "V1",
+                    "kind": "Video",
+                    "metadata": {},
+                    "children": [
+                        {"OTIO_SCHEMA":"otio.schema.Clip","name":"ClipA","metadata":{},"source_range":{"start_time":{"value":0.0,"rate":24.0},"duration":{"value":200.0,"rate":24.0}}}
+                    ]
+                }
+            ]
+        }"#;
+
+        let driver = OtioDriver::new();
+        let diff = driver.serialize_diff(old, new).unwrap();
+        assert!(
+            diff.contains("100") && diff.contains("200"),
+            "diff should show duration change from 100 to 200"
+        );
+    }
+
+    #[test]
+    fn test_merge_track_addition() {
+        let old = r#"{
+            "OTIO_SCHEMA": "otio.schema.Timeline",
+            "name": "TrackTest",
+            "metadata": {},
+            "tracks": [
+                {
+                    "OTIO_SCHEMA": "otio.schema.Track",
+                    "name": "V1",
+                    "kind": "Video",
+                    "metadata": {},
+                    "children": []
+                },
+                {
+                    "OTIO_SCHEMA": "otio.schema.Track",
+                    "name": "A1",
+                    "kind": "Audio",
+                    "metadata": {},
+                    "children": []
+                }
+            ]
+        }"#;
+
+        let new = r#"{
+            "OTIO_SCHEMA": "otio.schema.Timeline",
+            "name": "TrackTest",
+            "metadata": {},
+            "tracks": [
+                {
+                    "OTIO_SCHEMA": "otio.schema.Track",
+                    "name": "V1",
+                    "kind": "Video",
+                    "metadata": {},
+                    "children": []
+                },
+                {
+                    "OTIO_SCHEMA": "otio.schema.Track",
+                    "name": "A1",
+                    "kind": "Audio",
+                    "metadata": {},
+                    "children": []
+                },
+                {
+                    "OTIO_SCHEMA": "otio.schema.Track",
+                    "name": "A2_Music",
+                    "kind": "Audio",
+                    "metadata": {},
+                    "children": [
+                        {"OTIO_SCHEMA":"otio.schema.Clip","name":"Score","metadata":{},"source_range":{"start_time":{"value":0.0,"rate":48.0},"duration":{"value":500.0,"rate":48.0}}}
+                    ]
+                }
+            ]
+        }"#;
+
+        let driver = OtioDriver::new();
+        let diff = driver.serialize_diff(old, new).unwrap();
+        assert!(diff.contains("A2_Music"), "diff should detect new track");
+        assert!(diff.contains("Score"), "diff should detect clip in new track");
+    }
+
+    #[test]
+    fn test_merge_metadata_change() {
+        let old = r#"{
+            "OTIO_SCHEMA": "otio.schema.Timeline",
+            "name": "MetaTest",
+            "metadata": {"project": "test"},
+            "tracks": []
+        }"#;
+
+        let new = r#"{
+            "OTIO_SCHEMA": "otio.schema.Timeline",
+            "name": "MetaTest",
+            "metadata": {"project": "test", "color_space": "sRGB"},
+            "tracks": []
+        }"#;
+
+        let driver = OtioDriver::new();
+        let diff = driver.serialize_diff(old, new).unwrap();
+        assert!(
+            diff.contains("color_space"),
+            "diff should show new metadata field"
+        );
+        assert!(diff.contains("sRGB"), "diff should show sRGB value");
+    }
+
+    #[test]
+    fn test_large_timeline_performance() {
+        use std::time::Instant;
+
+        let mut tracks = Vec::new();
+        for t in 0..10 {
+            let mut clips = Vec::new();
+            for c in 0..50 {
+                clips.push(serde_json::json!({
+                    "OTIO_SCHEMA": "otio.schema.Clip",
+                    "name": format!("Clip_{t}_{c}"),
+                    "metadata": {},
+                    "source_range": {
+                        "start_time": {"value": (c as f64) * 100.0, "rate": 24.0},
+                        "duration": {"value": 100.0, "rate": 24.0}
+                    }
+                }));
+            }
+            tracks.push(serde_json::json!({
+                "OTIO_SCHEMA": "otio.schema.Track",
+                "name": format!("Track_{t}"),
+                "kind": if t < 3 { "Video" } else { "Audio" },
+                "metadata": {},
+                "children": clips
+            }));
+        }
+
+        let timeline = serde_json::json!({
+            "OTIO_SCHEMA": "otio.schema.Timeline",
+            "name": "LargeTimeline",
+            "metadata": {"project": "perf_test"},
+            "tracks": tracks
+        });
+        let json_str = serde_json::to_string(&timeline).unwrap();
+
+        let mut driver = OtioDriver::new();
+        let start = Instant::now();
+        driver.parse_otio(&json_str).unwrap();
+        let parse_time = start.elapsed();
+
+        assert_eq!(
+            driver.elements().len(),
+            511,
+            "should have 511 elements (1 timeline + 10 tracks + 500 clips)"
+        );
+        assert!(
+            parse_time.as_secs() < 5,
+            "parsing 500 clips should complete in under 5 seconds, took {:?}",
+            parse_time
+        );
+
+        let track_id = driver.elements()[1].id().to_string();
+        let changes = vec![ChangeDescription {
+            element_id: track_id.clone(),
+            field_path: "name".to_string(),
+            old_value: Some("Track_0".to_string()),
+            new_value: Some("Track_0_Renamed".to_string()),
+        }];
+
+        let start = Instant::now();
+        let touch_set = driver.compute_touch_set(&changes);
+        let touch_time = start.elapsed();
+        assert!(!touch_set.is_empty(), "touch set should not be empty");
+        assert!(
+            touch_time.as_secs() < 5,
+            "compute_touch_set should complete in under 5 seconds, took {:?}",
+            touch_time
+        );
+
+        let start = Instant::now();
+        let diff = driver.serialize_diff(&json_str, &json_str).unwrap();
+        let diff_time = start.elapsed();
+        assert_eq!(diff, "(no differences)");
+        assert!(
+            diff_time.as_secs() < 5,
+            "serialize_diff should complete in under 5 seconds, took {:?}",
+            diff_time
+        );
+    }
+
+    #[test]
+    fn test_merge_nested_stack() {
+        let old = r#"{
+            "OTIO_SCHEMA": "otio.schema.Timeline",
+            "name": "StackTest",
+            "metadata": {},
+            "tracks": [
+                {
+                    "OTIO_SCHEMA": "otio.schema.Stack",
+                    "name": "MainStack",
+                    "metadata": {},
+                    "children": [
+                        {
+                            "OTIO_SCHEMA": "otio.schema.Track",
+                            "name": "InnerTrack",
+                            "kind": "Video",
+                            "metadata": {},
+                            "children": [
+                                {"OTIO_SCHEMA":"otio.schema.Clip","name":"DeepClip","metadata":{},"source_range":{"start_time":{"value":0.0,"rate":24.0},"duration":{"value":100.0,"rate":24.0}}}
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }"#;
+
+        let new = r#"{
+            "OTIO_SCHEMA": "otio.schema.Timeline",
+            "name": "StackTest",
+            "metadata": {},
+            "tracks": [
+                {
+                    "OTIO_SCHEMA": "otio.schema.Stack",
+                    "name": "MainStack",
+                    "metadata": {},
+                    "children": [
+                        {
+                            "OTIO_SCHEMA": "otio.schema.Track",
+                            "name": "InnerTrack",
+                            "kind": "Video",
+                            "metadata": {},
+                            "children": [
+                                {"OTIO_SCHEMA":"otio.schema.Clip","name":"DeepClip_MODIFIED","metadata":{},"source_range":{"start_time":{"value":0.0,"rate":24.0},"duration":{"value":200.0,"rate":24.0}}}
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }"#;
+
+        let driver = OtioDriver::new();
+        let diff = driver.serialize_diff(old, new).unwrap();
+        assert_ne!(
+            diff, "(no differences)",
+            "diff should detect deep change in nested stack"
+        );
+        assert!(
+            diff.contains("DeepClip_MODIFIED"),
+            "diff should show modified clip name"
+        );
+
+        let mut driver = OtioDriver::new();
+        driver.parse_otio(new).unwrap();
+        let stacks: Vec<_> = driver
+            .elements()
+            .iter()
+            .filter(|e| e.element_type() == "Track" && e.name() == "MainStack")
+            .collect();
+        assert_eq!(stacks.len(), 1, "should find the Stack element");
+        assert_eq!(driver.elements().len(), 4, "timeline + stack + inner track + deep clip");
+    }
 }

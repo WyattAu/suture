@@ -221,3 +221,86 @@ fn pptx_realistic_format_diff() {
     let output = driver.format_diff(Some(&base), &new).unwrap();
     assert!(output.contains("ADDED"), "format_diff should show ADDED");
 }
+
+#[test]
+fn test_pptx_slide_reorder_merge() {
+    let driver = PptxDriver::new();
+    let base = pptx::make_from_slides(&["S1", "S2", "S3", "S4", "S5"]);
+    let ours = pptx::make_from_slides(&["S1", "S3", "S2", "S4", "S5"]);
+    let theirs = pptx::make_from_slides(&["S1", "S2", "S3", "S4 Updated", "S5"]);
+
+    let merged = driver.merge(&base, &ours, &theirs).unwrap();
+    assert!(
+        merged.is_some(),
+        "slide reorder + non-overlapping text edit should produce a merge result"
+    );
+
+    let merged_str = merged.unwrap();
+    assert!(
+        merged_str.starts_with("PK"),
+        "merged output should be valid PPTX (ZIP magic bytes)"
+    );
+}
+
+#[test]
+fn test_pptx_multi_slide_edit_merge() {
+    let driver = PptxDriver::new();
+    let base = pptx::complex();
+
+    let base_names: &[&str] = &[
+        "Project Phoenix - Kickoff",
+        "Agenda",
+        "Project Background",
+        "Objectives and KPIs",
+        "Team Structure",
+        "Timeline Overview",
+        "Technical Approach",
+        "Risk Assessment",
+        "Budget Allocation",
+        "Milestone 1: Discovery",
+        "Milestone 2: Design",
+        "Milestone 3: Implementation",
+        "Milestone 4: Testing",
+        "Milestone 5: Launch",
+        "Appendix: Technical Specs",
+    ];
+
+    let mut ours_names: Vec<String> = base_names.iter().map(|s| s.to_string()).collect();
+    ours_names[1] = "Agenda - UPDATED BY A".to_string();
+    ours_names[4] = "Team Structure - UPDATED BY A".to_string();
+    ours_names[7] = "Risk Assessment - UPDATED BY A".to_string();
+
+    let mut theirs_names: Vec<String> = base_names.iter().map(|s| s.to_string()).collect();
+    theirs_names[2] = "Project Background - UPDATED BY B".to_string();
+    theirs_names[5] = "Timeline Overview - UPDATED BY B".to_string();
+    theirs_names[8] = "Budget Allocation - UPDATED BY B".to_string();
+
+    let ours = pptx::make_from_slides(&ours_names);
+    let theirs = pptx::make_from_slides(&theirs_names);
+
+    let merged = driver.merge(&base, &ours, &theirs).unwrap();
+    assert!(
+        merged.is_some(),
+        "non-overlapping multi-slide edits should merge"
+    );
+
+    let merged_str = merged.unwrap();
+    assert!(
+        merged_str.starts_with("PK"),
+        "merged output should be valid PPTX (ZIP magic bytes)"
+    );
+}
+
+#[test]
+fn test_pptx_large_deck_stress() {
+    let driver = PptxDriver::new();
+    let slides: Vec<String> = (1..=30).map(|i| format!("Slide {i}")).collect();
+    let doc = pptx::make_from_slides(&slides);
+
+    let changes = driver.diff(None, &doc).unwrap();
+    assert!(
+        changes.len() >= 30,
+        "30-slide deck should have at least 30 slides, got {}",
+        changes.len()
+    );
+}

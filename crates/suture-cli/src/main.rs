@@ -198,7 +198,9 @@ EXAMPLES:
     suture diff budget.xlsx                  # XLSX semantic diff (auto-detected)
     suture diff timeline.otio                # OTIO timeline diff (auto-detected)
     suture diff photo.png                    # Image metadata diff (auto-detected)
-    suture diff config.yaml                  # YAML semantic diff (auto-detected)")]
+    suture diff config.yaml                  # YAML semantic diff (auto-detected)
+    suture diff --integrity                  # Supply chain integrity analysis
+    suture diff --integrity HEAD~5..HEAD     # Integrity check on recent commits")]
     Diff {
         /// From ref (commit hash or branch name). Omit for HEAD.
         #[arg(short, long)]
@@ -209,6 +211,9 @@ EXAMPLES:
         /// Show staged changes (diff of staging area vs HEAD)
         #[arg(long)]
         cached: bool,
+        /// Show supply chain integrity analysis (entropy, risk indicators)
+        #[arg(long)]
+        integrity: bool,
     },
     /// Revert a commit
     #[command(after_long_help = "\
@@ -492,6 +497,16 @@ EXAMPLES:
     Fsck,
     /// Check repository health and configuration
     Doctor,
+    /// Interact with Git repositories
+    #[command(after_long_help = "\
+EXAMPLES:
+    suture git import ./my-project     # Import Git history into Suture
+    suture git log ./my-project        # Preview Git commits to import
+    suture git status ./my-project     # Show import summary")]
+    Git {
+        #[command(subcommand)]
+        action: GitAction,
+    },
     /// Binary search for bug-introducing commit
     Bisect {
         #[command(subcommand)]
@@ -719,6 +734,25 @@ pub(crate) enum BisectAction {
     Reset,
 }
 
+#[derive(Subcommand, Debug)]
+pub(crate) enum GitAction {
+    /// Import Git history into the current Suture repository
+    Import {
+        /// Path to the Git repository to import
+        path: Option<String>,
+    },
+    /// Show Git commits that would be imported
+    Log {
+        /// Path to the Git repository
+        path: Option<String>,
+    },
+    /// Show import summary
+    Status {
+        /// Path to the Git repository
+        path: Option<String>,
+    },
+}
+
 #[tokio::main]
 async fn main() {
     // On Unix, restore default SIGPIPE handling so broken pipes terminate the
@@ -802,8 +836,13 @@ async fn main() {
             source,
             destination,
         } => cmd::mv::cmd_mv(&source, &destination).await,
-        Commands::Diff { from, to, cached } => {
-            cmd::diff::cmd_diff(from.as_deref(), to.as_deref(), cached).await
+        Commands::Diff {
+            from,
+            to,
+            cached,
+            integrity,
+        } => {
+            cmd::diff::cmd_diff(from.as_deref(), to.as_deref(), cached, integrity).await
         }
         Commands::Revert { commit, message } => {
             cmd::revert::cmd_revert(&commit, message.as_deref()).await
@@ -926,6 +965,14 @@ async fn main() {
         Commands::Fsck => cmd::fsck::cmd_fsck().await,
         Commands::Doctor => cmd::doctor::cmd_doctor().await,
         Commands::Bisect { action } => cmd::bisect::cmd_bisect(&action).await,
+        Commands::Git { action } => {
+            let git_action = match action {
+                GitAction::Import { path } => cmd::git::GitAction::Import { path },
+                GitAction::Log { path } => cmd::git::GitAction::Log { path },
+                GitAction::Status { path } => cmd::git::GitAction::Status { path },
+            };
+            cmd::git::cmd_git(git_action).await
+        }
         Commands::Squash { count, message } => {
             cmd::squash::cmd_squash(count, message.as_deref()).await
         }
@@ -1072,10 +1119,16 @@ mod tests {
     fn test_diff_cached_flag() {
         let cli = parse(&["suture", "diff", "--cached"]);
         match cli.command {
-            Commands::Diff { cached, from, to } => {
+            Commands::Diff {
+                cached,
+                from,
+                to,
+                integrity,
+            } => {
                 assert!(cached);
                 assert!(from.is_none());
                 assert!(to.is_none());
+                assert!(!integrity);
             }
             other => panic!("expected Diff, got {other:?}"),
         }
@@ -1085,10 +1138,16 @@ mod tests {
     fn test_diff_from_to() {
         let cli = parse(&["suture", "diff", "--from", "HEAD~1", "--to", "HEAD"]);
         match cli.command {
-            Commands::Diff { cached, from, to } => {
+            Commands::Diff {
+                cached,
+                from,
+                to,
+                integrity,
+            } => {
                 assert!(!cached);
                 assert_eq!(from.as_deref(), Some("HEAD~1"));
                 assert_eq!(to.as_deref(), Some("HEAD"));
+                assert!(!integrity);
             }
             other => panic!("expected Diff, got {other:?}"),
         }
@@ -1326,5 +1385,53 @@ mod tests {
     fn test_global_repo_path() {
         let cli = parse(&["suture", "-C", "/some/path", "status"]);
         assert_eq!(cli.repo_path.as_deref(), Some("/some/path"));
+    }
+
+    #[test]
+    fn test_git_import() {
+        let cli = parse(&["suture", "git", "import", "./my-project"]);
+        match cli.command {
+            Commands::Git { action } => match action {
+                GitAction::Import { path } => assert_eq!(path.as_deref(), Some("./my-project")),
+                other => panic!("expected GitAction::Import, got {other:?}"),
+            },
+            other => panic!("expected Git, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_git_import_default_path() {
+        let cli = parse(&["suture", "git", "import"]);
+        match cli.command {
+            Commands::Git { action } => match action {
+                GitAction::Import { path } => assert!(path.is_none()),
+                other => panic!("expected GitAction::Import, got {other:?}"),
+            },
+            other => panic!("expected Git, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_git_log() {
+        let cli = parse(&["suture", "git", "log", "."]);
+        match cli.command {
+            Commands::Git { action } => match action {
+                GitAction::Log { path } => assert_eq!(path.as_deref(), Some(".")),
+                other => panic!("expected GitAction::Log, got {other:?}"),
+            },
+            other => panic!("expected Git, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_git_status() {
+        let cli = parse(&["suture", "git", "status"]);
+        match cli.command {
+            Commands::Git { action } => match action {
+                GitAction::Status { path } => assert!(path.is_none()),
+                other => panic!("expected GitAction::Status, got {other:?}"),
+            },
+            other => panic!("expected Git, got {other:?}"),
+        }
     }
 }

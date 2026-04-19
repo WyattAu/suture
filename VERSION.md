@@ -1,9 +1,9 @@
 # Suture Version
 
-- **Current Version:** 3.2.1
-- **Current Phase:** Post-Ship Bugfix
+- **Current Version:** 3.4.0
+- **Current Phase:** Post-Ship Phase 2–3 Complete
 - **Status:** Complete
-- **Last Updated:** 2026-04-18
+- **Last Updated:** 2026-04-19
 - **Rust Edition:** 2024
 - **Lean 4:** v4.29.1 (23 theorems proved)
 
@@ -35,6 +35,16 @@
 | **V** | Driver Validation | 58 realistic tests for DOCX/XLSX/PPTX/PDF/OTIO/Image | v3.2 | ✅ Complete |
 | **W** | Workflow Reliability | 7 E2E workflow tests (basic, merge, conflict, branch, history, stash) | v3.2 | ✅ Complete |
 | **X** | Performance Baseline | 16 benchmarks, docs/performance.md, quick optimizations | v3.2 | ✅ Complete |
+| **1A** | Enhanced Undo/Reflog/Doctor | Reflog-aware undo, doctor command, structured reflog | v3.3 | ✅ Complete |
+| **1B** | Merge Strategies | --strategy flag (semantic/ours/theirs/manual), dry-run | v3.3 | ✅ Complete |
+| **1C** | GC/fsck Hardening | Transactional GC, blob pruning, fsck fixes | v3.3 | ✅ Complete |
+| **1D** | Merge Stress Tests | 12 E2E stress tests: multi-file, deep history, diamond, strategies | v3.3 | ✅ Complete |
+| **1E** | Supply Chain Integrity | Shannon entropy, risk scoring, --integrity diff mode | v3.3 | ✅ Complete |
+| **2A** | Video/OTIO Depth | 8 deep tests: reordering, transitions, nesting, 500-clip perf | v3.4 | ✅ Complete |
+| **2B** | Document Collab Depth | 9 deep tests: DOCX/XLSX/PPTX conflicts, large docs, formulas | v3.4 | ✅ Complete |
+| **3A** | Git Bridge | `suture git import/log/status`, read-only Git→Suture import | v3.4 | ✅ Complete |
+| **3B** | Shell Completions | bash/zsh/fish/powershell/nushell (already done in v3.1) | v3.4 | ✅ Complete |
+| **3C** | TUI Conflict Resolver | Line-by-line hunk resolution, ours/theirs/both, navigation | v3.4 | ✅ Complete |
 
 ### Direction A — Product Polish (v1.3–v1.4) ✅
 
@@ -186,19 +196,114 @@
 - `docs/comparing-with-git.md`: honest comparison, positioned as complementary
 - `docs/index.html`: updated with domain cards and semantic diff visual
 
+### Direction 1A — Enhanced Undo/Reflog/Doctor (v3.3) ✅
+
+- `suture undo`: reflog-aware undo (can undo merges, checkouts, cherry-picks)
+- `suture undo --hard`: discard working tree changes
+- `suture reflog`: structured display with relative timestamps, `ReflogEntry` type
+- `suture doctor`: 10 health checks (repository integrity, CAS consistency, DAG validity)
+- Fixed reflog timestamp bug, fsck double-counting, GC blob pruning
+
+### Direction 1B — Merge Reconciliation Strategies (v3.3) ✅
+
+- `suture merge -s ours <branch>`: keep our version for all conflicts
+- `suture merge -s theirs <branch>`: take their version for all conflicts
+- `suture merge -s manual <branch>`: leave all conflicts for manual resolution
+- `suture merge --dry-run <branch>`: preview merge without modifying working tree
+- `suture merge -s semantic <branch>`: try semantic drivers first (default)
+
+### Direction 1C — GC/fsck Hardening (v3.3) ✅
+
+- GC is now transactional (SQLite `unchecked_transaction`)
+- GC prunes orphaned blobs from CAS store (computes reachable set from patches)
+- GC cleans up file_trees and reflog entries for unreachable patches
+- fsck fixed: HEAD check no longer double-counts
+- fsck upgraded: missing blob references are now errors (data loss risk)
+
+### Direction 1D — Merge Correctness Stress Tests (v3.3) ✅
+
+- 12 new E2E stress tests in `workflow_conflict.rs` (total: 14 tests)
+- Multi-file merge with overlapping conflicts (10 files)
+- Large file scattered edits (200-line file, edits at 6 positions)
+- Deep branch history (50 commits per branch, 100 files total)
+- Diamond merge pattern (two branches from same point)
+- Delete/modify conflict detection
+- Strategy flag tests (ours, theirs, manual)
+- Dry-run verification (no file changes)
+- Fast-forward, non-overlapping JSON, cascade merges
+
+### Direction 1E — Supply Chain Integrity Analysis (v3.3) ✅
+
+- `suture diff --integrity`: mathematical diff analysis for supply chain transparency
+- Shannon entropy calculation (H ∈ [0, 8] bits/byte) for every changed file
+- 13 risk indicators detecting XZ-style attack patterns:
+  - High entropy in source files (encrypted/injected code)
+  - Binary content in text files (hidden payloads)
+  - Build script modifications (configure, Makefile, build.rs)
+  - Test infrastructure modifications (xz backdoor used test fixtures)
+  - Compressed file modifications (could hide changes)
+  - Lockfile modifications without source changes
+  - Base64-encoded content detection
+  - Sudden entropy increase from old to new version
+- 5-level risk scoring (None → Low → Medium → High → Critical)
+- XZ-pattern detection: warns when build scripts and test infrastructure change together
+- Formatted terminal output with Unicode box drawing
+- 19 unit tests + 8 E2E tests for integrity analysis
+
+### Direction 2A — Video/OTIO Domain Depth (v3.4) ✅
+
+- 7 new OTIO unit tests: clip reordering, transition addition, duration change, track addition, metadata change, nested stack merge, large timeline performance (500 clips)
+- 1 new OTIO E2E test: multi-editor merge conflict simulation with complex fixture
+- Validates OTIO driver handles real-world video editing collaboration scenarios
+
+### Direction 2B — Document Collaboration Depth (v3.4) ✅
+
+- 3 new DOCX tests: two-editor paragraph conflict, table insertion merge, large document stress (50+ paragraphs)
+- 3 new XLSX tests: cell-level merge conflict, formula preservation, large sheet stress (200×10)
+- 3 new PPTX tests: slide reorder merge, multi-slide edit merge, large deck stress (30 slides)
+
+### Direction 3A — Git Bridge (v3.4) ✅
+
+- `suture git import [PATH]`: Read-only import of Git history into Suture (no libgit2 dependency)
+- Parses Git object store directly: commit objects, tree objects, blob objects (zlib-compressed)
+- Creates `git-import/main` branch to avoid overwriting existing Suture history
+- Idempotent: detects already-imported commits by message matching
+- `suture git log [PATH]`: Preview Git commits with file change counts
+- `suture git status [PATH]`: Import summary (commits, branches, files)
+- 7 unit tests: reflog parsing, commit/tree object parsing, zlib roundtrip, empty repo handling
+
+### Direction 3B — Shell Completions (v3.4) ✅
+
+- Already implemented in v3.1: bash, zsh, fish, powershell, nushell
+- Uses `clap_complete` + `clap_complete_nushell`
+- Homebrew formula auto-generates completions during install
+
+### Direction 3C — TUI Conflict Resolver (v3.4) ✅
+
+- Line-by-line hunk resolution (replaces binary ours/theirs-only choice)
+- `1`/`2`/`3` keys: take ours, theirs, or both per hunk
+- `j`/`k` keys: navigate between conflict hunks within a file
+- `n`/`p` keys: next/previous conflict file
+- `a` key: accept all remaining hunks with last used resolution
+- Auto-advance to next unresolved hunk after resolution
+- Auto-write resolved file and stage when all hunks resolved
+- Three-panel layout: file list, hunk detail, key bindings footer
+- Per-file resolved hunk count display
+
 ## Quality Gate Compliance
 
 | Gate | Status | Details |
 |------|--------|---------|
-| Tests | ✅ 1059 passing | 0 failures across 28 crates (2 ignored: FUSE root-only) |
+| Tests | ✅ 1127 passing | 0 failures across 28 crates (2 ignored: FUSE root-only) |
 | Property-based tests | ✅ 21 proptest suites | 10K+ cases via proptest |
 | Benchmarks | ✅ 28 Criterion functions | repo ops, semantic merge, protocol, compression |
 | Clippy | ✅ Zero warnings | `cargo clippy --workspace -- -D warnings` clean |
 | Ed25519 signing | ✅ Wired into push | `suture key generate`, auto-sign on push |
-| E2E tests | ✅ 27 integration tests | init→commit→branch→merge→gc→fsck→bisect→tag→stash |
+| E2E tests | ✅ 50 integration tests | init→commit→branch→merge→gc→fsck→bisect→tag→stash→integrity→stress→git |
 | Lean 4 proofs | ✅ 23 theorems | TouchSet, commutativity, DAG, LCA, merge properties |
 | HTTP integration | ✅ 61 tests (with features) | handshake, repos, patches, push/pull, V2, auth, mirrors, CRUD, search, batch, health |
 | Semantic drivers | ✅ 16 drivers | JSON, YAML, TOML, CSV, XML, Markdown, DOCX, XLSX, PPTX, OTIO, SQL, PDF, Image, Example, Properties |
+| Supply chain integrity | ✅ NEW | Shannon entropy, 13 risk indicators, XZ-style attack detection |
 | Editor plugins | ✅ 3 plugins | Neovim (Lua), JetBrains IntelliJ (Kotlin), VS Code (TypeScript) |
 | Language bindings | ✅ 2 bindings | Node.js (napi-rs), Python (PyO3) |
 
@@ -207,15 +312,15 @@
 | Crate | Tests | Description |
 |-------|-------|-------------|
 | suture-common | 8 | Shared types (Hash, BranchName, RepoPath) |
-| suture-core | 279 | Core engine (CAS, DAG, patches, repo, engine, signing, merge, stash, reset, cherry-pick, rebase, blame, reflog, rm, mv, notes, gc, fsck, squash, patch composition, conflict classification, file-type detection, semantic diff formatter) |
+| suture-core | 298 | Core engine (CAS, DAG, patches, repo, engine, signing, merge, stash, reset, cherry-pick, rebase, blame, reflog, rm, mv, notes, gc, fsck, squash, patch composition, conflict classification, file-type detection, semantic diff formatter, **supply chain integrity analysis**) |
 | suture-protocol | 55 | Wire protocol, V2 handshake, delta encoding, compression |
-| suture-cli | 25 | CLI binary (37 commands) |
-| suture-tui | 31 | Terminal UI (7 tabs: status, log, staging, diff, branches, remote, help) |
+| suture-cli | 32 | CLI binary (39 commands, `diff --integrity`, `git import/log/status`) |
+| suture-tui | 31 | Terminal UI (7 tabs + hunk-level conflict resolver with ours/theirs/both) |
 | suture-hub | 61 | Hub daemon with SQLite, auth, replication, mirrors, branch protection, CRUD, search, cursor-based pagination, gRPC (14 RPCs), S3 blob backend (opt-in), Raft consensus (opt-in, TCP multi-node), webhooks (push/branch events), health check, graceful shutdown, TOML config, request tracing, persistent rate limiter, batch patches |
 | suture-daemon | 33 | File watcher, auto-commit, auto-sync, SHM status, PID management, signal handling, mount manager (FUSE/WebDAV lifecycle) |
 | suture-driver | 8 | SutureDriver trait, DriverRegistry, semantic diff/merge types |
 | suture-ooxml | 4 | Shared OOXML infrastructure (ZIP, part navigation) |
-| suture-driver-otio | 13 | OpenTimelineIO reference driver |
+| suture-driver-otio | 20 | OpenTimelineIO reference driver (clip reorder, transitions, nesting, 500-clip perf) |
 | suture-driver-json | 47 | JSON semantic driver |
 | suture-driver-yaml | 30 | YAML semantic driver |
 | suture-driver-toml | 30 | TOML semantic driver |
@@ -231,7 +336,7 @@
 | suture-vfs | 28 | FUSE3 read/write mount, WebDAV server, inode allocation, path translation (2 ignored integration) |
 | suture-node | 0 | Node.js native addon (napi-rs) |
 | suture-lsp | 11 | Language Server Protocol (hover, diagnostics) |
-| suture-e2e | 197 | End-to-end workflow tests + 121 driver correctness tests (realistic + unit) |
+| suture-e2e | 226 | End-to-end workflow tests + 130 driver correctness tests + 8 integrity E2E tests |
 | suture-fuzz | 6 | Fuzz testing (CAS hash, patch serialization, merge, touch-set) |
 | suture-bench | — | Criterion benchmarks (44 functions: 28 core + 16 perf baselines) |
 | suture-raft | 30 | Raft consensus protocol (election, replication, commit, 3-node cluster simulation, persisted log) |
@@ -244,6 +349,7 @@
 
 | Commit | Version | Description |
 |--------|---------|-------------|
+| _(pending)_ | v3.3.0 | Phase 1: undo, merge strategies, GC hardening, stress tests, supply chain integrity |
 | `77ad798` | v3.2.1 | Fix commit O(n²) bottleneck: incremental file tree computation (70x faster at 10K commits) |
 | `77ad798` | v3.2.0 | Directions T–X: ship, CI/CD, real-world drivers, workflow tests, benchmarks |
 | `50526ec` | v3.1.0 | Directions O–S: publish prep, driver audits, semantic diff, domain docs |

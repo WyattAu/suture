@@ -1,5 +1,6 @@
 pub mod add;
 pub mod bisect;
+pub mod git;
 pub mod blame;
 pub mod branch;
 pub mod checkout;

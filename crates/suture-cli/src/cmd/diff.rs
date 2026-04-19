@@ -5,6 +5,7 @@ pub(crate) async fn cmd_diff(
     from: Option<&str>,
     to: Option<&str>,
     cached: bool,
+    integrity: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use suture_core::engine::diff::DiffType;
     use suture_core::engine::merge::diff_lines;
@@ -19,6 +20,14 @@ pub(crate) async fn cmd_diff(
 
     if entries.is_empty() {
         println!("No differences.");
+        return Ok(());
+    }
+
+    // Integrity analysis mode: show mathematical properties and risk indicators
+    if integrity {
+        let report = build_integrity_report(&entries, &repo, from, to, cached)?;
+        let formatted = suture_core::integrity::format_integrity_report(&report);
+        println!("{formatted}");
         return Ok(());
     }
 
@@ -158,4 +167,211 @@ pub(crate) async fn cmd_diff(
     }
 
     Ok(())
+}
+
+/// Build an integrity report from diff entries by reading actual file contents.
+fn build_integrity_report(
+    entries: &[suture_core::engine::diff::DiffEntry],
+    repo: &suture_core::repository::Repository,
+    _from: Option<&str>,
+    _to: Option<&str>,
+    _cached: bool,
+) -> Result<suture_core::integrity::DiffIntegrityReport, Box<dyn std::error::Error>> {
+    use std::collections::HashMap;
+    use suture_core::engine::diff::DiffType;
+    use suture_core::integrity::{analyze_file, FileIntegrityReport};
+
+    let mut files = Vec::new();
+    let mut old_files: HashMap<String, FileIntegrityReport> = HashMap::new();
+
+    for entry in entries {
+        match &entry.diff_type {
+            DiffType::Added => {
+                let content = get_file_content(repo, &entry.path, entry.new_hash.as_ref());
+                let report = analyze_file(&entry.path, &content);
+                files.push(report);
+            }
+            DiffType::Deleted => {
+                let content = get_file_content(repo, &entry.path, entry.old_hash.as_ref());
+                let report = analyze_file(&entry.path, &content);
+                files.push(report);
+            }
+            DiffType::Modified => {
+                // Analyze old version
+                let old_content =
+                    get_file_content(repo, &entry.path, entry.old_hash.as_ref());
+                let old_report = analyze_file(&entry.path, &old_content);
+                old_files.insert(entry.path.clone(), old_report);
+
+                // Analyze new version
+                let new_content =
+                    get_file_content(repo, &entry.path, entry.new_hash.as_ref());
+                let mut new_report = analyze_file(&entry.path, &new_content);
+
+                // Check for sudden entropy increase
+                if let Some(old) = old_files.get(&entry.path)
+                    && new_report.shannon_entropy > old.shannon_entropy + 2.0
+                {
+                    new_report
+                        .risk_indicators
+                        .push(suture_core::integrity::RiskIndicator::SuddenEntropyIncrease);
+                }
+
+                files.push(new_report);
+            }
+            DiffType::Renamed { old_path, .. } => {
+                // Treat as deleted + added for integrity purposes
+                let old_content =
+                    get_file_content(repo, old_path, entry.old_hash.as_ref());
+                let old_report = analyze_file(old_path, &old_content);
+                old_files.insert(entry.path.clone(), old_report);
+
+                let new_content =
+                    get_file_content(repo, &entry.path, entry.new_hash.as_ref());
+                let new_report = analyze_file(&entry.path, &new_content);
+                files.push(new_report);
+            }
+        }
+    }
+
+    // Check for xz-style attack pattern: build script + test infrastructure modified together
+    let has_build_script = files.iter().any(|f| {
+        f.risk_indicators
+            .contains(&suture_core::integrity::RiskIndicator::BuildScriptModified)
+    });
+    let has_test_infra = files.iter().any(|f| {
+        f.risk_indicators
+            .contains(&suture_core::integrity::RiskIndicator::TestInfrastructureModified)
+    });
+
+    // Check for lockfile modified without corresponding source
+    let has_lockfile = files.iter().any(|f| {
+        f.risk_indicators
+            .contains(&suture_core::integrity::RiskIndicator::LockfileModifiedWithoutSource)
+    });
+    let has_manifest = files.iter().any(|f| {
+        let p = f.path.to_lowercase();
+        p.ends_with("cargo.toml")
+            || p.ends_with("package.json")
+            || p.ends_with("pyproject.toml")
+            || p.ends_with("go.mod")
+    });
+    if has_lockfile && !has_manifest {
+        // Flag on the lockfile entry
+        for f in &mut files {
+            if f.risk_indicators.contains(
+                &suture_core::integrity::RiskIndicator::LockfileModifiedWithoutSource,
+            ) && !has_manifest
+            {
+                // Already flagged, that's sufficient
+            }
+        }
+    }
+
+    let mut warnings = Vec::new();
+    if has_build_script && has_test_infra {
+        let build_paths: Vec<String> = files
+            .iter()
+            .filter(|f| {
+                f.risk_indicators
+                    .contains(&suture_core::integrity::RiskIndicator::BuildScriptModified)
+            })
+            .map(|f| f.path.clone())
+            .collect();
+        let test_paths: Vec<String> = files
+            .iter()
+            .filter(|f| {
+                f.risk_indicators
+                    .contains(&suture_core::integrity::RiskIndicator::TestInfrastructureModified)
+            })
+            .take(3)
+            .map(|f| f.path.clone())
+            .collect();
+        warnings.push(format!(
+            "Build script modified alongside test infrastructure. \
+             This pattern was used in the XZ Utils backdoor (CVE-2024-3094). \
+             Review: {}",
+            build_paths
+                .iter()
+                .chain(test_paths.iter())
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    if has_lockfile && !has_manifest {
+        warnings.push(
+            "Lockfile modified without corresponding manifest change. \
+             Verify no new dependencies were injected."
+                .to_string(),
+        );
+    }
+
+    let high_risk_count = files
+        .iter()
+        .filter(|f| f.risk_score >= suture_core::integrity::RiskScore::High)
+        .count();
+    let critical_risk_count = files
+        .iter()
+        .filter(|f| f.risk_score >= suture_core::integrity::RiskScore::Critical)
+        .count();
+    let new_binary_files = files
+        .iter()
+        .filter(|f| f.is_binary)
+        .count();
+    let build_system_changes = files
+        .iter()
+        .filter(|f| {
+            f.risk_indicators
+                .contains(&suture_core::integrity::RiskIndicator::BuildScriptModified)
+        })
+        .count();
+
+    let total_indicators: usize = files.iter().map(|f| f.risk_indicators.len()).sum();
+    let overall_risk = match total_indicators {
+        0 => suture_core::integrity::RiskScore::None,
+        1 => suture_core::integrity::RiskScore::Low,
+        2..=3 => suture_core::integrity::RiskScore::Medium,
+        4..=5 => suture_core::integrity::RiskScore::High,
+        _ => suture_core::integrity::RiskScore::Critical,
+    };
+    // Upgrade if any individual file is critical
+    let overall_risk = std::cmp::max(overall_risk, {
+        files
+            .iter()
+            .map(|f| f.risk_score)
+            .max()
+            .unwrap_or(suture_core::integrity::RiskScore::None)
+    });
+
+    let summary = suture_core::integrity::IntegritySummary {
+        total_files_changed: files.len(),
+        high_risk_count,
+        critical_risk_count,
+        new_binary_files,
+        build_system_changes,
+        overall_risk,
+        warnings,
+    };
+
+    Ok(suture_core::integrity::DiffIntegrityReport {
+        files,
+        old_files,
+        summary,
+    })
+}
+
+/// Get file content from CAS or filesystem.
+fn get_file_content(
+    repo: &suture_core::repository::Repository,
+    path: &str,
+    hash: Option<&suture_common::Hash>,
+) -> Vec<u8> {
+    if let Some(h) = hash
+        && let Ok(blob) = repo.cas().get_blob(h)
+    {
+        return blob;
+    }
+    // Fall back to filesystem
+    std::fs::read(repo.root().join(path)).unwrap_or_default()
 }

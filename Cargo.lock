@@ -4149,6 +4149,7 @@ dependencies = [
  "clap_complete",
  "clap_complete_nushell",
  "ed25519-dalek",
+ "flate2",
  "hex",
  "libc",
  "rand 0.8.5",

@@ -49,6 +49,7 @@ toml = "0.8"
 libc = "0.2"
 regex = "1"
 suture-node = { path = "../suture-node", version = "0.1.0", optional = true }
+flate2 = "1"
 
 [features]
 node = ["dep:suture-node"]
