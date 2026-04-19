@@ -87,7 +87,7 @@ jobs:
           Compress-Archive -Path suture.exe -DestinationPath ../../../suture-${{ matrix.asset_suffix }}.zip
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: suture-${{ matrix.asset_suffix }}
           path: suture-${{ matrix.asset_suffix }}.*
@@ -108,7 +108,7 @@ jobs:
             .
 
       - name: Upload source artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: suture-source
           path: suture-src.tar.gz
