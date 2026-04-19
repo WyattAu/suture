@@ -1,31 +1,187 @@
-name: Semantic Merge Check
+name: Semantic Merge
+
 on:
   pull_request:
-    paths:
-      - '**.json'
-      - '**.yaml'
-      - '**.yml'
-      - '**.toml'
-      - '**.xml'
-      - '**.csv'
-      - '**.md'
-      - '**.docx'
-      - '**.xlsx'
-      - '**.pptx'
+    types: [opened, synchronize, reopened]
+
+workflow_dispatch:
 
 jobs:
   semantic-merge:
     runs-on: ubuntu-latest
     permissions:
+      contents: write
       pull-requests: write
-      contents: read
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout PR
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - uses: ./.github/actions/semantic-merge
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Suture
+        run: |
+          cargo install --git https://github.com/WyattAu/suture.git --branch main \
+            --path crates/suture-cli \
+            crates/suture-core \
+            crates/suture-common \
+            crates/suture-driver \
+            crates/suture-ooxml \
+            crates/suture-driver-json \
+            crates/suture-driver-yaml \
+            crates/suture-driver-toml \
+            crates/suture-driver-csv \
+            crates/suture-driver-xml \
+            crates/suture-driver-markdown \
+            crates/suture-driver-docx \
+            crates/suture-driver-xlsx \
+            crates/suture-driver-pptx \
+            crates/suture-driver-sql \
+            crates/suture-pdf \
+            crates/suture-driver-image \
+            crates/suture-driver-otio
+
+      - name: Find merge base
+        id: merge-base
+        run: |
+          BASE=$(git merge-base HEAD ${{ github.event.pull_request.base.sha }} 2>/dev/null || echo "HEAD")
+          echo "BASE=$BASE" >> $GITHUB_OUTPUT
+          echo "HEAD=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Check for conflicts
+        id: conflicts
+        run: |
+          git merge --no-commit --no-ff origin/${{ github.event.pull_request.head.ref }} 2>&1 || true
+          CONFLICTS=$(git diff --name-only --diff-filter=U 2>/dev/null || true)
+          echo "conflict_count=$(echo "$CONFLICTS" | wc -l)" >> $GITHUB_OUTPUT
+          if [ -n "$CONFLICTS" ]; then
+            echo "conflicts<<EOF" >> $GITHUB_OUTPUT
+            echo "$CONFLICTS" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          fi
+          git merge --abort 2>/dev/null || true
+
+      - name: Resolve conflicts with Suture
+        id: resolve
+        if: steps.conflicts.outputs.conflict_count != '0'
+        env:
+          MERGE_BASE: ${{ steps.merge-base.outputs.BASE }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          CONFLICTS="${{ steps.conflicts.outputs.conflicts }}"
+          RESOLVED=0
+          FAILED=0
+          REPORT_FILE=$(mktemp)
+
+          while IFS= read -r FILE; do
+            [ -z "$FILE" ] && continue
+
+            BASE_TMP=$(mktemp)
+            OURS_TMP=$(mktemp)
+            THEIRS_TMP=$(mktemp)
+            OUTPUT_TMP=$(mktemp)
+
+            git show "$MERGE_BASE:$FILE" > "$BASE_TMP" 2>/dev/null || true
+            git show "HEAD:$FILE" > "$OURS_TMP" 2>/dev/null || true
+            git show "origin/$HEAD_REF:$FILE" > "$THEIRS_TMP" 2>/dev/null || true
+
+            if [ ! -s "$OURS_TMP" ] && [ -s "$THEIRS_TMP" ]; then
+              mkdir -p "$(dirname "$FILE")"
+              cp "$THEIRS_TMP" "$FILE"
+              git add "$FILE"
+              RESOLVED=$((RESOLVED + 1))
+              echo "ok $FILE (new file from incoming branch)" >> "$REPORT_FILE"
+              rm -f "$BASE_TMP" "$OURS_TMP" "$THEIRS_TMP" "$OUTPUT_TMP"
+              continue
+            fi
+
+            if [ -s "$OURS_TMP" ] && [ ! -s "$THEIRS_TMP" ]; then
+              RESOLVED=$((RESOLVED + 1))
+              echo "ok $FILE (deleted by incoming branch)" >> "$REPORT_FILE"
+              rm -f "$BASE_TMP" "$OURS_TMP" "$THEIRS_TMP" "$OUTPUT_TMP"
+              continue
+            fi
+
+            if suture merge-file "$BASE_TMP" "$OURS_TMP" "$THEIRS_TMP" --driver auto > "$OUTPUT_TMP" 2>/dev/null; then
+              if [ -s "$OUTPUT_TMP" ]; then
+                mkdir -p "$(dirname "$FILE")"
+                cp "$OUTPUT_TMP" "$FILE"
+                git add "$FILE"
+                RESOLVED=$((RESOLVED + 1))
+                echo "ok $FILE" >> "$REPORT_FILE"
+              else
+                FAILED=$((FAILED + 1))
+                echo "fail $FILE (empty output)" >> "$REPORT_FILE"
+              fi
+            else
+              FAILED=$((FAILED + 1))
+              echo "fail $FILE (driver failed)" >> "$REPORT_FILE"
+            fi
+
+            rm -f "$BASE_TMP" "$OURS_TMP" "$THEIRS_TMP" "$OUTPUT_TMP"
+          done <<< "$CONFLICTS"
+
+          echo "resolved=$RESOLVED" >> $GITHUB_OUTPUT
+          echo "failed=$FAILED" >> $GITHUB_OUTPUT
+
+          # Build multiline report for output
+          if [ -f "$REPORT_FILE" ]; then
+            echo "report<<EOF" >> $GITHUB_OUTPUT
+            cat "$REPORT_FILE" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+            rm -f "$REPORT_FILE"
+          fi
+
+      - name: No conflicts
+        if: steps.conflicts.outputs.conflict_count == '0'
+        run: echo "No conflicts found - PR is clean"
+
+      - name: Commit resolved files
+        if: steps.conflicts.outputs.conflict_count != '0' && steps.resolve.outputs.resolved != '0'
+        run: |
+          git commit -m "resolve: semantic merge via Suture (${{ steps.resolve.outputs.resolved }}/${{ steps.conflicts.outputs.conflict_count }} files)"
+
+      - name: Comment on PR
+        if: steps.conflicts.outputs.conflict_count != '0'
+        uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          fail-on-conflict: 'false'
-          file-patterns: '*.json,*.yaml,*.yml,*.toml,*.xml,*.csv,*.md,*.docx,*.xlsx,*.pptx'
+          script: |
+            const resolved = parseInt("${{ steps.resolve.outputs.resolved }}" || "0");
+            const failed = parseInt("${{ steps.resolve.outputs.failed }}" || "0");
+
+            const lines = (process.env.REPORT || "")
+              .split("\n")
+              .filter(Boolean)
+              .map(line => {
+                const [status, ...rest] = line.split(" ");
+                const file = rest.join(" ");
+                if (status === "ok") return `- :white_check_mark: \`${file}\``;
+                if (status === "fail") return `- :x: \`${file}\``;
+                return `- ${line}`;
+              });
+
+            const body = [
+              "## Semantic Merge Results",
+              "",
+              ...lines,
+              "",
+              resolved > 0 ? `**Resolved:** ${resolved} file(s) merged automatically.` : "",
+              failed > 0 ? `**Failed:** ${failed} file(s) could not be auto-resolved.` : "",
+              "",
+              "---",
+              "*Powered by [Suture](https://github.com/WyattAu/suture) - Semantic version control for structured files.*"
+            ].filter(Boolean).join("\n");
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: body
+            });
+
+      - name: Push resolved files
+        if: steps.conflicts.outputs.conflict_count != '0' && steps.resolve.outputs.resolved != '0'
+        run: git push

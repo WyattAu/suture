@@ -24,6 +24,13 @@ pub(crate) enum GitAction {
     Import { path: Option<String> },
     Log { path: Option<String> },
     Status { path: Option<String> },
+    Driver { action: DriverAction },
+}
+
+pub(crate) enum DriverAction {
+    Install,
+    Uninstall,
+    List,
 }
 
 pub(crate) async fn cmd_git(action: GitAction) -> Result<(), Box<dyn std::error::Error>> {
@@ -31,6 +38,11 @@ pub(crate) async fn cmd_git(action: GitAction) -> Result<(), Box<dyn std::error:
         GitAction::Import { path } => git_import(path),
         GitAction::Log { path } => git_log(path),
         GitAction::Status { path } => git_status(path),
+        GitAction::Driver { action } => match action {
+            DriverAction::Install => cmd_driver_install(),
+            DriverAction::Uninstall => cmd_driver_uninstall(),
+            DriverAction::List => cmd_driver_list(),
+        },
     }
 }
 
@@ -323,6 +335,216 @@ fn truncate_msg(s: &str, max: usize) -> String {
     } else {
         format!("{}...", &s[..max - 3])
     }
+}
+
+const SUTURE_DRIVER_SCRIPT_PATH: &str = ".suture/git-merge-driver.sh";
+
+fn gitattributes_patterns() -> &'static str {
+    "*.docx merge=suture
+*.docm merge=suture
+*.xlsx merge=suture
+*.xlsm merge=suture
+*.pptx merge=suture
+*.pptm merge=suture
+*.json merge=suture
+*.jsonl merge=suture
+*.yaml merge=suture
+*.yml merge=suture
+*.toml merge=suture
+*.csv merge=suture
+*.tsv merge=suture
+*.xml merge=suture
+*.xsl merge=suture
+*.svg merge=suture
+*.md merge=suture
+*.markdown merge=suture
+*.otio merge=suture
+*.sql merge=suture"
+}
+
+fn merge_driver_script() -> &'static str {
+    r#"#!/bin/sh
+# Suture merge driver — called by Git with: $LOCAL $BASE $REMOTE
+# $LOCAL = ours (current branch version)
+# $BASE = common ancestor
+# $REMOTE = theirs (incoming branch version)
+# Exit 0 with merged content on stdout
+BASE_FILE="$3"
+# Write the merged result using suture merge-file
+suture merge-file --driver auto "$BASE_FILE" "$2" "$4" -o -
+exit $?
+"#
+}
+
+fn ensure_git_repo() -> Result<(), Box<dyn std::error::Error>> {
+    let output = std::process::Command::new("git")
+        .args(["rev-parse", "--git-dir"])
+        .output()?;
+    if !output.status.success() {
+        return Err("not a Git repository".into());
+    }
+    Ok(())
+}
+
+fn cmd_driver_install() -> Result<(), Box<dyn std::error::Error>> {
+    ensure_git_repo()?;
+
+    std::fs::create_dir_all(".suture")?;
+
+    std::fs::write(SUTURE_DRIVER_SCRIPT_PATH, merge_driver_script())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = std::fs::Permissions::from_mode(0o755);
+        std::fs::set_permissions(SUTURE_DRIVER_SCRIPT_PATH, perms)?;
+    }
+
+    let patterns = gitattributes_patterns();
+    let gitattributes_path = std::path::Path::new(".gitattributes");
+    if gitattributes_path.exists() {
+        let existing = std::fs::read_to_string(gitattributes_path)?;
+        let filtered: String = existing
+            .lines()
+            .filter(|line| !line.contains("merge=suture"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let needs_newline = !filtered.is_empty();
+        let new_content = if needs_newline {
+            format!("{filtered}\n{patterns}")
+        } else {
+            patterns.to_string()
+        };
+        std::fs::write(gitattributes_path, new_content)?;
+    } else {
+        std::fs::write(gitattributes_path, patterns)?;
+    }
+
+    let script_path = std::path::Path::new(SUTURE_DRIVER_SCRIPT_PATH);
+    let absolute_script = if script_path.is_absolute() {
+        script_path.display().to_string()
+    } else {
+        std::env::current_dir()?
+            .join(script_path)
+            .display()
+            .to_string()
+    };
+
+    std::process::Command::new("git")
+        .args([
+            "config",
+            "merge.suture.name",
+            "Suture Semantic Merge Driver",
+        ])
+        .output()?;
+    std::process::Command::new("git")
+        .args(["config", "merge.suture.driver", &absolute_script])
+        .output()?;
+    std::process::Command::new("git")
+        .args(["config", "merge.suture.recursive", "binary"])
+        .output()?;
+
+    println!("Suture merge driver installed successfully.");
+    println!();
+    println!("  Merge driver script:  {SUTURE_DRIVER_SCRIPT_PATH}");
+    println!("  Git config section:   merge.suture");
+    println!("  Gitattributes:        updated with 20 file patterns");
+    println!();
+    println!("Next steps:");
+    println!("  git add .gitattributes .suture/git-merge-driver.sh");
+    println!("  git commit -m \"Configure suture merge driver\"");
+
+    Ok(())
+}
+
+fn cmd_driver_uninstall() -> Result<(), Box<dyn std::error::Error>> {
+    ensure_git_repo()?;
+
+    let gitattributes_path = std::path::Path::new(".gitattributes");
+    if gitattributes_path.exists() {
+        let existing = std::fs::read_to_string(gitattributes_path)?;
+        let filtered: String = existing
+            .lines()
+            .filter(|line| !line.contains("merge=suture"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        if filtered.trim().is_empty() {
+            std::fs::remove_file(gitattributes_path)?;
+        } else {
+            std::fs::write(gitattributes_path, filtered)?;
+        }
+    }
+
+    std::process::Command::new("git")
+        .args(["config", "--remove-section", "merge.suture"])
+        .output()?;
+
+    let script_path = std::path::Path::new(SUTURE_DRIVER_SCRIPT_PATH);
+    if script_path.exists() {
+        std::fs::remove_file(script_path)?;
+    }
+
+    println!("Suture merge driver uninstalled successfully.");
+
+    Ok(())
+}
+
+fn cmd_driver_list() -> Result<(), Box<dyn std::error::Error>> {
+    ensure_git_repo()?;
+
+    let gitattributes_path = std::path::Path::new(".gitattributes");
+    if gitattributes_path.exists() {
+        let content = std::fs::read_to_string(gitattributes_path)?;
+        let patterns: Vec<&str> = content
+            .lines()
+            .filter(|line| line.contains("merge=suture"))
+            .collect();
+        if patterns.is_empty() {
+            println!("  .gitattributes:    no suture patterns found");
+        } else {
+            println!("  .gitattributes:    {} patterns configured", patterns.len());
+            for p in &patterns {
+                println!("    {}", p.trim());
+            }
+        }
+    } else {
+        println!("  .gitattributes:    not found");
+    }
+
+    let name = std::process::Command::new("git")
+        .args(["config", "--get", "merge.suture.name"])
+        .output()?;
+    let driver = std::process::Command::new("git")
+        .args(["config", "--get", "merge.suture.driver"])
+        .output()?;
+    let recursive = std::process::Command::new("git")
+        .args(["config", "--get", "merge.suture.recursive"])
+        .output()?;
+
+    if name.status.success() {
+        println!(
+            "  merge.suture.name:      {}",
+            String::from_utf8_lossy(&name.stdout).trim()
+        );
+        println!(
+            "  merge.suture.driver:    {}",
+            String::from_utf8_lossy(&driver.stdout).trim()
+        );
+        println!(
+            "  merge.suture.recursive: {}",
+            String::from_utf8_lossy(&recursive.stdout).trim()
+        );
+    } else {
+        println!("  git config:        merge.suture section not found");
+    }
+
+    let script_path = std::path::Path::new(SUTURE_DRIVER_SCRIPT_PATH);
+    if script_path.exists() {
+        println!("  driver script:     {} (exists)", SUTURE_DRIVER_SCRIPT_PATH);
+    } else {
+        println!("  driver script:     {} (missing)", SUTURE_DRIVER_SCRIPT_PATH);
+    }
+
+    Ok(())
 }
 
 fn write_blob_to_disk(git_dir: &Path, path: &str, blob_sha: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -787,5 +1009,87 @@ mod tests {
         };
         entries.push((new_sha, message));
         entries
+    }
+
+    #[test]
+    fn test_gitattributes_content() {
+        let patterns = gitattributes_patterns();
+        let lines: Vec<&str> = patterns.lines().collect();
+        assert_eq!(lines.len(), 20);
+        assert!(lines.iter().all(|l| l.contains("merge=suture")));
+        assert!(lines.iter().any(|l| l.starts_with("*.json")));
+        assert!(lines.iter().any(|l| l.starts_with("*.yaml")));
+        assert!(lines.iter().any(|l| l.starts_with("*.yml")));
+        assert!(lines.iter().any(|l| l.starts_with("*.toml")));
+        assert!(lines.iter().any(|l| l.starts_with("*.csv")));
+        assert!(lines.iter().any(|l| l.starts_with("*.xml")));
+        assert!(lines.iter().any(|l| l.starts_with("*.md")));
+        assert!(lines.iter().any(|l| l.starts_with("*.docx")));
+        assert!(lines.iter().any(|l| l.starts_with("*.xlsx")));
+        assert!(lines.iter().any(|l| l.starts_with("*.pptx")));
+        assert!(lines.iter().any(|l| l.starts_with("*.sql")));
+        assert!(lines.iter().any(|l| l.starts_with("*.otio")));
+        assert!(lines.iter().any(|l| l.starts_with("*.svg")));
+    }
+
+    #[test]
+    fn test_merge_driver_script() {
+        let script = merge_driver_script();
+        assert!(script.starts_with("#!/bin/sh"));
+        assert!(script.contains("suture merge-file --driver auto"));
+        assert!(script.contains("$BASE_FILE"));
+        assert!(script.contains("$2"));
+        assert!(script.contains("$4"));
+        assert!(script.contains("exit $?"));
+    }
+
+    #[test]
+    fn test_install_uninstall_flow() {
+        let dir = std::env::temp_dir().join("suture-test-driver-flow");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(dir.join(".git")).unwrap();
+        std::fs::write(dir.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
+        std::fs::create_dir_all(dir.join(".git/objects")).unwrap();
+        std::fs::create_dir_all(dir.join(".git/refs/heads")).unwrap();
+
+        let prev = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&dir).unwrap();
+
+        cmd_driver_install().unwrap();
+
+        let gitattributes = std::fs::read_to_string(".gitattributes").unwrap();
+        assert!(gitattributes.contains("*.json merge=suture"));
+        assert!(gitattributes.contains("*.sql merge=suture"));
+
+        let script = std::path::Path::new(SUTURE_DRIVER_SCRIPT_PATH);
+        assert!(script.exists());
+        let script_content = std::fs::read_to_string(script).unwrap();
+        assert!(script_content.contains("suture merge-file"));
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let perms = std::fs::metadata(script).unwrap().permissions();
+            assert_eq!(perms.mode() & 0o111, 0o111);
+        }
+
+        cmd_driver_install().unwrap();
+
+        let gitattributes2 = std::fs::read_to_string(".gitattributes").unwrap();
+        let suture_count = gitattributes2
+            .lines()
+            .filter(|l| l.contains("merge=suture"))
+            .count();
+        assert_eq!(suture_count, 20, "re-install should not duplicate patterns");
+
+        cmd_driver_uninstall().unwrap();
+
+        assert!(!script.exists());
+        let gitattributes3 = std::fs::read_to_string(".gitattributes").unwrap_or_default();
+        assert!(!gitattributes3.contains("merge=suture"));
+
+        std::env::set_current_dir(&prev).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

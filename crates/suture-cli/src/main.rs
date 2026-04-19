@@ -751,6 +751,26 @@ pub(crate) enum GitAction {
         /// Path to the Git repository
         path: Option<String>,
     },
+    /// Manage Suture as a Git merge driver
+    #[command(after_long_help = "\
+EXAMPLES:
+    suture git driver install    # Install Suture as a Git merge driver
+    suture git driver uninstall  # Remove the Suture merge driver
+    suture git driver list       # Show current driver status")]
+    Driver {
+        #[command(subcommand)]
+        action: DriverAction,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub(crate) enum DriverAction {
+    /// Install Suture as a Git merge driver in the current repo
+    Install,
+    /// Remove the Suture merge driver from the current repo
+    Uninstall,
+    /// Show current merge driver status
+    List,
 }
 
 #[tokio::main]
@@ -970,6 +990,13 @@ async fn main() {
                 GitAction::Import { path } => cmd::git::GitAction::Import { path },
                 GitAction::Log { path } => cmd::git::GitAction::Log { path },
                 GitAction::Status { path } => cmd::git::GitAction::Status { path },
+                GitAction::Driver { action } => cmd::git::GitAction::Driver {
+                    action: match action {
+                        DriverAction::Install => cmd::git::DriverAction::Install,
+                        DriverAction::Uninstall => cmd::git::DriverAction::Uninstall,
+                        DriverAction::List => cmd::git::DriverAction::List,
+                    },
+                },
             };
             cmd::git::cmd_git(git_action).await
         }
@@ -1430,6 +1457,51 @@ mod tests {
             Commands::Git { action } => match action {
                 GitAction::Status { path } => assert!(path.is_none()),
                 other => panic!("expected GitAction::Status, got {other:?}"),
+            },
+            other => panic!("expected Git, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_git_driver_install() {
+        let cli = parse(&["suture", "git", "driver", "install"]);
+        match cli.command {
+            Commands::Git { action } => match action {
+                GitAction::Driver { action } => match action {
+                    DriverAction::Install => {}
+                    other => panic!("expected DriverAction::Install, got {other:?}"),
+                },
+                other => panic!("expected GitAction::Driver, got {other:?}"),
+            },
+            other => panic!("expected Git, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_git_driver_uninstall() {
+        let cli = parse(&["suture", "git", "driver", "uninstall"]);
+        match cli.command {
+            Commands::Git { action } => match action {
+                GitAction::Driver { action } => match action {
+                    DriverAction::Uninstall => {}
+                    other => panic!("expected DriverAction::Uninstall, got {other:?}"),
+                },
+                other => panic!("expected GitAction::Driver, got {other:?}"),
+            },
+            other => panic!("expected Git, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_git_driver_list() {
+        let cli = parse(&["suture", "git", "driver", "list"]);
+        match cli.command {
+            Commands::Git { action } => match action {
+                GitAction::Driver { action } => match action {
+                    DriverAction::List => {}
+                    other => panic!("expected DriverAction::List, got {other:?}"),
+                },
+                other => panic!("expected GitAction::Driver, got {other:?}"),
             },
             other => panic!("expected Git, got {other:?}"),
         }
