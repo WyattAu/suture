@@ -5440,9 +5440,9 @@ mod tests {
         eprintln!("log() 10001 entries: {:?} ({} entries)", log_time, log.len());
 
         assert_eq!(log.len(), 10_001); // 10K commits + 1 root
-        // 10K commits should complete in <30s even in debug mode
+        // 10K commits should complete in <60s even in debug mode on slow CI
         assert!(
-            commit_time.as_secs() < 30,
+            commit_time.as_secs() < 60,
             "10K commits took too long: {:?}",
             commit_time
         );

@@ -348,6 +348,7 @@ fn csv_diff_and_format() {
 // 5. XML
 // ============================================================================
 
+#[cfg(feature = "xml")]
 #[test]
 fn xml_clean_different_elements() {
     let r = merge_xml(
@@ -359,6 +360,7 @@ fn xml_clean_different_elements() {
     check_clean(&r, &["10", "20"], &[]);
 }
 
+#[cfg(feature = "xml")]
 #[test]
 fn xml_conflict_same_element() {
     let r = merge_xml(
@@ -370,6 +372,7 @@ fn xml_conflict_same_element() {
     check_conflict(&r);
 }
 
+#[cfg(feature = "xml")]
 #[test]
 fn xml_attribute_changes() {
     let r = merge_xml(
@@ -381,6 +384,7 @@ fn xml_attribute_changes() {
     check_clean(&r, &["val=\"2\"", "color=\"red\""], &[]);
 }
 
+#[cfg(feature = "xml")]
 #[test]
 fn xml_nested() {
     let r = merge_xml(
@@ -392,6 +396,7 @@ fn xml_nested() {
     check_clean(&r, &["new>z<"], &[]);
 }
 
+#[cfg(feature = "xml")]
 #[test]
 fn xml_diff_and_format() {
     let changes = diff("<root><a>1</a></root>", "<root><a>2</a><b>3</b></root>", Some(".xml")).unwrap();
@@ -404,6 +409,7 @@ fn xml_diff_and_format() {
 // 6. Markdown
 // ============================================================================
 
+#[cfg(feature = "markdown")]
 #[test]
 fn markdown_clean_different_sections() {
     let r = merge_markdown(
@@ -415,6 +421,7 @@ fn markdown_clean_different_sections() {
     check_clean(&r, &["New text A", "New text B"], &[]);
 }
 
+#[cfg(feature = "markdown")]
 #[test]
 fn markdown_conflict_same_section() {
     let r = merge_markdown(
@@ -426,6 +433,7 @@ fn markdown_conflict_same_section() {
     check_conflict(&r);
 }
 
+#[cfg(feature = "markdown")]
 #[test]
 fn markdown_list_additions() {
     let r = merge_markdown(
@@ -438,6 +446,7 @@ fn markdown_list_additions() {
     assert!(!r.merged.is_empty());
 }
 
+#[cfg(feature = "markdown")]
 #[test]
 fn markdown_diff_and_format() {
     let changes = diff("# A\n\nold\n", "# A\n\nnew\n", Some(".md")).unwrap();
@@ -448,6 +457,7 @@ fn markdown_diff_and_format() {
 // 7. SVG
 // ============================================================================
 
+#[cfg(feature = "svg")]
 #[test]
 fn svg_clean_different_attributes() {
     let r = merge_svg(
@@ -459,6 +469,7 @@ fn svg_clean_different_attributes() {
     check_clean(&r, &["fill=\"blue\"", "width=\"200\""], &[]);
 }
 
+#[cfg(feature = "svg")]
 #[test]
 fn svg_conflict_same_attribute() {
     let r = merge_svg(
@@ -470,6 +481,7 @@ fn svg_conflict_same_attribute() {
     check_conflict(&r);
 }
 
+#[cfg(feature = "svg")]
 #[test]
 fn svg_clean_add_element() {
     let r = merge_svg(
@@ -481,6 +493,7 @@ fn svg_clean_add_element() {
     check_clean(&r, &["circle"], &[]);
 }
 
+#[cfg(feature = "svg")]
 #[test]
 fn svg_diff_and_format() {
     let r = r#"<svg xmlns="http://www.w3.org/2000/svg"><rect id="r" fill="red"/></svg>"#;
@@ -495,6 +508,7 @@ fn svg_diff_and_format() {
 // 8. HTML
 // ============================================================================
 
+#[cfg(feature = "html")]
 #[test]
 fn html_clean_different_elements() {
     let r = merge_html(
@@ -506,6 +520,7 @@ fn html_clean_different_elements() {
     check_clean(&r, &["New Title", "New Body"], &[]);
 }
 
+#[cfg(feature = "html")]
 #[test]
 fn html_conflict_same_element() {
     let r = merge_html(
@@ -517,6 +532,7 @@ fn html_conflict_same_element() {
     check_conflict(&r);
 }
 
+#[cfg(feature = "html")]
 #[test]
 fn html_attribute_changes() {
     let r = merge_html(
@@ -528,6 +544,7 @@ fn html_attribute_changes() {
     check_clean(&r, &["href=\"/new\"", "class=\"active\""], &[]);
 }
 
+#[cfg(feature = "html")]
 #[test]
 fn html_diff_and_format() {
     let changes = diff(
@@ -543,6 +560,7 @@ fn html_diff_and_format() {
 // 9. iCalendar
 // ============================================================================
 
+#[cfg(feature = "ical")]
 #[test]
 fn ical_clean_different_events() {
     let base = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nSUMMARY:Meeting A\r\nUID:a@test.com\r\nDTSTART:20240101T100000Z\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nSUMMARY:Meeting B\r\nUID:b@test.com\r\nDTSTART:20240102T100000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
@@ -553,6 +571,7 @@ fn ical_clean_different_events() {
     check_clean(&r, &["Updated Meeting A", "Updated Meeting B"], &[]);
 }
 
+#[cfg(feature = "ical")]
 #[test]
 fn ical_conflict_same_event() {
     let base = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nSUMMARY:Meeting\r\nUID:x@test.com\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
@@ -563,6 +582,7 @@ fn ical_conflict_same_event() {
     check_conflict(&r);
 }
 
+#[cfg(feature = "ical")]
 #[test]
 fn ical_diff_and_format() {
     let base = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nSUMMARY:Meeting\r\nUID:x@test.com\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
@@ -575,6 +595,7 @@ fn ical_diff_and_format() {
 // 10. RSS Feed
 // ============================================================================
 
+#[cfg(feature = "feed")]
 #[test]
 fn feed_rss_clean_different_entries() {
     let base = r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -598,6 +619,7 @@ fn feed_rss_clean_different_entries() {
     check_clean(&r, &["Updated Article 1", "Updated Article 2"], &[]);
 }
 
+#[cfg(feature = "feed")]
 #[test]
 fn feed_rss_conflict_same_entry() {
     let base = r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -617,6 +639,7 @@ fn feed_rss_conflict_same_entry() {
     check_conflict(&r);
 }
 
+#[cfg(feature = "feed")]
 #[test]
 fn feed_atom_clean() {
     let base = r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -638,6 +661,7 @@ fn feed_atom_clean() {
     check_clean(&r, &["Updated Entry 1", "Updated Entry 2"], &[]);
 }
 
+#[cfg(feature = "feed")]
 #[test]
 fn feed_diff_and_format() {
     let base = r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -687,18 +711,21 @@ fn merge_auto_csv() {
     assert_eq!(r.status, MergeStatus::Clean);
 }
 
+#[cfg(feature = "xml")]
 #[test]
 fn merge_auto_xml() {
     let r = merge_auto("<r><a>1</a></r>", "<r><a>2</a></r>", "<r><b>3</b></r>", Some(".xml")).unwrap();
     assert_eq!(r.status, MergeStatus::Clean);
 }
 
+#[cfg(feature = "markdown")]
 #[test]
 fn merge_auto_md() {
     let r = merge_auto("# A\n\nold\n", "# A\n\nnew\n", "# A\n\nold\n", Some(".md")).unwrap();
     assert_eq!(r.status, MergeStatus::Clean);
 }
 
+#[cfg(feature = "svg")]
 #[test]
 fn merge_auto_svg() {
     let r = merge_auto(
@@ -711,6 +738,7 @@ fn merge_auto_svg() {
     assert_eq!(r.status, MergeStatus::Conflict);
 }
 
+#[cfg(feature = "html")]
 #[test]
 fn merge_auto_html() {
     let r = merge_auto(
@@ -723,6 +751,7 @@ fn merge_auto_html() {
     assert_eq!(r.status, MergeStatus::Clean);
 }
 
+#[cfg(feature = "ical")]
 #[test]
 fn merge_auto_ics() {
     let base = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nSUMMARY:A\r\nUID:x@t\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
@@ -730,6 +759,7 @@ fn merge_auto_ics() {
     assert_eq!(r.status, MergeStatus::Clean);
 }
 
+#[cfg(feature = "feed")]
 #[test]
 fn merge_auto_rss() {
     let base = r#"<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>F</title></channel></rss>"#;
@@ -737,6 +767,7 @@ fn merge_auto_rss() {
     assert_eq!(r.status, MergeStatus::Clean);
 }
 
+#[cfg(feature = "feed")]
 #[test]
 fn merge_auto_atom() {
     let base = r#"<?xml version="1.0" encoding="UTF-8"?><feed xmlns="http://www.w3.org/2005/Atom"><title>F</title></feed>"#;
@@ -775,6 +806,7 @@ fn edge_malformed_json() {
     let _ = r;
 }
 
+#[cfg(feature = "xml")]
 #[test]
 fn edge_malformed_xml() {
     let r = merge_xml("<broken", "<also broken", "<three broken");
@@ -832,6 +864,7 @@ fn edge_toml_array() {
     let _ = r; // Array merge behavior may vary
 }
 
+#[cfg(feature = "markdown")]
 #[test]
 fn edge_markdown_empty() {
     let r = merge_markdown("", "# New\n", "").unwrap();
@@ -867,6 +900,7 @@ fn realworld_csv_cpi() {
     check_clean(&r, &["105", "103"], &[]);
 }
 
+#[cfg(feature = "xml")]
 #[test]
 fn realworld_xml_note() {
     let base = r#"<?xml version="1.0"?>
@@ -883,6 +917,7 @@ fn realworld_xml_note() {
     check_clean(&r, &["Alice", "Bob"], &[]);
 }
 
+#[cfg(feature = "markdown")]
 #[test]
 fn realworld_markdown_readme() {
     let base = "# Linux\n\nLinux is cool.\n\n## Security\n\nStay safe.\n";
@@ -942,14 +977,16 @@ fn consistency_no_changes() {
 #[test]
 fn consistency_all_formats_no_change() {
     // Every format should report no changes for identical content
-    let formats: &[(&str, &str, &str, fn(&str, &str, &str) -> Result<MergeResult, MergeError>)] = &[
+    let mut formats: Vec<(&str, &str, &str, fn(&str, &str, &str) -> Result<MergeResult, MergeError>)> = vec![
         (".json", r#"{"a":1}"#, r#"{"a":1}"#, merge_json),
         ("base", "a: 1\n", "a: 1\n", merge_yaml),
         ("base", "a = 1\n", "a = 1\n", merge_toml),
         ("base", "a\n1\n", "a\n1\n", merge_csv),
-        ("base", "<r><a>1</a></r>", "<r><a>1</a></r>", merge_xml),
-        ("base", "# A\n\nB\n", "# A\n\nB\n", merge_markdown),
     ];
+    #[cfg(feature = "xml")]
+    formats.push(("base", "<r><a>1</a></r>", "<r><a>1</a></r>", merge_xml));
+    #[cfg(feature = "markdown")]
+    formats.push(("base", "# A\n\nB\n", "# A\n\nB\n", merge_markdown));
 
     for (label, base, modified, merge_fn) in formats {
         let r = merge_fn(base, modified, base).unwrap();

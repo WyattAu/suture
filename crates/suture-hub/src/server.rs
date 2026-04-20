@@ -1971,6 +1971,16 @@ pub async fn handshake_handler(
     })
 }
 
+/// GET /handshake — returns version info without requiring a request body.
+/// Used by `suture push`/`suture pull` which send a bare GET for compatibility checking.
+pub async fn handshake_get_handler() -> Json<crate::types::HandshakeResponse> {
+    Json(crate::types::HandshakeResponse {
+        server_version: crate::types::PROTOCOL_VERSION,
+        server_name: "suture-hub".to_string(),
+        compatible: true,
+    })
+}
+
 #[derive(Debug, serde::Serialize)]
 pub struct TokenResponse {
     pub token: String,
@@ -3177,7 +3187,7 @@ pub async fn run_server(
             "/repos/{repo_id}/patches",
             axum::routing::get(repo_patches_handler),
         )
-        .route("/handshake", axum::routing::get(handshake_handler))
+        .route("/handshake", axum::routing::get(handshake_get_handler))
         .route("/handshake", axum::routing::post(handshake_handler))
         .route("/v2/handshake", axum::routing::get(handshake_v2_handler))
         .route("/v2/handshake", axum::routing::post(handshake_v2_handler))
@@ -3312,7 +3322,7 @@ mod tests {
             .route("/repo/{repo_id}", axum::routing::get(repo_info_handler))
             .route("/repos/{repo_id}/branches", axum::routing::get(repo_branches_handler))
             .route("/repos/{repo_id}/patches", axum::routing::get(repo_patches_handler))
-            .route("/handshake", axum::routing::get(handshake_handler))
+            .route("/handshake", axum::routing::get(handshake_get_handler))
             .route("/handshake", axum::routing::post(handshake_handler))
             .route("/v2/handshake", axum::routing::get(handshake_v2_handler))
             .route("/v2/handshake", axum::routing::post(handshake_v2_handler))

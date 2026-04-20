@@ -188,11 +188,17 @@ adversarial_test!(json, merge_json, ".json");
 adversarial_test!(yaml, merge_yaml, ".yaml");
 adversarial_test!(toml, merge_toml, ".toml");
 adversarial_test!(csv, merge_csv, ".csv");
+#[cfg(feature = "xml")]
 adversarial_test!(xml, merge_xml, ".xml");
+#[cfg(feature = "markdown")]
 adversarial_test!(markdown, merge_markdown, ".md");
+#[cfg(feature = "svg")]
 adversarial_test!(svg, merge_svg, ".svg");
+#[cfg(feature = "html")]
 adversarial_test!(html, merge_html, ".html");
+#[cfg(feature = "ical")]
 adversarial_test!(ical, merge_ical, ".ics");
+#[cfg(feature = "feed")]
 adversarial_test!(feed, merge_feed, ".rss");
 
 // ============================================================================
@@ -339,6 +345,7 @@ fn stress_csv_10000_rows() {
     }
 }
 
+#[cfg(feature = "xml")]
 #[test]
 fn stress_xml_500_elements() {
     let mut base = String::from("<root>");
@@ -357,6 +364,7 @@ fn stress_xml_500_elements() {
     }
 }
 
+#[cfg(feature = "markdown")]
 #[test]
 fn stress_markdown_200_sections() {
     let mut base = String::new();
@@ -383,6 +391,7 @@ fn stress_yaml_500_keys() {
     assert!(r.is_ok(), "500-key YAML merge should succeed: {:?}", r.err());
 }
 
+#[cfg(feature = "ical")]
 #[test]
 fn stress_ical_50_events() {
     let mut base = String::from("BEGIN:VCALENDAR\r\nVERSION:2.0\r\n");
@@ -401,6 +410,7 @@ fn stress_ical_50_events() {
     assert!(r.is_ok(), "50-event iCal merge should succeed: {:?}", r.err());
 }
 
+#[cfg(feature = "feed")]
 #[test]
 fn stress_feed_50_entries() {
     let mut items = String::new();
@@ -462,9 +472,13 @@ trivial_test!(json_trivial, merge_json, r#"{"a": 1}"#);
 trivial_test!(yaml_trivial, merge_yaml, "a: 1\n");
 trivial_test!(toml_trivial, merge_toml, "a = 1\n");
 trivial_test!(csv_trivial, merge_csv, "a,b\n1,2\n");
+#[cfg(feature = "xml")]
 trivial_test!(xml_trivial, merge_xml, "<r><a>1</a></r>");
+#[cfg(feature = "markdown")]
 trivial_test!(md_trivial, merge_markdown, "# A\n\nB\n");
+#[cfg(feature = "svg")]
 trivial_test!(svg_trivial, merge_svg, r#"<svg xmlns="http://www.w3.org/2000/svg"><rect id="r"/></svg>"#);
+#[cfg(feature = "html")]
 trivial_test!(html_trivial, merge_html, "<html><body><p>a</p></body></html>");
 
 // ============================================================================
@@ -474,16 +488,20 @@ trivial_test!(html_trivial, merge_html, "<html><body><p>a</p></body></html>");
 /// All drivers should handle "no change" identically
 #[test]
 fn consistency_all_drivers_no_change() {
-    let inputs: &[(&str, &str, fn(&str, &str, &str) -> Result<MergeResult, MergeError>)] = &[
+    let mut inputs: Vec<(&str, &str, fn(&str, &str, &str) -> Result<MergeResult, MergeError>)> = vec![
         (".json", r#"{"a": 1}"#, merge_json as fn(&str, &str, &str) -> Result<MergeResult, MergeError>),
         (".yaml", "a: 1\n", merge_yaml as fn(&str, &str, &str) -> Result<MergeResult, MergeError>),
         (".toml", "a = 1\n", merge_toml as fn(&str, &str, &str) -> Result<MergeResult, MergeError>),
         (".csv", "a\n1\n", merge_csv as fn(&str, &str, &str) -> Result<MergeResult, MergeError>),
-        (".xml", "<r><a>1</a></r>", merge_xml as fn(&str, &str, &str) -> Result<MergeResult, MergeError>),
-        (".md", "# A\n\nB\n", merge_markdown as fn(&str, &str, &str) -> Result<MergeResult, MergeError>),
-        (".svg", r#"<svg xmlns="http://www.w3.org/2000/svg"><rect id="r"/></svg>"#, merge_svg as fn(&str, &str, &str) -> Result<MergeResult, MergeError>),
-        (".html", "<html><p>a</p></html>", merge_html as fn(&str, &str, &str) -> Result<MergeResult, MergeError>),
     ];
+    #[cfg(feature = "xml")]
+    inputs.push((".xml", "<r><a>1</a></r>", merge_xml as fn(&str, &str, &str) -> Result<MergeResult, MergeError>));
+    #[cfg(feature = "markdown")]
+    inputs.push((".md", "# A\n\nB\n", merge_markdown as fn(&str, &str, &str) -> Result<MergeResult, MergeError>));
+    #[cfg(feature = "svg")]
+    inputs.push((".svg", r#"<svg xmlns="http://www.w3.org/2000/svg"><rect id="r"/></svg>"#, merge_svg as fn(&str, &str, &str) -> Result<MergeResult, MergeError>));
+    #[cfg(feature = "html")]
+    inputs.push((".html", "<html><p>a</p></html>", merge_html as fn(&str, &str, &str) -> Result<MergeResult, MergeError>));
 
     for (label, content, merge_fn) in inputs {
         let r = merge_fn(content, content, content).unwrap();
@@ -495,16 +513,20 @@ fn consistency_all_drivers_no_change() {
 }
 
 /// All XML-like drivers (XML, SVG, HTML) should handle the same basic structure
+#[cfg(feature = "xml")]
 #[test]
 fn consistency_xml_family_basic() {
     let base = r#"<root><a>1</a><b>2</b></root>"#;
     let ours = r#"<root><a>10</a><b>2</b></root>"#;
     let theirs = r#"<root><a>1</a><b>20</b></root>"#;
 
-    for (label, merge_fn) in [
+    let mut drivers: Vec<(&str, fn(&str, &str, &str) -> Result<MergeResult, MergeError>)> = vec![
         ("xml", merge_xml as fn(&str, &str, &str) -> Result<MergeResult, MergeError>),
-        ("html", merge_html as fn(&str, &str, &str) -> Result<MergeResult, MergeError>),
-    ] {
+    ];
+    #[cfg(feature = "html")]
+    drivers.push(("html", merge_html as fn(&str, &str, &str) -> Result<MergeResult, MergeError>));
+
+    for (label, merge_fn) in drivers {
         let r = merge_fn(base, ours, theirs).unwrap();
         assert_eq!(
             r.status, MergeStatus::Clean,
@@ -567,6 +589,7 @@ fn error_malformed_json_is_parse_error() {
     }
 }
 
+#[cfg(feature = "xml")]
 #[test]
 fn error_malformed_xml_is_parse_error() {
     let r = merge_xml("<broken", "<broken", "<broken");
@@ -632,6 +655,7 @@ fn conflict_result_csv_has_content() {
     assert!(!r.merged.is_empty());
 }
 
+#[cfg(feature = "xml")]
 #[test]
 fn conflict_result_xml_has_content() {
     let r = merge_xml(
@@ -644,6 +668,7 @@ fn conflict_result_xml_has_content() {
     assert!(!r.merged.is_empty());
 }
 
+#[cfg(feature = "markdown")]
 #[test]
 fn conflict_result_markdown_has_content() {
     let r = merge_markdown("# A\n\nBody\n", "# A\n\nOurs\n", "# A\n\nTheirs\n").unwrap();
@@ -651,6 +676,7 @@ fn conflict_result_markdown_has_content() {
     assert!(!r.merged.is_empty());
 }
 
+#[cfg(feature = "svg")]
 #[test]
 fn conflict_result_svg_has_content() {
     let r = merge_svg(
@@ -663,6 +689,7 @@ fn conflict_result_svg_has_content() {
     assert!(!r.merged.is_empty());
 }
 
+#[cfg(feature = "html")]
 #[test]
 fn conflict_result_html_has_content() {
     let r = merge_html(
@@ -675,6 +702,7 @@ fn conflict_result_html_has_content() {
     assert!(!r.merged.is_empty());
 }
 
+#[cfg(feature = "ical")]
 #[test]
 fn conflict_result_ical_has_content() {
     let base = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nSUMMARY:Meeting\r\nUID:x@t\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
@@ -683,6 +711,7 @@ fn conflict_result_ical_has_content() {
     assert!(!r.merged.is_empty());
 }
 
+#[cfg(feature = "feed")]
 #[test]
 fn conflict_result_feed_has_content() {
     let base = r#"<?xml version="1.0"?><rss version="2.0"><channel><title>F</title><item><title>P</title><guid>x</guid></item></channel></rss>"#;

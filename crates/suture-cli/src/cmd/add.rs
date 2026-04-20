@@ -7,24 +7,7 @@ fn expand_paths(paths: &[String]) -> Vec<String> {
     for path_str in paths {
         let path = Path::new(path_str);
         if path.is_dir() {
-            if let Ok(entries) = std::fs::read_dir(path) {
-                for entry in entries.flatten() {
-                    let entry_path = entry.path();
-                    if !entry_path.is_file() {
-                        continue;
-                    }
-                    // Skip if any ancestor is .suture
-                    let is_suture = entry_path.ancestors().any(|a| {
-                        a.file_name() == Some(std::ffi::OsStr::new(".suture"))
-                    });
-                    if is_suture {
-                        continue;
-                    }
-                    if let Some(s) = entry_path.to_str() {
-                        result.push(s.to_string());
-                    }
-                }
-            }
+            expand_dir_recursive(path, &mut result);
         } else if path.is_file()
             && let Some(s) = path.to_str()
         {
@@ -32,6 +15,33 @@ fn expand_paths(paths: &[String]) -> Vec<String> {
         }
     }
     result
+}
+
+/// Recursively collect all files under `dir`, skipping .suture directories.
+fn expand_dir_recursive(dir: &Path, result: &mut Vec<String>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let mut entries: Vec<_> = entries.flatten().collect();
+    entries.sort_by_key(|e| e.file_name());
+
+    for entry in entries {
+        let entry_path = entry.path();
+        let file_name = entry.file_name();
+
+        // Skip .suture directory
+        if file_name == ".suture" {
+            continue;
+        }
+
+        if entry_path.is_dir() {
+            expand_dir_recursive(&entry_path, result);
+        } else if entry_path.is_file() {
+            if let Some(s) = entry_path.to_str() {
+                result.push(s.to_string());
+            }
+        }
+    }
 }
 
 pub(crate) async fn cmd_add(
