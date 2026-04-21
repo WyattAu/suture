@@ -45,7 +45,7 @@ tower-http = { version = "0.6", features = ["request-id"] }
 blake3 = "1"
 tempfile = "3"
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
-criterion = { version = "0.5", features = ["async_tokio"] }
+criterion = { version = "0.8", features = ["async_tokio"] }
 
 [[bench]]
 name = "scale_bench"
