@@ -1,4 +1,21 @@
 //! XLSX semantic driver — cell-level diff and merge for Excel spreadsheets.
+//!
+//! ## Architecture
+//!
+//! Real XLSX files store data in `xl/worksheets/sheetN.xml` with cell references
+//! in A1 notation (e.g., `<c r="B3">`). Cell types are indicated by the `t` attribute:
+//! - `t="s"` → shared string (index into `xl/sharedStrings.xml`)
+//! - `t="inlineStr"` → inline string (embedded `<is><t>...</t></is>`)
+//! - `t="n"` or absent → numeric value (from `<v>`)
+//! - `t="b"` → boolean
+//! - `t="str"` → formula string result
+//!
+//! This driver:
+//! 1. Parses `xl/sharedStrings.xml` to build a string table
+//! 2. Resolves cell references from A1 notation to (row, col) coordinates
+//! 3. Performs cell-level diff and three-way merge
+
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use suture_driver::{DriverError, SemanticChange, SutureDriver};
 use suture_ooxml::OoxmlDocument;
@@ -13,82 +30,34 @@ impl XlsxDriver {
         Self
     }
 
-    #[allow(clippy::type_complexity)]
-    fn parse_sheets(doc: &OoxmlDocument) -> Result<Vec<SheetData>, DriverError> {
-        let mut sheets = Vec::new();
-
-        let mut sheet_files: Vec<String> = doc
-            .parts
-            .keys()
-            .filter(|k| k.contains("worksheets/") && k.ends_with(".xml"))
-            .cloned()
-            .collect();
-        sheet_files.sort();
-
-        for path in &sheet_files {
-            let part = doc
-                .get_part(path)
-                .ok_or_else(|| DriverError::ParseError(format!("sheet part {} missing", path)))?;
-            let name = path.rsplit('/').next().unwrap_or("sheet");
-            let name = name.strip_suffix(".xml").unwrap_or(name);
-            let cells = Self::parse_sheet_xml(&part.content);
-            sheets.push((name.to_string(), cells));
+    /// Parse a column letter(s) to a 1-based column index.
+    /// A=1, B=2, ..., Z=26, AA=27, AB=28, etc.
+    fn col_from_a1(col_str: &str) -> usize {
+        let mut col = 0usize;
+        for ch in col_str.bytes() {
+            col = col * 26 + (ch - b'A' + 1) as usize;
         }
-
-        Ok(sheets)
+        col
     }
 
-    fn parse_sheet_xml(xml: &str) -> Vec<Cell> {
-        let mut cells = Vec::new();
-        let mut current_row: usize = 0;
-        let mut current_col: usize = 0;
-        let mut in_row = false;
-        let mut in_cell = false;
-        let mut cell_text = String::new();
-
-        for line in xml.lines() {
-            let trimmed = line.trim();
-            if trimmed.contains("<row ") || trimmed.contains("<row>") {
-                in_row = true;
-                if let Some(idx) = Self::extract_attr(trimmed, "r")
-                    && let Ok(n) = idx.parse::<usize>()
-                {
-                    current_row = n;
-                }
-            }
-            if in_row && (trimmed.contains("<c ") || trimmed.contains("<c>")) {
-                in_cell = true;
-                cell_text.clear();
-                if let Some(idx) = Self::extract_attr(trimmed, "r")
-                    && let Ok(n) = idx.parse::<usize>()
-                {
-                    current_row = n;
-                }
-                if let Some(idx) = Self::extract_attr(trimmed, "t")
-                    && let Ok(n) = idx.parse::<usize>()
-                {
-                    current_col = n;
-                }
-            }
-            if in_cell {
-                if let Some(start) = trimmed.find("<v>") {
-                    let after = &trimmed[start + 3..];
-                    if let Some(end) = after.find("</v>") {
-                        cell_text = after[..end].to_string();
-                    }
-                }
-                if trimmed.contains("</c>") {
-                    cells.push((current_row, current_col, cell_text.clone()));
-                    in_cell = false;
-                }
-            }
-            if trimmed.contains("</row>") {
-                in_row = false;
-            }
+    /// Parse A1 notation (e.g., "B3", "AA42") to (row, col) coordinates (1-based).
+    fn parse_a1(ref_str: &str) -> Option<(usize, usize)> {
+        let bytes = ref_str.as_bytes();
+        let mut split = 0;
+        while split < bytes.len() && bytes[split].is_ascii_alphabetic() {
+            split += 1;
         }
-        cells
+        if split == 0 || split >= bytes.len() {
+            return None;
+        }
+        let col_str = &ref_str[..split];
+        let row_str = &ref_str[split..];
+        let col = Self::col_from_a1(col_str);
+        let row = row_str.parse::<usize>().ok()?;
+        Some((row, col))
     }
 
+    /// Extract an XML attribute value from a line of XML.
     fn extract_attr(xml_line: &str, attr_name: &str) -> Option<String> {
         let pattern = format!("{}=\"", attr_name);
         let start = xml_line.find(&pattern)?;
@@ -98,22 +67,205 @@ impl XlsxDriver {
         Some(rest[..end].to_string())
     }
 
+    /// Parse the shared strings table from `xl/sharedStrings.xml`.
+    /// Returns a vector of string values indexed by their position.
+    fn parse_shared_strings(doc: &OoxmlDocument) -> Vec<String> {
+        let mut strings = Vec::new();
+        let Some(part) = doc.get_part("xl/sharedStrings.xml") else {
+            return strings;
+        };
+
+        let mut in_si = false;
+        let mut current_text = String::new();
+
+        for line in part.content.lines() {
+            let trimmed = line.trim();
+
+            if !in_si && (trimmed.contains("<si>") || trimmed.contains("<si ")) {
+                in_si = true;
+                current_text.clear();
+                // Don't continue — <t> might be on the same line
+            }
+
+            if in_si {
+                if let Some(start) = trimmed.find("<t>") {
+                    let after = &trimmed[start + 3..];
+                    if let Some(end) = after.find("</t>") {
+                        current_text = after[..end].to_string();
+                    }
+                }
+                if trimmed.contains("</si>") {
+                    strings.push(std::mem::take(&mut current_text));
+                    in_si = false;
+                }
+            }
+        }
+        strings
+    }
+
+    /// Parse a worksheet XML to extract cells.
+    fn parse_sheet_xml(xml: &str, shared_strings: &[String]) -> Vec<Cell> {
+        let mut cells = Vec::new();
+        let mut in_cell = false;
+        let mut cell_ref = String::new();
+        let mut cell_type = String::new();
+        let mut cell_value = String::new();
+        let mut in_inline_str = false;
+
+        for line in xml.lines() {
+            let trimmed = line.trim();
+
+            // Look for all <c> tags on this line (there may be multiple cells per line)
+            let mut search_from = 0;
+            loop {
+                // Find next <c on this line
+                let c_pos = if in_cell {
+                    // Already inside a cell — continue processing it
+                    None
+                } else {
+                    let remaining = &trimmed[search_from..];
+                    remaining.find("<c ").or_else(|| {
+                        if remaining.contains("<c>") {
+                            Some(remaining.find("<c>").unwrap())
+                        } else {
+                            None
+                        }
+                    }).map(|pos| search_from + pos)
+                };
+
+                if !in_cell {
+                    match c_pos {
+                        Some(pos) => {
+                            in_cell = true;
+                            cell_ref.clear();
+                            cell_type.clear();
+                            cell_value.clear();
+                            in_inline_str = false;
+
+                            // Extract attributes from the <c> tag only
+                            let c_tag = &trimmed[pos..];
+                            let c_tag_end = c_tag.find('>').unwrap_or(c_tag.len());
+                            let c_tag_only = &c_tag[..c_tag_end];
+
+                            if let Some(r) = Self::extract_attr(c_tag_only, "r") {
+                                cell_ref = r;
+                            }
+                            if let Some(t) = Self::extract_attr(c_tag_only, "t") {
+                                cell_type = t;
+                            }
+                            search_from = pos + c_tag_end;
+                        }
+                        None => break, // No more cells on this line
+                    }
+                }
+
+                if in_cell {
+                    // Search only within the part of the line starting from this cell's <c> tag
+                    let cell_region = &trimmed[search_from..];
+
+                    // Extract value from <v>...</v>
+                    if let Some(start) = cell_region.find("<v>") {
+                        let after = &cell_region[start + 3..];
+                        if let Some(end) = after.find("</v>") {
+                            cell_value = after[..end].to_string();
+                        }
+                    }
+
+                    // Detect inline string
+                    if cell_region.contains("<is>") || cell_region.contains("<is ") {
+                        in_inline_str = true;
+                    }
+                    if in_inline_str {
+                        if let Some(start) = cell_region.find("<t>") {
+                            let after = &cell_region[start + 3..];
+                            if let Some(end) = after.find("</t>") {
+                                cell_value = after[..end].to_string();
+                            }
+                        }
+                        if cell_region.contains("</is>") {
+                            in_inline_str = false;
+                        }
+                    }
+
+                    // Cell end
+                    if cell_region.contains("</c>") {
+                        if let Some((row, col)) = Self::parse_a1(&cell_ref) {
+                            let display_value = match cell_type.as_str() {
+                                "s" => {
+                                    if let Ok(idx) = cell_value.parse::<usize>() {
+                                        shared_strings
+                                            .get(idx)
+                                            .cloned()
+                                            .unwrap_or_else(|| cell_value.clone())
+                                    } else {
+                                        cell_value.clone()
+                                    }
+                                }
+                                "inlineStr" | "str" => cell_value.clone(),
+                                "b" => match cell_value.as_str() {
+                                    "1" | "true" => "TRUE".to_string(),
+                                    _ => "FALSE".to_string(),
+                                },
+                                _ => cell_value.clone(),
+                            };
+                            if !display_value.is_empty() {
+                                cells.push((row, col, display_value));
+                            }
+                        }
+                        in_cell = false;
+                        // Continue the loop to look for more <c> tags on this line
+                    } else {
+                        break; // Cell not closed yet — move to next line
+                    }
+                }
+            }
+        }
+        cells
+    }
+
+    /// Parse all sheets from an XLSX document.
+    #[allow(clippy::type_complexity)]
+    fn parse_sheets(doc: &OoxmlDocument) -> Result<Vec<SheetData>, DriverError> {
+        let shared_strings = Self::parse_shared_strings(doc);
+
+        let mut sheet_files: Vec<String> = doc
+            .parts
+            .keys()
+            .filter(|k| k.contains("worksheets/") && k.ends_with(".xml"))
+            .cloned()
+            .collect();
+        sheet_files.sort();
+
+        let mut sheets = Vec::new();
+        for path in &sheet_files {
+            let part = doc
+                .get_part(path)
+                .ok_or_else(|| DriverError::ParseError(format!("sheet part {} missing", path)))?;
+            let name = path.rsplit('/').next().unwrap_or("sheet");
+            let name = name.strip_suffix(".xml").unwrap_or(name);
+            let cells = Self::parse_sheet_xml(&part.content, &shared_strings);
+            sheets.push((name.to_string(), cells));
+        }
+
+        Ok(sheets)
+    }
+
     fn diff_cells(
         base_cells: &[Cell],
         new_cells: &[Cell],
         sheet_name: &str,
     ) -> Vec<SemanticChange> {
-        let base_map: std::collections::HashMap<(usize, usize), &String> =
+        let base_map: HashMap<(usize, usize), &String> =
             base_cells.iter().map(|(r, c, v)| ((*r, *c), v)).collect();
-        let new_map: std::collections::HashMap<(usize, usize), &String> =
+        let new_map: HashMap<(usize, usize), &String> =
             new_cells.iter().map(|(r, c, v)| ((*r, *c), v)).collect();
 
         let mut changes = Vec::new();
-        let all_keys: std::collections::HashSet<_> =
-            base_map.keys().chain(new_map.keys()).collect();
+        let all_keys: HashSet<_> = base_map.keys().chain(new_map.keys()).collect();
 
         for (row, col) in all_keys {
-            let path = format!("/{}/{}/{}", sheet_name, row, col);
+            let col_letter = col_to_letter(*col);
+            let path = format!("/{}/{}/{}", sheet_name, col_letter, row);
             match (base_map.get(&(*row, *col)), new_map.get(&(*row, *col))) {
                 (None, Some(val)) => changes.push(SemanticChange::Added {
                     path,
@@ -137,14 +289,14 @@ impl XlsxDriver {
     }
 
     fn merge_cells(base: &[Cell], ours: &[Cell], theirs: &[Cell]) -> Option<Vec<Cell>> {
-        let base_map: std::collections::HashMap<(usize, usize), &String> =
+        let base_map: HashMap<(usize, usize), &String> =
             base.iter().map(|(r, c, v)| ((*r, *c), v)).collect();
-        let ours_map: std::collections::HashMap<(usize, usize), &String> =
+        let ours_map: HashMap<(usize, usize), &String> =
             ours.iter().map(|(r, c, v)| ((*r, *c), v)).collect();
-        let theirs_map: std::collections::HashMap<(usize, usize), &String> =
+        let theirs_map: HashMap<(usize, usize), &String> =
             theirs.iter().map(|(r, c, v)| ((*r, *c), v)).collect();
 
-        let all_keys: std::collections::HashSet<_> = base_map
+        let all_keys: HashSet<_> = base_map
             .keys()
             .chain(ours_map.keys())
             .chain(theirs_map.keys())
@@ -185,27 +337,18 @@ impl XlsxDriver {
         }
         Some(merged)
     }
+}
 
-    fn build_sheet_xml(cells: &[Cell]) -> String {
-        let mut xml = String::from(
-            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n\
-             <worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">",
-        );
-        let mut rows: std::collections::BTreeMap<usize, Vec<(usize, &String)>> =
-            std::collections::BTreeMap::new();
-        for &(row, col, ref val) in cells {
-            rows.entry(row).or_default().push((col, val));
-        }
-        for (row_num, cols) in &rows {
-            xml.push_str(&format!("<row r=\"{}\">", row_num));
-            for (col, val) in cols {
-                xml.push_str(&format!("<c r=\"{}{}\"><v>{}</v></c>", row_num, col, val));
-            }
-            xml.push_str("</row>");
-        }
-        xml.push_str("</worksheet>");
-        xml
+/// Convert a 1-based column number to a column letter (A=1, Z=26, AA=27).
+fn col_to_letter(col: usize) -> String {
+    let mut n = col;
+    let mut result = String::new();
+    while n > 0 {
+        n -= 1;
+        result.insert(0, (b'A' + (n % 26) as u8) as char);
+        n /= 26;
     }
+    result
 }
 
 impl Default for XlsxDriver {
@@ -296,7 +439,7 @@ impl SutureDriver for XlsxDriver {
         let ours_sheets = Self::parse_sheets(&ours_doc)?;
         let theirs_sheets = Self::parse_sheets(&theirs_doc)?;
 
-        let all_names: std::collections::HashSet<&str> = base_sheets
+        let all_names: HashSet<&str> = base_sheets
             .iter()
             .chain(ours_sheets.iter())
             .chain(theirs_sheets.iter())
@@ -327,11 +470,14 @@ impl SutureDriver for XlsxDriver {
             }
         }
 
+        // Build merged XLSX by updating sheet XML in the base document.
+        // The merge operates at the semantic (cell value) level. We rebuild
+        // the sheetData section of each worksheet, preserving the rest of
+        // the XML structure.
         let mut doc = OoxmlDocument::from_bytes(base.as_bytes())
             .map_err(|e| DriverError::ParseError(e.to_string()))?;
 
-        let mut name_to_path: std::collections::HashMap<String, String> =
-            std::collections::HashMap::new();
+        let mut name_to_path: HashMap<String, String> = HashMap::new();
         for path in doc.parts.keys() {
             if path.contains("worksheets/") && path.ends_with(".xml") {
                 let sheet_name = path.rsplit('/').next().unwrap_or("sheet");
@@ -344,17 +490,91 @@ impl SutureDriver for XlsxDriver {
             if let Some(path) = name_to_path.get(name)
                 && let Some(part) = doc.parts.get_mut(path)
             {
-                part.content = Self::build_sheet_xml(cells);
+                part.content = Self::rebuild_sheet_xml(&part.content, cells);
             }
         }
+
+        // Update shared strings if ours or theirs added new strings.
+        // For now, we embed inline strings in the rebuilt sheet XML,
+        // which avoids the complexity of merging shared string tables.
 
         let bytes = doc
             .to_bytes()
             .map_err(|e| DriverError::SerializationError(e.to_string()))?;
-        // SAFETY: simple_xml produces valid UTF-8 XML content. The
-        // serialization only writes ASCII characters (tags, attributes,
-        // escaped text content) so the output is always valid UTF-8.
+        // SAFETY: OOXML parts are UTF-8 XML. The serialization writes stored
+        // string content which is always valid UTF-8.
         Ok(Some(unsafe { String::from_utf8_unchecked(bytes) }))
+    }
+}
+
+impl XlsxDriver {
+    /// Rebuild a worksheet XML by replacing the `<sheetData>` section
+    /// with cells from the merged result.
+    ///
+    /// This preserves everything outside `<sheetData>...</sheetData>`
+    /// (column widths, sheet views, merge cells, etc.) and only replaces
+    /// the actual cell data.
+    fn rebuild_sheet_xml(original_xml: &str, cells: &[Cell]) -> String {
+        // Find <sheetData> and </sheetData> boundaries
+        let data_start = match original_xml.find("<sheetData") {
+            Some(pos) => {
+                // Find the closing > of the opening tag
+                let after = &original_xml[pos..];
+                let tag_end = after.find('>').map(|i| pos + i + 1).unwrap_or(pos);
+                tag_end
+            }
+            None => return original_xml.to_string(),
+        };
+
+        let data_end = match original_xml.find("</sheetData>") {
+            Some(pos) => pos,
+            None => return original_xml.to_string(),
+        };
+
+        // Build new sheetData content
+        let mut rows: BTreeMap<usize, Vec<(usize, &String)>> = BTreeMap::new();
+        for &(row, col, ref val) in cells {
+            rows.entry(row).or_default().push((col, val));
+        }
+
+        let mut new_data = String::from("<sheetData>");
+        for (row_num, cols) in &rows {
+            new_data.push_str(&format!(
+                "<row r=\"{}\">",
+                row_num
+            ));
+            for (col, val) in cols {
+                let col_letter = col_to_letter(*col);
+                let ref_str = format!("{}{}", col_letter, row_num);
+                // Use inlineStr for all string values to avoid shared string table issues
+                if val.parse::<f64>().is_ok() {
+                    new_data.push_str(&format!(
+                        "<c r=\"{}\"><v>{}</v></c>",
+                        ref_str, val
+                    ));
+                } else if *val == "TRUE" || *val == "FALSE" {
+                    let bval = if *val == "TRUE" { "1" } else { "0" };
+                    new_data.push_str(&format!(
+                        "<c r=\"{}\" t=\"b\"><v>{}</v></c>",
+                        ref_str, bval
+                    ));
+                } else {
+                    new_data.push_str(&format!(
+                        "<c r=\"{}\" t=\"inlineStr\"><is><t>{}</t></is></c>",
+                        ref_str, val
+                    ));
+                }
+            }
+            new_data.push_str("</row>");
+        }
+        new_data.push_str("</sheetData>");
+
+        // Reassemble: before sheetData + new sheetData + after sheetData
+        let mut result = String::new();
+        result.push_str(&original_xml[..data_start]);
+        result.push_str(&new_data);
+        result.push_str(&original_xml[data_end + "</sheetData>".len()..]);
+        result
     }
 }
 
@@ -372,53 +592,155 @@ mod tests {
     }
 
     #[test]
+    fn test_col_from_a1() {
+        assert_eq!(XlsxDriver::col_from_a1("A"), 1);
+        assert_eq!(XlsxDriver::col_from_a1("B"), 2);
+        assert_eq!(XlsxDriver::col_from_a1("Z"), 26);
+        assert_eq!(XlsxDriver::col_from_a1("AA"), 27);
+        assert_eq!(XlsxDriver::col_from_a1("AB"), 28);
+        assert_eq!(XlsxDriver::col_from_a1("AZ"), 52);
+        assert_eq!(XlsxDriver::col_from_a1("BA"), 53);
+    }
+
+    #[test]
+    fn test_parse_a1() {
+        assert_eq!(XlsxDriver::parse_a1("A1"), Some((1, 1)));
+        assert_eq!(XlsxDriver::parse_a1("B3"), Some((3, 2)));
+        assert_eq!(XlsxDriver::parse_a1("AA42"), Some((42, 27)));
+        assert_eq!(XlsxDriver::parse_a1("Z1"), Some((1, 26)));
+        assert_eq!(XlsxDriver::parse_a1("123"), None); // No column letters
+        assert_eq!(XlsxDriver::parse_a1("ABC"), None); // No row number
+    }
+
+    #[test]
+    fn test_col_to_letter() {
+        assert_eq!(col_to_letter(1), "A");
+        assert_eq!(col_to_letter(2), "B");
+        assert_eq!(col_to_letter(26), "Z");
+        assert_eq!(col_to_letter(27), "AA");
+        assert_eq!(col_to_letter(28), "AB");
+    }
+
+    #[test]
+    fn test_parse_shared_strings() {
+        let xml = r#"<?xml version="1.0"?>
+<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="3" uniqueCount="3">
+  <si><t>Hello</t></si>
+  <si><t>World</t></si>
+  <si><t>Test</t></si>
+</sst>"#;
+        let mut doc_parts = std::collections::HashMap::new();
+        doc_parts.insert(
+            "xl/sharedStrings.xml".to_string(),
+            suture_ooxml::OoxmlPart {
+                path: "xl/sharedStrings.xml".to_string(),
+                content: xml.to_string(),
+                content_type: String::new(),
+            },
+        );
+        let doc = OoxmlDocument {
+            parts: doc_parts,
+            content_types: String::new(),
+            rels: HashMap::new(),
+            part_rels: HashMap::new(),
+        };
+        let strings = XlsxDriver::parse_shared_strings(&doc);
+        assert_eq!(strings.len(), 3);
+        assert_eq!(strings[0], "Hello");
+        assert_eq!(strings[1], "World");
+        assert_eq!(strings[2], "Test");
+    }
+
+    #[test]
+    fn test_parse_sheet_xml_with_shared_strings() {
+        let xml = r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<sheetData>
+<row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1"><v>42</v></c></row>
+<row r="2"><c r="A2" t="s"><v>1</v></c></row>
+</sheetData>
+</worksheet>"#;
+        let shared = vec!["Hello".to_string(), "World".to_string()];
+        let cells = XlsxDriver::parse_sheet_xml(xml, &shared);
+        assert_eq!(cells.len(), 3);
+        assert_eq!(cells[0], (1, 1, "Hello".to_string()));
+        assert_eq!(cells[1], (1, 2, "42".to_string()));
+        assert_eq!(cells[2], (2, 1, "World".to_string()));
+    }
+
+    #[test]
+    fn test_parse_sheet_xml_with_inline_strings() {
+        let xml = r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<sheetData>
+<row r="1"><c r="A1" t="inlineStr"><is><t>Direct text</t></is></c></row>
+</sheetData>
+</worksheet>"#;
+        let cells = XlsxDriver::parse_sheet_xml(xml, &[]);
+        assert_eq!(cells.len(), 1);
+        assert_eq!(cells[0], (1, 1, "Direct text".to_string()));
+    }
+
+    #[test]
+    fn test_parse_sheet_xml_with_booleans() {
+        let xml = r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<sheetData>
+<row r="1"><c r="A1" t="b"><v>1</v></c><c r="B1" t="b"><v>0</v></c></row>
+</sheetData>
+</worksheet>"#;
+        let cells = XlsxDriver::parse_sheet_xml(xml, &[]);
+        assert_eq!(cells.len(), 2);
+        assert_eq!(cells[0], (1, 1, "TRUE".to_string()));
+        assert_eq!(cells[1], (1, 2, "FALSE".to_string()));
+    }
+
+    #[test]
     fn test_diff_cells() {
-        let base = vec![(0, 0, "A".to_string()), (0, 1, "B".to_string())];
+        let base = vec![(1, 1, "A".to_string()), (1, 2, "B".to_string())];
         let new = vec![
-            (0, 0, "X".to_string()),
-            (0, 1, "B".to_string()),
-            (1, 0, "C".to_string()),
+            (1, 1, "X".to_string()),
+            (1, 2, "B".to_string()),
+            (2, 1, "C".to_string()),
         ];
         let changes = XlsxDriver::diff_cells(&base, &new, "Sheet1");
-        assert!(
-            changes
-                .iter()
-                .any(|c| matches!(c, SemanticChange::Modified { .. }))
-        );
-        assert!(
-            changes
-                .iter()
-                .any(|c| matches!(c, SemanticChange::Added { value, .. } if value == "C"))
-        );
+        assert!(changes.iter().any(|c| matches!(c, SemanticChange::Modified { .. })));
+        assert!(changes.iter().any(|c| matches!(c, SemanticChange::Added { value, .. } if value == "C")));
     }
 
     #[test]
     fn test_merge_cells_no_conflict() {
-        let base = vec![(0, 0, "A".to_string()), (0, 1, "B".to_string())];
-        let ours = vec![(0, 0, "X".to_string())];
-        let theirs = vec![(0, 1, "Y".to_string())];
+        let base = vec![(1, 1, "A".to_string()), (1, 2, "B".to_string())];
+        let ours = vec![(1, 1, "X".to_string())];
+        let theirs = vec![(1, 2, "Y".to_string())];
         let result = XlsxDriver::merge_cells(&base, &ours, &theirs);
         assert!(result.is_some());
         let m = result.unwrap();
-        assert_eq!(
-            m.iter()
-                .find(|(r, c, _)| *r == 0 && *c == 0)
-                .map(|(_, _, v)| v.as_str()),
-            Some("X")
-        );
-        assert_eq!(
-            m.iter()
-                .find(|(r, c, _)| *r == 0 && *c == 1)
-                .map(|(_, _, v)| v.as_str()),
-            Some("Y")
-        );
+        assert_eq!(m.iter().find(|(r, c, _)| *r == 1 && *c == 1).map(|(_, _, v)| v.as_str()), Some("X"));
+        assert_eq!(m.iter().find(|(r, c, _)| *r == 1 && *c == 2).map(|(_, _, v)| v.as_str()), Some("Y"));
     }
 
     #[test]
     fn test_merge_cells_conflict() {
-        let base = vec![(0, 0, "A".to_string())];
-        let ours = vec![(0, 0, "X".to_string())];
-        let theirs = vec![(0, 0, "Y".to_string())];
+        let base = vec![(1, 1, "A".to_string())];
+        let ours = vec![(1, 1, "X".to_string())];
+        let theirs = vec![(1, 1, "Y".to_string())];
         assert!(XlsxDriver::merge_cells(&base, &ours, &theirs).is_none());
+    }
+
+    #[test]
+    fn test_rebuild_sheet_xml() {
+        let original = r#"<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<sheetFormatPr defaultColWidth="10"/>
+<sheetData><row r="1"><c r="A1"><v>old</v></c></row></sheetData>
+<sheetViews><sheetView tabSelected="1"/></sheetViews>
+</worksheet>"#;
+
+        let cells = vec![(1, 1, "new".to_string()), (2, 1, "added".to_string())];
+        let rebuilt = XlsxDriver::rebuild_sheet_xml(original, &cells);
+
+        assert!(rebuilt.contains("<sheetFormatPr")); // Preserved
+        assert!(rebuilt.contains("<sheetViews>")); // Preserved
+        assert!(rebuilt.contains("new")); // New cell value
+        assert!(rebuilt.contains("added")); // Added cell value
+        assert!(!rebuilt.contains("old")); // Old value replaced
     }
 }

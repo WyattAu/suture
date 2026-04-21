@@ -4,6 +4,19 @@ use suture_driver_xlsx::XlsxDriver;
 
 type Cell = (usize, usize, String);
 
+/// Convert 0-based column index to A1 column letter(s).
+fn col_to_letter(col: usize) -> String {
+    let mut result = String::new();
+    let mut c = col;
+    loop {
+        result.insert(0, char::from(b'A' + (c % 26) as u8));
+        c /= 26;
+        if c == 0 { break; }
+        c -= 1;
+    }
+    result
+}
+
 fn make_xlsx(sheets: &[(&str, &[Cell])]) -> String {
     let content_types = r#"<?xml version="1.0"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -34,7 +47,8 @@ fn make_xlsx(sheets: &[(&str, &[Cell])]) -> String {
             for (row_num, cols) in &rows {
                 xml.push_str(&format!("<row r=\"{}\">\n", row_num));
                 for (col, val) in cols {
-                    xml.push_str(&format!("<c r=\"{}{}\"><v>{}</v></c>\n", row_num, col, val));
+                    let col_letter = col_to_letter(*col);
+                    xml.push_str(&format!("<c r=\"{}{}\"><v>{}</v></c>\n", col_letter, row_num, val));
                 }
                 xml.push_str("</row>\n");
             }

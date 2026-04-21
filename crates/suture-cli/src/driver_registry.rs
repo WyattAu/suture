@@ -7,6 +7,7 @@ use suture_driver_ical::IcalDriver;
 use suture_driver_image::ImageDriver;
 use suture_driver_json::JsonDriver;
 use suture_driver_markdown::MarkdownDriver;
+use suture_driver_otio::OtioDriver;
 use suture_driver_pdf::PdfDriver;
 use suture_driver_pptx::PptxDriver;
 use suture_driver_sql::SqlDriver;
@@ -35,5 +36,6 @@ pub(crate) fn builtin_registry() -> DriverRegistry {
     registry.register(Box::new(HtmlDriver));
     registry.register(Box::new(IcalDriver));
     registry.register(Box::new(FeedDriver));
+    registry.register(Box::new(OtioDriver));
     registry
 }

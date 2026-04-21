@@ -260,6 +260,20 @@ fn cd(row: usize, col: usize, value: impl Into<String>) -> CellData {
     (row, col, value.into())
 }
 
+fn col_to_letter(col: usize) -> String {
+    let mut result = String::new();
+    let mut n = col;
+    loop {
+        result.insert(0, (b'A' + (n % 26) as u8) as char);
+        n = n / 26;
+        if n == 0 {
+            break;
+        }
+        n -= 1;
+    }
+    result
+}
+
 fn zip_to_string(buf: Vec<u8>) -> String {
     unsafe { String::from_utf8_unchecked(buf) }
 }
@@ -290,13 +304,16 @@ fn make_xlsx(sheets: &[(&str, Vec<CellData>)]) -> String {
             for &(row, col, ref val) in sheet_cells {
                 rows.entry(row).or_default().push((col, val));
             }
+            xml.push_str("<sheetData>\n");
             for (row_num, cols) in &rows {
                 xml.push_str(&format!("<row r=\"{}\">\n", row_num));
                 for (col, val) in cols {
-                    xml.push_str(&format!("<c r=\"{}{}\"><v>{}</v></c>\n", row_num, col, val));
+                    let col_letter = col_to_letter(*col);
+                    xml.push_str(&format!("<c r=\"{}{}\"><v>{}</v></c>\n", col_letter, row_num, val));
                 }
                 xml.push_str("</row>\n");
             }
+            xml.push_str("</sheetData>\n");
             xml.push_str("</worksheet>");
 
             let path = format!("xl/worksheets/{}.xml", sheet_name);

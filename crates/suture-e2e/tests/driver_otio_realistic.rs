@@ -1,8 +1,8 @@
-use suture_driver_otio::{ChangeDescription, OtioDriver};
+use suture_driver_otio::{ChangeDescription, LegacyOtioDriver};
 
 #[test]
 fn otio_realistic_simple_parse() {
-    let mut driver = OtioDriver::new();
+    let mut driver = LegacyOtioDriver::new();
     let json = suture_e2e::fixtures::otio::simple();
     driver.parse_otio(&json).unwrap();
 
@@ -28,7 +28,7 @@ fn otio_realistic_simple_parse() {
 
 #[test]
 fn otio_realistic_simple_diff_clip_change() {
-    let driver = OtioDriver::new();
+    let driver = LegacyOtioDriver::new();
     let base = suture_e2e::fixtures::otio::simple();
 
     let modified = r#"{
@@ -119,7 +119,7 @@ fn otio_realistic_simple_diff_clip_change() {
 
 #[test]
 fn otio_realistic_complex_parse() {
-    let mut driver = OtioDriver::new();
+    let mut driver = LegacyOtioDriver::new();
     let json = suture_e2e::fixtures::otio::complex();
     driver.parse_otio(&json).unwrap();
 
@@ -153,7 +153,7 @@ fn otio_realistic_complex_parse() {
 
 #[test]
 fn otio_realistic_complex_touch_set() {
-    let mut driver = OtioDriver::new();
+    let mut driver = LegacyOtioDriver::new();
     let json = suture_e2e::fixtures::otio::complex();
     driver.parse_otio(&json).unwrap();
 
@@ -183,7 +183,7 @@ fn otio_realistic_complex_touch_set() {
 
 #[test]
 fn otio_realistic_nested_parse() {
-    let mut driver = OtioDriver::new();
+    let mut driver = LegacyOtioDriver::new();
     let json = suture_e2e::fixtures::otio::nested();
     driver.parse_otio(&json).unwrap();
 
@@ -203,7 +203,7 @@ fn otio_realistic_nested_parse() {
 
 #[test]
 fn otio_realistic_diff_identical() {
-    let driver = OtioDriver::new();
+    let driver = LegacyOtioDriver::new();
     let json = suture_e2e::fixtures::otio::complex();
 
     let diff = driver.serialize_diff(&json, &json).unwrap();
@@ -212,7 +212,7 @@ fn otio_realistic_diff_identical() {
 
 #[test]
 fn otio_realistic_complex_diff_track_addition() {
-    let driver = OtioDriver::new();
+    let driver = LegacyOtioDriver::new();
     let base = suture_e2e::fixtures::otio::simple();
 
     let with_extra = r#"{
@@ -322,7 +322,7 @@ fn otio_multi_editor_merge_conflict() {
     }
     let editor_b_json = serde_json::to_string(&editor_b_val).unwrap();
 
-    let driver = OtioDriver::new();
+    let driver = LegacyOtioDriver::new();
     let diff = driver
         .serialize_diff(&editor_a_json, &editor_b_json)
         .unwrap();
@@ -331,14 +331,14 @@ fn otio_multi_editor_merge_conflict() {
         "merge should detect conflicts between editors"
     );
 
-    let mut driver_a = OtioDriver::new();
+    let mut driver_a = LegacyOtioDriver::new();
     driver_a.parse_otio(&editor_a_json).unwrap();
     assert!(
         driver_a.elements().len() >= 15,
         "editor A's timeline should parse with many elements"
     );
 
-    let mut driver_b = OtioDriver::new();
+    let mut driver_b = LegacyOtioDriver::new();
     driver_b.parse_otio(&editor_b_json).unwrap();
     assert!(
         driver_b.elements().len() >= 15,

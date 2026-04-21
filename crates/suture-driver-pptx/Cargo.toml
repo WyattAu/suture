@@ -15,3 +15,6 @@ suture-driver = { path = "../suture-driver", version = "1.2.0" }
 suture-ooxml = { path = "../suture-ooxml", version = "1.2.0" }
 quick-xml = "0.37"
 serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+zip = { version = "2.2", default-features = false }

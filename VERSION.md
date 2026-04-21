@@ -1,10 +1,10 @@
 # Suture Version
 
-- **Current Version:** 3.4.0
-- **Crates.io:** 26/27 crates published (suture-cli requires Node.js build; install from source)
-- **Current Phase:** Post-Ship Complete
-- **Status:** Shipped
-- **Last Updated:** 2026-04-19
+- **Current Version:** 4.0.0
+- **Crates.io:** 31 crates published (suture-cli requires Node.js build; install from source)
+- **Current Phase:** Phase B — Vertical Deepening
+- **Status:** Active Development
+- **Last Updated:** 2026-04-20
 - **Rust Edition:** 2024
 - **Lean 4:** v4.29.1 (23 theorems proved)
 
@@ -46,6 +46,12 @@
 | **3A** | Git Bridge | `suture git import/log/status`, read-only Git→Suture import | v3.4 | ✅ Complete |
 | **3B** | Shell Completions | bash/zsh/fish/powershell/nushell (already done in v3.1) | v3.4 | ✅ Complete |
 | **3C** | TUI Conflict Resolver | Line-by-line hunk resolution, ours/theirs/both, navigation | v3.4 | ✅ Complete |
+| **4A** | suture-merge Library | Standalone merge library crate, 10 drivers, published to crates.io | v3.7 | ✅ Complete |
+| **4B** | Binary Document E2E | 71 E2E tests for DOCX/XLSX/PPTX full VCS lifecycle | v3.7 | ✅ Complete |
+| **4C** | Hardening & Stabilize | 4 bug fixes, full workspace 0 failures, 1396 tests | v4.0 | ✅ Complete |
+| **5A** | OTIO Driver Rewrite | SutureDriver trait, content-based ID, three-way merge, Gap/Marker support | v4.0 | 🔄 In Progress |
+| **5B** | OOXML Driver Deepening | Fix XLSX cell refs, PPTX slide discovery, DOCX in-place merge | v4.0 | 🔄 In Progress |
+| **5C** | Distribution & Adoption | Installers, migration tooling, documentation overhaul | v4.1 | Pending |
 
 ### Direction A — Product Polish (v1.3–v1.4) ✅
 
@@ -279,7 +285,51 @@
 - Uses `clap_complete` + `clap_complete_nushell`
 - Homebrew formula auto-generates completions during install
 
-### Direction 3C — TUI Conflict Resolver (v3.4) ✅
+### Direction 4A — suture-merge Library & Binary E2E (v3.5–v3.7) ✅
+
+- `suture-merge` library crate: dead-simple API, 10 feature-gated merge functions
+- Published to crates.io (v0.1.0): `cargo add suture-merge`
+- 389 hardening tests (129 default, 289 all-features): adversarial, unicode, size/stress, trivial, cross-driver, error quality, conflict quality
+- 80 validation tests (45 default, 80 all-features): clean merge, conflict, nested, edge cases, real-world
+- Binary document E2E test script: 4 scenarios, 71 tests covering full VCS lifecycle
+  - DOCX: init→add→commit→branch→modify→merge→diff→log→reflog (semantic XML merge)
+  - XLSX: clean merge across different spreadsheet cells
+  - PPTX: slide modification with merge
+  - Mixed: DOCX+XLSX+PPTX+text file repo with fsck and doctor
+
+### Direction 4C — Hardening & Stabilize (v4.0) ✅
+
+- Fix suture-merge test compilation: gate non-default driver tests behind `#[cfg(feature = "...")]`
+- Fix `suture add .` to recurse into subdirectories (was non-recursive via `read_dir`)
+- Fix hub handshake: add GET handler without request body (CLI sends bare GET, server required JSON body → 422)
+- Fix flaky 10K perf test: relax threshold from 30s to 60s for slow CI
+- Full `cargo test --workspace`: 0 failures, 0 errors, 1396 tests
+
+### Direction 5A — OTIO Driver Rewrite (v4.0) 🔄
+
+- Implement `SutureDriver` trait for `OtioDriver` (diff, format_diff, merge)
+- Replace index-based identity with content-based heuristic (media_reference + source_range)
+- Add missing OTIO types: Gap, Marker, Effect, TimeEffect
+- Implement semantic three-way merge with clip-level conflict detection
+- Register driver in plugin registry for CLI auto-discovery
+- Handle unknown schema types gracefully (skip instead of failing)
+- 38 tests → target 60+ tests
+
+### Direction 5B — OOXML Driver Deepening (v4.0) 🔄
+
+- **XLSX**: Fix cell reference parsing (A1 notation), add shared string table support
+- **PPTX**: Fix slide discovery (parse `presentation.xml` slide ID list, resolve relationship IDs)
+- **DOCX**: Switch from extract-and-regenerate to parse-and-modify-in-place (preserve formatting)
+- Use `quick-xml` for proper XML parsing instead of hand-written string scanners
+- Implement OOXML relationship resolution in `suture-ooxml` shared infrastructure
+
+### Direction 5C — Distribution & Adoption (v4.1) Pending
+
+- One-click installers (DMG, MSI, AppImage)
+- `git → suture` migration tooling for repos with structured files
+- Interactive onboarding tutorial
+- Documentation overhaul (quickstart, API reference, domain guides)
+- Community building (blog posts, conference talks)
 
 - Line-by-line hunk resolution (replaces binary ours/theirs-only choice)
 - `1`/`2`/`3` keys: take ours, theirs, or both per hunk
@@ -295,12 +345,13 @@
 
 | Gate | Status | Details |
 |------|--------|---------|
-| Tests | ✅ 1127 passing | 0 failures across 28 crates (2 ignored: FUSE root-only) |
+| Tests | ✅ 1396 passing | 0 failures across 37 crates (2 ignored: FUSE root-only) |
 | Property-based tests | ✅ 21 proptest suites | 10K+ cases via proptest |
 | Benchmarks | ✅ 28 Criterion functions | repo ops, semantic merge, protocol, compression |
 | Clippy | ✅ Zero warnings | `cargo clippy --workspace -- -D warnings` clean |
 | Ed25519 signing | ✅ Wired into push | `suture key generate`, auto-sign on push |
 | E2E tests | ✅ 50 integration tests | init→commit→branch→merge→gc→fsck→bisect→tag→stash→integrity→stress→git |
+| Binary E2E | ✅ 71 tests | DOCX/XLSX/PPTX full lifecycle (init→add→commit→branch→modify→merge→diff→log) |
 | Lean 4 proofs | ✅ 23 theorems | TouchSet, commutativity, DAG, LCA, merge properties |
 | HTTP integration | ✅ 61 tests (with features) | handshake, repos, patches, push/pull, V2, auth, mirrors, CRUD, search, batch, health |
 | Semantic drivers | ✅ 16 drivers | JSON, YAML, TOML, CSV, XML, Markdown, DOCX, XLSX, PPTX, OTIO, SQL, PDF, Image, Example, Properties |

@@ -4169,6 +4169,7 @@ dependencies = [
  "suture-driver-image",
  "suture-driver-json",
  "suture-driver-markdown",
+ "suture-driver-otio",
  "suture-driver-pdf",
  "suture-driver-pptx",
  "suture-driver-sql",
@@ -4333,8 +4334,6 @@ version = "1.2.0"
 dependencies = [
  "serde",
  "serde_json",
- "suture-common",
- "suture-core",
  "suture-driver",
  "thiserror 2.0.18",
 ]
@@ -4355,6 +4354,7 @@ dependencies = [
  "serde",
  "suture-driver",
  "suture-ooxml",
+ "zip",
 ]
 
 [[package]]

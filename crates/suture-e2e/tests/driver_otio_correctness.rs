@@ -1,4 +1,4 @@
-use suture_driver_otio::{ChangeDescription, OtioDriver};
+use suture_driver_otio::{ChangeDescription, LegacyOtioDriver};
 
 fn multi_track_timeline() -> &'static str {
     r#"{
@@ -178,7 +178,7 @@ fn added_audio_track_timeline() -> &'static str {
 
 #[test]
 fn otio_parse_multi_track_timeline() {
-    let mut driver = OtioDriver::new();
+    let mut driver = LegacyOtioDriver::new();
     driver.parse_otio(multi_track_timeline()).unwrap();
 
     let elements = driver.elements();
@@ -208,7 +208,7 @@ fn otio_parse_multi_track_timeline() {
 
 #[test]
 fn otio_diff_detects_clip_trim() {
-    let driver = OtioDriver::new();
+    let driver = LegacyOtioDriver::new();
     let diff = driver
         .serialize_diff(multi_track_timeline(), modified_clip_timeline())
         .unwrap();
@@ -225,7 +225,7 @@ fn otio_diff_detects_clip_trim() {
 
 #[test]
 fn otio_diff_detects_added_track() {
-    let driver = OtioDriver::new();
+    let driver = LegacyOtioDriver::new();
     let diff = driver
         .serialize_diff(multi_track_timeline(), added_audio_track_timeline())
         .unwrap();
@@ -242,7 +242,7 @@ fn otio_diff_detects_added_track() {
 
 #[test]
 fn otio_touch_set_cascades_from_track_to_children() {
-    let mut driver = OtioDriver::new();
+    let mut driver = LegacyOtioDriver::new();
     driver.parse_otio(multi_track_timeline()).unwrap();
 
     let track_id = "0:timeline:MultiTrack/0:track:Video1";
@@ -274,7 +274,7 @@ fn otio_touch_set_cascades_from_track_to_children() {
 
 #[test]
 fn otio_touch_set_no_cascade_for_timeline() {
-    let mut driver = OtioDriver::new();
+    let mut driver = LegacyOtioDriver::new();
     driver.parse_otio(multi_track_timeline()).unwrap();
 
     let changes = vec![ChangeDescription {
@@ -290,7 +290,7 @@ fn otio_touch_set_no_cascade_for_timeline() {
 
 #[test]
 fn otio_diff_identical_timelines() {
-    let driver = OtioDriver::new();
+    let driver = LegacyOtioDriver::new();
     let diff = driver
         .serialize_diff(multi_track_timeline(), multi_track_timeline())
         .unwrap();
@@ -306,7 +306,7 @@ fn otio_diff_detects_timeline_name_change() {
         "tracks": []
     }"#;
 
-    let driver = OtioDriver::new();
+    let driver = LegacyOtioDriver::new();
     let diff = driver
         .serialize_diff(
             r#"{"OTIO_SCHEMA":"otio.schema.Timeline","name":"Original","metadata":{},"tracks":[]}"#,
@@ -320,7 +320,7 @@ fn otio_diff_detects_timeline_name_change() {
 
 #[test]
 fn otio_find_element_by_id() {
-    let mut driver = OtioDriver::new();
+    let mut driver = LegacyOtioDriver::new();
     driver.parse_otio(multi_track_timeline()).unwrap();
 
     let opening_id = "0:timeline:MultiTrack/0:track:Video1/0:clip:Opening";
@@ -374,7 +374,7 @@ fn otio_parse_timeline_with_transition() {
         ]
     }"#;
 
-    let mut driver = OtioDriver::new();
+    let mut driver = LegacyOtioDriver::new();
     driver.parse_otio(json).unwrap();
 
     let transitions: Vec<_> = driver
@@ -418,7 +418,7 @@ fn otio_touch_set_for_transition_parent() {
         ]
     }"#;
 
-    let mut driver = OtioDriver::new();
+    let mut driver = LegacyOtioDriver::new();
     driver.parse_otio(json).unwrap();
 
     let transition_id = "0:timeline:T/0:track:V1/0:transition:Fade";

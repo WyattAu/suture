@@ -59,43 +59,125 @@ pub fn complex() -> String {
 }
 
 fn make_pptx(slide_names: &[impl AsRef<str>]) -> String {
-    let content_types = r#"<?xml version="1.0"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-  <Default Extension="xml" ContentType="application/xml"/>
-</Types>"#;
-
-    let mut pres_xml = String::from(
-        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n\
-         <p:presentation xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\" \
-         xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\">\n",
-    );
-    for name in slide_names {
-        let escaped = name.as_ref().replace('"', "&quot;");
-        pres_xml.push_str(&format!(
-            "  <p:sp name=\"{}\">\n\
-             <p:nvSpPr><p:cNvPr id=\"1\" name=\"{}\"/></p:nvSpPr>\n\
-             </p:sp>\n",
-            escaped, escaped
-        ));
-    }
-    pres_xml.push_str("</p:presentation>");
-
     let mut buf = Vec::new();
     {
         let mut zip = zip::ZipWriter::new(Cursor::new(&mut buf));
+
+        // [Content_Types].xml
+        let ct_overrides: String = slide_names
+            .iter()
+            .enumerate()
+            .map(|(i, _)| {
+                format!(
+                    r#"  <Override PartName="/ppt/slides/slide{}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>"#,
+                    i + 1
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        zip.start_file("[Content_Types].xml", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        zip.write_all(
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
+{}
+</Types>"#,
+                ct_overrides
+            )
+            .as_bytes(),
+        )
+        .unwrap();
+
+        // ppt/_rels/presentation.xml.rels
+        let slide_rels: String = slide_names
+            .iter()
+            .enumerate()
+            .map(|(i, _)| {
+                format!(
+                    r#"  <Relationship Id="rId{}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide{}.xml"/>"#,
+                    i + 2,
+                    i + 1
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
         zip.start_file(
-            "[Content_Types].xml",
+            "ppt/_rels/presentation.xml.rels",
             zip::write::SimpleFileOptions::default(),
         )
         .unwrap();
-        zip.write_all(content_types.as_bytes()).unwrap();
-        zip.start_file(
-            "ppt/presentation.xml",
-            zip::write::SimpleFileOptions::default(),
+        zip.write_all(
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+{}
+</Relationships>"#,
+                slide_rels
+            )
+            .as_bytes(),
         )
         .unwrap();
-        zip.write_all(pres_xml.as_bytes()).unwrap();
+
+        // ppt/presentation.xml with <p:sldIdLst>
+        let sld_ids: String = slide_names
+            .iter()
+            .enumerate()
+            .map(|(i, _)| {
+                format!(
+                    r#"    <p:sldId id="{}" r:id="rId{}"/>"#,
+                    256 + i as u32,
+                    i + 2
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        zip.start_file("ppt/presentation.xml", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        zip.write_all(
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <p:sldIdLst>
+{}
+  </p:sldIdLst>
+</p:presentation>"#,
+                sld_ids
+            )
+            .as_bytes(),
+        )
+        .unwrap();
+
+        // Individual slide files
+        for (i, name) in slide_names.iter().enumerate() {
+            zip.start_file(
+                &format!("ppt/slides/slide{}.xml", i + 1),
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
+            zip.write_all(
+                format!(
+                    r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:sp>
+    <p:nvSpPr>
+      <p:cNvPr id="1" name="{}"/>
+    </p:nvSpPr>
+  </p:sp>
+</p:sld>"#,
+                    name.as_ref()
+                )
+                .as_bytes(),
+            )
+            .unwrap();
+        }
+
         zip.finish().unwrap();
     }
     zip_to_string(buf)

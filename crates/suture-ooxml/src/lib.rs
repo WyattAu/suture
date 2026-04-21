@@ -6,6 +6,7 @@
 //! This crate provides:
 //! - ZIP archive reading/writing
 //! - Part navigation (finding specific XML parts)
+//! - Per-part relationship resolution (rId → target path)
 //! - Shared semantic change types for OOXML diffs
 
 use std::collections::HashMap;
@@ -22,7 +23,11 @@ pub struct OoxmlPart {
 pub struct OoxmlDocument {
     pub parts: HashMap<String, OoxmlPart>,
     pub content_types: String,
+    /// Root-level relationships from `_rels/.rels`. Maps target → rel type.
     pub rels: HashMap<String, String>,
+    /// Cache of per-part relationships. Key is the part path (e.g. `ppt/presentation.xml`),
+    /// value maps relationship Id (e.g. `rId2`) → target path.
+    pub part_rels: HashMap<String, HashMap<String, String>>,
 }
 
 impl OoxmlDocument {
@@ -34,6 +39,7 @@ impl OoxmlDocument {
         let mut parts = HashMap::new();
         let mut content_types = String::new();
         let mut rels = HashMap::new();
+        let mut part_rels: HashMap<String, HashMap<String, String>> = HashMap::new();
 
         for i in 0..archive.len() {
             let mut file = archive
@@ -54,10 +60,21 @@ impl OoxmlDocument {
                 content_types = content.clone();
             }
 
-            if path.contains("_rels/.rels") || path == "_rels/.rels" {
+            // Root-level relationships: _rels/.rels
+            if path == "_rels/.rels" {
                 for (target, rel_type) in parse_rels(&content) {
                     rels.insert(target, rel_type);
                 }
+            }
+
+            // Per-part relationships: e.g. ppt/_rels/presentation.xml.rels
+            // These resolve relationship IDs (rId) to target paths for a specific part.
+            if path.contains("/_rels/") && path.ends_with(".rels") && path != "_rels/.rels" {
+                // Extract the owning part path from the rels path.
+                // e.g. "ppt/_rels/presentation.xml.rels" → "ppt/presentation.xml"
+                let owner = path_rels_to_owner(&path);
+                let id_map = parse_rels_by_id(&content);
+                part_rels.insert(owner, id_map);
             }
 
             parts.insert(
@@ -74,6 +91,7 @@ impl OoxmlDocument {
             parts,
             content_types,
             rels,
+            part_rels,
         })
     }
 
@@ -117,8 +135,79 @@ impl OoxmlDocument {
             })
             .map(|v| v.as_str())
     }
+
+    /// Resolve a relationship ID for a given part to an absolute part path.
+    ///
+    /// For example, resolving `rId2` for `ppt/presentation.xml` might return
+    /// `ppt/slides/slide1.xml` based on `ppt/_rels/presentation.xml.rels`.
+    ///
+    /// Returns `None` if the relationship ID is not found.
+    pub fn resolve_rel(&self, part_path: &str, rel_id: &str) -> Option<String> {
+        let id_map = self.part_rels.get(part_path)?;
+        let target = id_map.get(rel_id)?;
+        // Targets are relative to the directory of the owning part.
+        Some(resolve_relative_path(part_path, target))
+    }
+
+    /// Get all relationship IDs and their resolved target paths for a given part.
+    ///
+    /// Returns an iterator of `(rel_id, resolved_target_path)` pairs.
+    pub fn get_part_rels(&self, part_path: &str) -> Option<&HashMap<String, String>> {
+        self.part_rels.get(part_path)
+    }
 }
 
+/// Convert a per-part rels path to its owning part path.
+/// e.g. `ppt/_rels/presentation.xml.rels` → `ppt/presentation.xml`
+fn path_rels_to_owner(rels_path: &str) -> String {
+    // The pattern is: <dir>/_rels/<name>.rels
+    // We need to extract: <dir>/<name>
+    let rels_filename = rels_path
+        .rsplit('/')
+        .next()
+        .unwrap_or("");
+    // Remove ".rels" suffix
+    let name = rels_filename
+        .strip_suffix(".rels")
+        .unwrap_or(rels_filename);
+
+    // Find the directory containing "_rels"
+    let dir = rels_path
+        .rsplit_once("/_rels/")
+        .map(|(d, _)| d)
+        .unwrap_or("");
+
+    if dir.is_empty() {
+        name.to_string()
+    } else {
+        format!("{}/{}", dir, name)
+    }
+}
+
+/// Parse relationships XML into a map of relationship Id → Target path.
+///
+/// This is used for per-part relationship files (e.g. `ppt/_rels/presentation.xml.rels`)
+/// where we need to look up targets by relationship ID.
+fn parse_rels_by_id(xml: &str) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    for line in xml.lines() {
+        let trimmed = line.trim();
+        if !trimmed.starts_with("<Relationship") {
+            continue;
+        }
+        let id = extract_attr(trimmed, "Id");
+        let target = extract_attr(trimmed, "Target");
+        if let (Some(id), Some(target)) = (id, target) {
+            map.insert(id, target);
+        }
+    }
+    map
+}
+
+/// Parse relationships XML into a list of (Target, Type) pairs.
+///
+/// This is used for root-level `.rels` files where we need to find
+/// relationships by type rather than by ID.
 fn parse_rels(xml: &str) -> Vec<(String, String)> {
     let mut rels = Vec::new();
     for line in xml.lines() {
@@ -135,6 +224,27 @@ fn parse_rels(xml: &str) -> Vec<(String, String)> {
     rels
 }
 
+/// Resolve a relative target path against a base part path.
+///
+/// e.g. `("ppt/presentation.xml", "slides/slide1.xml")` → `"ppt/slides/slide1.xml"`
+fn resolve_relative_path(base_part: &str, target: &str) -> String {
+    // Get the directory of the base part
+    let dir = base_part
+        .rsplit_once('/')
+        .map(|(d, _)| d)
+        .unwrap_or("");
+
+    if target.starts_with('/') {
+        // Absolute path within the archive (starts with /)
+        target[1..].to_string()
+    } else if dir.is_empty() {
+        target.to_string()
+    } else {
+        format!("{}/{}", dir, target)
+    }
+}
+
+/// Extract an XML attribute value from a line.
 fn extract_attr(xml_line: &str, attr_name: &str) -> Option<String> {
     let pattern = &format!("{}=\"", attr_name);
     let start = xml_line.find(pattern)?;
@@ -185,6 +295,55 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_rels_by_id() {
+        let xml = r#"<?xml version="1.0"?>
+<Relationships xmlns="...">
+  <Relationship Id="rId2" Type="http://slide" Target="slides/slide1.xml"/>
+  <Relationship Id="rId3" Type="http://slide" Target="slides/slide2.xml"/>
+</Relationships>"#;
+        let map = parse_rels_by_id(xml);
+        assert_eq!(map.get("rId2"), Some(&"slides/slide1.xml".to_string()));
+        assert_eq!(map.get("rId3"), Some(&"slides/slide2.xml".to_string()));
+        assert_eq!(map.get("rId1"), None);
+    }
+
+    #[test]
+    fn test_path_rels_to_owner() {
+        assert_eq!(
+            path_rels_to_owner("ppt/_rels/presentation.xml.rels"),
+            "ppt/presentation.xml"
+        );
+        assert_eq!(
+            path_rels_to_owner("ppt/slides/_rels/slide1.xml.rels"),
+            "ppt/slides/slide1.xml"
+        );
+        assert_eq!(
+            path_rels_to_owner("word/_rels/document.xml.rels"),
+            "word/document.xml"
+        );
+        assert_eq!(
+            path_rels_to_owner("xl/_rels/workbook.xml.rels"),
+            "xl/workbook.xml"
+        );
+    }
+
+    #[test]
+    fn test_resolve_relative_path() {
+        assert_eq!(
+            resolve_relative_path("ppt/presentation.xml", "slides/slide1.xml"),
+            "ppt/slides/slide1.xml"
+        );
+        assert_eq!(
+            resolve_relative_path("ppt/presentation.xml", "/ppt/slides/slide1.xml"),
+            "ppt/slides/slide1.xml"
+        );
+        assert_eq!(
+            resolve_relative_path("word/document.xml", "styles.xml"),
+            "word/styles.xml"
+        );
+    }
+
+    #[test]
     fn test_roundtrip_minimal() {
         let content_types = r#"<?xml version="1.0"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -225,5 +384,76 @@ mod tests {
         let out = doc.to_bytes().unwrap();
         let doc2 = OoxmlDocument::from_bytes(&out).unwrap();
         assert_eq!(doc2.get_part("word/document.xml").unwrap().content, doc_xml);
+    }
+
+    #[test]
+    fn test_resolve_rel_pptx() {
+        // Build a minimal PPTX-like ZIP with per-part rels
+        let mut buf = Vec::new();
+        {
+            let mut zip = zip::ZipWriter::new(io::Cursor::new(&mut buf));
+            zip.start_file(
+                "[Content_Types].xml",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
+            zip.write_all(b"<Types/>").unwrap();
+
+            zip.start_file(
+                "ppt/presentation.xml",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
+            zip.write_all(b"<p:presentation/>").unwrap();
+
+            zip.start_file(
+                "ppt/_rels/presentation.xml.rels",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
+            zip.write_all(
+                br#"<Relationships>
+                <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide1.xml"/>
+                <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide2.xml"/>
+                </Relationships>"#,
+            )
+            .unwrap();
+
+            zip.start_file(
+                "ppt/slides/slide1.xml",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
+            zip.write_all(b"<p:sld/>").unwrap();
+
+            zip.start_file(
+                "ppt/slides/slide2.xml",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
+            zip.write_all(b"<p:sld/>").unwrap();
+
+            zip.finish().unwrap();
+        }
+
+        let doc = OoxmlDocument::from_bytes(&buf).unwrap();
+
+        // Resolve rId2 → should give ppt/slides/slide1.xml
+        assert_eq!(
+            doc.resolve_rel("ppt/presentation.xml", "rId2"),
+            Some("ppt/slides/slide1.xml".to_string())
+        );
+
+        // Resolve rId3 → should give ppt/slides/slide2.xml
+        assert_eq!(
+            doc.resolve_rel("ppt/presentation.xml", "rId3"),
+            Some("ppt/slides/slide2.xml".to_string())
+        );
+
+        // Non-existent rId → None
+        assert_eq!(
+            doc.resolve_rel("ppt/presentation.xml", "rId99"),
+            None
+        );
     }
 }
