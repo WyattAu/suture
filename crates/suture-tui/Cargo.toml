@@ -24,5 +24,5 @@ suture-driver-docx = { path = "../suture-driver-docx", version = "1.2.0" }
 suture-driver-xlsx = { path = "../suture-driver-xlsx", version = "1.2.0" }
 suture-driver-pptx = { path = "../suture-driver-pptx", version = "1.2.0" }
 ratatui = "0.29"
-crossterm = "0.28"
+crossterm = "0.29"
 unicode-width = "0.2"
