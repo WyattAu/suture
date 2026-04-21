@@ -2,9 +2,9 @@
 
 - **Current Version:** 4.0.0
 - **Crates.io:** 31 crates published (suture-cli requires Node.js build; install from source)
-- **Current Phase:** Phase B — Vertical Deepening
+- **Current Phase:** Phase C — Distribution & Adoption
 - **Status:** Active Development
-- **Last Updated:** 2026-04-20
+- **Last Updated:** 2026-04-22
 - **Rust Edition:** 2024
 - **Lean 4:** v4.29.1 (23 theorems proved)
 
@@ -49,9 +49,9 @@
 | **4A** | suture-merge Library | Standalone merge library crate, 10 drivers, published to crates.io | v3.7 | ✅ Complete |
 | **4B** | Binary Document E2E | 71 E2E tests for DOCX/XLSX/PPTX full VCS lifecycle | v3.7 | ✅ Complete |
 | **4C** | Hardening & Stabilize | 4 bug fixes, full workspace 0 failures, 1396 tests | v4.0 | ✅ Complete |
-| **5A** | OTIO Driver Rewrite | SutureDriver trait, content-based ID, three-way merge, Gap/Marker support | v4.0 | 🔄 In Progress |
-| **5B** | OOXML Driver Deepening | Fix XLSX cell refs, PPTX slide discovery, DOCX in-place merge | v4.0 | 🔄 In Progress |
-| **5C** | Distribution & Adoption | Installers, migration tooling, documentation overhaul | v4.1 | Pending |
+| **5A** | OTIO Driver Rewrite | SutureDriver trait, content-based ID, three-way merge, Gap/Marker support | v4.0 | ✅ Complete |
+| **5B** | OOXML Driver Deepening | Fix XLSX cell refs, PPTX slide discovery, DOCX in-place merge | v4.0 | ✅ Complete |
+| **5C** | Distribution & Adoption | Installers, migration tooling, documentation overhaul | v4.1 | 🔄 In Progress |
 
 ### Direction A — Product Polish (v1.3–v1.4) ✅
 
@@ -305,23 +305,27 @@
 - Fix flaky 10K perf test: relax threshold from 30s to 60s for slow CI
 - Full `cargo test --workspace`: 0 failures, 0 errors, 1396 tests
 
-### Direction 5A — OTIO Driver Rewrite (v4.0) 🔄
+### Direction 5A — OTIO Driver Rewrite (v4.0) ✅
 
 - Implement `SutureDriver` trait for `OtioDriver` (diff, format_diff, merge)
 - Replace index-based identity with content-based heuristic (media_reference + source_range)
-- Add missing OTIO types: Gap, Marker, Effect, TimeEffect
+- Add `OtioNode::Unknown` variant for Gap, Marker, Effect, TimeEffect, and any future schema types
 - Implement semantic three-way merge with clip-level conflict detection
 - Register driver in plugin registry for CLI auto-discovery
-- Handle unknown schema types gracefully (skip instead of failing)
-- 38 tests → target 60+ tests
+- `rebuild_children_with_merged()` with global `placed_fps` tracking to prevent duplicate placement
+- Leaf-only modification detection (containers excluded from Modified changes)
+- Raw JSON comparison (no serde round-trip) via `FlatNode.raw_json` field
+- Legacy API preserved as `LegacyOtioDriver` (backward compatible with E2E tests)
+- 21 unit tests + 18 E2E tests (39 total)
 
-### Direction 5B — OOXML Driver Deepening (v4.0) 🔄
+### Direction 5B — OOXML Driver Deepening (v4.0) ✅
 
-- **XLSX**: Fix cell reference parsing (A1 notation), add shared string table support
-- **PPTX**: Fix slide discovery (parse `presentation.xml` slide ID list, resolve relationship IDs)
-- **DOCX**: Switch from extract-and-regenerate to parse-and-modify-in-place (preserve formatting)
-- Use `quick-xml` for proper XML parsing instead of hand-written string scanners
-- Implement OOXML relationship resolution in `suture-ooxml` shared infrastructure
+- **suture-ooxml**: Per-part relationship resolution (`part_rels`, `resolve_rel()`, `get_part_rels()`)
+- **XLSX**: Full rewrite — A1 notation parser, shared string table via `xl/sharedStrings.xml`, inline/boolean/numeric cell types, `<sheetData>` section replacement
+- **PPTX**: Full rewrite — Proper slide discovery via `<p:sldIdLst>` + relationship ID resolution, content-hash-based deduplication, slide name extraction from `<p:cNvPr>`
+- **DOCX**: Full rewrite — XML-level paragraph preservation, raw `<w:p>` extraction, formatting preservation (bold/italic/styles/w:pPr/w:rPr/rsidR), `<w:sectPr>` trailing content, namespace preservation, self-closing `<w:p/>` handling
+- E2E fixtures updated: PPTX/XLSX/OTIO with proper OOXML structure
+- All 24 DOCX E2E tests pass (correctness + realistic), all 11 PPTX E2E tests, all 13 XLSX E2E tests
 
 ### Direction 5C — Distribution & Adoption (v4.1) Pending
 
@@ -345,7 +349,7 @@
 
 | Gate | Status | Details |
 |------|--------|---------|
-| Tests | ✅ 1396 passing | 0 failures across 37 crates (2 ignored: FUSE root-only) |
+| Tests | ✅ 1427 passing | 0 failures across 37 crates (1 ignored: perf 10K) |
 | Property-based tests | ✅ 21 proptest suites | 10K+ cases via proptest |
 | Benchmarks | ✅ 28 Criterion functions | repo ops, semantic merge, protocol, compression |
 | Clippy | ✅ Zero warnings | `cargo clippy --workspace -- -D warnings` clean |
@@ -371,17 +375,17 @@
 | suture-hub | 61 | Hub daemon with SQLite, auth, replication, mirrors, branch protection, CRUD, search, cursor-based pagination, gRPC (14 RPCs), S3 blob backend (opt-in), Raft consensus (opt-in, TCP multi-node), webhooks (push/branch events), health check, graceful shutdown, TOML config, request tracing, persistent rate limiter, batch patches |
 | suture-daemon | 33 | File watcher, auto-commit, auto-sync, SHM status, PID management, signal handling, mount manager (FUSE/WebDAV lifecycle) |
 | suture-driver | 8 | SutureDriver trait, DriverRegistry, semantic diff/merge types |
-| suture-ooxml | 4 | Shared OOXML infrastructure (ZIP, part navigation) |
-| suture-driver-otio | 20 | OpenTimelineIO reference driver (clip reorder, transitions, nesting, 500-clip perf) |
+| suture-ooxml | 8 | Shared OOXML infrastructure (ZIP, part navigation, per-part relationship resolution) |
+| suture-driver-otio | 21 | OpenTimelineIO driver (SutureDriver trait, content-based ID, Unknown types, 39 total with E2E) |
 | suture-driver-json | 47 | JSON semantic driver |
 | suture-driver-yaml | 30 | YAML semantic driver |
 | suture-driver-toml | 30 | TOML semantic driver |
 | suture-driver-csv | 27 | CSV semantic driver |
 | suture-driver-xml | 31 | XML semantic driver |
 | suture-driver-markdown | 41 | Markdown semantic driver |
-| suture-driver-docx | 7 | DOCX semantic driver |
-| suture-driver-xlsx | 5 | XLSX semantic driver |
-| suture-driver-pptx | 7 | PPTX semantic driver |
+| suture-driver-docx | 13 | DOCX semantic driver (XML-level paragraph preservation, formatting, sectPr) |
+| suture-driver-xlsx | 13 | XLSX semantic driver (A1 notation, shared strings, sheetData replacement) |
+| suture-driver-pptx | 19 | PPTX semantic driver (sldIdLst discovery, rId resolution, content-hash dedup) |
 | suture-driver-sql | 18 | SQL DDL semantic driver (schema diff, three-way merge) |
 | suture-driver-pdf | 12 | PDF semantic driver (text extraction, page-level diff/merge) |
 | suture-driver-image | 12 | Image metadata driver (dimensions, color type, 10 formats) |

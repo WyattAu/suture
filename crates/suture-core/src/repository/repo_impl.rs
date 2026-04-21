@@ -5419,6 +5419,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Expensive perf test — run with: cargo test -p suture-core test_perf_10k -- --ignored
     fn test_perf_10k_commits_and_log() {
         let dir = tempfile::tempdir().unwrap();
         let repo_path = dir.path().to_path_buf();

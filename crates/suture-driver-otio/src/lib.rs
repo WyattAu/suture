@@ -82,6 +82,7 @@ impl OtioNode {
     }
 
     /// Return child OtioNodes for containers that hold them.
+    #[allow(dead_code)]
     fn children(&self) -> Vec<OtioNode> {
         match self {
             OtioNode::Timeline(tl) => tl.child_nodes(),
@@ -147,6 +148,7 @@ impl Timeline {
     fn child_nodes(&self) -> Vec<OtioNode> {
         parse_children(&self.tracks_json)
     }
+    #[allow(dead_code)]
     fn with_children(mut self, nodes: Vec<OtioNode>) -> Self {
         self.tracks_json = children_to_json(&nodes);
         self
@@ -168,6 +170,7 @@ impl Track {
     fn child_nodes(&self) -> Vec<OtioNode> {
         parse_children(&self.children_json)
     }
+    #[allow(dead_code)]
     fn with_children(mut self, nodes: Vec<OtioNode>) -> Self {
         self.children_json = children_to_json(&nodes);
         self
@@ -187,6 +190,7 @@ impl Stack {
     fn child_nodes(&self) -> Vec<OtioNode> {
         parse_children(&self.children_json)
     }
+    #[allow(dead_code)]
     fn with_children(mut self, nodes: Vec<OtioNode>) -> Self {
         self.children_json = children_to_json(&nodes);
         self
