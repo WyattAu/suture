@@ -18,7 +18,17 @@ pub(crate) async fn cmd_checkout(
                 return Err(e.into());
             }
         }
-        println!("Switched to branch '{}'", target);
+        if repo.is_detached() {
+            if let Ok(Some(id)) = repo.get_detached_head() {
+                let short = &id.to_hex()[..12];
+                println!("Note: checking out '{}'.", short);
+                println!("You are in 'detached HEAD' state. You can look around, make experimental");
+                println!("changes and commit them, and you can discard any commits you make in this");
+                println!("state without impacting any branches by switching back to a branch.");
+            }
+        } else {
+            println!("Switched to branch '{}'", target);
+        }
     }
     Ok(())
 }

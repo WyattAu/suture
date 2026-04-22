@@ -346,10 +346,14 @@ EXAMPLES:
     /// Show per-line commit attribution for a file
     #[command(after_long_help = "\
 EXAMPLES:
-    suture blame src/main.rs   # Show line-by-line attribution")]
+    suture blame src/main.rs          # Show line-by-line attribution at HEAD
+    suture blame src/main.rs --at HEAD~3  # Show attribution as of HEAD~3")]
     Blame {
         /// File path to blame
         path: String,
+        /// Blame as of a specific commit (default: HEAD)
+        #[arg(long)]
+        at: Option<String>,
     },
     /// Tag operations
     #[command(after_long_help = "\
@@ -1015,7 +1019,7 @@ async fn main() {
             resume,
             abort,
         } => cmd::rebase::cmd_rebase(&branch, interactive, resume, abort).await,
-        Commands::Blame { path } => cmd::blame::cmd_blame(&path).await,
+        Commands::Blame { path, at } => cmd::blame::cmd_blame(&path, at.as_deref()).await,
         Commands::Tag {
             name,
             target,

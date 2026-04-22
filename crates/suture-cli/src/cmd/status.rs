@@ -6,10 +6,11 @@ pub(crate) async fn cmd_status() -> Result<(), Box<dyn std::error::Error>> {
     let repo = suture_core::repository::Repository::open(StdPath::new("."))?;
     let status = repo.status()?;
 
-    println!(
-        "On branch {}",
-        status.head_branch.as_deref().unwrap_or("detached")
-    );
+    if let Some(ref branch_name) = status.head_branch {
+        println!("On branch {}", branch_name);
+    } else if let Some(ref id) = status.head_patch {
+        println!("HEAD detached at {}", &id.to_hex()[..12]);
+    }
     if let Some(id) = status.head_patch {
         println!("HEAD: {}", id);
     }

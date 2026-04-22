@@ -158,6 +158,75 @@ pub struct ReflogEntry {
 }
 
 impl Repository {
+    // =========================================================================
+    // Ref Resolution
+    // =========================================================================
+
+    /// Resolve a user-supplied ref string to a concrete patch ID.
+    ///
+    /// Supported forms (tried in order):
+    /// - `"HEAD"` — current HEAD
+    /// - `"HEAD~N"` — Nth ancestor of HEAD
+    /// - Full 64-char hex hash — direct patch lookup
+    /// - Short hex prefix (4+ chars) — prefix match (error on ambiguity)
+    /// - Tag name — look up `tag.<name>` in config
+    /// - Branch name — look up in the DAG
+    pub fn resolve_ref(&self, name: &str) -> Result<PatchId, RepoError> {
+        if name == "HEAD" || name.starts_with("HEAD~") {
+            let (_, head_id) = self.head()?;
+            let mut target_id = head_id;
+            if let Some(n_str) = name.strip_prefix("HEAD~") {
+                let n: usize = n_str
+                    .parse()
+                    .map_err(|_| RepoError::Custom(format!("invalid HEAD~N: {}", name)))?;
+                for _ in 0..n {
+                    let patch = self.dag.get_patch(&target_id).ok_or_else(|| {
+                        RepoError::Custom("HEAD ancestor not found".to_string())
+                    })?;
+                    target_id = patch
+                        .parent_ids
+                        .first()
+                        .ok_or_else(|| RepoError::Custom("HEAD has no parent".to_string()))?
+                        .to_owned();
+                }
+            }
+            return Ok(target_id);
+        }
+        // Try full hex hash (patch IDs are 64-char hex strings that
+        // also happen to pass BranchName validation, so we must try
+        // hex before branch name to avoid false branch lookups).
+        if let Ok(hash) = Hash::from_hex(name)
+            && self.dag.has_patch(&hash)
+        {
+            return Ok(hash);
+        }
+        // Try short hash prefix
+        let all_patch_ids = self.dag.patch_ids();
+        let prefix_matches: Vec<&PatchId> = all_patch_ids
+            .iter()
+            .filter(|id| id.to_hex().starts_with(name))
+            .collect();
+        match prefix_matches.len() {
+            1 => return Ok(*prefix_matches[0]),
+            0 => {}
+            n => {
+                return Err(RepoError::Custom(format!(
+                    "ambiguous ref '{}' matches {} commits",
+                    name, n
+                )));
+            }
+        }
+        // Try tag
+        if let Ok(Some(tag_id)) = self.resolve_tag(name) {
+            return Ok(tag_id);
+        }
+        // Fall back to branch name
+        let bn = BranchName::new(name)?;
+        self.dag
+            .get_branch(&bn)
+            .ok_or_else(|| RepoError::BranchNotFound(name.to_string()))
+    }
+
     /// Initialize a new Suture repository at the given path.
     pub fn init(path: &Path, author: &str) -> Result<Self, RepoError> {
         let suture_dir = path.join(".suture");
@@ -384,42 +453,7 @@ impl Repository {
     pub fn create_branch(&mut self, name: &str, target: Option<&str>) -> Result<(), RepoError> {
         let branch = BranchName::new(name)?;
         let target_id = match target {
-            Some(t) => {
-                // Check for HEAD / HEAD~N before trying branch name resolution
-                if t == "HEAD" {
-                    let head = self
-                        .dag
-                        .head()
-                        .ok_or_else(|| RepoError::Custom("no HEAD".to_string()))?;
-                    head.1
-                } else if let Some(rest) = t.strip_prefix("HEAD~") {
-                    let n: usize = rest
-                        .parse()
-                        .map_err(|_| RepoError::Custom(format!("invalid HEAD~N: {}", t)))?;
-                    let (_, head_id) = self.head()?;
-                    let mut current = head_id;
-                    for _ in 0..n {
-                        let patch = self.dag.get_patch(&current).ok_or_else(|| {
-                            RepoError::Custom("HEAD ancestor not found".to_string())
-                        })?;
-                        current = patch
-                            .parent_ids
-                            .first()
-                            .ok_or_else(|| {
-                                RepoError::Custom("HEAD has no parent".to_string())
-                            })?
-                            .to_owned();
-                    }
-                    current
-                } else if let Ok(bn) = BranchName::new(t) {
-                    self.dag
-                        .get_branch(&bn)
-                        .ok_or_else(|| RepoError::BranchNotFound(t.to_string()))?
-                } else {
-                    Hash::from_hex(t)
-                        .map_err(|_| RepoError::Custom(format!("invalid target: {}", t)))?
-                }
-            }
+            Some(t) => self.resolve_ref(t)?,
             None => {
                 let head = self
                     .dag
@@ -434,15 +468,53 @@ impl Repository {
         Ok(())
     }
 
+    /// Check if HEAD is detached (not pointing to a branch).
+    pub fn is_detached(&self) -> bool {
+        self.meta()
+            .get_config("core.detached")
+            .ok()
+            .flatten()
+            .as_deref()
+            == Some("true")
+    }
+
+    /// Get the detached HEAD commit ID (only valid when `is_detached()` is true).
+    pub fn get_detached_head(&self) -> Result<Option<PatchId>, Box<dyn std::error::Error>> {
+        if self.is_detached() {
+            let hex = self
+                .meta()
+                .get_config("core.detachedHead")
+                .ok()
+                .flatten()
+                .ok_or("detached HEAD but no commit ID stored")?;
+            Ok(Some(Hash::from_hex(&hex)?))
+        } else {
+            Ok(None)
+        }
+    }
+
     /// Get the current branch and its target.
     ///
     /// Reads the `head_branch` config key to determine which branch is
     /// currently checked out. Falls back to "main" if not set.
+    /// When HEAD is detached, returns `("(detached)", patch_id)`.
     pub fn head(&self) -> Result<(String, PatchId), RepoError> {
         if let Some(ref cached) = *self.cached_head_id.borrow()
             && let Some(ref branch) = *self.cached_head_branch.borrow()
         {
             return Ok((branch.clone(), *cached));
+        }
+        if self.is_detached() {
+            let patch_id = self
+                .get_detached_head()
+                .map_err(|e| RepoError::Custom(e.to_string()))?
+                .ok_or_else(|| {
+                    RepoError::Custom("detached HEAD but no commit ID stored".into())
+                })?;
+            let label = "(detached)".to_string();
+            *self.cached_head_branch.borrow_mut() = Some(label.clone());
+            *self.cached_head_id.borrow_mut() = Some(patch_id);
+            return Ok((label, patch_id));
         }
         let branch_name = self.read_head_branch()?;
 
@@ -776,7 +848,11 @@ impl Repository {
         let head = self.head()?;
 
         Ok(RepoStatus {
-            head_branch: Some(head.0),
+            head_branch: if self.is_detached() {
+                None
+            } else {
+                Some(head.0)
+            },
             head_patch: Some(head.1),
             branch_count: branches.len(),
             staged_files: working_set
@@ -1444,24 +1520,34 @@ impl Repository {
         Ok(())
     }
 
-    /// Checkout a branch, updating the working tree to match its tip state.
+    /// Checkout a branch or commit, updating the working tree to match its tip state.
     ///
     /// This operation:
-    /// 1. Builds the target FileTree from the branch's patch chain
+    /// 1. Builds the target FileTree from the branch's patch chain (or commit's snapshot)
     /// 2. Compares against the current working tree
     /// 3. Updates files (add/modify/delete) to match the target
     /// 4. Updates the HEAD reference
+    ///
+    /// If the argument is not a valid branch, it is resolved as a commit hash
+    /// and HEAD enters detached mode.
     ///
     /// Refuses to checkout if there are uncommitted staged changes.
     pub fn checkout(&mut self, branch_name: &str) -> Result<FileTree, RepoError> {
         let old_head = self.head().map(|(_, id)| id).unwrap_or(Hash::ZERO);
         let old_branch = self.head().ok().map(|(n, _)| n);
-        let target = BranchName::new(branch_name)?;
 
-        let target_id = self
-            .dag
-            .get_branch(&target)
-            .ok_or_else(|| RepoError::BranchNotFound(branch_name.to_string()))?;
+        let (target_id, is_detached) =
+            if let Ok(target) = BranchName::new(branch_name) {
+                if let Some(id) = self.dag.get_branch(&target) {
+                    (id, false)
+                } else {
+                    let id = self.resolve_ref(branch_name)?;
+                    (id, true)
+                }
+            } else {
+                let id = self.resolve_ref(branch_name)?;
+                (id, true)
+            };
 
         let has_changes = self.has_uncommitted_changes()?;
         if has_changes {
@@ -1512,17 +1598,35 @@ impl Repository {
             }
         }
 
-        self.write_head_branch(branch_name)?;
+        if is_detached {
+            self.set_config("core.detached", "true")?;
+            self.set_config("core.detachedHead", &target_id.to_hex())?;
+        } else {
+            let _ = self.meta().conn().execute(
+                "DELETE FROM config WHERE key = 'core.detached'",
+                [],
+            );
+            let _ = self.meta().conn().execute(
+                "DELETE FROM config WHERE key = 'core.detachedHead'",
+                [],
+            );
+            self.write_head_branch(branch_name)?;
+        }
 
         self.invalidate_head_cache();
 
+        let ref_label = if is_detached {
+            format!("{}", &target_id.to_hex()[..12])
+        } else {
+            branch_name.to_string()
+        };
         let _ = self.record_reflog(
             &old_head,
             &target_id,
             &format!(
                 "checkout: moving from {} to {}",
                 old_branch.as_deref().unwrap_or("HEAD"),
-                branch_name
+                ref_label
             ),
         );
 
@@ -1541,62 +1645,6 @@ impl Repository {
     ///
     /// If `from` is None, compares the empty tree to `to`.
     pub fn diff(&self, from: Option<&str>, to: Option<&str>) -> Result<Vec<DiffEntry>, RepoError> {
-        let resolve_id = |name: &str| -> Result<PatchId, RepoError> {
-            if name == "HEAD" || name.starts_with("HEAD~") {
-                let (_, head_id) = self.head()?;
-                let mut target_id = head_id;
-                if let Some(n_str) = name.strip_prefix("HEAD~") {
-                    let n: usize = n_str
-                        .parse()
-                        .map_err(|_| RepoError::Custom(format!("invalid HEAD~N: {}", name)))?;
-                    for _ in 0..n {
-                        let patch = self.dag.get_patch(&target_id).ok_or_else(|| {
-                            RepoError::Custom("HEAD ancestor not found".to_string())
-                        })?;
-                        target_id = patch
-                            .parent_ids
-                            .first()
-                            .ok_or_else(|| RepoError::Custom("HEAD has no parent".to_string()))?
-                            .to_owned();
-                    }
-                }
-                return Ok(target_id);
-            }
-            // Try full hex hash (patch IDs are 64-char hex strings that
-            // also happen to pass BranchName validation, so we must try
-            // hex before branch name to avoid false branch lookups).
-            if let Ok(hash) = Hash::from_hex(name)
-                && self.dag.has_patch(&hash)
-            {
-                return Ok(hash);
-            }
-            // Try short hash prefix
-            let all_patch_ids = self.dag.patch_ids();
-            let prefix_matches: Vec<&PatchId> = all_patch_ids
-                .iter()
-                .filter(|id| id.to_hex().starts_with(name))
-                .collect();
-            match prefix_matches.len() {
-                1 => return Ok(*prefix_matches[0]),
-                0 => {}
-                n => {
-                    return Err(RepoError::Custom(format!(
-                        "ambiguous ref '{}' matches {} commits",
-                        name, n
-                    )));
-                }
-            }
-            // Try tag
-            if let Ok(Some(tag_id)) = self.resolve_tag(name) {
-                return Ok(tag_id);
-            }
-            // Fall back to branch name
-            let bn = BranchName::new(name)?;
-            self.dag
-                .get_branch(&bn)
-                .ok_or_else(|| RepoError::BranchNotFound(name.to_string()))
-        };
-
         // When both from and to are None, diff HEAD vs working tree
         // to show all uncommitted changes.
         if from.is_none() && to.is_none() {
@@ -1606,12 +1654,12 @@ impl Repository {
         }
 
         let old_tree = match from {
-            Some(f) => self.snapshot(&resolve_id(f)?)?,
+            Some(f) => self.snapshot(&self.resolve_ref(f)?)?,
             None => FileTree::empty(),
         };
 
         let new_tree = match to {
-            Some(t) => self.snapshot(&resolve_id(t)?)?,
+            Some(t) => self.snapshot(&self.resolve_ref(t)?)?,
             None => self.snapshot_head()?,
         };
 
@@ -3044,19 +3092,24 @@ impl Repository {
 
     /// Show per-line commit attribution for a file.
     ///
-    /// Returns a vector of `BlameEntry` tuples, one per line in the file at HEAD.
-    pub fn blame(&self, path: &str) -> Result<Vec<BlameEntry>, RepoError> {
-        let head_tree = self.snapshot_head()?;
-        let hash = head_tree
+    /// Returns a vector of `BlameEntry` tuples, one per line in the file at the
+    /// given commit (default: HEAD).
+    pub fn blame(&self, path: &str, at: Option<&str>) -> Result<Vec<BlameEntry>, RepoError> {
+        let target_id = match at {
+            Some(ref_str) => self.resolve_ref(ref_str)?,
+            None => self.head().map(|(_, id)| id)?,
+        };
+
+        let tree = self.snapshot(&target_id)?;
+        let hash = tree
             .get(path)
-            .ok_or_else(|| RepoError::Custom(format!("file not found in HEAD: {}", path)))?;
+            .ok_or_else(|| RepoError::Custom(format!("file not found at '{}': {}", at.unwrap_or("HEAD"), path)))?;
 
         let blob = self.cas.get_blob(hash)?;
         let content = String::from_utf8_lossy(&blob);
         let lines: Vec<&str> = content.lines().collect();
 
-        let (_, head_id) = self.head()?;
-        let chain = self.dag.patch_chain(&head_id);
+        let chain = self.dag.patch_chain(&target_id);
 
         let mut patches: Vec<Patch> = chain
             .iter()
@@ -5240,7 +5293,7 @@ mod tests {
         repo.add("test.txt")?;
         let second_commit = repo.commit("modify line2")?;
 
-        let blame = repo.blame("test.txt")?;
+        let blame = repo.blame("test.txt", None)?;
 
         assert_eq!(blame.len(), 3);
         assert_eq!(blame[0].line, "line1");
@@ -5260,7 +5313,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let repo = Repository::init(dir.path(), "alice").unwrap();
 
-        let result = repo.blame("nonexistent.txt");
+        let result = repo.blame("nonexistent.txt", None);
         assert!(result.is_err());
     }
 
