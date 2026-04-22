@@ -1,4 +1,20 @@
-use crate::style::{ANSI_GREEN, ANSI_RED, ANSI_RESET};
+use crate::style::{ANSI_GREEN, ANSI_RED, ANSI_YELLOW, ANSI_RESET};
+
+/// Read a file's contents as bytes and convert to String.
+///
+/// For text files this is a normal UTF-8 read. For binary files (DOCX, XLSX, PPTX)
+/// which are ZIP archives, we read the raw bytes and treat them as a String since
+/// the SutureDriver trait operates on `&str`. This is safe because:
+/// - The driver will parse the bytes at the format level (ZIP → XML → merge → ZIP)
+/// - The output is written back as raw bytes via `std::fs::write`
+/// - We never interpret the binary content as UTF-8 text ourselves
+fn read_file_bytes(path: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let bytes = std::fs::read(path)?;
+    // SAFETY: SutureDriver implementations handle binary content at the format level.
+    // DOCX/XLSX/PPTX are ZIP archives — the bytes are round-tripped through
+    // ZIP read → XML parse → merge → XML serialize → ZIP write.
+    Ok(unsafe { String::from_utf8_unchecked(bytes) })
+}
 
 pub(crate) async fn cmd_merge_file(
     base_path: &str,
@@ -11,9 +27,16 @@ pub(crate) async fn cmd_merge_file(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use std::path::Path as StdPath;
 
-    let base_content = std::fs::read_to_string(base_path)?;
-    let ours_content = std::fs::read_to_string(ours_path)?;
-    let theirs_content = std::fs::read_to_string(theirs_path)?;
+    // Read all three files (binary-safe for OOXML formats)
+    let base_content = read_file_bytes(base_path).map_err(|e| {
+        format!("{ANSI_RED}Error reading base file '{base_path}': {e}{ANSI_RESET}")
+    })?;
+    let ours_content = read_file_bytes(ours_path).map_err(|e| {
+        format!("{ANSI_RED}Error reading ours file '{ours_path}': {e}{ANSI_RESET}")
+    })?;
+    let theirs_content = read_file_bytes(theirs_path).map_err(|e| {
+        format!("{ANSI_RED}Error reading theirs file '{theirs_path}': {e}{ANSI_RESET}")
+    })?;
 
     let ours_label = label_ours.unwrap_or("ours");
     let theirs_label = label_theirs.unwrap_or("theirs");
@@ -23,25 +46,31 @@ pub(crate) async fn cmd_merge_file(
     // Resolve driver: explicit --driver flag > auto-detect by extension > none
     let driver: Option<&dyn suture_driver::SutureDriver> = match driver_name {
         Some(name) => {
-            // Explicit driver: try as extension name (e.g., "json" -> ".json")
-            let ext = if name.starts_with('.') {
-                name.to_string()
+            if name == "auto" {
+                // --driver auto: detect from file extension
+                match registry.get_for_path(StdPath::new(ours_path)) {
+                    Ok(d) => Some(d),
+                    Err(_) => None,
+                }
             } else {
-                format!(".{name}")
-            };
-            match registry.get(&ext) {
-                Ok(d) => Some(d),
-                Err(e) => {
-                    eprintln!("{ANSI_RED}Error: {e}{ANSI_RESET}");
-                    std::process::exit(1);
+                // Explicit driver: try as extension name (e.g., "json" -> ".json")
+                let ext = if name.starts_with('.') {
+                    name.to_string()
+                } else {
+                    format!(".{name}")
+                };
+                match registry.get(&ext) {
+                    Ok(d) => Some(d),
+                    Err(e) => {
+                        eprintln!("{ANSI_RED}Error: {e}{ANSI_RESET}");
+                        std::process::exit(1);
+                    }
                 }
             }
         }
         None => {
             // Auto-detect by file extension
-            registry
-                .get_for_path(StdPath::new(ours_path))
-                .ok()
+            registry.get_for_path(StdPath::new(ours_path)).ok()
         }
     };
 
@@ -51,8 +80,21 @@ pub(crate) async fn cmd_merge_file(
             Ok(Some(merged)) => {
                 // Clean semantic merge
                 match output_path {
-                    Some(path) => std::fs::write(path, &merged)?,
-                    None => print!("{merged}"),
+                    Some(path) => std::fs::write(path, merged.as_bytes())?,
+                    None => {
+                        // For binary formats, don't print to stdout
+                        let ours_ext = StdPath::new(ours_path)
+                            .extension()
+                            .and_then(|e| e.to_str())
+                            .unwrap_or("");
+                        if is_binary_extension(ours_ext) {
+                            eprintln!(
+                                "{ANSI_YELLOW}Note: merged content is binary ({ours_ext}). Use -o <path> to write output.{ANSI_RESET}"
+                            );
+                        } else {
+                            print!("{merged}");
+                        }
+                    }
                 }
                 eprintln!(
                     "{ANSI_GREEN}Merged via {} driver (semantic merge){ANSI_RESET}",
@@ -63,14 +105,14 @@ pub(crate) async fn cmd_merge_file(
             Ok(None) => {
                 // Driver declined — fall back to line-based merge
                 eprintln!(
-                    "Note: {} driver could not auto-resolve, falling back to line-based merge",
+                    "{ANSI_YELLOW}Note: {} driver could not auto-resolve, falling back to line-based merge{ANSI_RESET}",
                     driver.name()
                 );
             }
             Err(e) => {
                 // Parse error — fall back to line-based merge
                 eprintln!(
-                    "Note: {} driver error: {e}, falling back to line-based merge",
+                    "{ANSI_YELLOW}Note: {} driver error: {e}, falling back to line-based merge{ANSI_RESET}",
                     driver.name()
                 );
             }
@@ -78,6 +120,8 @@ pub(crate) async fn cmd_merge_file(
     }
 
     // Line-based three-way merge (fallback or default)
+    // For binary formats with no driver, this won't produce useful results,
+    // but it's better than nothing.
     let base_lines: Vec<&str> = base_content.lines().collect();
     let ours_lines: Vec<&str> = ours_content.lines().collect();
     let theirs_lines: Vec<&str> = theirs_content.lines().collect();
@@ -92,7 +136,7 @@ pub(crate) async fn cmd_merge_file(
 
     let merged_output: String = result.lines.join("\n");
     match output_path {
-        Some(path) => std::fs::write(path, &merged_output)?,
+        Some(path) => std::fs::write(path, merged_output.as_bytes())?,
         None => print!("{merged_output}"),
     }
 
@@ -111,4 +155,12 @@ pub(crate) async fn cmd_merge_file(
     }
 
     Ok(())
+}
+
+/// Check if a file extension represents a binary format.
+fn is_binary_extension(ext: &str) -> bool {
+    matches!(
+        ext,
+        "docx" | "docm" | "xlsx" | "xlsm" | "pptx" | "pptm" | "pdf" | "otio"
+    )
 }

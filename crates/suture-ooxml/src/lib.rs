@@ -7,14 +7,22 @@
 //! - ZIP archive reading/writing
 //! - Part navigation (finding specific XML parts)
 //! - Per-part relationship resolution (rId → target path)
+//! - Binary part passthrough (fonts, images, media)
 //! - Shared semantic change types for OOXML diffs
 
 use std::collections::HashMap;
 use std::io::{self, Read, Write};
 
+/// An OOXML part within a document archive.
+///
+/// XML parts have their `content` parsed as UTF-8 text.
+/// Binary parts (fonts, images, media) are tracked separately in
+/// `OoxmlDocument::binary_parts`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OoxmlPart {
     pub path: String,
+    /// Text content for XML parts. Empty string for binary parts
+    /// (use `binary_parts` to access raw bytes).
     pub content: String,
     pub content_type: String,
 }
@@ -22,6 +30,9 @@ pub struct OoxmlPart {
 #[derive(Clone, Debug)]
 pub struct OoxmlDocument {
     pub parts: HashMap<String, OoxmlPart>,
+    /// Binary parts that can't be represented as UTF-8 (fonts, images, media).
+    /// Key is the part path, value is the raw bytes.
+    pub binary_parts: HashMap<String, Vec<u8>>,
     pub content_types: String,
     /// Root-level relationships from `_rels/.rels`. Maps target → rel type.
     pub rels: HashMap<String, String>,
@@ -37,6 +48,7 @@ impl OoxmlDocument {
             zip::ZipArchive::new(reader).map_err(|e| OoxmlError::Zip(e.to_string()))?;
 
         let mut parts = HashMap::new();
+        let mut binary_parts = HashMap::new();
         let mut content_types = String::new();
         let mut rels = HashMap::new();
         let mut part_rels: HashMap<String, HashMap<String, String>> = HashMap::new();
@@ -47,14 +59,33 @@ impl OoxmlDocument {
                 .map_err(|e| OoxmlError::Zip(e.to_string()))?;
 
             let path = file.name().to_string();
-            let mut content = String::new();
-            file.read_to_string(&mut content)
-                .map_err(|e| OoxmlError::Io(e.to_string()))?;
-
             let enc_name = file
                 .enclosed_name()
                 .map(|n| n.display().to_string())
                 .unwrap_or_default();
+
+            // Read raw bytes first
+            let mut raw_bytes = Vec::new();
+            file.read_to_end(&mut raw_bytes)
+                .map_err(|e| OoxmlError::Io(e.to_string()))?;
+
+            // Try to interpret as UTF-8 text
+            let content = match String::from_utf8(raw_bytes.clone()) {
+                Ok(text) => text,
+                Err(_) => {
+                    // Binary part (font, image, etc.) — store as raw bytes
+                    binary_parts.insert(path.clone(), raw_bytes);
+                    parts.insert(
+                        path.clone(),
+                        OoxmlPart {
+                            content_type: enc_name,
+                            content: String::new(),
+                            path,
+                        },
+                    );
+                    continue;
+                }
+            };
 
             if path == "[Content_Types].xml" {
                 content_types = content.clone();
@@ -68,10 +99,7 @@ impl OoxmlDocument {
             }
 
             // Per-part relationships: e.g. ppt/_rels/presentation.xml.rels
-            // These resolve relationship IDs (rId) to target paths for a specific part.
             if path.contains("/_rels/") && path.ends_with(".rels") && path != "_rels/.rels" {
-                // Extract the owning part path from the rels path.
-                // e.g. "ppt/_rels/presentation.xml.rels" → "ppt/presentation.xml"
                 let owner = path_rels_to_owner(&path);
                 let id_map = parse_rels_by_id(&content);
                 part_rels.insert(owner, id_map);
@@ -89,6 +117,7 @@ impl OoxmlDocument {
 
         Ok(Self {
             parts,
+            binary_parts,
             content_types,
             rels,
             part_rels,
@@ -109,9 +138,17 @@ impl OoxmlDocument {
                 writer
                     .start_file(path.as_str(), zip::write::SimpleFileOptions::default())
                     .map_err(|e| OoxmlError::Zip(e.to_string()))?;
-                writer
-                    .write_all(part.content.as_bytes())
-                    .map_err(|e| OoxmlError::Io(e.to_string()))?;
+
+                // Check if this is a binary part
+                if let Some(raw) = self.binary_parts.get(path) {
+                    writer
+                        .write_all(raw)
+                        .map_err(|e| OoxmlError::Io(e.to_string()))?;
+                } else {
+                    writer
+                        .write_all(part.content.as_bytes())
+                        .map_err(|e| OoxmlError::Io(e.to_string()))?;
+                }
             }
 
             writer
@@ -380,10 +417,57 @@ mod tests {
         let doc = OoxmlDocument::from_bytes(&buf).unwrap();
         assert!(doc.get_part("word/document.xml").is_some());
         assert!(doc.get_part("[Content_Types].xml").is_some());
+        assert!(doc.binary_parts.is_empty());
 
         let out = doc.to_bytes().unwrap();
         let doc2 = OoxmlDocument::from_bytes(&out).unwrap();
         assert_eq!(doc2.get_part("word/document.xml").unwrap().content, doc_xml);
+    }
+
+    #[test]
+    fn test_binary_part_passthrough() {
+        // Build a ZIP with an XML part and a binary part (simulating a font file)
+        let binary_data: Vec<u8> = vec![0x00, 0x01, 0x02, 0xFF, 0xFE, 0xFD]; // Invalid UTF-8
+
+        let mut buf = Vec::new();
+        {
+            let mut zip = zip::ZipWriter::new(io::Cursor::new(&mut buf));
+            zip.start_file(
+                "[Content_Types].xml",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
+            zip.write_all(b"<Types/>").unwrap();
+            zip.start_file(
+                "word/document.xml",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
+            zip.write_all(b"<w:document/>").unwrap();
+            zip.start_file(
+                "word/fonts/font1.odttf",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
+            zip.write_all(&binary_data).unwrap();
+            zip.finish().unwrap();
+        }
+
+        let doc = OoxmlDocument::from_bytes(&buf).unwrap();
+        assert!(doc.get_part("word/document.xml").is_some());
+        assert_eq!(doc.binary_parts.len(), 1);
+        assert_eq!(
+            doc.binary_parts.get("word/fonts/font1.odttf").unwrap(),
+            &binary_data
+        );
+
+        // Roundtrip: binary data should survive
+        let out = doc.to_bytes().unwrap();
+        let doc2 = OoxmlDocument::from_bytes(&out).unwrap();
+        assert_eq!(
+            doc2.binary_parts.get("word/fonts/font1.odttf").unwrap(),
+            &binary_data
+        );
     }
 
     #[test]

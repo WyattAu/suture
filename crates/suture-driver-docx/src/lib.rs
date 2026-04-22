@@ -1,48 +1,54 @@
 //! DOCX semantic driver — paragraph-level diff and merge for Word documents.
 //!
 //! Unlike a naive text extraction approach, this driver operates on the raw XML
-//! of each `<w:p>` element, preserving all formatting (bold, italic, fonts),
-//! paragraph properties (styles, headings), bookmarks, change tracking attributes,
-//! and run-level details.
+//! of each block-level element (`<w:p>` paragraphs and `<w:tbl>` tables),
+//! preserving all formatting (bold, italic, fonts), paragraph properties,
+//! table structures, and other document features.
 //!
 //! ## Approach
 //!
-//! 1. **Parse** `word/document.xml` to extract `<w:p>` elements as raw XML strings
-//!    along with their extracted plain text.
-//! 2. **Diff** compares paragraph text (for semantic changes) while preserving
+//! 1. **Parse** `word/document.xml` to extract block-level elements as raw XML
+//!    strings along with their extracted plain text (for comparison).
+//! 2. **Block types**: `<w:p>` (paragraphs) and `<w:tbl>` (tables) are the two
+//!    block-level elements we track. Tables are treated as atomic units.
+//! 3. **Diff** compares block text (for semantic changes) while preserving
 //!    the full XML for output.
-//! 3. **Merge** uses three-way paragraph-index merge, substituting the winning
-//!    paragraph's raw XML into the base document's `<w:body>`.
-//! 4. **Reconstruct** preserves everything outside the paragraph list:
+//! 4. **Merge** uses three-way block-index merge, substituting the winning
+//!    block's raw XML into the base document's `<w:body>`.
+//! 5. **Reconstruct** preserves everything outside the block list:
 //!    XML declaration, namespaces, `<w:sectPr>`, etc.
 
 use suture_driver::{DriverError, SemanticChange, SutureDriver};
 use suture_ooxml::OoxmlDocument;
 
-/// A parsed paragraph from a DOCX document, holding both the raw XML
-/// and the extracted plain text for comparison.
+/// A parsed block from a DOCX document.xml body.
+///
+/// Can be either a paragraph (`<w:p>`) or a table (`<w:tbl>`).
+/// Tables are treated as atomic blocks — their entire XML is preserved.
 #[derive(Debug, Clone)]
-struct Paragraph {
-    /// Raw XML string of this `<w:p>` element, e.g.
-    /// `<w:p w:rsidR="001"><w:r><w:t>Hello</w:t></w:r></w:p>`
+struct Block {
+    /// The block type.
+    kind: BlockKind,
+    /// Raw XML string of this element.
     raw_xml: String,
-    /// Extracted plain text from all `<w:t>` elements, joined with spaces.
+    /// Extracted plain text from all `<w:t>` elements within this block.
     text: String,
 }
 
-impl Paragraph {
-    /// Extract text content from all `<w:t>` elements within the paragraph XML.
-    ///
-    /// In OOXML, `<w:t>` elements contain the actual text. Spaces between runs
-    /// are typically embedded in the text content itself (especially when
-    /// `xml:space="preserve"` is used). We concatenate without adding separators.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum BlockKind {
+    Paragraph,
+    Table,
+}
+
+impl Block {
+    /// Extract text content from all `<w:t>` elements within the block XML.
     fn extract_text(xml: &str) -> String {
         let mut text = String::new();
         let mut search = 0;
         while search < xml.len() {
             if let Some(t_start) = xml[search..].find("<w:t") {
                 let abs_t = search + t_start;
-                // Skip past `<w:t` and any attributes to find `>`
                 let after = &xml[abs_t + 4..];
                 if let Some(gt_pos) = after.find('>') {
                     let content_start = abs_t + 4 + gt_pos + 1;
@@ -71,32 +77,25 @@ impl Paragraph {
 
 /// Result of parsing a DOCX document.xml body.
 struct BodyParse {
-    /// Everything before `<w:body>` (XML declaration + document opening tag + any whitespace)
+    /// Everything before `<w:body>` (XML declaration + document opening tag)
     prefix: String,
-    /// The `<w:body>` opening tag including attributes (e.g. `<w:body>`)
+    /// The `<w:body>` opening tag including attributes
     body_open_tag: String,
-    /// Parsed paragraphs in order
-    paragraphs: Vec<Paragraph>,
-    /// Raw XML of non-paragraph children inside `<w:body>` (e.g. `<w:sectPr>...`)
-    /// stored as (position_index, raw_xml) where position_index indicates where
-    /// in the paragraph sequence this element appears.
+    /// Parsed blocks in order (paragraphs and tables)
+    blocks: Vec<Block>,
+    /// Raw XML after the last block and before `</w:body>` (e.g. `<w:sectPr>`)
     trailing_body_content: String,
-    /// Everything after `</w:body>` (closing document tag, etc.)
+    /// Everything after `</w:body>` (closing document tag)
     suffix: String,
 }
 
-/// Parse the document.xml content to extract paragraph-level XML and structure.
-///
-/// This function finds `<w:body>`, extracts all `<w:p>` elements (preserving
-/// their raw XML including all attributes, child elements, formatting, etc.),
-/// and identifies any non-paragraph body children (like `<w:sectPr>`).
+/// Parse the document.xml content to extract block-level elements and structure.
 fn parse_body(xml: &str) -> Result<BodyParse, DriverError> {
     // Find <w:body
     let body_tag_start = xml
         .find("<w:body")
         .ok_or_else(|| DriverError::ParseError("no <w:body> found in document.xml".into()))?;
 
-    // Find the closing > of the <w:body> tag
     let after_body_tag = &xml[body_tag_start..];
     let gt_pos = after_body_tag
         .find('>')
@@ -112,87 +111,142 @@ fn parse_body(xml: &str) -> Result<BodyParse, DriverError> {
         .ok_or_else(|| DriverError::ParseError("no </w:body> found".into()))?;
     let suffix = xml[body_close + 10..].to_string();
 
-    // Extract content between <w:body> and </w:body>
     let body_content = &xml[body_tag_end..body_close];
 
-    // Parse paragraphs from body content
-    let paragraphs = extract_paragraphs(body_content);
+    // Parse block-level elements from body content
+    let blocks = extract_blocks(body_content);
 
-    // Identify trailing content — anything after the last </w:p> that isn't whitespace
-    let trailing = extract_trailing_body_content(body_content, &paragraphs);
+    // Identify trailing content — anything after the last block
+    let trailing = extract_trailing_body_content(body_content, &blocks);
 
     Ok(BodyParse {
         prefix,
         body_open_tag,
-        paragraphs,
+        blocks,
         trailing_body_content: trailing,
         suffix,
     })
 }
 
-/// Extract all `<w:p>` elements from body content as raw XML strings.
-fn extract_paragraphs(body_content: &str) -> Vec<Paragraph> {
-    let mut paragraphs = Vec::new();
+/// Extract all block-level elements (`<w:p>` and `<w:tbl>`) from body content.
+///
+/// Elements are extracted in document order. `<w:tbl>` is extracted as a single
+/// atomic block (including all nested rows, cells, and paragraphs within cells).
+fn extract_blocks(body_content: &str) -> Vec<Block> {
+    let mut blocks = Vec::new();
     let mut pos = 0;
 
     while pos < body_content.len() {
-        // Look for <w:p but not <w:pPr or <w:pict etc.
-        if let Some(p_start) = body_content[pos..].find("<w:p") {
-            let abs_start = pos + p_start;
-            let after_tag = &body_content[abs_start + 4..];
+        // Find the next block-level element
+        let next_p = body_content[pos..].find("<w:p").map(|i| pos + i);
+        let next_tbl = body_content[pos..].find("<w:tbl").map(|i| pos + i);
 
-            // Ensure this is actually a <w:p element (followed by >, space, or /)
-            if !after_tag.starts_with('>') && !after_tag.starts_with(' ') && !after_tag.starts_with('/') {
-                pos = abs_start + 4;
-                continue;
+        // Pick whichever comes first
+        let (abs_start, kind) = match (next_p, next_tbl) {
+            (None, None) => break,
+            (Some(p), None) => (p, BlockKind::Paragraph),
+            (None, Some(t)) => (t, BlockKind::Table),
+            (Some(p), Some(t)) => {
+                if p <= t {
+                    (p, BlockKind::Paragraph)
+                } else {
+                    (t, BlockKind::Table)
+                }
             }
+        };
 
-            // Self-closing <w:p/> — treat as empty paragraph
-            if after_tag.starts_with('/') {
-                if let Some(close) = after_tag.find("/>") {
-                    let end_abs = abs_start + 4 + close + 2;
+        // Length of the tag prefix searched: "<w:p" = 4, "<w:tbl" = 6
+        let tag_len = match kind {
+            BlockKind::Paragraph => 4,
+            BlockKind::Table => 6,
+        };
+
+        let after_tag = &body_content[abs_start + tag_len..];
+
+        match kind {
+            BlockKind::Paragraph => {
+                // Ensure this is actually a <w:p element (not <w:pPr, <w:pict, etc.)
+                if !after_tag.starts_with('>')
+                    && !after_tag.starts_with(' ')
+                    && !after_tag.starts_with('/')
+                {
+                    pos = abs_start + tag_len;
+                    continue;
+                }
+
+                // Self-closing <w:p/>
+                if after_tag.starts_with('/') {
+                    if let Some(close) = after_tag.find("/>") {
+                        let end_abs = abs_start + tag_len + close + 2;
+                        let raw_xml = body_content[abs_start..end_abs].to_string();
+                        blocks.push(Block {
+                            kind: BlockKind::Paragraph,
+                            raw_xml,
+                            text: String::new(),
+                        });
+                        pos = end_abs;
+                        continue;
+                    }
+                    pos = abs_start + tag_len;
+                    continue;
+                }
+
+                // Find </w:p>
+                if let Some(end) = body_content[abs_start..].find("</w:p>") {
+                    let end_abs = abs_start + end + 6;
                     let raw_xml = body_content[abs_start..end_abs].to_string();
-                    let text = String::new();
-                    paragraphs.push(Paragraph { raw_xml, text });
+                    let text = Block::extract_text(&raw_xml);
+                    blocks.push(Block {
+                        kind: BlockKind::Paragraph,
+                        raw_xml,
+                        text,
+                    });
                     pos = end_abs;
                 } else {
-                    pos = abs_start + 4;
+                    pos = abs_start + tag_len;
                 }
-                continue;
             }
+            BlockKind::Table => {
+                // Ensure this is actually a <w:tbl element
+                if !after_tag.starts_with('>')
+                    && !after_tag.starts_with(' ')
+                    && !after_tag.starts_with('/')
+                {
+                    pos = abs_start + tag_len;
+                    continue;
+                }
 
-            // Find the matching </w:p>
-            if let Some(end) = body_content[abs_start..].find("</w:p>") {
-                let end_abs = abs_start + end + 6;
-                let raw_xml = body_content[abs_start..end_abs].to_string();
-                let text = Paragraph::extract_text(&raw_xml);
-                paragraphs.push(Paragraph { raw_xml, text });
-                pos = end_abs;
-            } else {
-                pos = abs_start + 4;
+                // Find </w:tbl>
+                if let Some(end) = body_content[abs_start..].find("</w:tbl>") {
+                    let end_abs = abs_start + end + 8;
+                    let raw_xml = body_content[abs_start..end_abs].to_string();
+                    let text = Block::extract_text(&raw_xml);
+                    blocks.push(Block {
+                        kind: BlockKind::Table,
+                        raw_xml,
+                        text,
+                    });
+                    pos = end_abs;
+                } else {
+                    pos = abs_start + tag_len;
+                }
             }
-        } else {
-            break;
         }
     }
 
-    paragraphs
+    blocks
 }
 
-/// Extract non-paragraph trailing content from the body.
-///
-/// After the last `</w:p>`, there may be elements like `<w:sectPr>...</w:sectPr>`
-/// that must be preserved.
-fn extract_trailing_body_content(body_content: &str, paragraphs: &[Paragraph]) -> String {
-    if paragraphs.is_empty() {
+/// Extract non-block trailing content from the body.
+fn extract_trailing_body_content(body_content: &str, blocks: &[Block]) -> String {
+    if blocks.is_empty() {
         return body_content.trim_end().to_string();
     }
 
-    let last_para = &paragraphs[paragraphs.len() - 1];
-    if let Some(last_end) = body_content.rfind(&last_para.raw_xml) {
-        let after = &body_content[last_end + last_para.raw_xml.len()..];
-        let trimmed = after.trim();
-        if !trimmed.is_empty() {
+    let last = &blocks[blocks.len() - 1];
+    if let Some(last_end) = body_content.rfind(&last.raw_xml) {
+        let after = &body_content[last_end + last.raw_xml.len()..];
+        if !after.trim().is_empty() {
             return after.to_string();
         }
     }
@@ -200,14 +254,14 @@ fn extract_trailing_body_content(body_content: &str, paragraphs: &[Paragraph]) -
     String::new()
 }
 
-/// Rebuild document.xml from parsed body structure with merged paragraphs.
-fn rebuild_document_xml(body: &BodyParse, merged_paragraphs: &[Paragraph]) -> String {
+/// Rebuild document.xml from parsed body structure with merged blocks.
+fn rebuild_document_xml(body: &BodyParse, merged_blocks: &[Block]) -> String {
     let mut out = String::new();
     out.push_str(&body.prefix);
     out.push_str(&body.body_open_tag);
 
-    for para in merged_paragraphs {
-        out.push_str(&para.raw_xml);
+    for block in merged_blocks {
+        out.push_str(&block.raw_xml);
     }
 
     out.push_str(&body.trailing_body_content);
@@ -216,17 +270,12 @@ fn rebuild_document_xml(body: &BodyParse, merged_paragraphs: &[Paragraph]) -> St
     out
 }
 
-/// Three-way merge of paragraph lists by index.
-///
-/// For each index, selects the winning paragraph based on standard three-way rules:
-/// - If both sides agree, use that.
-/// - If one side matches base, use the other side's change.
-/// - If both sides changed differently, conflict (return None).
-fn merge_paragraphs(
-    base: &[Paragraph],
-    ours: &[Paragraph],
-    theirs: &[Paragraph],
-) -> Option<Vec<Paragraph>> {
+/// Three-way merge of block lists by index.
+fn merge_blocks(
+    base: &[Block],
+    ours: &[Block],
+    theirs: &[Block],
+) -> Option<Vec<Block>> {
     let max_len = base.len().max(ours.len()).max(theirs.len());
     let mut merged = Vec::with_capacity(max_len);
 
@@ -240,7 +289,6 @@ fn merge_paragraphs(
             (None, None, Some(t)) => merged.push(t.clone()),
             (None, Some(o), Some(t)) => {
                 if o.text == t.text {
-                    // Both added same text — prefer ours (arbitrary but deterministic)
                     merged.push(o.clone());
                 } else {
                     return None;
@@ -248,22 +296,16 @@ fn merge_paragraphs(
             }
             (Some(_), Some(o), None) => merged.push(o.clone()),
             (Some(_), None, Some(t)) => merged.push(t.clone()),
-            (Some(_), None, None) => {
-                // Both deleted — omit
-            }
+            (Some(_), None, None) => {} // Both deleted
             (Some(b), Some(o), Some(t)) => {
                 if o.text == t.text {
-                    // Both changed to same text
                     merged.push(o.clone());
                 } else if o.text == b.text {
-                    // Only theirs changed
                     merged.push(t.clone());
                 } else if t.text == b.text {
-                    // Only ours changed
                     merged.push(o.clone());
                 } else {
-                    // Both changed differently — conflict
-                    return None;
+                    return None; // Conflict
                 }
             }
             (None, None, None) => unreachable!(),
@@ -272,8 +314,8 @@ fn merge_paragraphs(
     Some(merged)
 }
 
-/// Extract paragraphs from an OOXML document's main part.
-fn extract_paras(doc: &OoxmlDocument) -> Result<Vec<Paragraph>, DriverError> {
+/// Extract blocks from an OOXML document's main part.
+fn extract_blocks_from_doc(doc: &OoxmlDocument) -> Result<Vec<Block>, DriverError> {
     let main_path = doc
         .main_document_path()
         .ok_or_else(|| DriverError::ParseError("no main document part".into()))?;
@@ -281,7 +323,7 @@ fn extract_paras(doc: &OoxmlDocument) -> Result<Vec<Paragraph>, DriverError> {
         .get_part(main_path)
         .ok_or_else(|| DriverError::ParseError("main part missing".into()))?;
     let body = parse_body(&main.content)?;
-    Ok(body.paragraphs)
+    Ok(body.blocks)
 }
 
 pub struct DocxDriver;
@@ -321,9 +363,9 @@ impl SutureDriver for DocxDriver {
             .get_part(main_path)
             .ok_or_else(|| DriverError::ParseError("main document part missing".into()))?;
         let new_body = parse_body(&main_xml.content)?;
-        let new_paras = &new_body.paragraphs;
+        let new_blocks = &new_body.blocks;
 
-        let base_paras: Vec<String> = match base_content {
+        let base_blocks: Vec<Block> = match base_content {
             None => Vec::new(),
             Some(base) => {
                 let base_doc = OoxmlDocument::from_bytes(base.as_bytes())
@@ -335,28 +377,32 @@ impl SutureDriver for DocxDriver {
                     .get_part(bp)
                     .ok_or_else(|| DriverError::ParseError("main part missing".into()))?;
                 let base_body = parse_body(&bm.content)?;
-                base_body.paragraphs.iter().map(|p| p.text.clone()).collect()
+                base_body.blocks
             }
         };
 
-        let max_len = base_paras.len().max(new_paras.len());
+        let max_len = base_blocks.len().max(new_blocks.len());
         let mut changes = Vec::new();
 
         for i in 0..max_len {
-            let path = format!("/paragraphs/{}", i);
-            match (base_paras.get(i), new_paras.get(i)) {
+            let block_type = new_blocks
+                .get(i)
+                .map(|b| if b.kind == BlockKind::Table { "table" } else { "paragraph" })
+                .unwrap_or("paragraph");
+            let path = format!("/{}/{}", block_type, i);
+            match (base_blocks.get(i), new_blocks.get(i)) {
                 (None, Some(new)) => changes.push(SemanticChange::Added {
                     path,
                     value: new.text.clone(),
                 }),
                 (Some(old), None) => changes.push(SemanticChange::Removed {
                     path,
-                    old_value: old.to_string(),
+                    old_value: old.text.clone(),
                 }),
-                (Some(old), Some(new)) if old != &new.text => {
+                (Some(old), Some(new)) if old.text != new.text => {
                     changes.push(SemanticChange::Modified {
                         path,
-                        old_value: old.to_string(),
+                        old_value: old.text.clone(),
                         new_value: new.text.clone(),
                     });
                 }
@@ -421,15 +467,13 @@ impl SutureDriver for DocxDriver {
             .ok_or_else(|| DriverError::ParseError("base main part missing".into()))?;
         let base_body = parse_body(&base_main.content)?;
 
-        let ours_paras = extract_paras(&ours_doc)?;
-        let theirs_paras = extract_paras(&theirs_doc)?;
+        let ours_blocks = extract_blocks_from_doc(&ours_doc)?;
+        let theirs_blocks = extract_blocks_from_doc(&theirs_doc)?;
 
-        match merge_paragraphs(&base_body.paragraphs, &ours_paras, &theirs_paras) {
-            Some(merged_paras) => {
-                // Rebuild document.xml from base structure with merged paragraphs
-                let new_doc_xml = rebuild_document_xml(&base_body, &merged_paras);
+        match merge_blocks(&base_body.blocks, &ours_blocks, &theirs_blocks) {
+            Some(merged_blocks) => {
+                let new_doc_xml = rebuild_document_xml(&base_body, &merged_blocks);
 
-                // Create output document based on base, replacing only the main part
                 let mut out_doc = OoxmlDocument::from_bytes(base.as_bytes())
                     .map_err(|e| DriverError::ParseError(e.to_string()))?;
                 if let Some(part) = out_doc.parts.get_mut(&main_path) {
@@ -452,61 +496,56 @@ mod tests {
     use super::*;
     use std::io::{Cursor, Write};
 
-    /// Build a minimal valid DOCX ZIP from paragraph texts.
     fn make_docx(paragraphs: &[&str]) -> Vec<u8> {
-        let content_types = r#"<?xml version="1.0"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-  <Default Extension="xml" ContentType="application/xml"/>
-  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
-</Types>"#;
-        let mut doc_xml = String::new();
-        doc_xml.push_str(
-            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>"#,
-        );
-        for p in paragraphs {
-            doc_xml.push_str(&format!("<w:p><w:r><w:t>{}</w:t></w:r></w:p>", p));
-        }
-        doc_xml.push_str("</w:body></w:document>");
-
-        let mut buf = Vec::new();
-        {
-            let mut zip = zip::ZipWriter::new(Cursor::new(&mut buf));
-            zip.start_file(
-                "[Content_Types].xml",
-                zip::write::SimpleFileOptions::default(),
-            )
-            .unwrap();
-            zip.write_all(content_types.as_bytes()).unwrap();
-            zip.start_file(
-                "word/document.xml",
-                zip::write::SimpleFileOptions::default(),
-            )
-            .unwrap();
-            zip.write_all(doc_xml.as_bytes()).unwrap();
-            zip.finish().unwrap();
-        }
-        buf
+        make_docx_raw(&paragraphs.iter().map(|p| (*p, vec![])).collect::<Vec<_>>())
     }
 
-    /// Build a DOCX with styled paragraphs that include formatting XML.
-    fn make_styled_docx() -> Vec<u8> {
+    /// Build a DOCX from a list of (paragraph_text, table_rows) items.
+    /// An empty table_rows vec means it's a paragraph; non-empty means it's a table.
+    fn make_docx_raw(items: &[(&str, Vec<Vec<&str>>)]) -> Vec<u8> {
         let content_types = r#"<?xml version="1.0"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
   <Default Extension="xml" ContentType="application/xml"/>
   <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
 </Types>"#;
-        // Document with formatting: bold, italic, heading style, multiple runs
-        let doc_xml = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-  <w:body>
-    <w:p><w:pPr><w:pStyle w:val="Title"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="48"/></w:rPr><w:t>BIG TITLE</w:t></w:r></w:p>
-    <w:p><w:r><w:t>Normal </w:t></w:r><w:r><w:rPr><w:b/></w:rPr><w:t>bold</w:t></w:r><w:r><w:t> </w:t></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>italic</w:t></w:r><w:r><w:t> text</w:t></w:r></w:p>
-    <w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Section One</w:t></w:r></w:p>
-    <w:p w:rsidR="00112233"><w:r><w:t xml:space="preserve">Preserved  space text</w:t></w:r></w:p>
-  </w:body>
-</w:document>"#;
+
+        let mut doc_xml = String::from(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\
+             <w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body>",
+        );
+        for (text, rows) in items {
+            if rows.is_empty() {
+                // Paragraph
+                let escaped = text
+                    .replace('&', "&amp;")
+                    .replace('<', "&lt;")
+                    .replace('>', "&gt;");
+                doc_xml
+                    .push_str(&format!("<w:p><w:r><w:t>{escaped}</w:t></w:r></w:p>"));
+            } else {
+                // Table
+                doc_xml.push_str(
+                    "<w:tbl><w:tblPr><w:tblStyle w:val=\"TableGrid\"/></w:tblPr>\
+                     <w:tblGrid><w:gridCol w:w=\"5000\"/><w:gridCol w:w=\"5000\"/></w:tblGrid>",
+                );
+                for row in rows {
+                    doc_xml.push_str("<w:tr>");
+                    for cell in row {
+                        let escaped = cell
+                            .replace('&', "&amp;")
+                            .replace('<', "&lt;")
+                            .replace('>', "&gt;");
+                        doc_xml.push_str(&format!(
+                            "<w:tc><w:p><w:r><w:t>{escaped}</w:t></w:r></w:p></w:tc>"
+                        ));
+                    }
+                    doc_xml.push_str("</w:tr>");
+                }
+                doc_xml.push_str("</w:tbl>");
+            }
+        }
+        doc_xml.push_str("</w:body></w:document>");
 
         let mut buf = Vec::new();
         {
@@ -605,7 +644,94 @@ mod tests {
         assert!(result.is_none());
     }
 
-    // === XML preservation tests ===
+    // === Table preservation tests ===
+
+    #[test]
+    fn test_table_preserved_in_merge() {
+        let d = DocxDriver::new();
+
+        // Base: paragraph, table, paragraph
+        let base = make_docx_raw(&[
+            ("Intro", vec![]),
+            ("", vec![vec!["Name", "Age"], vec!["Alice", "30"], vec!["Bob", "25"]]),
+            ("Outro", vec![]),
+        ]);
+
+        // Ours: change intro text
+        let ours = make_docx_raw(&[
+            ("CHANGED Intro", vec![]),
+            ("", vec![vec!["Name", "Age"], vec!["Alice", "30"], vec!["Bob", "25"]]),
+            ("Outro", vec![]),
+        ]);
+
+        // Theirs: change outro text
+        let theirs = make_docx_raw(&[
+            ("Intro", vec![]),
+            ("", vec![vec!["Name", "Age"], vec!["Alice", "30"], vec!["Bob", "25"]]),
+            ("CHANGED Outro", vec![]),
+        ]);
+
+        let merged = d
+            .merge(&docx_str(&base), &docx_str(&ours), &docx_str(&theirs))
+            .unwrap();
+        assert!(merged.is_some());
+
+        // Verify table survived
+        let merged_str = merged.unwrap();
+        assert!(merged_str.contains("<w:tbl>"), "table should be preserved");
+        assert!(merged_str.contains("<w:tblGrid>"), "table grid should be preserved");
+        assert!(merged_str.contains("<w:tr>"), "table rows should be preserved");
+        assert!(merged_str.contains("<w:tc>"), "table cells should be preserved");
+        assert!(merged_str.contains("Alice"), "table data should be preserved");
+        assert!(merged_str.contains("Bob"), "table data should be preserved");
+    }
+
+    #[test]
+    fn test_table_is_atomic_block() {
+        let d = DocxDriver::new();
+
+        // Base: has a table
+        let base = make_docx_raw(&[
+            ("Before", vec![]),
+            ("", vec![vec!["A", "B"], vec!["1", "2"]]),
+            ("After", vec![]),
+        ]);
+
+        // Ours: table unchanged, modify before/after
+        let ours = make_docx_raw(&[
+            ("CHANGED Before", vec![]),
+            ("", vec![vec!["A", "B"], vec!["1", "2"]]),
+            ("CHANGED After", vec![]),
+        ]);
+
+        // Theirs: same table, modify before
+        let theirs = make_docx_raw(&[
+            ("DIFFERENT Before", vec![]),
+            ("", vec![vec!["A", "B"], vec!["1", "2"]]),
+            ("After", vec![]),
+        ]);
+
+        let result = d
+            .merge(&docx_str(&base), &docx_str(&ours), &docx_str(&theirs))
+            .unwrap();
+        assert!(result.is_none(), "conflicting edits to paragraph before table should conflict");
+    }
+
+    #[test]
+    fn test_diff_shows_table_blocks() {
+        let d = DocxDriver::new();
+        let base = make_docx_raw(&[("Para", vec![])]);
+        let new = make_docx_raw(&[
+            ("Para", vec![]),
+            ("", vec![vec!["H1", "H2"], vec!["V1", "V2"]]),
+        ]);
+
+        let changes = d.diff(Some(&docx_str(&base)), &docx_str(&new)).unwrap();
+        assert!(changes.iter().any(|c| matches!(
+            c,
+            SemanticChange::Added { path, .. } if path.starts_with("/table/")
+        )));
+    }
 
     #[test]
     fn test_parse_preserves_raw_xml() {
@@ -615,28 +741,25 @@ mod tests {
         let main = doc.get_part(main_path).unwrap();
         let body = parse_body(&main.content).unwrap();
 
-        assert_eq!(body.paragraphs.len(), 4);
+        assert_eq!(body.blocks.len(), 4);
 
-        // First paragraph should have the Title style
-        assert!(body.paragraphs[0].raw_xml.contains(r#"<w:pStyle w:val="Title"/>"#));
-        assert!(body.paragraphs[0].raw_xml.contains("<w:b/>"));
-        assert_eq!(body.paragraphs[0].text, "BIG TITLE");
+        // First block should have the Title style
+        assert!(body.blocks[0].raw_xml.contains(r#"<w:pStyle w:val="Title"/>"#));
+        assert!(body.blocks[0].raw_xml.contains("<w:b/>"));
+        assert_eq!(body.blocks[0].text, "BIG TITLE");
 
-        // Second paragraph has multiple runs with bold/italic
-        assert_eq!(
-            body.paragraphs[1].text,
-            "Normal bold italic text"
-        );
-        assert!(body.paragraphs[1].raw_xml.contains("<w:b/>"));
-        assert!(body.paragraphs[1].raw_xml.contains("<w:i/>"));
+        // Second block has multiple runs with bold/italic
+        assert_eq!(body.blocks[1].text, "Normal bold italic text");
+        assert!(body.blocks[1].raw_xml.contains("<w:b/>"));
+        assert!(body.blocks[1].raw_xml.contains("<w:i/>"));
 
-        // Third paragraph has Heading1 style
-        assert!(body.paragraphs[2].raw_xml.contains(r#"<w:pStyle w:val="Heading1"/>"#));
+        // Third block has Heading1 style
+        assert!(body.blocks[2].raw_xml.contains(r#"<w:pStyle w:val="Heading1"/>"#));
 
-        // Fourth paragraph preserves xml:space and rsidR attribute
-        assert!(body.paragraphs[3].raw_xml.contains(r#"xml:space="preserve""#));
-        assert!(body.paragraphs[3].raw_xml.contains(r#"w:rsidR="00112233""#));
-        assert_eq!(body.paragraphs[3].text, "Preserved  space text");
+        // Fourth block preserves xml:space and rsidR attribute
+        assert!(body.blocks[3].raw_xml.contains(r#"xml:space="preserve""#));
+        assert!(body.blocks[3].raw_xml.contains(r#"w:rsidR="00112233""#));
+        assert_eq!(body.blocks[3].text, "Preserved  space text");
     }
 
     #[test]
@@ -645,14 +768,6 @@ mod tests {
         let styled = make_styled_docx();
         let styled_str = docx_str(&styled);
 
-        // Create a modified version where we change paragraph 2 (index 1)
-        // We rebuild by hand to simulate a "real" edit
-        let modified_content_types = r#"<?xml version="1.0"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-  <Default Extension="xml" ContentType="application/xml"/>
-  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
-</Types>"#;
         let modified_doc_xml = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
   <w:body>
@@ -662,20 +777,8 @@ mod tests {
     <w:p w:rsidR="00112233"><w:r><w:t xml:space="preserve">Preserved  space text</w:t></w:r></w:p>
   </w:body>
 </w:document>"#;
-        let mut buf = Vec::new();
-        {
-            let mut zip = zip::ZipWriter::new(Cursor::new(&mut buf));
-            zip.start_file("[Content_Types].xml", zip::write::SimpleFileOptions::default())
-                .unwrap();
-            zip.write_all(modified_content_types.as_bytes()).unwrap();
-            zip.start_file("word/document.xml", zip::write::SimpleFileOptions::default())
-                .unwrap();
-            zip.write_all(modified_doc_xml.as_bytes()).unwrap();
-            zip.finish().unwrap();
-        }
-        let modified_str = docx_str(&buf);
+        let modified_str = docx_bytes(&make_docx_from_xml(modified_doc_xml));
 
-        // Create another version that changes paragraph 3 (index 2)
         let modified2_doc_xml = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
   <w:body>
@@ -685,41 +788,25 @@ mod tests {
     <w:p w:rsidR="00112233"><w:r><w:t xml:space="preserve">Preserved  space text</w:t></w:r></w:p>
   </w:body>
 </w:document>"#;
-        let mut buf2 = Vec::new();
-        {
-            let mut zip = zip::ZipWriter::new(Cursor::new(&mut buf2));
-            zip.start_file("[Content_Types].xml", zip::write::SimpleFileOptions::default())
-                .unwrap();
-            zip.write_all(modified_content_types.as_bytes()).unwrap();
-            zip.start_file("word/document.xml", zip::write::SimpleFileOptions::default())
-                .unwrap();
-            zip.write_all(modified2_doc_xml.as_bytes()).unwrap();
-            zip.finish().unwrap();
-        }
-        let modified2_str = docx_str(&buf2);
+        let modified2_str = docx_bytes(&make_docx_from_xml(modified2_doc_xml));
 
         let merged = d
             .merge(&styled_str, &modified_str, &modified2_str)
             .unwrap();
         assert!(merged.is_some(), "non-overlapping edits should merge");
 
-        // Verify the merged result preserves formatting
         let merged_doc = OoxmlDocument::from_bytes(merged.unwrap().as_bytes()).unwrap();
         let merged_main = merged_doc
             .get_part(merged_doc.main_document_path().unwrap())
             .unwrap();
         let merged_body = parse_body(&merged_main.content).unwrap();
 
-        assert_eq!(merged_body.paragraphs.len(), 4);
-        // Title formatting preserved
-        assert!(merged_body.paragraphs[0].raw_xml.contains("<w:b/>"));
-        assert_eq!(merged_body.paragraphs[0].text, "BIG TITLE");
-        // Ours' change to paragraph 1
-        assert_eq!(merged_body.paragraphs[1].text, "CHANGED PARAGRAPH");
-        // Theirs' change to paragraph 2
-        assert_eq!(merged_body.paragraphs[2].text, "CHANGED HEADING");
-        // Paragraph 3 preserved with rsidR attribute
-        assert!(merged_body.paragraphs[3].raw_xml.contains(r#"w:rsidR="00112233""#));
+        assert_eq!(merged_body.blocks.len(), 4);
+        assert!(merged_body.blocks[0].raw_xml.contains("<w:b/>"));
+        assert_eq!(merged_body.blocks[0].text, "BIG TITLE");
+        assert_eq!(merged_body.blocks[1].text, "CHANGED PARAGRAPH");
+        assert_eq!(merged_body.blocks[2].text, "CHANGED HEADING");
+        assert!(merged_body.blocks[3].raw_xml.contains(r#"w:rsidR="00112233""#));
     }
 
     #[test]
@@ -732,12 +819,12 @@ mod tests {
 </w:document>"#;
 
         let body = parse_body(doc_xml).unwrap();
-        assert!(body.prefix.contains("xmlns:r="), "prefix should preserve extra namespaces");
-        assert!(body.prefix.contains("<?xml"), "prefix should preserve XML declaration");
+        assert!(body.prefix.contains("xmlns:r="));
+        assert!(body.prefix.contains("<?xml"));
 
-        let rebuilt = rebuild_document_xml(&body, &body.paragraphs);
-        assert!(rebuilt.contains("xmlns:r="), "rebuilt should preserve extra namespaces");
-        assert!(rebuilt.contains("<?xml"), "rebuilt should preserve XML declaration");
+        let rebuilt = rebuild_document_xml(&body, &body.blocks);
+        assert!(rebuilt.contains("xmlns:r="));
+        assert!(rebuilt.contains("<?xml"));
     }
 
     #[test]
@@ -745,24 +832,17 @@ mod tests {
         let doc_xml = r#"<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Page 1</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:body></w:document>"#;
 
         let body = parse_body(doc_xml).unwrap();
-        assert_eq!(body.paragraphs.len(), 1);
-        assert!(
-            body.trailing_body_content.contains("<w:sectPr>"),
-            "trailing content should include sectPr"
-        );
-        assert!(
-            body.trailing_body_content.contains("w:w=\"12240\""),
-            "sectPr attributes should be preserved"
-        );
+        assert_eq!(body.blocks.len(), 1);
+        assert!(body.trailing_body_content.contains("<w:sectPr>"));
+        assert!(body.trailing_body_content.contains("w:w=\"12240\""));
 
-        let rebuilt = rebuild_document_xml(&body, &body.paragraphs);
-        assert!(rebuilt.contains("<w:sectPr>"), "rebuilt should preserve sectPr");
+        let rebuilt = rebuild_document_xml(&body, &body.blocks);
+        assert!(rebuilt.contains("<w:sectPr>"));
         assert!(rebuilt.contains("w:w=\"12240\""));
     }
 
     #[test]
     fn test_empty_paragraph_handled() {
-        let d = DocxDriver::new();
         let doc_xml = r#"<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p/><w:p><w:r><w:t>Text</w:t></w:r></w:p></w:body></w:document>"#;
 
         let content_types = r#"<?xml version="1.0"?>
@@ -782,23 +862,78 @@ mod tests {
             zip.finish().unwrap();
         }
 
+        let d = DocxDriver::new();
         let changes = d.diff(None, &docx_str(&buf)).unwrap();
-        assert_eq!(changes.len(), 2, "should detect empty + text paragraphs");
+        assert_eq!(changes.len(), 2);
         assert!(matches!(&changes[0], SemanticChange::Added { value, .. } if value.is_empty()));
         assert!(matches!(&changes[1], SemanticChange::Added { value, .. } if value == "Text"));
     }
 
     #[test]
     fn test_bookmark_between_paragraphs() {
-        // Real DOCX files often have <w:bookmarkEnd> between paragraphs
         let doc_xml = r#"<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Para 1</w:t></w:r></w:p></w:bookmarkEnd><w:p><w:r><w:t>Para 2</w:t></w:r></w:p></w:body></w:document>"#;
 
         let body = parse_body(doc_xml).unwrap();
-        // bookmarkEnd is not a <w:p> element, so it becomes trailing content
-        // But it's between paragraphs, not after the last one...
-        // Actually our parser extracts w:p elements in order, and trailing is after last </w:p>
-        assert_eq!(body.paragraphs.len(), 2);
-        assert_eq!(body.paragraphs[0].text, "Para 1");
-        assert_eq!(body.paragraphs[1].text, "Para 2");
+        assert_eq!(body.blocks.len(), 2);
+        assert_eq!(body.blocks[0].text, "Para 1");
+        assert_eq!(body.blocks[1].text, "Para 2");
+    }
+
+    // === Helpers ===
+
+    fn make_styled_docx() -> Vec<u8> {
+        let content_types = r#"<?xml version="1.0"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>"#;
+        let doc_xml = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:pPr><w:pStyle w:val="Title"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="48"/></w:rPr><w:t>BIG TITLE</w:t></w:r></w:p>
+    <w:p><w:r><w:t>Normal </w:t></w:r><w:r><w:rPr><w:b/></w:rPr><w:t>bold</w:t></w:r><w:r><w:t> </w:t></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>italic</w:t></w:r><w:r><w:t> text</w:t></w:r></w:p>
+    <w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Section One</w:t></w:r></w:p>
+    <w:p w:rsidR="00112233"><w:r><w:t xml:space="preserve">Preserved  space text</w:t></w:r></w:p>
+  </w:body>
+</w:document>"#;
+
+        let mut buf = Vec::new();
+        {
+            let mut zip = zip::ZipWriter::new(Cursor::new(&mut buf));
+            zip.start_file("[Content_Types].xml", zip::write::SimpleFileOptions::default())
+                .unwrap();
+            zip.write_all(content_types.as_bytes()).unwrap();
+            zip.start_file("word/document.xml", zip::write::SimpleFileOptions::default())
+                .unwrap();
+            zip.write_all(doc_xml.as_bytes()).unwrap();
+            zip.finish().unwrap();
+        }
+        buf
+    }
+
+    fn make_docx_from_xml(doc_xml: &str) -> Vec<u8> {
+        let content_types = r#"<?xml version="1.0"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>"#;
+        let mut buf = Vec::new();
+        {
+            let mut zip = zip::ZipWriter::new(Cursor::new(&mut buf));
+            zip.start_file("[Content_Types].xml", zip::write::SimpleFileOptions::default())
+                .unwrap();
+            zip.write_all(content_types.as_bytes()).unwrap();
+            zip.start_file("word/document.xml", zip::write::SimpleFileOptions::default())
+                .unwrap();
+            zip.write_all(doc_xml.as_bytes()).unwrap();
+            zip.finish().unwrap();
+        }
+        buf
+    }
+
+    fn docx_bytes(bytes: &[u8]) -> String {
+        unsafe { String::from_utf8_unchecked(bytes.to_vec()) }
     }
 }

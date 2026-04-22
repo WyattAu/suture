@@ -2,8 +2,8 @@
 # Suture Git Merge Driver
 #
 # Lets Git use Suture's semantic merge for conflict resolution on structured
-# files (JSON, YAML, TOML, CSV, XML, Markdown). When a merge conflict occurs
-# on a configured file type, Git invokes this script with three file paths:
+# files. When a merge conflict occurs on a configured file type, Git invokes
+# this script with three file paths:
 #
 #   $1 = %O  (base/ancestor version)
 #   $2 = %A  (ours version — Git reads this back as the merge result)
@@ -13,27 +13,15 @@
 # If the merge succeeds, the merged content is written to $2 and the script
 # exits 0. If it fails, Git falls back to its default line-based merge.
 #
-# --- SETUP ---
+# --- QUICK SETUP ---
 #
-# 1. Register the driver (run once per repo or globally with --global):
+#   suture git driver install
 #
-#      git config merge.suture.name "Suture semantic merge"
-#      git config merge.suture.driver "/path/to/suture-merge-driver %O %A %B %P"
+# Or manually:
 #
-# 2. Tell Git which file types to route through Suture (add to .gitattributes):
-#
-#      echo "*.json merge=suture"  >> .gitattributes
-#      echo "*.yaml merge=suture"  >> .gitattributes
-#      echo "*.yml  merge=suture"  >> .gitattributes
-#      echo "*.toml merge=suture"  >> .gitattributes
-#      echo "*.csv  merge=suture"  >> .gitattributes
-#      echo "*.xml  merge=suture"  >> .gitattributes
-#      echo "*.md   merge=suture"  >> .gitattributes
-#
-# 3. Commit .gitattributes and merge normally:
-#
-#      git add .gitattributes
-#      git commit -m "Configure suture merge driver"
+#   git config merge.suture.name "Suture semantic merge"
+#   git config merge.suture.driver "/path/to/suture-merge-driver %O %A %B %P"
+#   echo "*.json merge=suture" >> .gitattributes
 #
 # See docs/git_merge_driver.md for full documentation.
 
@@ -54,24 +42,11 @@ else
     exit 1
 fi
 
-# --- Detect driver from file extension ---
-# Git passes temp files (e.g. .merge_file_XXXX) without the original extension,
-# so we use $4 (%P) — the original file path — when available.
-ORIG_PATH="${4:-$OURS}"
-EXT="${ORIG_PATH##*.}"
-case "$EXT" in
-    json|yaml|yml|toml|csv|xml|md)
-        DRIVER="--driver $EXT"
-        ;;
-    *)
-        # Unknown extension — fall back to Git's default line-based merge
-        cp "$THEIRS" "$OURS"
-        exit 0
-        ;;
-esac
-
-# --- Run semantic merge ---
-if "$SUTURE" merge-file $DRIVER "$BASE" "$OURS" "$THEIRS" -o "$OURS" 2>/dev/null; then
+# --- Run semantic merge with auto driver detection ---
+# --driver auto detects the driver from the original file path (%P).
+# For binary formats (DOCX, XLSX, PPTX), Suture reads the ZIP, merges at
+# the structural level, and writes a new ZIP.
+if "$SUTURE" merge-file --driver auto "$BASE" "$OURS" "$THEIRS" -o "$OURS" 2>/dev/null; then
     # Clean merge — result written to $2 (ours), mark as resolved
     exit 0
 else
@@ -81,6 +56,6 @@ else
     fi
     # Neither semantic nor line-based merge succeeded.
     # Exit non-zero so Git falls back to its default conflict behavior.
-    echo "suture: merge conflict on $OURS" >&2
+    echo "suture: merge conflict on ${4:-$OURS}" >&2
     exit 1
 fi

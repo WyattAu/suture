@@ -1,5 +1,6 @@
 pub(crate) const ANSI_RED: &str = "\x1b[31m";
 pub(crate) const ANSI_GREEN: &str = "\x1b[32m";
+pub(crate) const ANSI_YELLOW: &str = "\x1b[33m";
 pub(crate) const ANSI_BOLD_CYAN: &str = "\x1b[1;36m";
 pub(crate) const ANSI_RESET: &str = "\x1b[0m";
 
