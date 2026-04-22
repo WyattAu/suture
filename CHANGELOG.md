@@ -1,5 +1,48 @@
 # Changelog
 
+## [4.1.0] - 2026-04-22
+
+Production VCS readiness release — 10 new commands, core engine improvements, binary diff fix.
+
+### New Commands
+
+- **`suture switch`** — Modern branch switching (alias for `checkout -b`)
+- **`suture restore`** — Restore working tree files from HEAD or specific ref (`--staged` to unstage)
+- **`suture ls-remote`** — List branches on a remote Hub without cloning
+- **`suture archive`** — Export repo contents as tar.gz/tar/zip (`--format`, `--prefix`)
+- **`suture grep`** — Search tracked file content with regex (`-i`, `-l`, `-F`, `-C`)
+- **`suture stash branch`** — Create and checkout a branch from a stash entry
+
+### New Flags
+
+- **`suture log --stat`** — Show per-commit file change statistics
+- **`suture log --diff`** — Show patch content inline in log output
+- **`suture diff --name-only`** — List only changed file names
+- **`suture blame --at <ref>`** — Blame as of a specific commit
+
+### Core Engine
+
+- **Unified `resolve_ref()`** — Single method for HEAD, HEAD~N, hex hash, short prefix, tag, branch resolution. Refactored `create_branch`, `create_tag`, `reset`, `diff` to use it (fixes bug where `reset <tag>` failed).
+- **Detached HEAD** — Checkout arbitrary commits without a branch. `is_detached()`, `get_detached_head()`, status shows "HEAD detached at <hash>".
+- **Historical blame** — `blame()` now accepts an optional `at` parameter for blaming at any commit.
+
+### CLI Improvements
+
+- **Remote tracking in status** — Shows ahead/behind counts when remote tracking refs exist. `do_fetch` saves remote branch tips for comparison.
+- **Progress indicators** — clone, fetch, pull, push now show progress messages (blob/patch counts).
+- **Binary format diff fix** — `suture diff` for DOCX/XLSX/PPTX/PDF/images now uses `from_utf8_unchecked` to preserve raw bytes, enabling semantic drivers to receive intact ZIP/binary content.
+
+### Library
+
+- **suture-merge v0.2** — DOCX/XLSX/PPTX feature flags, public merge functions, 4 new integration tests
+- **suture-action** — GitHub composite action for CI/CD semantic merge
+- **Dependency bumps** — roxmltree 0.21, rayon 1.12
+
+### Documentation
+
+- **Blog post** — "I Built a Semantic Merge Engine in Rust That Understands Word, Excel, and PowerPoint Files" (~950 words)
+- **14 dependabot issues closed** with documented rationale for deferred major version bumps
+
 ## [4.0.0] - 2026-04-22
 
 Major driver rewrite release — all OOXML and OTIO drivers rewritten for production quality.

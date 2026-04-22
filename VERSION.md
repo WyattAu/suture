@@ -1,8 +1,8 @@
 # Suture Version
 
-- **Current Version:** 4.0.0
+- **Current Version:** 4.1.0
 - **Crates.io:** 31 crates published (suture-cli requires Node.js build; install from source)
-- **Current Phase:** Phase C — Distribution & Adoption
+- **Current Phase:** Phase 7C — Documentation & Polish
 - **Status:** Active Development
 - **Last Updated:** 2026-04-22
 - **Rust Edition:** 2024
