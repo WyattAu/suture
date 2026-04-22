@@ -48,37 +48,53 @@ assert_eq!(result.status, MergeStatus::Clean);
 | CSV | `csv` (default) | Supported |
 | XML | `xml` | Supported |
 | Markdown | `markdown` | Supported |
+| DOCX | `docx` | Supported |
+| XLSX | `xlsx` | Supported |
+| PPTX | `pptx` | Supported |
 | SVG | `svg` | Supported |
 | HTML | `html` | Supported |
 | iCalendar | `ical` | Supported |
 | RSS/Atom | `feed` | Supported |
 
+## Binary Document Merge
+
+DOCX, XLSX, and PPTX files are ZIP archives containing XML content. `suture-merge` extracts the XML from these archives, parses it semantically, and performs three-way merges — just like it does for plain-text structured formats. The result is a valid document with both sets of changes merged intelligently.
+
+```rust
+use suture_merge::{merge_docx, MergeStatus};
+
+// base, ours, theirs are the raw DOCX file bytes as strings
+let result = merge_docx(&base, &ours, &theirs)?;
+assert!(matches!(result.status, MergeStatus::Clean | MergeStatus::Conflict));
+```
+
 ## Install
 
 ```toml
 [dependencies]
-suture-merge = "0.1"
+suture-merge = "0.2"
 ```
 
 Or with specific formats:
 
 ```toml
 [dependencies]
-suture-merge = { version = "0.1", features = ["json", "yaml"] }
+suture-merge = { version = "0.2", features = ["json", "yaml"] }
 ```
 
 Enable everything:
 
 ```toml
 [dependencies]
-suture-merge = { version = "0.1", features = ["all"] }
+suture-merge = { version = "0.2", features = ["all"] }
 ```
 
 ## API
 
 ```rust
 use suture_merge::{merge_json, merge_yaml, merge_toml, merge_csv,
-                   merge_xml, merge_markdown, merge_svg, merge_html,
+                   merge_xml, merge_markdown, merge_docx, merge_xlsx,
+                   merge_pptx, merge_svg, merge_html,
                    merge_ical, merge_feed, merge_auto, diff, format_diff,
                    MergeResult, MergeStatus, MergeError};
 
@@ -89,6 +105,9 @@ let result: MergeResult = merge_toml(base, ours, theirs)?;
 let result: MergeResult = merge_csv(base, ours, theirs)?;
 let result: MergeResult = merge_xml(base, ours, theirs)?;
 let result: MergeResult = merge_markdown(base, ours, theirs)?;
+let result: MergeResult = merge_docx(base, ours, theirs)?;
+let result: MergeResult = merge_xlsx(base, ours, theirs)?;
+let result: MergeResult = merge_pptx(base, ours, theirs)?;
 let result: MergeResult = merge_svg(base, ours, theirs)?;
 let result: MergeResult = merge_html(base, ours, theirs)?;
 let result: MergeResult = merge_ical(base, ours, theirs)?;

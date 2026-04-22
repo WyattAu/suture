@@ -1,6 +1,6 @@
 //! # suture-merge
 //!
-//! Dead-simple semantic merge for structured files.
+//! Dead-simple semantic merge for structured files, including DOCX, XLSX, and PPTX binary documents.
 //!
 //! ## Quick Start
 //!
@@ -75,6 +75,21 @@ pub fn merge_ical(base: &str, ours: &str, theirs: &str) -> Result<MergeResult, M
 #[cfg(feature = "feed")]
 pub fn merge_feed(base: &str, ours: &str, theirs: &str) -> Result<MergeResult, MergeError> {
     perform_merge(&suture_driver_feed::FeedDriver, base, ours, theirs)
+}
+
+#[cfg(feature = "docx")]
+pub fn merge_docx(base: &str, ours: &str, theirs: &str) -> Result<MergeResult, MergeError> {
+    perform_merge(&suture_driver_docx::DocxDriver, base, ours, theirs)
+}
+
+#[cfg(feature = "xlsx")]
+pub fn merge_xlsx(base: &str, ours: &str, theirs: &str) -> Result<MergeResult, MergeError> {
+    perform_merge(&suture_driver_xlsx::XlsxDriver, base, ours, theirs)
+}
+
+#[cfg(feature = "pptx")]
+pub fn merge_pptx(base: &str, ours: &str, theirs: &str) -> Result<MergeResult, MergeError> {
+    perform_merge(&suture_driver_pptx::PptxDriver, base, ours, theirs)
 }
 
 pub fn merge_auto(base: &str, ours: &str, theirs: &str, extension: Option<&str>) -> Result<MergeResult, MergeError> {

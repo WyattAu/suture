@@ -1,0 +1,123 @@
+name: 'Suture Semantic Merge'
+description: 'Automatically resolve merge conflicts in JSON, YAML, TOML, CSV, XML, Markdown, DOCX, XLSX, and PPTX files using semantic merge'
+author: 'WyattAu'
+
+inputs:
+  formats:
+    description: 'Comma-separated list of formats to handle (json,yaml,toml,csv,xml,markdown,docx,xlsx,pptx)'
+    required: false
+    default: 'json,yaml,toml,csv,xml,markdown'
+  working-directory:
+    description: 'Directory to run in'
+    required: false
+    default: '.'
+  fail-on-conflict:
+    description: 'Fail the workflow if semantic merge cannot resolve a conflict (true/false)'
+    required: false
+    default: 'true'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install suture
+      shell: bash
+      run: |
+        cd "${{ inputs.working-directory }}"
+        # Try cargo install first (fastest if already cached)
+        if command -v cargo &>/dev/null; then
+          cargo install suture-cli --locked --root "$HOME/.local" 2>/dev/null || true
+          if [ -x "$HOME/.local/bin/suture" ]; then
+            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+            echo "Installed suture via cargo"
+            exit 0
+          fi
+        fi
+        # Fallback: build from source
+        echo "Building suture from source..."
+        git clone --depth 1 https://github.com/WyattAu/suture.git /tmp/suture-build
+        cd /tmp/suture-build
+        cargo build --release --bin suture 2>/dev/null
+        cp target/release/suture "$HOME/.local/bin/" || sudo cp target/release/suture /usr/local/bin/
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH" || true
+        echo "Built suture from source"
+
+    - name: Configure git merge driver
+      shell: bash
+      run: |
+        cd "${{ inputs.working-directory }}"
+        SUTURE_BIN="$(which suture)" || SUTURE_BIN="$HOME/.local/bin/suture"
+        # Create a merge driver script
+        mkdir -p .suture-ci
+        cat > .suture-ci/merge-driver.sh << 'SCRIPT'
+        #!/bin/bash
+        # Git merge driver using suture semantic merge
+        BASE="$1"
+        LOCAL="$2"
+        REMOTE="$3"
+        MARKER_SIZE="$4"
+        EXT="${LOCAL##*.}"
+        FORMATS="json,yaml,toml,csv,xml,markdown,docx,xlsx,pptx"
+        case ",$FORMATS," in
+          *",$EXT,"*)
+            if suture merge-file --driver auto -o "$LOCAL" "$BASE" "$LOCAL" "$REMOTE" 2>/dev/null; then
+              exit 0
+            fi
+            # If semantic merge fails, fall back to default
+            ;;
+        esac
+        # Try default merge
+        git merge-file -L "ours" -L "base" -L "theirs" "$LOCAL" "$BASE" "$REMOTE"
+        SCRIPT
+        chmod +x .suture-ci/merge-driver.sh
+        echo "SUTURE_MERGE_DRIVER=$(pwd)/.suture-ci/merge-driver.sh" >> "$GITHUB_ENV"
+
+    - name: Attempt merge
+      shell: bash
+      run: |
+        cd "${{ inputs.working-directory }}"
+        # Configure git
+        git config user.name "suture-action[bot]"
+        git config user.email "suture-action[bot]@users.noreply.github.com"
+        
+        # Set up merge driver for each format
+        IFS=',' read -ra FORMATS <<< "${{ inputs.formats }}"
+        for fmt in "${FORMATS[@]}"; do
+          case "$fmt" in
+            json)  git config merge.suture-json.name "Suture JSON merge" && git config merge.suture-json.driver "$SUTURE_MERGE_DRIVER %O %A %B %L" ;;
+            yaml)  git config merge.suture-yaml.name "Suture YAML merge" && git config merge.suture-yaml.driver "$SUTURE_MERGE_DRIVER %O %A %B %L" ;;
+            toml)  git config merge.suture-toml.name "Suture TOML merge" && git config merge.suture-toml.driver "$SUTURE_MERGE_DRIVER %O %A %B %L" ;;
+            csv)   git config merge.suture-csv.name "Suture CSV merge" && git config merge.suture-csv.driver "$SUTURE_MERGE_DRIVER %O %A %B %L" ;;
+            xml)   git config merge.suture-xml.name "Suture XML merge" && git config merge.suture-xml.driver "$SUTURE_MERGE_DRIVER %O %A %B %L" ;;
+            md|markdown) git config merge.suture-markdown.name "Suture Markdown merge" && git config merge.suture-markdown.driver "$SUTURE_MERGE_DRIVER %O %A %B %L" ;;
+            docx)  git config merge.suture-docx.name "Suture DOCX merge" && git config merge.suture-docx.driver "$SUTURE_MERGE_DRIVER %O %A %B %L" ;;
+            xlsx)  git config merge.suture-xlsx.name "Suture XLSX merge" && git config merge.suture-xlsx.driver "$SUTURE_MERGE_DRIVER %O %A %B %L" ;;
+            pptx)  git config merge.suture-pptx.name "Suture PPTX merge" && git config merge.suture-pptx.driver "$SUTURE_MERGE_DRIVER %O %A %B %L" ;;
+          esac
+        done
+        
+        # Create .gitattributes for the configured formats
+        ATTRS=""
+        for fmt in "${FORMATS[@]}"; do
+          case "$fmt" in
+            json) ATTRS="${ATTRS}*.json merge=suture-json\n" ;;
+            yaml) ATTRS="${ATTRS}*.{yaml,yml} merge=suture-yaml\n" ;;
+            toml) ATTRS="${ATTRS}*.toml merge=suture-toml\n" ;;
+            csv)  ATTRS="${ATTRS}*.csv merge=suture-csv\n" ;;
+            xml)  ATTRS="${ATTRS}*.xml merge=suture-xml\n" ;;
+            markdown) ATTRS="${ATTRS}*.{md,markdown} merge=suture-markdown\n" ;;
+            docx) ATTRS="${ATTRS}*.docx merge=suture-docx\n" ;;
+            xlsx) ATTRS="${ATTRS}*.xlsx merge=suture-xlsx\n" ;;
+            pptx) ATTRS="${ATTRS}*.pptx merge=suture-pptx\n" ;;
+          esac
+        done
+        printf "%b" "$ATTRS" >> .gitattributes
+        git add .gitattributes
+        
+        echo ""
+        echo "=== Suture Semantic Merge ==="
+        echo "Configured for: ${{ inputs.formats }}"
+        echo "Fail on conflict: ${{ inputs.fail-on-conflict }}"
+        echo ""
+        echo "Suture will now attempt to merge the current branch."
+        echo "Structured file conflicts will be resolved semantically."
+        echo "================================"

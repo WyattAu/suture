@@ -1,14 +1,14 @@
 [package]
 name = "suture-merge"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 license.workspace = true
 repository.workspace = true
-description = "Dead-simple semantic merge for structured files. Merge JSON, YAML, TOML, CSV, XML, Markdown, SVG, HTML, iCalendar, and RSS/Atom feeds."
+description = "Dead-simple semantic merge for structured files. Merge JSON, YAML, TOML, CSV, XML, Markdown, DOCX, XLSX, PPTX, SVG, HTML, iCalendar, and RSS/Atom feeds."
 homepage.workspace = true
-keywords = ["merge", "semantic-merge", "json", "yaml", "three-way-merge"]
+keywords = ["merge", "semantic-merge", "json", "yaml", "three-way-merge", "docx", "office"]
 readme = "README.md"
-categories = ["text-processing", "config"]
+categories = ["text-processing", "config", "parser-implementations"]
 
 [dependencies]
 suture-driver = { path = "../suture-driver", version = "1.2.0" }
@@ -22,6 +22,9 @@ suture-driver-svg = { path = "../suture-driver-svg", version = "1.2.0", optional
 suture-driver-html = { path = "../suture-driver-html", version = "1.2.0", optional = true }
 suture-driver-ical = { path = "../suture-driver-ical", version = "1.2.0", optional = true }
 suture-driver-feed = { path = "../suture-driver-feed", version = "1.2.0", optional = true }
+suture-driver-docx = { path = "../suture-driver-docx", version = "1.2.0", optional = true }
+suture-driver-xlsx = { path = "../suture-driver-xlsx", version = "1.2.0", optional = true }
+suture-driver-pptx = { path = "../suture-driver-pptx", version = "1.2.0", optional = true }
 
 [features]
 default = ["json", "yaml", "toml", "csv"]
@@ -35,4 +38,10 @@ svg = ["dep:suture-driver-svg"]
 html = ["dep:suture-driver-html"]
 ical = ["dep:suture-driver-ical"]
 feed = ["dep:suture-driver-feed"]
-all = ["json", "yaml", "toml", "csv", "xml", "markdown", "svg", "html", "ical", "feed"]
+docx = ["dep:suture-driver-docx"]
+xlsx = ["dep:suture-driver-xlsx"]
+pptx = ["dep:suture-driver-pptx"]
+all = ["json", "yaml", "toml", "csv", "xml", "markdown", "svg", "html", "ical", "feed", "docx", "xlsx", "pptx"]
+
+[dev-dependencies]
+zip = { version = "2.2", default-features = false }

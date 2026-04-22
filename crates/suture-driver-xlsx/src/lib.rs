@@ -640,6 +640,7 @@ mod tests {
         );
         let doc = OoxmlDocument {
             parts: doc_parts,
+            binary_parts: HashMap::new(),
             content_types: String::new(),
             rels: HashMap::new(),
             part_rels: HashMap::new(),

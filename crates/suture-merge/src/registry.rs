@@ -23,5 +23,11 @@ pub fn build_registry() -> DriverRegistry {
     registry.register(Box::new(suture_driver_ical::IcalDriver));
     #[cfg(feature = "feed")]
     registry.register(Box::new(suture_driver_feed::FeedDriver));
+    #[cfg(feature = "docx")]
+    registry.register(Box::new(suture_driver_docx::DocxDriver));
+    #[cfg(feature = "xlsx")]
+    registry.register(Box::new(suture_driver_xlsx::XlsxDriver));
+    #[cfg(feature = "pptx")]
+    registry.register(Box::new(suture_driver_pptx::PptxDriver));
     registry
 }

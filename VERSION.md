@@ -52,6 +52,7 @@
 | **5A** | OTIO Driver Rewrite | SutureDriver trait, content-based ID, three-way merge, Gap/Marker support | v4.0 | ✅ Complete |
 | **5B** | OOXML Driver Deepening | Fix XLSX cell refs, PPTX slide discovery, DOCX in-place merge | v4.0 | ✅ Complete |
 | **5C** | Distribution & Adoption | Installers, migration tooling, documentation overhaul | v4.1 | 🔄 In Progress |
+| **6D** | Library v0.2 + GitHub Action | suture-merge v0.2 with DOCX/XLSX/PPTX, suture-action, blog post, dep bumps | v4.1 | ✅ Complete |
 
 ### Direction A — Product Polish (v1.3–v1.4) ✅
 
@@ -334,6 +335,27 @@
 - Interactive onboarding tutorial
 - Documentation overhaul (quickstart, API reference, domain guides)
 - Community building (blog posts, conference talks)
+
+### Direction 6D — Library v0.2 + GitHub Action (v4.1) ✅
+
+- **suture-merge v0.2**: Added DOCX, XLSX, PPTX binary document merge support
+  - New feature flags: `docx`, `xlsx`, `pptx`
+  - New public functions: `merge_docx()`, `merge_xlsx()`, `merge_pptx()`
+  - Updated `all` feature to include binary formats
+  - 4 new integration tests (DOCX paragraph addition, same-content no-change for all three)
+  - README updated with binary document section
+- **suture-action**: GitHub Action for CI/CD auto-merge
+  - Composite action: installs Suture, configures git merge driver per format
+  - Supports: JSON, YAML, TOML, CSV, XML, Markdown, DOCX, XLSX, PPTX
+  - Falls back to standard git merge for non-structured files
+- **Blog post**: "I Built a Semantic Merge Engine in Rust That Understands Word, Excel, and PowerPoint Files"
+  - Targets: Hacker News, r/rust, r/programming
+  - 950 words, 3 code examples, real-world scenario
+- **Dependency maintenance**: Closed 14 dependabot issues
+  - Updated: roxmltree 0.20→0.21, rayon 1.11→1.12
+  - Closed with rationale: toml 0.8→1.x (major rewrite), rand 0.8→0.9 (API change), criterion 0.5→0.8, ratatui 0.29→0.30, crossterm 0.28→0.29 (eval needed)
+  - Closed with rationale: actions/* v4→v6, v4→v7, v7→v9 (major version bumps)
+- **Bug fix**: suture-driver-xlsx test missing `binary_parts` field in OoxmlDocument constructor
 
 - Line-by-line hunk resolution (replaces binary ours/theirs-only choice)
 - `1`/`2`/`3` keys: take ours, theirs, or both per hunk
