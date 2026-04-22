@@ -53,6 +53,7 @@
 | **5B** | OOXML Driver Deepening | Fix XLSX cell refs, PPTX slide discovery, DOCX in-place merge | v4.0 | ✅ Complete |
 | **5C** | Distribution & Adoption | Installers, migration tooling, documentation overhaul | v4.1 | 🔄 In Progress |
 | **6D** | Library v0.2 + GitHub Action | suture-merge v0.2 with DOCX/XLSX/PPTX, suture-action, blog post, dep bumps | v4.1 | ✅ Complete |
+| **7A** | Production VCS CLI | 10 new commands/flags, progress indicators, binary diff fix | v4.1 | ✅ Complete |
 
 ### Direction A — Product Polish (v1.3–v1.4) ✅
 
@@ -356,6 +357,34 @@
   - Closed with rationale: toml 0.8→1.x (major rewrite), rand 0.8→0.9 (API change), criterion 0.5→0.8, ratatui 0.29→0.30, crossterm 0.28→0.29 (eval needed)
   - Closed with rationale: actions/* v4→v6, v4→v7, v7→v9 (major version bumps)
 - **Bug fix**: suture-driver-xlsx test missing `binary_parts` field in OoxmlDocument constructor
+
+### Direction 7A — Production VCS CLI (v4.1) ✅
+
+- **New commands:**
+  - `suture switch` — Modern alternative to `checkout` for branch switching (with `-c` to create)
+  - `suture restore` — Restore working tree files from HEAD or a specific ref (`--staged` to unstage)
+  - `suture ls-remote` — List branches on a remote Hub without cloning (URL or remote name)
+  - `suture archive` — Export repo contents as tar.gz, tar, or zip (`--format`, `--prefix`)
+  - `suture grep` — Search tracked file content with regex or fixed-string matching (`-i`, `-l`, `-F`, `-C`)
+  - `suture stash branch <name>` — Create and checkout a branch from a stash entry
+- **New flags:**
+  - `suture log --stat` — Show per-commit file change statistics (touch_set)
+  - `suture log --diff` — Show patch content inline in log output
+  - `suture diff --name-only` — List only changed file names
+- **Status improvements:**
+  - Remote tracking info: ahead/behind counts when remote tracking refs exist
+  - Remote connection status when remotes are configured
+  - `do_fetch` now saves remote branch tips for status comparison
+- **Binary format diff fix:**
+  - Fixed `suture diff` for DOCX/XLSX/PPTX/PDF/images — uses `from_utf8_unchecked` for binary formats
+  - Semantic drivers now receive intact ZIP/binary bytes instead of corrupted `from_utf8_lossy` output
+- **Progress indicators:**
+  - `suture clone` — "Cloning into 'dir'..." message
+  - `suture fetch` — "Fetching from remote..." + blob/patch count progress
+  - `suture pull` — "Pulling from remote..." message
+  - `suture push` — "Pushing N patches, M blobs..." message
+  - `do_fetch` — "\r" progress counters every 100 items for blobs and patches
+- **Clippy:** All suture-cli clippy warnings resolved (collapsed ifs, Error::other, manual ok)
 
 - Line-by-line hunk resolution (replaces binary ours/theirs-only choice)
 - `1`/`2`/`3` keys: take ours, theirs, or both per hunk

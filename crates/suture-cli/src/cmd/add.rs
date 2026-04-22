@@ -36,10 +36,10 @@ fn expand_dir_recursive(dir: &Path, result: &mut Vec<String>) {
 
         if entry_path.is_dir() {
             expand_dir_recursive(&entry_path, result);
-        } else if entry_path.is_file() {
-            if let Some(s) = entry_path.to_str() {
-                result.push(s.to_string());
-            }
+        } else if entry_path.is_file()
+            && let Some(s) = entry_path.to_str()
+        {
+            result.push(s.to_string());
         }
     }
 }

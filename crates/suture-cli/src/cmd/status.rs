@@ -1,4 +1,5 @@
 use crate::display::walk_repo_files;
+use std::collections::HashSet;
 use std::path::Path as StdPath;
 
 pub(crate) async fn cmd_status() -> Result<(), Box<dyn std::error::Error>> {
@@ -12,6 +13,58 @@ pub(crate) async fn cmd_status() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(id) = status.head_patch {
         println!("HEAD: {}", id);
     }
+
+    if let Some(ref branch_name) = status.head_branch {
+        if let Ok(Some(remote_ref)) = find_remote_ref(&repo, branch_name) {
+            if let Some(id) = status.head_patch {
+                let (ahead, behind) = compute_ahead_behind(&repo, &id, &remote_ref.tip);
+                match (ahead, behind) {
+                    (0, 0) => {
+                        println!(
+                            "Your branch is up to date with '{}'.",
+                            remote_ref.label
+                        );
+                    }
+                    (a, 0) => {
+                        println!(
+                            "Your branch is ahead of '{}' by {} commit{}.",
+                            remote_ref.label,
+                            a,
+                            if a == 1 { "" } else { "s" }
+                        );
+                    }
+                    (0, b) => {
+                        println!(
+                            "Your branch is behind '{}' by {} commit{}.",
+                            remote_ref.label,
+                            b,
+                            if b == 1 { "" } else { "s" }
+                        );
+                    }
+                    (a, b) => {
+                        println!(
+                            "Your branch and '{}' have diverged, and have {} and {} different commit{} each, respectively.",
+                            remote_ref.label,
+                            a,
+                            b,
+                            if a + b == 2 { "" } else { "s" }
+                        );
+                    }
+                }
+            }
+        } else {
+            let remotes = repo.list_remotes().unwrap_or_default();
+            if !remotes.is_empty() {
+                let names: Vec<&str> = remotes.iter().map(|(n, _)| n.as_str()).collect();
+                println!(
+                    "Connected to remote{} {}. Use `suture fetch` to check for updates.",
+                    if names.len() == 1 { "" } else { "s" },
+                    names.join(", "),
+                );
+            }
+        }
+    }
+
     println!(
         "{} patches, {} branches",
         status.patch_count, status.branch_count
@@ -86,4 +139,53 @@ pub(crate) async fn cmd_status() -> Result<(), Box<dyn std::error::Error>> {
 
 fn file_type_icon(path: &str) -> &'static str {
     suture_core::file_type::detect_file_type(StdPath::new(path)).icon()
+}
+
+struct RemoteRef {
+    label: String,
+    tip: suture_common::Hash,
+}
+
+fn find_remote_ref(
+    repo: &suture_core::repository::Repository,
+    branch_name: &str,
+) -> Result<Option<RemoteRef>, Box<dyn std::error::Error>> {
+    let remotes = repo.list_remotes().unwrap_or_default();
+    for (remote_name, _url) in &remotes {
+        let ref_key = format!("remote.{}.ref.{}", remote_name, branch_name);
+        if let Ok(Some(hex)) = repo.get_config(&ref_key) && let Ok(tip) = suture_common::Hash::from_hex(&hex) {
+            return Ok(Some(RemoteRef {
+                label: format!("{}/{}", remote_name, branch_name),
+                tip,
+            }));
+        }
+    }
+    Ok(None)
+}
+
+fn compute_ahead_behind(
+    repo: &suture_core::repository::Repository,
+    local_head: &suture_common::Hash,
+    remote_tip: &suture_common::Hash,
+) -> (usize, usize) {
+    if local_head == remote_tip {
+        return (0, 0);
+    }
+
+    let local_ancestors = repo.dag().ancestors(local_head);
+    let remote_ancestors = repo.dag().ancestors(remote_tip);
+
+    let local_reachable: HashSet<_> = local_ancestors
+        .into_iter()
+        .chain(std::iter::once(*local_head))
+        .collect();
+    let remote_reachable: HashSet<_> = remote_ancestors
+        .into_iter()
+        .chain(std::iter::once(*remote_tip))
+        .collect();
+
+    let ahead = local_reachable.difference(&remote_reachable).count();
+    let behind = remote_reachable.difference(&local_reachable).count();
+
+    (ahead, behind)
 }

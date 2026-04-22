@@ -42,6 +42,20 @@ pub(crate) async fn cmd_stash(
             repo.stash_drop(*index)?;
             println!("Dropped stash@{{{}}}", index);
         }
+        StashAction::Branch { name, index } => {
+            let stashes = repo.stash_list()?;
+            let entry = stashes
+                .iter()
+                .find(|s| s.index == *index)
+                .ok_or_else(|| format!("stash@{{{}}} not found", index))?;
+            repo.create_branch(name, if entry.head_id.is_empty() { None } else { Some(&entry.head_id) })?;
+            repo.checkout(name)?;
+            repo.stash_apply(*index)?;
+            println!(
+                "Created branch '{}' from stash@{{{}}}: {}",
+                name, index, entry.message
+            );
+        }
     }
     Ok(())
 }

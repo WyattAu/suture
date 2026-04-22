@@ -59,6 +59,7 @@ suture-node = { path = "../suture-node", version = "0.1.0", optional = true }
 # The dependency above will cause a publish warning but is optional.
 
 flate2 = "1"
+tar = "0.4"
 
 [features]
 node = ["dep:suture-node"]

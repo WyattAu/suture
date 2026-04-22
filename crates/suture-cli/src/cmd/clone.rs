@@ -23,6 +23,7 @@ pub(crate) async fn cmd_clone(
     let mut repo = suture_core::repository::Repository::init(&repo_path, "unknown")?;
     repo.add_remote("origin", url)?;
 
+    eprintln!("Cloning into '{}'...", repo_name);
     let new_patches = do_pull_with_depth(&mut repo, "origin", depth).await?;
 
     println!("Cloned into '{}'", repo_name);

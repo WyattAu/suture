@@ -48,10 +48,7 @@ pub(crate) async fn cmd_merge_file(
         Some(name) => {
             if name == "auto" {
                 // --driver auto: detect from file extension
-                match registry.get_for_path(StdPath::new(ours_path)) {
-                    Ok(d) => Some(d),
-                    Err(_) => None,
-                }
+                registry.get_for_path(StdPath::new(ours_path)).ok()
             } else {
                 // Explicit driver: try as extension name (e.g., "json" -> ".json")
                 let ext = if name.starts_with('.') {

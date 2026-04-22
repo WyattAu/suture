@@ -1,11 +1,36 @@
 use crate::display::format_line_diff;
 use crate::style::{ANSI_BOLD_CYAN, ANSI_RESET};
 
+const BINARY_EXTENSIONS: &[&str] = &[
+    ".docx", ".xlsx", ".pptx",
+    ".pdf",
+    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff", ".tif", ".ico", ".avif",
+    ".svg",
+];
+
+fn is_binary_format(path: &str) -> bool {
+    let lower = path.to_lowercase();
+    BINARY_EXTENSIONS.iter().any(|ext| lower.ends_with(ext))
+}
+
+fn blob_to_string_preserve_bytes(blob: &[u8]) -> String {
+    unsafe { String::from_utf8_unchecked(blob.to_vec()) }
+}
+
+fn blob_to_string(blob: &[u8], path: &str) -> String {
+    if is_binary_format(path) {
+        blob_to_string_preserve_bytes(blob)
+    } else {
+        String::from_utf8_lossy(blob).into_owned()
+    }
+}
+
 pub(crate) async fn cmd_diff(
     from: Option<&str>,
     to: Option<&str>,
     cached: bool,
     integrity: bool,
+    name_only: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use suture_core::engine::diff::DiffType;
     use suture_core::engine::merge::diff_lines;
@@ -20,6 +45,20 @@ pub(crate) async fn cmd_diff(
 
     if entries.is_empty() {
         println!("No differences.");
+        return Ok(());
+    }
+
+    if name_only {
+        for entry in &entries {
+            match &entry.diff_type {
+                DiffType::Renamed { old_path, new_path } => {
+                    println!("{} -> {}", old_path, new_path);
+                }
+                _ => {
+                    println!("{}", entry.path);
+                }
+            }
+        }
         return Ok(());
     }
 
@@ -59,7 +98,7 @@ pub(crate) async fn cmd_diff(
                         );
                         continue;
                     };
-                    let new_str = String::from_utf8_lossy(&new_blob);
+                    let new_str = blob_to_string(&new_blob, &entry.path);
 
                     if let Ok(driver) = registry.get_for_path(StdPath::new(&entry.path))
                         && let Ok(semantic) = driver.format_diff(None, &new_str)
@@ -100,7 +139,7 @@ pub(crate) async fn cmd_diff(
                         );
                         continue;
                     };
-                    let old_str = String::from_utf8_lossy(&old_blob);
+                    let old_str = blob_to_string(&old_blob, &entry.path);
                     let old_lines: Vec<&str> = old_str.lines().collect();
                     let changes = diff_lines(&old_lines, &[]);
                     format_line_diff(&entry.path, &changes);
@@ -118,8 +157,8 @@ pub(crate) async fn cmd_diff(
                         .or_else(|| std::fs::read(repo.root().join(&entry.path)).ok());
                     match (old_blob, new_blob) {
                         (Some(old_blob), Some(new_blob)) => {
-                            let old_str = String::from_utf8_lossy(&old_blob);
-                            let new_str = String::from_utf8_lossy(&new_blob);
+                            let old_str = blob_to_string(&old_blob, &entry.path);
+                            let new_str = blob_to_string(&new_blob, &entry.path);
 
                             if let Ok(driver) = registry.get_for_path(StdPath::new(&entry.path))
                                 && let Ok(semantic) =

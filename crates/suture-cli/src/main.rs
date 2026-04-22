@@ -162,6 +162,12 @@ EXAMPLES:
         /// Show commits older than a date/time (same format as --since)
         #[arg(long)]
         until: Option<String>,
+        /// Show which files changed in each commit
+        #[arg(long)]
+        stat: bool,
+        /// Show patch content (diff) for each commit
+        #[arg(long)]
+        diff: bool,
     },
     /// Switch to a different branch
     #[command(after_long_help = "\
@@ -175,6 +181,35 @@ EXAMPLES:
         /// Create a new branch before switching
         #[arg(short = 'b', long)]
         new_branch: Option<String>,
+    },
+    /// Switch to a different branch (modern alternative to checkout)
+    #[command(after_long_help = "\
+EXAMPLES:
+    suture switch main          # Switch to 'main'
+    suture switch -c feature   # Create and switch to 'feature'
+    suture switch -c feat main # Create 'feat' from 'main'")]
+    Switch {
+        /// Branch name to switch to
+        branch: Option<String>,
+        /// Create a new branch before switching
+        #[arg(short = 'c', long)]
+        create: Option<String>,
+    },
+    /// Restore working tree files (modern alternative to checkout -- <path>)
+    #[command(after_long_help = "\
+EXAMPLES:
+    suture restore file.txt          # Restore file from HEAD
+    suture restore --staged file.txt # Unstage a file (restore index from HEAD)
+    suture restore --source HEAD~2 file.txt  # Restore from a specific commit")]
+    Restore {
+        /// Restore from a specific commit (default: HEAD)
+        #[arg(short, long)]
+        source: Option<String>,
+        /// Files to restore
+        paths: Vec<String>,
+        /// Restore staged files (unstage)
+        #[arg(long)]
+        staged: bool,
     },
     /// Move or rename a tracked file
     #[command(after_long_help = "\
@@ -214,6 +249,9 @@ EXAMPLES:
         /// Show supply chain integrity analysis (entropy, risk indicators)
         #[arg(long)]
         integrity: bool,
+        /// Show only names of changed files
+        #[arg(long)]
+        name_only: bool,
     },
     /// Revert a commit
     #[command(after_long_help = "\
@@ -402,6 +440,15 @@ EXAMPLES:
         #[arg(long, help = "Limit fetch to the last N commits")]
         depth: Option<u32>,
     },
+    /// List references (branches) on a remote Hub
+    #[command(after_long_help = "\
+EXAMPLES:
+    suture ls-remote http://localhost:50051/my-repo
+    suture ls-remote origin")]
+    LsRemote {
+        /// Remote URL or remote name (e.g., 'origin')
+        remote_or_url: String,
+    },
     /// Clone a repository from a remote Hub
     #[command(after_long_help = "\
 EXAMPLES:
@@ -493,6 +540,36 @@ EXAMPLES:
     Version,
     /// Garbage collect unreachable objects
     Gc,
+    /// Search for a pattern in tracked files
+    #[command(after_long_help = "\
+EXAMPLES:
+    suture grep 'TODO'                  # Search working tree for 'TODO'
+    suture grep --fixed-string 'foo bar'  # Literal string search (no regex)
+    suture grep -i 'error'               # Case-insensitive search
+    suture grep -l 'import'              # Only show matching file names
+    suture grep -- '*.rs'               # Only search .rs files")]
+    Grep {
+        /// Search pattern (regex by default)
+        pattern: String,
+        /// Search in specific files or paths (default: all tracked files)
+        #[arg(default_value = ".")]
+        paths: Vec<String>,
+        /// Case-insensitive search
+        #[arg(short = 'i', long)]
+        ignore_case: bool,
+        /// Show only file names (not matching lines)
+        #[arg(short = 'l', long)]
+        files_only: bool,
+        /// Show line numbers
+        #[arg(short = 'n', long, default_value_t = true)]
+        line_number: bool,
+        /// Fixed string matching (no regex)
+        #[arg(short = 'F', long)]
+        fixed_string: bool,
+        /// Show N lines of context around matches
+        #[arg(short = 'C', long)]
+        context: Option<usize>,
+    },
     /// Verify repository integrity
     Fsck,
     /// Check repository health and configuration
@@ -543,6 +620,25 @@ EXAMPLES:
     },
     /// Launch terminal UI
     Tui,
+    /// Create an archive of the repository
+    #[command(after_long_help = "\
+EXAMPLES:
+    suture archive -o project.tar.gz         # Archive HEAD as tar.gz
+    suture archive --format zip -o out.zip   # Archive HEAD as zip
+    suture archive main -o release.tar.gz    # Archive a specific branch")]
+    Archive {
+        /// Commit or branch to archive (default: HEAD)
+        commit: Option<String>,
+        /// Output file path
+        #[arg(short, long)]
+        output: String,
+        /// Archive format (default: auto-detect from output extension)
+        #[arg(short, long)]
+        format: Option<String>,
+        /// Prefix directory in the archive (default: repo name)
+        #[arg(long)]
+        prefix: Option<String>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -607,6 +703,15 @@ pub(crate) enum StashAction {
         after_long_help = "EXAMPLES:\n    suture stash drop 0         # Drop the latest stash\n    suture stash drop 2         # Drop a specific stash"
     )]
     Drop { index: usize },
+    /// Create and checkout a new branch from a stash entry
+    #[command(after_long_help = "EXAMPLES:\n    suture stash branch feature     # Create branch from latest stash\n    suture stash branch fix 2       # Create branch from stash index 2")]
+    Branch {
+        /// Branch name to create
+        name: String,
+        /// Stash index (default: 0 = latest)
+        #[arg(default_value_t = 0)]
+        index: usize,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -835,6 +940,8 @@ async fn main() {
             all,
             since,
             until,
+            stat,
+            diff,
         } => {
             cmd::log::cmd_log(
                 branch.as_deref(),
@@ -846,12 +953,22 @@ async fn main() {
                 all,
                 since.as_deref(),
                 until.as_deref(),
+                stat,
+                diff,
             )
             .await
         }
         Commands::Checkout { branch, new_branch } => {
             cmd::checkout::cmd_checkout(branch.as_deref(), new_branch.as_deref()).await
         }
+        Commands::Switch { branch, create } => {
+            cmd::checkout::cmd_checkout(branch.as_deref(), create.as_deref()).await
+        }
+        Commands::Restore {
+            source,
+            paths,
+            staged,
+        } => cmd::restore::cmd_restore(source.as_deref(), &paths, staged).await,
         Commands::Mv {
             source,
             destination,
@@ -861,8 +978,9 @@ async fn main() {
             to,
             cached,
             integrity,
+            name_only,
         } => {
-            cmd::diff::cmd_diff(from.as_deref(), to.as_deref(), cached, integrity).await
+            cmd::diff::cmd_diff(from.as_deref(), to.as_deref(), cached, integrity, name_only).await
         }
         Commands::Revert { commit, message } => {
             cmd::revert::cmd_revert(&commit, message.as_deref()).await
@@ -928,6 +1046,9 @@ async fn main() {
         Commands::Clone { url, dir, depth } => {
             cmd::clone::cmd_clone(&url, dir.as_deref(), depth).await
         }
+        Commands::LsRemote { remote_or_url } => {
+            cmd::ls_remote::cmd_ls_remote(&remote_or_url).await
+        }
         Commands::Reset { target, mode } => cmd::reset::cmd_reset(&target, &mode).await,
         Commands::Key { action } => cmd::key::cmd_key(&action).await,
         Commands::Stash { action } => cmd::stash::cmd_stash(&action).await,
@@ -982,6 +1103,26 @@ async fn main() {
         Commands::Notes { action } => cmd::notes::cmd_notes(&action).await,
         Commands::Worktree { action } => cmd::worktree::cmd_worktree(&action).await,
         Commands::Gc => cmd::gc::cmd_gc().await,
+        Commands::Grep {
+            pattern,
+            paths,
+            ignore_case,
+            files_only,
+            line_number,
+            fixed_string,
+            context,
+        } => {
+            cmd::grep::cmd_grep(
+                &pattern,
+                &paths,
+                ignore_case,
+                files_only,
+                line_number,
+                fixed_string,
+                context,
+            )
+            .await
+        }
         Commands::Fsck => cmd::fsck::cmd_fsck().await,
         Commands::Doctor => cmd::doctor::cmd_doctor().await,
         Commands::Bisect { action } => cmd::bisect::cmd_bisect(&action).await,
@@ -1006,6 +1147,20 @@ async fn main() {
         Commands::Undo { steps, hard } => cmd::undo::cmd_undo(steps, hard).await,
         Commands::Version => cmd::version::cmd_version().await,
         Commands::Tui => cmd::tui::cmd_tui().await,
+        Commands::Archive {
+            commit,
+            output,
+            format,
+            prefix,
+        } => {
+            cmd::archive::cmd_archive(
+                commit.as_deref(),
+                &output,
+                format.as_deref(),
+                prefix.as_deref(),
+            )
+            .await
+        }
     };
 
     if let Err(e) = result {
@@ -1151,11 +1306,13 @@ mod tests {
                 from,
                 to,
                 integrity,
+                name_only,
             } => {
                 assert!(cached);
                 assert!(from.is_none());
                 assert!(to.is_none());
                 assert!(!integrity);
+                assert!(!name_only);
             }
             other => panic!("expected Diff, got {other:?}"),
         }
@@ -1170,11 +1327,13 @@ mod tests {
                 from,
                 to,
                 integrity,
+                name_only,
             } => {
                 assert!(!cached);
                 assert_eq!(from.as_deref(), Some("HEAD~1"));
                 assert_eq!(to.as_deref(), Some("HEAD"));
                 assert!(!integrity);
+                assert!(!name_only);
             }
             other => panic!("expected Diff, got {other:?}"),
         }

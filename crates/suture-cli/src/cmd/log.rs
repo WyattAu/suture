@@ -11,7 +11,21 @@ pub(crate) async fn cmd_log(
     all: bool,
     since: Option<&str>,
     until: Option<&str>,
+    stat: bool,
+    diff: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    fn format_stat(patch: &suture_core::patch::types::Patch) -> String {
+        let files = patch.touch_set.addresses();
+        let count = files.len();
+        if count == 0 {
+            return String::new();
+        }
+        if count == 1 {
+            format!(" {} file changed: {}", count, files[0])
+        } else {
+            format!(" {} files changed: {}", count, files.join(", "))
+        }
+    }
     let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
 
     let since_ts = since.map(parse_time_filter).transpose()?;
@@ -85,7 +99,12 @@ pub(crate) async fn cmd_log(
         if oneline {
             for patch in &patches {
                 let short_hash = patch.id.to_hex().chars().take(8).collect::<String>();
-                println!("{} {}", short_hash, patch.message);
+                if stat {
+                    let stat_str = format_stat(patch);
+                    println!("{} {} | {}", short_hash, patch.message, stat_str.trim());
+                } else {
+                    println!("{} {}", short_hash, patch.message);
+                }
             }
             return Ok(());
         }
@@ -95,6 +114,38 @@ pub(crate) async fn cmd_log(
                 println!("* {} {}", patch.id.to_hex(), patch.message);
             } else {
                 println!("  {} {}", patch.id.to_hex(), patch.message);
+            }
+            if stat {
+                println!("{}", format_stat(patch));
+            }
+            if diff {
+                let parent_hex = patch
+                    .parent_ids
+                    .first()
+                    .map(|h| h.to_hex())
+                    .unwrap_or_default();
+                let commit_hex = patch.id.to_hex();
+                let from = if parent_hex.is_empty() { None } else { Some(parent_hex.as_str()) };
+                let entries = repo.diff(from, Some(commit_hex.as_str())).unwrap_or_default();
+                if !entries.is_empty() {
+                    use suture_core::engine::diff::DiffType;
+                    for entry in &entries {
+                        match &entry.diff_type {
+                            DiffType::Renamed { old_path, new_path } => {
+                                println!("  renamed {} → {}", old_path, new_path);
+                            }
+                            DiffType::Added => {
+                                println!("  added {}", entry.path);
+                            }
+                            DiffType::Deleted => {
+                                println!("  deleted {}", entry.path);
+                            }
+                            DiffType::Modified => {
+                                println!("  modified {}", entry.path);
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -192,6 +243,11 @@ pub(crate) async fn cmd_log(
         };
 
         println!("{} {} {}{}", row_str, short_hash, message, label_str);
+        if stat && let Some(pid) = patch_ids.first()
+            && let Some(patch) = repo.dag().get_patch(pid)
+        {
+            println!("{}", format_stat(patch));
+        }
     }
 
     Ok(())

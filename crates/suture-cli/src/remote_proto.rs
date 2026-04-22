@@ -311,16 +311,33 @@ pub(crate) async fn do_fetch(
         return Ok(0);
     }
 
+    if !result.blobs.is_empty() || !result.patches.is_empty() {
+        eprintln!(
+            "Receiving objects: {} blob(s), {} patch(es)",
+            result.blobs.len(),
+            result.patches.len()
+        );
+    }
+
     let b64 = base64::engine::general_purpose::STANDARD;
 
-    for blob in &result.blobs {
+    for (i, blob) in result.blobs.iter().enumerate() {
+        if (i + 1) % 100 == 0 || i + 1 == result.blobs.len() {
+            eprint!("\r  blobs: {}/{}", i + 1, result.blobs.len());
+        }
         let hash = suture_common::Hash::from_hex(&blob.hash.value)?;
         let data = b64.decode(&blob.data)?;
         repo.cas().put_blob_with_hash(&data, &hash)?;
     }
+    if !result.blobs.is_empty() {
+        eprintln!();
+    }
 
     let mut new_patches = 0;
-    for patch_proto in &result.patches {
+    for (i, patch_proto) in result.patches.iter().enumerate() {
+        if (i + 1) % 100 == 0 || i + 1 == result.patches.len() {
+            eprint!("\r  patches: {}/{}", i + 1, result.patches.len());
+        }
         let patch = proto_to_patch(patch_proto)?;
         if !repo.dag().has_patch(&patch.id) {
             repo.meta().store_patch(&patch)?;
@@ -334,10 +351,17 @@ pub(crate) async fn do_fetch(
             new_patches += 1;
         }
     }
+    if !result.patches.is_empty() {
+        eprintln!();
+    }
 
     for branch in &result.branches {
         let target_id = suture_common::Hash::from_hex(&branch.target_id.value)?;
         let branch_name = suture_common::BranchName::new(&branch.name)?;
+        let ref_key = format!("remote.{}.ref.{}", remote, branch.name);
+        repo.meta()
+            .set_config(&ref_key, &target_id.to_hex())
+            .ok();
         if !repo.dag().branch_exists(&branch_name) {
             let _ = repo.dag_mut().create_branch(branch_name.clone(), target_id);
         } else {

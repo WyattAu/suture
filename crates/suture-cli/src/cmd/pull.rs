@@ -2,6 +2,7 @@ use crate::remote_proto::{do_fetch, do_pull};
 
 pub(crate) async fn cmd_pull(remote: &str, rebase: bool) -> Result<(), Box<dyn std::error::Error>> {
     let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+    eprintln!("Pulling from {}...", remote);
 
     if rebase {
         // Save current branch for later

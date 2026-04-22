@@ -116,6 +116,13 @@ pub(crate) async fn cmd_push(
 
     let push_body = sign_push_request(&repo, push_body)?;
 
+    eprintln!(
+        "Pushing {} patch(es), {} blob(s) to {}...",
+        patches.len(),
+        push_body.blobs.len(),
+        remote
+    );
+
     let (branch_display, head_id) = repo
         .head()
         .unwrap_or_else(|_| ("main".to_string(), suture_common::Hash::ZERO));
