@@ -25,12 +25,16 @@ Git is to text files what Suture is to Word docs, spreadsheets, and video timeli
   >>>>>>> staging
 ```
 
-Suture uses semantic drivers to merge JSON, YAML, TOML, CSV, XML, Markdown, DOCX, XLSX, PPTX, SQL, PDF, images, and video timelines at the structural level — not the line level. Two edits to different JSON keys, different DOCX paragraphs, or different spreadsheet cells never conflict.
+Suture uses semantic drivers to merge JSON, YAML, TOML, CSV, XML, Markdown, HTML, SVG, DOCX, XLSX, PPTX, SQL, PDF, images, iCalendar, RSS/Atom feeds, and video timelines at the structural level — not the line level. Two edits to different JSON keys, different DOCX paragraphs, or different spreadsheet cells never conflict.
 
 ## Quick Start
 
 ```bash
-cargo install suture-cli
+# Install (builds in ~2 minutes)
+cargo install suture-cli --path crates/suture-cli
+
+# Or download a prebuilt binary from GitHub Releases
+# https://github.com/WyattAu/suture/releases
 
 suture init
 suture config user.name "Your Name"
@@ -54,15 +58,16 @@ suture merge staging
 
 | Domain | Pain point Suture solves |
 |--------|--------------------------|
+| [Defence & compliance](docs/defence-compliance.md) | Audit trails (`log --audit`), classification detection (`diff --classification`), signed commits |
 | [Video editors](docs/video-editors.md) | Version control for NLE timelines (Premiere, DaVinci Resolve) |
 | [Document authors](docs/document-authors.md) | Merge Word docs, Excel sheets, PowerPoint decks |
+| [Content creators](docs/content-creators.md) | `suture sync` replaces Google Drive — auto-commit, pull, push |
 | [Data science](docs/data-science.md) | Branch and merge Jupyter notebooks, CSVs, configs |
 | DevOps | Semantic merge for Kubernetes YAML, Docker Compose, CI configs |
-| Config-as-code | TOML, XML, properties files across environments |
 
 ## What Makes Suture Different
 
-**Semantic merge for 16 formats:**
+**Semantic merge for 20+ formats:**
 
 | Format | Extensions | Merge granularity |
 |--------|-----------|-------------------|
@@ -72,6 +77,8 @@ suture merge staging
 | CSV | `.csv` | Row-level with header detection |
 | XML | `.xml` | Element/attribute-aware |
 | Markdown | `.md` | Section-aware |
+| HTML | `.html` | DOM-aware |
+| SVG | `.svg` | Element-aware |
 | DOCX | `.docx` | Paragraph-level |
 | XLSX | `.xlsx` | Cell-level |
 | PPTX | `.pptx` | Slide-level |
@@ -79,10 +86,18 @@ suture merge staging
 | PDF | `.pdf` | Page-level text diff |
 | Image | `.png` `.jpg` `.gif` `.bmp` `.webp` `.tiff` `.ico` `.avif` | Metadata diff |
 | OTIO | `.otio` | OpenTimelineIO editorial merge |
+| iCalendar | `.ics` | Event-level merge |
+| RSS/Atom | `.rss` `.atom` | Feed and entry-aware |
 
 Files without a driver fall back to line-based merge, same as Git.
 
-**Full version control workflow:** init, add, commit, branch, merge, rebase, cherry-pick, push, pull, tag, blame, stash, worktree, and 25+ more commands.
+**50+ CLI commands:** init, add, commit, branch, merge, rebase, cherry-pick, push, pull, clone, tag, blame, stash, worktree, remote, log, diff, show, status, grep, archive, export, sync, verify, describe, bisect, apply, clean, doctor, fsck, gc, notes, reflog, completions, and more.
+
+**Google Drive replacement:** `suture sync` auto-commits, pulls, and pushes — one command replaces cloud folder sync with full version history.
+
+**Audit & compliance:** `suture log --audit` exports structured audit trails (JSON/CSV/text). `suture diff --classification` detects NATO/US/UK/AU security marking changes. Ed25519 commit signing with `suture verify`.
+
+**Client delivery:** `suture export` creates clean snapshots for handoff. `suture diff --summary` produces human-readable change reports.
 
 **Mount as a filesystem:** FUSE and WebDAV mounts let any editor save directly into a Suture repo — every save creates a patch.
 
@@ -90,17 +105,44 @@ Files without a driver fall back to line-based merge, same as Git.
 
 ## Install
 
-```bash
-cargo install suture-cli          # crates.io (Rust 1.85+)
-brew install wyattau/tap/suture   # macOS / Linux
-paru -S suture-git                # Arch Linux (AUR)
-```
+### Prebuilt binaries (recommended)
 
-Or build from source:
+Download from [GitHub Releases](https://github.com/WyattAu/suture/releases) — Linux x86_64, macOS x86_64/aarch64, Windows x86_64.
+
+### From source
 
 ```bash
 git clone https://github.com/WyattAu/suture.git
 cd suture && cargo build --release --bin suture
+# Binary at target/release/suture
+```
+
+### Package managers
+
+```bash
+cargo install suture-cli          # crates.io
+brew install wyattau/tap/suture   # macOS / Linux
+paru -S suture-git                # Arch Linux (AUR)
+```
+
+## Key Commands
+
+```bash
+suture init                        # Initialize a repository
+suture add . && suture commit "msg" # Stage and commit
+suture branch feature && suture checkout feature  # Branching
+suture merge feature               # Semantic merge
+suture push origin main            # Push to remote
+suture pull                        # Pull from remote
+suture sync                        # Auto-commit + pull + push
+suture log --graph                 # Visual commit history
+suture diff --summary              # Human-readable change summary
+suture log --audit                 # Structured audit trail
+suture diff --classification        # Classification marking changes
+suture verify HEAD                 # Verify commit signature
+suture stash push -m "WIP"         # Stash work in progress
+suture export ./delivery           # Clean snapshot for client
+suture doctor --fix                # Auto-remediate common issues
 ```
 
 ## Use With Git
@@ -114,11 +156,20 @@ git config merge.suture.driver "suture merge-file --driver %s %O %A %B -o %A"
 
 ## Learn More
 
+- [Quick Start Guide](docs/quickstart.md) — 60-second getting started
 - [Why Suture?](docs/why-suture.md) — the problem with binary version control
 - [Suture vs. Git](docs/comparing-with-git.md) — honest comparison
 - [Semantic merge explained](docs/semantic-merge.md) — how it works under the hood
 - [Full CLI reference](docs/cli-reference.md)
 - [Comparison with other VCS](docs/comparison.md)
+
+## Stats
+
+- **37 crates** in the workspace
+- **20+ semantic drivers** for structured file formats
+- **1,400+ tests** across the workspace
+- **50+ CLI commands**
+- **v5.0.0** — unified version across all crates
 
 ## Contributing
 
