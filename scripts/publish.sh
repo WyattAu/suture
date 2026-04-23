@@ -21,6 +21,8 @@ PUBLISH_ORDER=(
   suture-driver-csv
   suture-driver-xml
   suture-driver-markdown
+  suture-driver-html
+  suture-driver-svg
   suture-driver-docx
   suture-driver-xlsx
   suture-driver-pptx
@@ -28,6 +30,8 @@ PUBLISH_ORDER=(
   suture-driver-pdf
   suture-driver-image
   suture-driver-otio
+  suture-driver-ical
+  suture-driver-feed
   suture-driver-example
   suture-raft
   suture-s3
@@ -36,6 +40,7 @@ PUBLISH_ORDER=(
   suture-tui
   suture-lsp
   suture-vfs
+  suture-merge
   suture-cli
 )
 
