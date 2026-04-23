@@ -59,6 +59,13 @@ Major release — version unification, release pipeline, defence/compliance feat
 - **`suture tag 'pattern'`** — Filter tags by glob pattern
 - **`suture reflog --show`** — Full patch details in reflog
 - **`suture notes add --append`** — Append to existing notes
+- **`suture verify`** — Per-commit Ed25519 signature verification (auto-signs when `signing.key` configured)
+- **`suture log --verify`** — Show signature status per commit (✓/✗/—)
+- **`suture stash show`** — Preview stash contents with file stats
+- **`suture clean`** — Remove untracked files (`--dry-run`, `--dirs`)
+- **`suture blame -L 10,20`** — Line range filtering
+- **`suture describe`** — Describe commit by nearest tag (`v1.0-3-gabc1234`)
+- **`suture rev-parse`** — Resolve refs for scripting (`--short`, `--verify`)
 - **`suture doctor --fix`** — Auto-remediation of common issues
 - **`suture init --template`** — Bootstrap from 4 templates (document/video/data/report)
 - **`suture archive --prefix`** — Custom directory prefix in archives

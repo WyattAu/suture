@@ -74,6 +74,12 @@
 | **13B** | Reflog Show | `suture reflog --show` with full patch details | v5.0 | ✅ Complete |
 | **13C** | Notes Append | `suture notes add --append` for appending to notes | v5.0 | ✅ Complete |
 | **13D** | Show Stat | `suture show --stat` with file classification | v5.0 | ✅ Complete |
+| **14A** | Verify Signing | `suture verify` per-commit Ed25519 signature verification | v5.0 | ✅ Complete |
+| **14B** | Stash Show | `suture stash show` preview stash contents | v5.0 | ✅ Complete |
+| **14C** | Clean | `suture clean` remove untracked files (--dry-run, --dirs) | v5.0 | ✅ Complete |
+| **14D** | Blame Line Range | `suture blame -L 10,20` line range filtering | v5.0 | ✅ Complete |
+| **14E** | Describe | `suture describe` describe commit by nearest tag | v5.0 | ✅ Complete |
+| **14F** | Rev-Parse | `suture rev-parse` resolve refs for scripting | v5.0 | ✅ Complete |
 
 ### Direction A — Product Polish (v1.3–v1.4) ✅
 
