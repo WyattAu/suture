@@ -6,7 +6,11 @@ pub(crate) async fn cmd_notes(
     let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
     let patches = repo.all_patches();
     match action {
-        crate::NotesAction::Add { commit, message } => {
+        crate::NotesAction::Add {
+            commit,
+            message,
+            append,
+        } => {
             let target = resolve_ref(&repo, commit, &patches)?;
             let patch_id = target.id;
             let msg = message.clone().unwrap_or_else(|| {
@@ -15,8 +19,21 @@ pub(crate) async fn cmd_notes(
                 std::io::stdin().read_line(&mut buf).unwrap_or_default();
                 buf.trim_end().to_string()
             });
-            repo.add_note(&patch_id, &msg)?;
-            println!("Note added to {}", commit);
+            if *append {
+                let existing = repo.list_notes(&patch_id)?;
+                if let Some(last_note) = existing.last() {
+                    let appended = format!("{}\n---\n{}", last_note, msg);
+                    repo.remove_note(&patch_id, existing.len() - 1)?;
+                    repo.add_note(&patch_id, &appended)?;
+                    println!("Note appended to {}", commit);
+                } else {
+                    repo.add_note(&patch_id, &msg)?;
+                    println!("Note added to {}", commit);
+                }
+            } else {
+                repo.add_note(&patch_id, &msg)?;
+                println!("Note added to {}", commit);
+            }
         }
         crate::NotesAction::List { commit } | crate::NotesAction::Show { commit } => {
             let target = resolve_ref(&repo, commit, &patches)?;

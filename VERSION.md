@@ -70,6 +70,10 @@
 | **12A** | Sync Command | `suture sync` — auto-commit, pull, push (Google Drive replacement) | v5.0 | ✅ Complete |
 | **12B** | Hook Management | `suture hook list/run/edit` + pre-commit/pre-push wiring | v5.0 | ✅ Complete |
 | **12C** | Remote Rename | `suture remote rename` for renaming remotes | v5.0 | ✅ Complete |
+| **13A** | Tag Improvements | `suture tag --list "v3.*"` pattern filter, `--sort date|name` | v5.0 | ✅ Complete |
+| **13B** | Reflog Show | `suture reflog --show` with full patch details | v5.0 | ✅ Complete |
+| **13C** | Notes Append | `suture notes add --append` for appending to notes | v5.0 | ✅ Complete |
+| **13D** | Show Stat | `suture show --stat` with file classification | v5.0 | ✅ Complete |
 
 ### Direction A — Product Polish (v1.3–v1.4) ✅
 

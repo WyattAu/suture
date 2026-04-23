@@ -399,6 +399,9 @@ EXAMPLES:
         /// Tag message (required with --annotate)
         #[arg(short, long)]
         message: Option<String>,
+        /// Sort tags by 'date' (newest first) or 'name' (alphabetical)
+        #[arg(long)]
+        sort: Option<String>,
     },
     /// Get or set configuration values
     #[command(after_long_help = "\
@@ -525,13 +528,21 @@ EXAMPLES:
     #[command(after_long_help = "\
 EXAMPLES:
     suture show HEAD           # Show HEAD commit
-    suture show abc123         # Show specific commit")]
+    suture show abc123         # Show specific commit
+    suture show --stat HEAD    # Show with file change statistics")]
     Show {
         /// Commit hash or branch name
         commit: String,
+        /// Show file change statistics
+        #[arg(long)]
+        stat: bool,
     },
     /// Show the reference log (HEAD movements)
-    Reflog,
+    Reflog {
+        /// Show full patch details for each reflog entry
+        #[arg(long)]
+        show: bool,
+    },
     /// List available semantic drivers
     Drivers,
     /// Show compact commit summary grouped by author
@@ -850,6 +861,9 @@ pub(crate) enum NotesAction {
         /// Note message
         #[arg(short, long)]
         message: Option<String>,
+        /// Append to the last note instead of creating a new one
+        #[arg(short, long)]
+        append: bool,
     },
     /// List notes for a commit
     List {
@@ -1126,6 +1140,7 @@ async fn main() {
             list,
             annotate,
             message,
+            sort,
         } => {
             cmd::tag::cmd_tag(
                 name.as_deref(),
@@ -1134,6 +1149,7 @@ async fn main() {
                 list,
                 annotate,
                 message.as_deref(),
+                sort.as_deref(),
             )
             .await
         }
@@ -1197,8 +1213,8 @@ async fn main() {
             }
             Ok(())
         }
-        Commands::Show { commit } => cmd::show::cmd_show(&commit).await,
-        Commands::Reflog => cmd::reflog::cmd_reflog().await,
+        Commands::Show { commit, stat } => cmd::show::cmd_show(&commit, stat).await,
+        Commands::Reflog { show } => cmd::reflog::cmd_reflog(show).await,
         Commands::Drivers => cmd::drivers::cmd_drivers().await,
         Commands::Shortlog { branch, number } => {
             cmd::shortlog::cmd_shortlog(branch.as_deref(), number).await
@@ -1704,7 +1720,7 @@ mod tests {
         let cli = parse(&["suture", "notes", "add", "HEAD", "-m", "review note"]);
         match cli.command {
             Commands::Notes { action } => match action {
-                NotesAction::Add { commit, message } => {
+                NotesAction::Add { commit, message, append: _ } => {
                     assert_eq!(commit, "HEAD");
                     assert_eq!(message.as_deref(), Some("review note"));
                 }

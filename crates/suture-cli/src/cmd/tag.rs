@@ -5,11 +5,42 @@ pub(crate) async fn cmd_tag(
     list: bool,
     annotate: bool,
     message: Option<&str>,
+    sort: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
 
     if list || name.is_none() {
-        let tags = repo.list_tags()?;
+        let mut tags = repo.list_tags()?;
+
+        if let Some(pattern) = name {
+            tags.retain(|(tname, _)| matches_pattern(tname, pattern));
+        }
+
+        match sort {
+            Some("date") => {
+                tags.sort_by(|a, b| {
+                    let ts_a = repo
+                        .dag()
+                        .get_patch(&a.1)
+                        .map(|p| p.timestamp)
+                        .unwrap_or(0);
+                    let ts_b = repo
+                        .dag()
+                        .get_patch(&b.1)
+                        .map(|p| p.timestamp)
+                        .unwrap_or(0);
+                    ts_b.cmp(&ts_a)
+                });
+            }
+            Some("name") | None => {
+                tags.sort_by(|a, b| a.0.cmp(&b.0));
+            }
+            Some(other) => {
+                eprintln!("error: unsupported sort order '{other}' (use 'date' or 'name')");
+                std::process::exit(1);
+            }
+        }
+
         if tags.is_empty() {
             println!("No tags.");
         } else {
@@ -48,4 +79,16 @@ pub(crate) async fn cmd_tag(
         }
     }
     Ok(())
+}
+
+fn matches_pattern(name: &str, pattern: &str) -> bool {
+    if pattern.contains('*') {
+        let parts: Vec<&str> = pattern.split('*').collect();
+        if parts.len() != 2 {
+            return name == pattern;
+        }
+        name.starts_with(parts[0]) && name.ends_with(parts[1])
+    } else {
+        name == pattern
+    }
 }
