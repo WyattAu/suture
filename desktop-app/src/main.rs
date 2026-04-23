@@ -48,6 +48,25 @@ pub struct FileEntry {
     pub staged: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TagEntry {
+    pub name: String,
+    pub target: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RemoteEntry {
+    pub name: String,
+    pub url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StashEntry {
+    pub index: usize,
+    pub message: String,
+    pub timestamp: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct CmdResult<T: Serialize> {
     pub success: bool,
@@ -362,6 +381,283 @@ mod tauri_commands {
             Err(String::from_utf8_lossy(&output.stderr).to_string())
         }
     }
+
+    pub fn merge_branch(name: String, state: State<'_, AppState>) -> CmdResult<String> {
+        let mut guard = state.repo.lock().unwrap();
+        let Some(repo) = guard.as_mut() else {
+            return CmdResult::err("No repository open");
+        };
+
+        match repo.execute_merge(&name) {
+            Ok(result) => {
+                if result.is_clean {
+                    let id = result
+                        .merge_patch_id
+                        .map(|id| format!(" {}…", &id.to_hex()[..12]))
+                        .unwrap_or_default();
+                    CmdResult::ok(format!("Merged '{name}':{id}"))
+                } else {
+                    let count = result.unresolved_conflicts.len();
+                    let msg = format!("Merge conflicts in {count} file(s)");
+                    CmdResult::err(msg)
+                }
+            }
+            Err(e) => {
+                let msg = format!("Failed to merge: {e}");
+                CmdResult::err(msg)
+            }
+        }
+    }
+
+    pub fn get_diff(state: State<'_, AppState>) -> CmdResult<String> {
+        let guard = state.repo.lock().unwrap();
+        let Some(repo) = guard.as_ref() else {
+            return CmdResult::err("No repository open");
+        };
+
+        match repo.diff(None, None) {
+            Ok(entries) => {
+                let text = entries
+                    .iter()
+                    .map(|e| format!("{e}"))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                CmdResult::ok(if text.is_empty() {
+                    "(no changes)".to_string()
+                } else {
+                    text
+                })
+            }
+            Err(e) => {
+                let msg = format!("Failed to get diff: {e}");
+                CmdResult::err(msg)
+            }
+        }
+    }
+
+    pub fn get_tags(state: State<'_, AppState>) -> CmdResult<Vec<TagEntry>> {
+        let guard = state.repo.lock().unwrap();
+        let Some(repo) = guard.as_ref() else {
+            return CmdResult::err("No repository open");
+        };
+
+        match repo.list_tags() {
+            Ok(tags) => {
+                let entries = tags
+                    .iter()
+                    .map(|(name, id)| TagEntry {
+                        name: name.clone(),
+                        target: id.to_hex(),
+                    })
+                    .collect();
+                CmdResult::ok(entries)
+            }
+            Err(e) => {
+                let msg = format!("Failed to list tags: {e}");
+                CmdResult::err(msg)
+            }
+        }
+    }
+
+    pub fn create_tag(name: String, state: State<'_, AppState>) -> CmdResult<String> {
+        let mut guard = state.repo.lock().unwrap();
+        let Some(repo) = guard.as_mut() else {
+            return CmdResult::err("No repository open");
+        };
+
+        match repo.create_tag(&name, None) {
+            Ok(()) => CmdResult::ok(format!("Created tag: {name}")),
+            Err(e) => {
+                let msg = format!("Failed to create tag: {e}");
+                CmdResult::err(msg)
+            }
+        }
+    }
+
+    pub async fn push(state: State<'_, AppState>) -> CmdResult<String> {
+        let guard = state.repo_path.lock().unwrap();
+        let Some(ref cwd) = *guard else {
+            return CmdResult::err("No repository open");
+        };
+        let cwd = cwd.clone();
+        drop(guard);
+
+        let output = tokio::process::Command::new("suture")
+            .args(&["push"])
+            .current_dir(&cwd)
+            .output()
+            .await
+            .map_err(|e| {
+                let msg = format!("Failed to execute suture push: {e}");
+                msg
+            })?;
+
+        if output.status.success() {
+            Ok(String::from_utf8_lossy(&output.stdout).to_string())
+                .map(CmdResult::ok)
+                .unwrap_or_else(CmdResult::err)
+        } else {
+            CmdResult::err(String::from_utf8_lossy(&output.stderr).to_string())
+        }
+    }
+
+    pub async fn pull(state: State<'_, AppState>) -> CmdResult<String> {
+        let guard = state.repo_path.lock().unwrap();
+        let Some(ref cwd) = *guard else {
+            return CmdResult::err("No repository open");
+        };
+        let cwd = cwd.clone();
+        drop(guard);
+
+        let output = tokio::process::Command::new("suture")
+            .args(&["pull"])
+            .current_dir(&cwd)
+            .output()
+            .await
+            .map_err(|e| {
+                let msg = format!("Failed to execute suture pull: {e}");
+                msg
+            })?;
+
+        if output.status.success() {
+            Ok(String::from_utf8_lossy(&output.stdout).to_string())
+                .map(CmdResult::ok)
+                .unwrap_or_else(CmdResult::err)
+        } else {
+            CmdResult::err(String::from_utf8_lossy(&output.stderr).to_string())
+        }
+    }
+
+    pub async fn sync(state: State<'_, AppState>) -> CmdResult<String> {
+        let guard = state.repo_path.lock().unwrap();
+        let Some(ref cwd) = *guard else {
+            return CmdResult::err("No repository open");
+        };
+        let cwd = cwd.clone();
+        drop(guard);
+
+        let output = tokio::process::Command::new("suture")
+            .args(&["sync"])
+            .current_dir(&cwd)
+            .output()
+            .await
+            .map_err(|e| {
+                let msg = format!("Failed to execute suture sync: {e}");
+                msg
+            })?;
+
+        if output.status.success() {
+            Ok(String::from_utf8_lossy(&output.stdout).to_string())
+                .map(CmdResult::ok)
+                .unwrap_or_else(CmdResult::err)
+        } else {
+            CmdResult::err(String::from_utf8_lossy(&output.stderr).to_string())
+        }
+    }
+
+    pub fn get_remotes(state: State<'_, AppState>) -> CmdResult<Vec<RemoteEntry>> {
+        let guard = state.repo.lock().unwrap();
+        let Some(repo) = guard.as_ref() else {
+            return CmdResult::err("No repository open");
+        };
+
+        match repo.list_remotes() {
+            Ok(remotes) => {
+                let entries = remotes
+                    .iter()
+                    .map(|(name, url)| RemoteEntry {
+                        name: name.clone(),
+                        url: url.clone(),
+                    })
+                    .collect();
+                CmdResult::ok(entries)
+            }
+            Err(e) => {
+                let msg = format!("Failed to list remotes: {e}");
+                CmdResult::err(msg)
+            }
+        }
+    }
+
+    pub fn add_remote(
+        name: String,
+        url: String,
+        state: State<'_, AppState>,
+    ) -> CmdResult<String> {
+        let guard = state.repo.lock().unwrap();
+        let Some(repo) = guard.as_ref() else {
+            return CmdResult::err("No repository open");
+        };
+
+        match repo.add_remote(&name, &url) {
+            Ok(()) => CmdResult::ok(format!("Added remote '{name}': {url}")),
+            Err(e) => {
+                let msg = format!("Failed to add remote: {e}");
+                CmdResult::err(msg)
+            }
+        }
+    }
+
+    pub fn get_stash_list(state: State<'_, AppState>) -> CmdResult<Vec<StashEntry>> {
+        let guard = state.repo.lock().unwrap();
+        let Some(repo) = guard.as_ref() else {
+            return CmdResult::err("No repository open");
+        };
+
+        match repo.stash_list() {
+            Ok(entries) => {
+                let mapped = entries
+                    .iter()
+                    .map(|e| StashEntry {
+                        index: e.index,
+                        message: e.message.clone(),
+                        timestamp: e.head_id.clone(),
+                    })
+                    .collect();
+                CmdResult::ok(mapped)
+            }
+            Err(e) => {
+                let msg = format!("Failed to list stash: {e}");
+                CmdResult::err(msg)
+            }
+        }
+    }
+
+    pub fn stash_push(
+        message: Option<String>,
+        state: State<'_, AppState>,
+    ) -> CmdResult<String> {
+        let mut guard = state.repo.lock().unwrap();
+        let Some(repo) = guard.as_mut() else {
+            return CmdResult::err("No repository open");
+        };
+
+        match repo.stash_push(message.as_deref()) {
+            Ok(index) => {
+                let msg = format!("Stashed as stash@{{{index}}}");
+                CmdResult::ok(msg)
+            }
+            Err(e) => {
+                let msg = format!("Failed to stash: {e}");
+                CmdResult::err(msg)
+            }
+        }
+    }
+
+    pub fn stash_pop(state: State<'_, AppState>) -> CmdResult<String> {
+        let mut guard = state.repo.lock().unwrap();
+        let Some(repo) = guard.as_mut() else {
+            return CmdResult::err("No repository open");
+        };
+
+        match repo.stash_pop() {
+            Ok(()) => CmdResult::ok("Stash popped".to_string()),
+            Err(e) => {
+                let msg = format!("Failed to pop stash: {e}");
+                CmdResult::err(msg)
+            }
+        }
+    }
 }
 
 // --- CLI-based Tauri Commands ---
@@ -597,7 +893,7 @@ mod cli_commands {
             Err(e) => return CmdResult::err(e),
         };
 
-        let output = match run_suture(&["commit", "-m", &message], Some(&cwd)).await {
+        let output = match run_suture(&["commit", &message], Some(&cwd)).await {
             Ok(o) => o,
             Err(e) => return CmdResult::err(e),
         };
@@ -659,14 +955,21 @@ fn main() {
         .setup(|app| {
             let show_item = MenuItemBuilder::with_id("show", "Show Suture").build(app)?;
             let status_item = MenuItemBuilder::with_id("status", "Refresh Status").build(app)?;
+            let sync_item = MenuItemBuilder::with_id("sync", "Sync Now").build(app)?;
+            let auto_sync_item = MenuItemBuilder::with_id("toggle-auto-sync", "Toggle Auto-Sync (OFF)").build(app)?;
             let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
 
             let menu = MenuBuilder::new(app)
                 .item(&show_item)
                 .item(&status_item)
+                .item(&sync_item)
+                .item(&auto_sync_item)
                 .separator()
                 .item(&quit_item)
                 .build()?;
+
+            let auto_sync_enabled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let auto_sync_for_thread = auto_sync_enabled.clone();
 
             TrayIconBuilder::with_id("main-tray")
                 .icon(app.default_window_icon().unwrap().clone())
@@ -683,6 +986,13 @@ fn main() {
                         "status" => {
                             let _ = app_handle.emit("tray-refresh-status", ());
                         }
+                        "sync" => {
+                            let _ = app_handle.emit("auto-sync", ());
+                        }
+                        "toggle-auto-sync" => {
+                            let was = auto_sync_enabled.load(std::sync::atomic::Ordering::Relaxed);
+                            auto_sync_enabled.store(!was, std::sync::atomic::Ordering::Relaxed);
+                        }
                         "quit" => {
                             app_handle.exit(0);
                         }
@@ -690,6 +1000,15 @@ fn main() {
                     }
                 })
                 .build(app)?;
+
+            std::thread::spawn(move || {
+                loop {
+                    std::thread::sleep(std::time::Duration::from_secs(300));
+                    if auto_sync_for_thread.load(std::sync::atomic::Ordering::Relaxed) {
+                        let _ = app_handle.emit("auto-sync", ());
+                    }
+                }
+            });
 
             Ok(())
         })
@@ -707,6 +1026,18 @@ fn main() {
             lib::checkout_branch,
             lib::unstage_all,
             lib::suture_command,
+            lib::merge_branch,
+            lib::get_diff,
+            lib::get_tags,
+            lib::create_tag,
+            lib::push,
+            lib::pull,
+            lib::sync,
+            lib::get_remotes,
+            lib::add_remote,
+            lib::get_stash_list,
+            lib::stash_push,
+            lib::stash_pop,
             cli::cli_init_repo,
             cli::cli_get_status,
             cli::cli_create_branch,
