@@ -80,6 +80,14 @@
 | **14D** | Blame Line Range | `suture blame -L 10,20` line range filtering | v5.0 | ✅ Complete |
 | **14E** | Describe | `suture describe` describe commit by nearest tag | v5.0 | ✅ Complete |
 | **14F** | Rev-Parse | `suture rev-parse` resolve refs for scripting | v5.0 | ✅ Complete |
+| **15A** | Apply | `suture apply` unified diff application (--stat, --reverse) | v5.0 | ✅ Complete |
+| **15B** | Pull Autostash | `suture pull --autostash`, `cherry-pick --no-commit` | v5.0 | ✅ Complete |
+| **15C** | Log/Gc/Fsck Flags | `log --diff-filter`, `gc --dry-run/--aggressive`, `fsck --full` | v5.0 | ✅ Complete |
+| **15D** | Stash/Worktree | `stash save/clear`, `worktree prune` | v5.0 | ✅ Complete |
+| **16** | E2E Workflow Tests | Defence, film, YouTube, general workflow validation (11 tests) | v5.0 | ✅ Complete |
+| **18** | Test Sweep | Full workspace: 1,419 tests, 0 failures, test isolation | v5.0 | ✅ Complete |
+| **19** | Publish Prep | 33-crate publish script, dry-run verified, README refresh | v5.0 | ✅ Complete |
+| **20** | README v5.0.0 | Refreshed README with all features, verticals, install options | v5.0 | ✅ Complete |
 
 ### Direction A — Product Polish (v1.3–v1.4) ✅
 

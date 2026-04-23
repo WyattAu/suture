@@ -96,10 +96,26 @@ Major release — version unification, release pipeline, defence/compliance feat
 - Rule attribution in `suture ignore check`
 - Welcome banner on first `suture init`
 - 60-second quickstart for non-developers
+- **`suture pull --autostash`** — auto-stash before pull, pop on success
+- **`suture cherry-pick --no-commit`** — stage without committing
+- **`suture log --diff-filter`** — filter by change type (A/D/M)
+- **`suture gc --dry-run --aggressive`** — preview or deep-clean garbage collection
+- **`suture fsck --full`** — verify blob integrity, parent chains, branch refs
+- **`suture stash save`** — alias for `stash push` (git parity)
+- **`suture stash clear`** — drop all stash entries
+- **`suture worktree prune`** — clean up stale worktree entries
+
+### Quality
+
+- **1,419 tests** across 37 crates, 0 failures
+- **81 CLI tests** with parallel-safe test isolation
+- **Prebuilt release binaries** for Linux/macOS/Windows
+- **33-crate publish script** verified for crates.io v5.0.0 release
 
 ### Documentation
 
 - `docs/quickstart.md` — 60-second quickstart targeting non-developers
+- README.md refreshed for v5.0.0 (20+ formats, 50+ commands, all verticals)
 - CHANGELOG.md updated for v5.0.0
 
 ## [4.1.0] - 2026-04-22
