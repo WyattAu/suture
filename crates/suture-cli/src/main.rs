@@ -821,15 +821,42 @@ EXAMPLES:
     suture export ../client-delivery       # Export HEAD to a directory
     suture export ../v2 main              # Export specific branch
     suture export ../snapshot v1.0        # Export a tag
-    suture export --zip ../delivery.zip   # Export as zip file")]
+    suture export --zip ../delivery.zip   # Export as zip file
+    suture export --template ./tpl --client Acme ./out
+    suture export --include-meta ./full-export")]
     Export {
-        /// Destination path (directory or zip file)
-        destination: String,
-        /// Commit, branch, or tag to export (default: HEAD)
-        commit: Option<String>,
-        /// Export as zip file instead of directory
+        /// Output directory or zip file path
+        output: String,
+        /// Export as zip instead of directory
         #[arg(long)]
         zip: bool,
+        /// Commit ref to export (default: HEAD)
+        #[arg(long)]
+        at: Option<String>,
+        /// Custom template directory (files to include in export)
+        #[arg(long)]
+        template: Option<String>,
+        /// Include .suture metadata in export
+        #[arg(long)]
+        include_meta: bool,
+        /// Client name (creates {output}/{client}/ subdirectory)
+        #[arg(long)]
+        client: Option<String>,
+    },
+    /// Generate reports about the repository
+    Report {
+        #[command(subcommand)]
+        report_type: ReportType,
+    },
+    /// Batch operations for managing multiple files or clients
+    Batch {
+        #[command(subcommand)]
+        action: BatchAction,
+    },
+    /// OTIO timeline operations
+    Timeline {
+        #[command(subcommand)]
+        action: TimelineAction,
     },
     /// Create an archive of the repository
     #[command(after_long_help = "\
@@ -849,6 +876,106 @@ EXAMPLES:
         /// Prefix directory in the archive (default: repo name)
         #[arg(long)]
         prefix: Option<String>,
+    },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub(crate) enum TimelineAction {
+    /// Import an OTIO timeline into the repo
+    Import {
+        /// Path to .otio file to import
+        file: String,
+        /// Commit message (default: auto-generated from timeline metadata)
+        message: Option<String>,
+    },
+    /// Export the current timeline to OTIO format
+    Export {
+        /// Output path for .otio file
+        output: String,
+        /// Commit ref to export from (default: HEAD)
+        #[arg(long)]
+        at: Option<String>,
+    },
+    /// Show timeline summary (clips, duration, tracks)
+    Summary {
+        /// Commit ref (default: HEAD)
+        #[arg(long, default_value = "HEAD")]
+        at: String,
+    },
+    /// Diff two timeline versions
+    Diff {
+        /// Base commit ref
+        #[arg(long, default_value = "HEAD~1")]
+        from: String,
+        /// Target commit ref
+        #[arg(long, default_value = "HEAD")]
+        to: String,
+        /// Show clip-level details
+        #[arg(long)]
+        detailed: bool,
+    },
+    /// List timeline-related files in the repo
+    List {
+        /// Only show .otio files
+        #[arg(long)]
+        otio_only: bool,
+    },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub(crate) enum ReportType {
+    /// Generate a change summary report (what changed between two refs)
+    Change {
+        /// From ref (default: previous tag or HEAD~10)
+        #[arg(long)]
+        from: Option<String>,
+        /// To ref (default: HEAD)
+        #[arg(long)]
+        to: Option<String>,
+        /// Output format (text, markdown, html)
+        #[arg(long, default_value = "markdown")]
+        format: String,
+        /// Output file (default: stdout)
+        #[arg(long)]
+        output: Option<String>,
+    },
+    /// Generate a contributor/activity report
+    Activity {
+        /// Number of days to cover (default: 30)
+        #[arg(long, default_value = "30")]
+        days: u64,
+        /// Output format
+        #[arg(long, default_value = "text")]
+        format: String,
+    },
+    /// Generate a file statistics report
+    Stats {
+        /// Commit ref (default: HEAD)
+        #[arg(long, default_value = "HEAD")]
+        at: Option<String>,
+    },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub(crate) enum BatchAction {
+    /// Stage files matching a pattern
+    Stage {
+        /// Glob pattern (e.g., "*.mp4", "thumbnails/*")
+        pattern: String,
+    },
+    /// Commit files matching a pattern
+    Commit {
+        /// Glob pattern
+        pattern: String,
+        /// Commit message
+        message: String,
+    },
+    /// Export multiple clients at once
+    ExportClients {
+        /// Base output directory
+        output: String,
+        /// Client names (space-separated)
+        clients: Vec<String>,
     },
 }
 
@@ -1469,11 +1596,14 @@ async fn main() {
         Commands::Version => cmd::version::cmd_version().await,
         Commands::Tui => cmd::tui::cmd_tui().await,
         Commands::Export {
-            destination,
-            commit,
+            output,
+            at,
             zip,
+            template,
+            include_meta,
+            client,
         } => {
-            cmd::export::cmd_export(&destination, commit.as_deref(), zip).await
+            cmd::export::cmd_export(&output, at.as_deref(), zip, template.as_deref(), include_meta, client.as_deref()).await
         }
         Commands::Archive {
             commit,
@@ -1489,6 +1619,53 @@ async fn main() {
             )
             .await
         }
+        Commands::Report { report_type } => {
+            let rt = match report_type {
+                ReportType::Change { from, to, format, output } => {
+                    cmd::report::ReportType::Change {
+                        from: from.clone(),
+                        to: to.clone(),
+                        format: format.clone(),
+                        output: output.clone(),
+                    }
+                }
+                ReportType::Activity { days, format } => {
+                    cmd::report::ReportType::Activity {
+                        days,
+                        format: format.clone(),
+                    }
+                }
+                ReportType::Stats { at } => {
+                    cmd::report::ReportType::Stats {
+                        at: at.clone().unwrap_or_else(|| "HEAD".to_string()),
+                    }
+                }
+            };
+            cmd::report::cmd_report(&rt).await
+        }
+        Commands::Batch { action } => {
+            let ba = match action {
+                BatchAction::Stage { pattern } => {
+                    cmd::batch::BatchAction::Stage {
+                        pattern: pattern.clone(),
+                    }
+                }
+                BatchAction::Commit { pattern, message } => {
+                    cmd::batch::BatchAction::Commit {
+                        pattern: pattern.clone(),
+                        message: message.clone(),
+                    }
+                }
+                BatchAction::ExportClients { clients, output } => {
+                    cmd::batch::BatchAction::ExportClients {
+                        clients: clients.clone(),
+                        output: output.clone(),
+                    }
+                }
+            };
+            cmd::batch::cmd_batch(&ba).await
+        }
+        Commands::Timeline { action } => cmd::timeline::cmd_timeline(&action).await,
     };
 
     if let Err(e) = result {
@@ -1556,6 +1733,7 @@ pub(crate) fn cwd_guard() -> std::sync::MutexGuard<'static, ()> {
 mod tests {
     use super::*;
     use clap::Parser;
+    use std::path::Path;
 
     fn parse(args: &[&str]) -> Cli {
         Cli::try_parse_from(args).unwrap_or_else(|e| panic!("failed to parse {:?}: {e}", args))
@@ -2497,7 +2675,7 @@ mod tests {
         drop(repo);
         std::env::set_current_dir(&dir_path).unwrap();
         let export_dir = dir.path().join("client_delivery");
-        let result = cmd::export::cmd_export(export_dir.to_str().unwrap(), None, false).await;
+        let result = cmd::export::cmd_export(export_dir.to_str().unwrap(), None, false, None, false, None).await;
         assert!(result.is_ok());
         assert!(export_dir.join("drafts/thumbnail_ideas.txt").exists());
         assert!(export_dir.join("drafts/script_draft.md").exists());
@@ -2869,6 +3047,183 @@ mod tests {
         let report_content = std::fs::read_to_string(&output_path).unwrap();
         assert!(report_content.contains("CLASSIFICATION COMPLIANCE REPORT"));
         assert!(report_content.contains("Chain of Custody"));
+
+        std::env::set_current_dir(&prev).unwrap();
+        drop(dir);
+    }
+
+    #[test]
+    fn test_timeline_parse() {
+        let cli = parse(&["suture", "timeline", "summary"]);
+        match cli.command {
+            Commands::Timeline { action } => match action {
+                TimelineAction::Summary { at } => {
+                    assert_eq!(at, "HEAD");
+                }
+                other => panic!("expected Summary, got {other:?}"),
+            },
+            other => panic!("expected Timeline, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_timeline_import_parse() {
+        let cli = parse(&["suture", "timeline", "import", "my_timeline.otio", "add timeline"]);
+        match cli.command {
+            Commands::Timeline { action } => match action {
+                TimelineAction::Import { file, message } => {
+                    assert_eq!(file, "my_timeline.otio");
+                    assert_eq!(message.as_deref(), Some("add timeline"));
+                }
+                other => panic!("expected Import, got {other:?}"),
+            },
+            other => panic!("expected Timeline, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_report_parse() {
+        let cli = parse(&["suture", "report", "change", "--from", "main", "--to", "HEAD", "--format", "markdown"]);
+        match cli.command {
+            Commands::Report { report_type } => match report_type {
+                ReportType::Change { from, to, format, output } => {
+                    assert_eq!(from.as_deref(), Some("main"));
+                    assert_eq!(to.as_deref(), Some("HEAD"));
+                    assert_eq!(format, "markdown");
+                    assert!(output.is_none());
+                }
+                other => panic!("expected ReportType::Change, got {other:?}"),
+            },
+            other => panic!("expected Report, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_report_activity_parse() {
+        let cli = parse(&["suture", "report", "activity", "--days", "14", "--format", "text"]);
+        match cli.command {
+            Commands::Report { report_type } => match report_type {
+                ReportType::Activity { days, format } => {
+                    assert_eq!(days, 14);
+                    assert_eq!(format, "text");
+                }
+                other => panic!("expected ReportType::Activity, got {other:?}"),
+            },
+            other => panic!("expected Report, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_report_stats_parse() {
+        let cli = parse(&["suture", "report", "stats"]);
+        match cli.command {
+            Commands::Report { report_type } => match report_type {
+                ReportType::Stats { at } => {
+                    assert_eq!(at.as_deref(), Some("HEAD"));
+                }
+                other => panic!("expected ReportType::Stats, got {other:?}"),
+            },
+            other => panic!("expected Report, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_batch_parse() {
+        let cli = parse(&["suture", "batch", "stage", "*.mp4"]);
+        match cli.command {
+            Commands::Batch { action } => match action {
+                BatchAction::Stage { pattern } => {
+                    assert_eq!(pattern, "*.mp4");
+                }
+                other => panic!("expected BatchAction::Stage, got {other:?}"),
+            },
+            other => panic!("expected Batch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_batch_commit_parse() {
+        let cli = parse(&["suture", "batch", "commit", "*.txt", "add text files"]);
+        match cli.command {
+            Commands::Batch { action } => match action {
+                BatchAction::Commit { pattern, message } => {
+                    assert_eq!(pattern, "*.txt");
+                    assert_eq!(message, "add text files");
+                }
+                other => panic!("expected BatchAction::Commit, got {other:?}"),
+            },
+            other => panic!("expected Batch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_batch_export_clients_parse() {
+        let cli = parse(&["suture", "batch", "export-clients", "./deliveries", "Acme", "Beta"]);
+        match cli.command {
+            Commands::Batch { action } => match action {
+                BatchAction::ExportClients { clients, output } => {
+                    assert_eq!(output, "./deliveries");
+                    assert_eq!(clients, vec!["Acme", "Beta"]);
+                }
+                other => panic!("expected BatchAction::ExportClients, got {other:?}"),
+            },
+            other => panic!("expected Batch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_export_template_parse() {
+        let cli = parse(&[
+            "suture", "export", "./out", "--template", "./tpl",
+            "--client", "Acme", "--include-meta", "--at", "v1.0",
+        ]);
+        match cli.command {
+            Commands::Export {
+                output,
+                zip,
+                at,
+                template,
+                include_meta,
+                client,
+            } => {
+                assert_eq!(output, "./out");
+                assert!(!zip);
+                assert_eq!(at.as_deref(), Some("v1.0"));
+                assert_eq!(template.as_deref(), Some("./tpl"));
+                assert!(include_meta);
+                assert_eq!(client.as_deref(), Some("Acme"));
+            }
+            other => panic!("expected Export, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_batch_stage_workflow() {
+        let _cwd = cwd_guard();
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path().to_path_buf();
+        let prev = std::env::current_dir().unwrap();
+        let repo = suture_core::repository::Repository::init(&dir_path, "ContentCreator").unwrap();
+
+        std::fs::write(dir_path.join("video_01.mp4"), "fake video data 1").unwrap();
+        std::fs::write(dir_path.join("video_02.mp4"), "fake video data 2").unwrap();
+        std::fs::write(dir_path.join("readme.txt"), "not a video").unwrap();
+
+        drop(repo);
+        std::env::set_current_dir(&dir_path).unwrap();
+
+        let result = cmd::batch::cmd_batch(&cmd::batch::BatchAction::Stage {
+            pattern: "*.mp4".to_string(),
+        })
+        .await;
+        assert!(result.is_ok());
+
+        let repo = suture_core::repository::Repository::open(Path::new(".")).unwrap();
+        let status = repo.status().unwrap();
+        let staged_paths: Vec<&str> = status.staged_files.iter().map(|(p, _)| p.as_str()).collect();
+        assert!(staged_paths.contains(&"video_01.mp4"));
+        assert!(staged_paths.contains(&"video_02.mp4"));
+        assert!(!staged_paths.contains(&"readme.txt"));
 
         std::env::set_current_dir(&prev).unwrap();
         drop(dir);

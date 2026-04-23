@@ -61,6 +61,7 @@ suture-node = { path = "../suture-node", version = "5.0.0", optional = true }
 
 flate2 = "1"
 tar = "0.4"
+difflib = "0.4"
 
 [features]
 node = ["dep:suture-node"]

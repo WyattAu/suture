@@ -16,10 +16,24 @@ fn get_template(name: &str) -> Result<Vec<TemplateEntry>, String> {
             TemplateEntry { path: "templates", content: None },
         ]),
         "video" => Ok(vec![
-            TemplateEntry { path: ".sutureignore", content: Some("# Temporary files\n*.tmp\n.DS_Store\n# Python cache\n__pycache__/\n*.pyc\n# Render output\nrender_cache/\n".into()) },
-            TemplateEntry { path: "README.md", content: Some(format!("# Video Project Repository\nInitialized by Suture on {date}\n")) },
-            TemplateEntry { path: "footage", content: None },
+            TemplateEntry { path: ".sutureignore", content: Some("# Temporary files\n*.tmp\n.DS_Store\n# Python cache\n__pycache__/\n*.pyc\n# Render output\nrender_cache/\n# Proxy media (large intermediate files)\nmedia/proxy/\n# Render cache\n.cache/\n*.render\n".into()) },
+            TemplateEntry { path: "README.md", content: Some(format!(
+                "# Video Project Repository\nInitialized by Suture on {date}\n\n\
+                 ## Structure\n\
+                 - timelines/ — OTIO timeline files (.otio)\n\
+                 - media/      — Source media files\n\
+                 - edits/      — Edit decision lists and notes\n\
+                 \n\
+                 ## Workflow\n\
+                 1. Import timelines: `suture timeline import my_timeline.otio`\n\
+                 2. View summary:     `suture timeline summary`\n\
+                 3. Diff versions:    `suture timeline diff --detailed`\n\
+                 4. Export for NLE:   `suture timeline export output.otio`\n"
+            )) },
+            TemplateEntry { path: "timelines", content: None },
+            TemplateEntry { path: "media", content: None },
             TemplateEntry { path: "edits", content: None },
+            TemplateEntry { path: "footage", content: None },
             TemplateEntry { path: "exports", content: None },
         ]),
         "data" => Ok(vec![
