@@ -107,10 +107,40 @@ Major release — version unification, release pipeline, defence/compliance feat
 
 ### Quality
 
-- **1,419 tests** across 37 crates, 0 failures
-- **81 CLI tests** with parallel-safe test isolation
+- **1,436 tests** across 37 crates, 0 failures
+- **98 CLI tests** with parallel-safe test isolation
 - **Prebuilt release binaries** for Linux/macOS/Windows
 - **33-crate publish script** verified for crates.io v5.0.0 release
+
+### Distribution
+
+- **npm package:** `suture-merge-driver` — auto-downloads platform binary
+- **pip package:** `suture-merge-driver` — Python wrapper for git merge driver
+- **VS Code extension:** one-click merge driver configuration
+- **Desktop app:** Tauri v2 with dark theme UI, 26 commands, auto-sync tray
+- **Blog post:** "Stop Having Merge Conflicts in package.json"
+- **Merge driver guide:** comprehensive setup and troubleshooting
+
+### Defence & Compliance
+
+- **Tamper-evident audit log:** BLAKE3 hash chain, `suture audit --verify`
+- **Bulk classification scan:** `suture classification scan` across all commits
+- **Compliance reports:** `suture classification report` for accreditation packages
+- **Audit logging** wired into commit and merge flows
+- **Doctor compliance check:** `suture doctor` now checks audit chain + signing
+
+### Film & Video
+
+- **Timeline management:** `suture timeline import/export/summary/diff/list`
+- **OTIO support:** minimal OTIO JSON parsing (tracks, clips, duration)
+- **Video template:** `suture init --template video` with timelines/, media/ dirs
+
+### Content Creator & YouTube
+
+- **Batch operations:** `suture batch stage/commit/export-clients` with glob patterns
+- **Report generation:** `suture report change/activity/stats` (text/markdown/HTML)
+- **Export templates:** `suture export --template/--client` with placeholder replacement
+- **Client delivery:** multi-client export with subdirectories
 
 ### Documentation
 

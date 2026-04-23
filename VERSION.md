@@ -2,7 +2,7 @@
 
 - **Current Version:** 5.0.0
 - **Crates.io:** 31 crates published (suture-cli at v1.0.0; needs republish at v5.0.0)
-- **Current Phase:** Phase 13D — Complete
+- **Current Phase:** Phase 26 — Complete
 - **Status:** Active Development
 - **Last Updated:** 2026-04-23
 - **Rust Edition:** 2024
@@ -88,6 +88,15 @@
 | **18** | Test Sweep | Full workspace: 1,419 tests, 0 failures, test isolation | v5.0 | ✅ Complete |
 | **19** | Publish Prep | 33-crate publish script, dry-run verified, README refresh | v5.0 | ✅ Complete |
 | **20** | README v5.0.0 | Refreshed README with all features, verticals, install options | v5.0 | ✅ Complete |
+| **21A** | npm Package | suture-merge-driver npm package with auto-download | v5.0 | ✅ Complete |
+| **21B** | Blog + Docs | Blog post, merge driver guide, release notes | v5.0 | ✅ Complete |
+| **22** | Desktop App v5 | Tauri backend (26 commands) + dark theme HTML UI | v5.0 | ✅ Complete |
+| **23A** | Tamper-Evident Audit | BLAKE3 hash chain audit log, suture audit command | v5.0 | ✅ Complete |
+| **23B** | Classification Scan | Bulk classification scan across repo history | v5.0 | ✅ Complete |
+| **24A** | Film Timeline | suture timeline import/export/summary/diff (OTIO) | v5.0 | ✅ Complete |
+| **24B** | YouTube Batch | suture report, batch ops, export templates | v5.0 | ✅ Complete |
+| **26** | VS Code Extension | Merge driver config, repo commands, auto-detect | v5.0 | ✅ Complete |
+| **27** | Final Sweep | 1,436 tests, 0 failures, all docs updated | v5.0 | ✅ Complete |
 
 ### Direction A — Product Polish (v1.3–v1.4) ✅
 
