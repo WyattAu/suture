@@ -11,23 +11,23 @@ fn get_template(name: &str) -> Result<Vec<TemplateEntry>, String> {
     let date = chrono::Local::now().format("%Y-%m-%d").to_string();
     match name {
         "document" => Ok(vec![
-            TemplateEntry { path: ".sutureignore", content: Some("*.tmp\n~$*\n.DS_Store\n".into()) },
+            TemplateEntry { path: ".sutureignore", content: Some("# Temporary files\n*.tmp\n~$*\n.DS_Store\nThumbs.db\n".into()) },
             TemplateEntry { path: "README.md", content: Some(format!("# Project Repository\nInitialized by Suture on {date}\n")) },
             TemplateEntry { path: "templates", content: None },
         ]),
         "video" => Ok(vec![
-            TemplateEntry { path: ".sutureignore", content: Some("*.tmp\n.DS_Store\n__pycache__/\n*.pyc\nrender_cache/\n".into()) },
+            TemplateEntry { path: ".sutureignore", content: Some("# Temporary files\n*.tmp\n.DS_Store\n# Python cache\n__pycache__/\n*.pyc\n# Render output\nrender_cache/\n".into()) },
             TemplateEntry { path: "README.md", content: Some(format!("# Video Project Repository\nInitialized by Suture on {date}\n")) },
             TemplateEntry { path: "footage", content: None },
             TemplateEntry { path: "edits", content: None },
             TemplateEntry { path: "exports", content: None },
         ]),
         "data" => Ok(vec![
-            TemplateEntry { path: ".sutureignore", content: Some("*.tmp\n.DS_Store\n__pycache__/\nnode_modules/\ntarget/\n".into()) },
+            TemplateEntry { path: ".sutureignore", content: Some("# Temporary files\n*.tmp\n.DS_Store\n# Build directories\nnode_modules/\ntarget/\ndist/\nbuild/\n".into()) },
             TemplateEntry { path: "README.md", content: Some(format!("# Data Project Repository\nInitialized by Suture on {date}\n")) },
         ]),
         "report" => Ok(vec![
-            TemplateEntry { path: ".sutureignore", content: Some("*.tmp\n~$*\n.DS_Store\narchive/\n".into()) },
+            TemplateEntry { path: ".sutureignore", content: Some("# Temporary files\n*.tmp\n~$*\n.DS_Store\nThumbs.db\n# Archive\narchive/\n".into()) },
             TemplateEntry { path: "README.md", content: Some(format!(
                 "# Report Repository\nInitialized by Suture on {date}\n\n\
                  ## Structure\n\

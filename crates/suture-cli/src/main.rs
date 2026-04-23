@@ -246,7 +246,8 @@ EXAMPLES:
     suture diff photo.png                    # Image metadata diff (auto-detected)
     suture diff config.yaml                  # YAML semantic diff (auto-detected)
     suture diff --integrity                  # Supply chain integrity analysis
-    suture diff --integrity HEAD~5..HEAD     # Integrity check on recent commits")]
+    suture diff --integrity HEAD~5..HEAD     # Integrity check on recent commits
+    suture diff --summary                    # Human-readable change summary (no diff output)")]
     Diff {
         /// From ref (commit hash or branch name). Omit for HEAD.
         #[arg(short, long)]
@@ -266,6 +267,9 @@ EXAMPLES:
         /// Detect classification marking changes (defence/compliance)
         #[arg(long)]
         classification: bool,
+        /// Human-readable change summary (no diff output)
+        #[arg(long)]
+        summary: bool,
     },
     /// Revert a commit
     #[command(after_long_help = "\
@@ -591,7 +595,11 @@ EXAMPLES:
     /// Verify repository integrity
     Fsck,
     /// Check repository health and configuration
-    Doctor,
+    Doctor {
+        /// Automatically fix detected issues
+        #[arg(long)]
+        fix: bool,
+    },
     /// Interact with Git repositories
     #[command(after_long_help = "\
 EXAMPLES:
@@ -1018,8 +1026,9 @@ async fn main() {
             integrity,
             name_only,
             classification,
+            summary,
         } => {
-            cmd::diff::cmd_diff(from.as_deref(), to.as_deref(), cached, integrity, name_only, classification).await
+            cmd::diff::cmd_diff(from.as_deref(), to.as_deref(), cached, integrity, name_only, classification, summary).await
         }
         Commands::Revert { commit, message } => {
             cmd::revert::cmd_revert(&commit, message.as_deref()).await
@@ -1163,7 +1172,7 @@ async fn main() {
             .await
         }
         Commands::Fsck => cmd::fsck::cmd_fsck().await,
-        Commands::Doctor => cmd::doctor::cmd_doctor().await,
+        Commands::Doctor { fix } => cmd::doctor::cmd_doctor(fix).await,
         Commands::Bisect { action } => cmd::bisect::cmd_bisect(&action).await,
         Commands::Git { action } => {
             let git_action = match action {
@@ -1382,6 +1391,7 @@ mod tests {
                 integrity,
                 name_only,
                 classification,
+                summary,
             } => {
                 assert!(cached);
                 assert!(from.is_none());
@@ -1389,6 +1399,7 @@ mod tests {
                 assert!(!integrity);
                 assert!(!name_only);
                 assert!(!classification);
+                assert!(!summary);
             }
             other => panic!("expected Diff, got {other:?}"),
         }
@@ -1405,6 +1416,7 @@ mod tests {
                 integrity,
                 name_only,
                 classification,
+                summary,
             } => {
                 assert!(!cached);
                 assert_eq!(from.as_deref(), Some("HEAD~1"));
@@ -1412,6 +1424,7 @@ mod tests {
                 assert!(!integrity);
                 assert!(!name_only);
                 assert!(!classification);
+                assert!(!summary);
             }
             other => panic!("expected Diff, got {other:?}"),
         }

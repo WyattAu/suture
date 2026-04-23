@@ -25,6 +25,204 @@ fn blob_to_string(blob: &[u8], path: &str) -> String {
     }
 }
 
+fn relative_time(timestamp: u64) -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let delta = now.saturating_sub(timestamp);
+
+    if delta < 60 {
+        "just now".to_string()
+    } else if delta < 3600 {
+        let mins = delta / 60;
+        format!("{mins} minute{} ago", if mins == 1 { "" } else { "s" })
+    } else if delta < 86400 {
+        let hours = delta / 3600;
+        format!("{hours} hour{} ago", if hours == 1 { "" } else { "s" })
+    } else if delta < 2592000 {
+        let days = delta / 86400;
+        format!("{days} day{} ago", if days == 1 { "" } else { "s" })
+    } else if delta < 31536000 {
+        let months = delta / 2592000;
+        format!("{months} month{} ago", if months == 1 { "" } else { "s" })
+    } else {
+        let years = delta / 31536000;
+        format!("{years} year{} ago", if years == 1 { "" } else { "s" })
+    }
+}
+
+fn file_type_icon(path: &str) -> &'static str {
+    use std::path::Path as StdPath;
+    suture_core::file_type::detect_file_type(StdPath::new(path)).icon()
+}
+
+struct FileMeta {
+    author: String,
+    timestamp: u64,
+}
+
+fn find_latest_patch_for_file(
+    repo: &suture_core::repository::Repository,
+    file_path: &str,
+    from: Option<&str>,
+) -> Option<FileMeta> {
+    use suture_core::patch::types::PatchId;
+
+    let head_id: PatchId = match from {
+        Some(f) => match repo.resolve_ref(f) {
+            Ok(id) => id,
+            Err(_) => return None,
+        },
+        None => match repo.head() {
+            Ok((_, id)) => id,
+            Err(_) => return None,
+        },
+    };
+
+    let chain = repo.dag().patch_chain(&head_id);
+    let mut latest: Option<(&str, u64)> = None;
+
+    for id in &chain {
+        let Some(patch) = repo.dag().get_patch(id) else {
+            continue;
+        };
+        if patch.touch_set.contains(file_path)
+            && latest.is_none_or(|(_, ts)| patch.timestamp > ts)
+        {
+            latest = Some((&patch.author, patch.timestamp));
+        }
+    }
+
+    latest.map(|(author, timestamp)| FileMeta {
+        author: author.to_string(),
+        timestamp,
+    })
+}
+
+fn build_summary_report(
+    entries: &[suture_core::engine::diff::DiffEntry],
+    repo: &suture_core::repository::Repository,
+    from: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use suture_core::engine::diff::DiffType;
+
+    println!("=== Change Summary ===");
+    println!("{} file{} changed\n", entries.len(), if entries.len() == 1 { "" } else { "s" });
+
+    for entry in entries {
+        let icon = file_type_icon(&entry.path);
+
+        match &entry.diff_type {
+            DiffType::Renamed { old_path, .. } => {
+                println!("{icon} {} (renamed from {})", entry.path, old_path);
+                if let Some(meta) = find_latest_patch_for_file(repo, &entry.path, from) {
+                    println!("   by {} — {}", meta.author, relative_time(meta.timestamp));
+                }
+            }
+            DiffType::Added => {
+                println!("{icon} {} (new file)", entry.path);
+                if let Some(meta) = find_latest_patch_for_file(repo, &entry.path, from) {
+                    println!("   by {} — {}", meta.author, relative_time(meta.timestamp));
+                }
+            }
+            DiffType::Deleted => {
+                println!("{icon} {} (removed)", entry.path);
+                if let Some(meta) = find_latest_patch_for_file(repo, &entry.path, from) {
+                    println!("   by {} — {}", meta.author, relative_time(meta.timestamp));
+                }
+            }
+            DiffType::Modified => {
+                let semantic_detail = extract_semantic_item_count(repo, entry);
+                let label = match semantic_detail {
+                    Some(count) => format!("modified) — {count}"),
+                    None => "modified)".to_string(),
+                };
+                println!("{icon} {} ({label}", entry.path);
+                if let Some(meta) = find_latest_patch_for_file(repo, &entry.path, from) {
+                    println!("   by {} — {}", meta.author, relative_time(meta.timestamp));
+                }
+            }
+        }
+        println!();
+    }
+
+    Ok(())
+}
+
+fn extract_semantic_item_count(
+    repo: &suture_core::repository::Repository,
+    entry: &suture_core::engine::diff::DiffEntry,
+) -> Option<String> {
+    use std::path::Path as StdPath;
+
+    let (old_hash, new_hash) = match (&entry.old_hash, &entry.new_hash) {
+        (Some(o), Some(n)) => (o, n),
+        _ => return None,
+    };
+
+    let registry = crate::driver_registry::builtin_registry();
+    let Ok(driver) = registry.get_for_path(StdPath::new(&entry.path)) else {
+        return None;
+    };
+
+    let old_blob = repo.cas().get_blob(old_hash).ok()?;
+    let new_blob = repo
+        .cas()
+        .get_blob(new_hash)
+        .ok()
+        .or_else(|| std::fs::read(repo.root().join(&entry.path)).ok())?;
+
+    let old_str = blob_to_string(&old_blob, &entry.path);
+    let new_str = blob_to_string(&new_blob, &entry.path);
+
+    let Ok(semantic) = driver.format_diff(Some(&old_str), &new_str) else {
+        return None;
+    };
+    if semantic.is_empty() || semantic == "no changes" {
+        return None;
+    }
+
+    parse_item_count_from_semantic(&semantic, &entry.path)
+}
+
+fn parse_item_count_from_semantic(semantic: &str, path: &str) -> Option<String> {
+    let lower = path.to_lowercase();
+    let item_label = if lower.ends_with(".xlsx") || lower.ends_with(".csv") {
+        "cell"
+    } else if lower.ends_with(".pptx") {
+        "slide"
+    } else if lower.ends_with(".docx") {
+        "paragraph"
+    } else if lower.ends_with(".json") || lower.ends_with(".yaml") || lower.ends_with(".yml") || lower.ends_with(".toml") {
+        "field"
+    } else {
+        "item"
+    };
+
+    let mut add_count: usize = 0;
+    let mut remove_count: usize = 0;
+    let mut modify_count: usize = 0;
+
+    for line in semantic.lines() {
+        let l = line.trim().to_lowercase();
+        if l.starts_with('+') || l.contains("added") {
+            add_count += 1;
+        } else if l.starts_with('-') || l.contains("removed") || l.contains("deleted") {
+            remove_count += 1;
+        } else if l.starts_with('~') || l.contains("changed") || l.contains("modified") {
+            modify_count += 1;
+        }
+    }
+
+    let total = add_count + remove_count + modify_count;
+    if total == 0 {
+        return None;
+    }
+
+    Some(format!("{total} {item_label}{} changed", if total == 1 { "" } else { "s" }))
+}
+
 pub(crate) async fn cmd_diff(
     from: Option<&str>,
     to: Option<&str>,
@@ -32,6 +230,7 @@ pub(crate) async fn cmd_diff(
     integrity: bool,
     name_only: bool,
     classification: bool,
+    summary: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use suture_core::engine::diff::DiffType;
     use suture_core::engine::merge::diff_lines;
@@ -46,6 +245,11 @@ pub(crate) async fn cmd_diff(
 
     if entries.is_empty() {
         println!("No differences.");
+        return Ok(());
+    }
+
+    if summary {
+        build_summary_report(&entries, &repo, from)?;
         return Ok(());
     }
 

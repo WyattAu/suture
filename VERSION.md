@@ -63,6 +63,10 @@
 | **9D** | Export Command | `suture export` for clean client delivery | v5.0 | ✅ Complete |
 | **9E** | Template Repos | `suture init --template document|video|data|report` | v5.0 | ✅ Complete |
 | **10A** | Onboarding | Welcome banner on first `suture init` | v5.0 | ✅ Complete |
+| **11A** | Diff Summary | `suture diff --summary` for non-technical stakeholders | v5.0 | ✅ Complete |
+| **11B** | Doctor Fix | `suture doctor --fix` auto-remediation | v5.0 | ✅ Complete |
+| **11C** | Log Graph Polish | Merge lines, HEAD labels, relative time, author names | v5.0 | ✅ Complete |
+| **11D** | Ignore Improvements | Negation patterns, directory-only, rule attribution | v5.0 | ✅ Complete |
 
 ### Direction A — Product Polish (v1.3–v1.4) ✅
 

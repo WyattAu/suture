@@ -1,5 +1,20 @@
 use crate::ref_utils::parse_time_filter;
 
+fn relative_time(timestamp: u64) -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let diff = now.saturating_sub(timestamp);
+    match diff {
+        0..=60 => "just now".to_string(),
+        61..=3600 => format!("{}m ago", diff / 60),
+        3601..=86400 => format!("{}h ago", diff / 3600),
+        86401..=2592000 => format!("{}d ago", diff / 86400),
+        _ => format!("{}mo ago", diff / 2592000),
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn cmd_log(
     branch: Option<&str>,
@@ -166,6 +181,7 @@ pub(crate) async fn cmd_log(
     }
     // Sort branches for deterministic graph column assignment
     branches.sort_by(|a, b| a.0.cmp(&b.0));
+    let head_branch = repo.head().map(|(name, _)| name).unwrap_or_default();
 
     let all_patches = repo.all_patches();
     let mut commit_groups: Vec<(Vec<suture_core::patch::types::PatchId>, String, u64)> = Vec::new();
@@ -238,10 +254,37 @@ pub(crate) async fn cmd_log(
             "????????".to_string()
         };
 
+        let first_patch = patch_ids.first().and_then(|pid| repo.dag().get_patch(pid));
+        let author_truncated = first_patch
+            .map(|p| {
+                let name = p.author.trim();
+                if name.len() > 12 {
+                    format!("{}...", &name[..12])
+                } else {
+                    name.to_string()
+                }
+            })
+            .unwrap_or_default();
+        let time_str = first_patch
+            .map(|p| relative_time(p.timestamp))
+            .unwrap_or_default();
+
+        let is_merge = first_patch.map(|p| p.parent_ids.len() > 1).unwrap_or(false);
+        let merge_col = patch_ids
+            .first()
+            .and_then(|pid| col_assign.get(pid).copied())
+            .unwrap_or(0);
+
         let labels: Vec<String> = branches
             .iter()
             .filter(|(_, id)| patch_ids.contains(id))
-            .map(|(name, _)| name.clone())
+            .map(|(name, _)| {
+                if name == &head_branch {
+                    format!("HEAD -> {}", name)
+                } else {
+                    name.clone()
+                }
+            })
             .collect();
         let label_str = if labels.is_empty() {
             String::new()
@@ -249,7 +292,26 @@ pub(crate) async fn cmd_log(
             format!(" ({})", labels.join(", "))
         };
 
-        println!("{} {} {}{}", row_str, short_hash, message, label_str);
+        println!(
+            "{} {} {} {} {}{}",
+            row_str, short_hash, author_truncated, time_str, message, label_str
+        );
+
+        if is_merge {
+            let mut merge_open = vec![' '; num_cols];
+            let mut merge_close = vec![' '; num_cols];
+            for &col in &used_cols {
+                merge_open[col] = '|';
+                merge_close[col] = '|';
+            }
+            if merge_col + 1 < num_cols {
+                merge_open[merge_col + 1] = '\\';
+                merge_close[merge_col + 1] = '/';
+            }
+            println!("{}", merge_open.iter().collect::<String>());
+            println!("{}", merge_close.iter().collect::<String>());
+        }
+
         if stat && let Some(pid) = patch_ids.first()
             && let Some(patch) = repo.dag().get_patch(pid)
         {
