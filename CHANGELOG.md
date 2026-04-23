@@ -1,5 +1,100 @@
 # Changelog
 
+## [5.0.0] - 2026-04-23
+
+Major release — version unification, release pipeline, defence/compliance features, Google Drive replacement.
+
+### Version & Distribution
+
+- **All 36 crates unified to v5.0.0** — coherent versioning across the workspace
+- **GitHub Actions release workflow** — prebuilt binaries for Linux x86_64, macOS x86_64 + aarch64, Windows x86_64 with SHA256 checksums
+- **`cargo install suture-cli`** now installs a modern v5.0.0 binary (was v1.0.0)
+- **GitHub Release v5.0.0** — https://github.com/WyattAu/suture/releases/tag/v5.0.0
+
+### Defence & Compliance
+
+- **`suture log --audit`** — Structured audit trail export for compliance accreditation
+  - `--audit-format json|csv|text` — three output formats
+  - JSON: machine-readable with ISO 8601 timestamps, full metadata
+  - CSV: spreadsheet-ready for compliance packages
+  - Text: human-readable formatted report
+- **`suture diff --classification`** — Detect security classification marking changes
+  - NATO/US/UK/AU classification hierarchies (UNCLASSIFIED through TOP SECRET//SCI)
+  - Detects ADDED, REMOVED, UPGRADED, DOWNGRADED events
+  - Works on text files and DOCX (Office XML) format
+
+### Google Drive Replacement
+
+- **`suture sync`** — One command to auto-commit, pull, and push
+  - Smart commit messages: "Sync: update 2 documents, 1 spreadsheet"
+  - Categorizes files by type (documents, spreadsheets, presentations)
+  - Handles merge conflicts gracefully (stops, doesn't overwrite)
+  - Works offline (skips push/pull when no remote configured)
+  - `--no-push`, `--pull-only`, `--message` flags
+
+### New Commands
+
+- **`suture switch`** — Modern branch switching (alias for `checkout -b`)
+- **`suture restore`** — Restore working tree files from HEAD or specific ref
+- **`suture ls-remote`** — List branches on a remote Hub without cloning
+- **`suture archive`** — Export repo contents as tar.gz/tar/zip
+- **`suture grep`** — Search tracked file content with regex
+- **`suture export`** — Clean snapshot delivery for client handoff (directory or zip)
+- **`suture stash branch`** — Create branch from stash entry
+- **`suture hook list/run/edit`** — Manage repository hooks
+- **`suture remote rename`** — Rename configured remotes
+
+### New Flags
+
+- **`suture log --stat`** — Per-commit file change statistics
+- **`suture log --diff`** — Inline patch content in log output
+- **`suture log --audit`** — Structured audit trail export
+- **`suture log --graph`** — Improved with merge lines, HEAD labels, author names, relative time
+- **`suture diff --name-only`** — List only changed file names
+- **`suture diff --summary`** — Human-readable change summary for non-technical stakeholders
+- **`suture diff --classification`** — Classification marking change detection
+- **`suture blame --at <ref>`** — Historical blame at any commit
+- **`suture show --stat`** — File classification in show output
+- **`suture tag --sort date|name`** — Sort tags by date or name
+- **`suture tag 'pattern'`** — Filter tags by glob pattern
+- **`suture reflog --show`** — Full patch details in reflog
+- **`suture notes add --append`** — Append to existing notes
+- **`suture doctor --fix`** — Auto-remediation of common issues
+- **`suture init --template`** — Bootstrap from 4 templates (document/video/data/report)
+- **`suture archive --prefix`** — Custom directory prefix in archives
+
+### Core Engine
+
+- **Unified `resolve_ref()`** — Single method for HEAD, HEAD~N, hex hash, short prefix, tag, branch
+- **Detached HEAD** — Checkout arbitrary commits, `is_detached()`, `get_detached_head()`
+- **Historical blame** — `blame()` accepts optional `at` parameter
+
+### OOXML Conflict UX
+
+- DOCX/XLSX/PPTX conflicts no longer corrupt files
+- Preserves "ours" version, generates `.suture_conflicts/report.md`
+- Dry-run mode prints OOXML conflict handling note
+
+### Binary Format Fix
+
+- `suture diff` for DOCX/XLSX/PPTX/PDF/images now preserves raw bytes
+- Semantic drivers receive intact ZIP/binary content via `from_utf8_unchecked`
+
+### CLI Improvements
+
+- Remote tracking in status: ahead/behind counts when tracking refs exist
+- Progress indicators for clone/fetch/pull/push
+- Negation patterns in `.sutureignore` (`!important.tmp`)
+- Directory-only ignore patterns (`node_modules/`)
+- Rule attribution in `suture ignore check`
+- Welcome banner on first `suture init`
+- 60-second quickstart for non-developers
+
+### Documentation
+
+- `docs/quickstart.md` — 60-second quickstart targeting non-developers
+- CHANGELOG.md updated for v5.0.0
+
 ## [4.1.0] - 2026-04-22
 
 Production VCS readiness release — 10 new commands, core engine improvements, binary diff fix.
