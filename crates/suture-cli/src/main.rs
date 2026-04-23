@@ -179,6 +179,9 @@ EXAMPLES:
         /// Output format for --audit (json, csv, text)
         #[arg(long, default_value = "text")]
         audit_format: String,
+        /// Verify commit signatures
+        #[arg(long)]
+        verify: bool,
     },
     /// Switch to a different branch
     #[command(after_long_help = "\
@@ -372,6 +375,9 @@ EXAMPLES:
         /// Blame as of a specific commit (default: HEAD)
         #[arg(long)]
         at: Option<String>,
+        /// Only show lines in range (e.g., -L 10,20)
+        #[arg(short = 'L', long = "lines")]
+        lines: Option<String>,
     },
     /// Tag operations
     #[command(after_long_help = "\
@@ -571,6 +577,20 @@ EXAMPLES:
     },
     /// Show version information
     Version,
+    /// Verify commit signatures
+    #[command(after_long_help = "\
+EXAMPLES:
+    suture verify             # Verify HEAD commit signature
+    suture verify abc123      # Verify specific commit
+    suture verify -v HEAD     # Show key details")]
+    Verify {
+        /// Commit ref to verify (default: HEAD)
+        #[arg(default_value = "HEAD")]
+        commit_ref: String,
+        /// Show key details (author, fingerprint, patch id)
+        #[arg(short, long)]
+        verbose: bool,
+    },
     /// Garbage collect unreachable objects
     Gc,
     /// Search for a pattern in tracked files
@@ -610,6 +630,56 @@ EXAMPLES:
         /// Automatically fix detected issues
         #[arg(long)]
         fix: bool,
+    },
+    /// Remove untracked files from the working tree
+    #[command(after_long_help = "\
+EXAMPLES:
+    suture clean                # Remove all untracked files
+    suture clean -n             # Preview what would be deleted
+    suture clean -d             # Also remove empty untracked directories
+    suture clean build/         # Only clean files under build/")]
+    Clean {
+        /// Show what would be deleted without actually deleting
+        #[arg(short = 'n', long)]
+        dry_run: bool,
+        /// Also remove empty untracked directories
+        #[arg(short, long)]
+        dirs: bool,
+        /// Paths to clean (default: all untracked)
+        paths: Vec<String>,
+    },
+    /// Describe a commit using the nearest tag
+    #[command(after_long_help = "\
+EXAMPLES:
+    suture describe             # Describe HEAD
+    suture describe HEAD~3      # Describe a specific commit
+    suture describe --all       # Search all tags")]
+    Describe {
+        /// Commit ref to describe (default: HEAD)
+        #[arg(default_value = "HEAD")]
+        commit_ref: String,
+        /// Search all tags (not just annotated)
+        #[arg(long)]
+        all: bool,
+        /// Only search tags (default behavior)
+        #[arg(long)]
+        tags: bool,
+    },
+    /// Parse revision names to hashes
+    #[command(after_long_help = "\
+EXAMPLES:
+    suture rev-parse HEAD       # Resolve HEAD to full hash
+    suture rev-parse --short HEAD  # Abbreviated hash
+    suture rev-parse --verify main  # Verify ref exists")]
+    RevParse {
+        /// Refs to parse
+        refs: Vec<String>,
+        /// Output abbreviated hash
+        #[arg(long)]
+        short: bool,
+        /// Verify the ref exists (error if not)
+        #[arg(long)]
+        verify: bool,
     },
     /// Interact with Git repositories
     #[command(after_long_help = "\
@@ -792,6 +862,13 @@ pub(crate) enum StashAction {
     Branch {
         /// Branch name to create
         name: String,
+        /// Stash index (default: 0 = latest)
+        #[arg(default_value_t = 0)]
+        index: usize,
+    },
+    /// Show stash contents
+    #[command(after_long_help = "EXAMPLES:\n    suture stash show           # Show latest stash\n    suture stash show 2         # Show stash at index 2")]
+    Show {
         /// Stash index (default: 0 = latest)
         #[arg(default_value_t = 0)]
         index: usize,
@@ -1055,6 +1132,7 @@ async fn main() {
             diff,
             audit,
             audit_format,
+            verify,
         } => {
             cmd::log::cmd_log(
                 branch.as_deref(),
@@ -1070,6 +1148,7 @@ async fn main() {
                 diff,
                 audit,
                 &audit_format,
+                verify,
             )
             .await
         }
@@ -1132,7 +1211,7 @@ async fn main() {
             resume,
             abort,
         } => cmd::rebase::cmd_rebase(&branch, interactive, resume, abort).await,
-        Commands::Blame { path, at } => cmd::blame::cmd_blame(&path, at.as_deref()).await,
+        Commands::Blame { path, at, lines } => cmd::blame::cmd_blame(&path, at.as_deref(), lines.as_deref()).await,
         Commands::Tag {
             name,
             target,
@@ -1244,6 +1323,9 @@ async fn main() {
         }
         Commands::Fsck => cmd::fsck::cmd_fsck().await,
         Commands::Doctor { fix } => cmd::doctor::cmd_doctor(fix).await,
+        Commands::Clean { dry_run, dirs, paths } => cmd::clean::cmd_clean(dry_run, dirs, &paths).await,
+        Commands::Describe { commit_ref, all, tags } => cmd::describe::cmd_describe(&commit_ref, all, tags).await,
+        Commands::RevParse { refs, short, verify } => cmd::rev_parse::cmd_rev_parse(&refs, short, verify).await,
         Commands::Bisect { action } => cmd::bisect::cmd_bisect(&action).await,
         Commands::Hook { action } => {
             let hook_action = match action {
@@ -1280,6 +1362,9 @@ async fn main() {
             cmd::sync::cmd_sync(&remote, no_push, pull_only, message.as_deref()).await
         }
         Commands::Undo { steps, hard } => cmd::undo::cmd_undo(steps, hard).await,
+        Commands::Verify { commit_ref, verbose } => {
+            cmd::verify::cmd_verify(&commit_ref, verbose).await
+        }
         Commands::Version => cmd::version::cmd_version().await,
         Commands::Tui => cmd::tui::cmd_tui().await,
         Commands::Export {
@@ -1842,5 +1927,250 @@ mod tests {
             },
             other => panic!("expected Git, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_stash_show() {
+        let cli = parse(&["suture", "stash", "show"]);
+        match cli.command {
+            Commands::Stash { action } => match action {
+                StashAction::Show { index } => {
+                    assert_eq!(index, 0);
+                }
+                other => panic!("expected StashAction::Show, got {other:?}"),
+            },
+            other => panic!("expected Stash, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_stash_show_with_index() {
+        let cli = parse(&["suture", "stash", "show", "3"]);
+        match cli.command {
+            Commands::Stash { action } => match action {
+                StashAction::Show { index } => {
+                    assert_eq!(index, 3);
+                }
+                other => panic!("expected StashAction::Show, got {other:?}"),
+            },
+            other => panic!("expected Stash, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_clean_dry_run() {
+        let cli = parse(&["suture", "clean", "-n"]);
+        match cli.command {
+            Commands::Clean { dry_run, dirs, paths } => {
+                assert!(dry_run);
+                assert!(!dirs);
+                assert!(paths.is_empty());
+            }
+            other => panic!("expected Clean, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_clean_with_dirs() {
+        let cli = parse(&["suture", "clean", "-d", "-n", "build/"]);
+        match cli.command {
+            Commands::Clean { dry_run, dirs, paths } => {
+                assert!(dry_run);
+                assert!(dirs);
+                assert_eq!(paths, vec!["build/"]);
+            }
+            other => panic!("expected Clean, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_blame_line_range() {
+        let cli = parse(&["suture", "blame", "-L", "10,20", "src/main.rs"]);
+        match cli.command {
+            Commands::Blame { path, lines, .. } => {
+                assert_eq!(path, "src/main.rs");
+                assert_eq!(lines.as_deref(), Some("10,20"));
+            }
+            other => panic!("expected Blame, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_blame_line_range_long() {
+        let cli = parse(&["suture", "blame", "--lines", "5,15", "file.txt"]);
+        match cli.command {
+            Commands::Blame { lines, .. } => {
+                assert_eq!(lines.as_deref(), Some("5,15"));
+            }
+            other => panic!("expected Blame, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_describe() {
+        let cli = parse(&["suture", "describe"]);
+        match cli.command {
+            Commands::Describe { commit_ref, all, tags } => {
+                assert_eq!(commit_ref, "HEAD");
+                assert!(!all);
+                assert!(!tags);
+            }
+            other => panic!("expected Describe, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_describe_with_ref() {
+        let cli = parse(&["suture", "describe", "--all", "HEAD~3"]);
+        match cli.command {
+            Commands::Describe { commit_ref, all, .. } => {
+                assert_eq!(commit_ref, "HEAD~3");
+                assert!(all);
+            }
+            other => panic!("expected Describe, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_rev_parse() {
+        let cli = parse(&["suture", "rev-parse", "HEAD"]);
+        match cli.command {
+            Commands::RevParse { refs, short, verify } => {
+                assert_eq!(refs, vec!["HEAD"]);
+                assert!(!short);
+                assert!(!verify);
+            }
+            other => panic!("expected RevParse, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_rev_parse_short() {
+        let cli = parse(&["suture", "rev-parse", "--short", "HEAD"]);
+        match cli.command {
+            Commands::RevParse { short, .. } => {
+                assert!(short);
+            }
+            other => panic!("expected RevParse, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_rev_parse_verify() {
+        let cli = parse(&["suture", "rev-parse", "--verify", "main"]);
+        match cli.command {
+            Commands::RevParse { verify, refs, .. } => {
+                assert!(verify);
+                assert_eq!(refs, vec!["main"]);
+            }
+            other => panic!("expected RevParse, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_verify_parse() {
+        let cli = parse(&["suture", "verify"]);
+        match cli.command {
+            Commands::Verify { commit_ref, verbose } => {
+                assert_eq!(commit_ref, "HEAD");
+                assert!(!verbose);
+            }
+            other => panic!("expected Verify, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_verify_with_ref() {
+        let cli = parse(&["suture", "verify", "abc123"]);
+        match cli.command {
+            Commands::Verify { commit_ref, verbose } => {
+                assert_eq!(commit_ref, "abc123");
+                assert!(!verbose);
+            }
+            other => panic!("expected Verify, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_verify_verbose() {
+        let cli = parse(&["suture", "verify", "-v", "HEAD"]);
+        match cli.command {
+            Commands::Verify { commit_ref, verbose } => {
+                assert_eq!(commit_ref, "HEAD");
+                assert!(verbose);
+            }
+            other => panic!("expected Verify, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_log_verify_flag() {
+        let cli = parse(&["suture", "log", "--verify"]);
+        match cli.command {
+            Commands::Log { verify, .. } => assert!(verify),
+            other => panic!("expected Log, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_verify_unsigned_commit() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path().to_path_buf();
+        let mut repo = suture_core::repository::Repository::init(&dir_path, "testuser").unwrap();
+        repo.set_config("user.name", "testuser").unwrap();
+        let file_path = dir_path.join("hello.txt");
+        std::fs::write(&file_path, "hello").unwrap();
+        repo.add("hello.txt").unwrap();
+        repo.commit("test commit").unwrap();
+
+        let prev = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&dir_path).unwrap();
+        let result = cmd::verify::cmd_verify("HEAD", false).await;
+        std::env::set_current_dir(&prev).unwrap();
+        assert!(result.is_ok());
+        drop(dir);
+    }
+
+    #[tokio::test]
+    async fn test_verify_signed_commit() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path().to_path_buf();
+        let mut repo = suture_core::repository::Repository::init(&dir_path, "testuser").unwrap();
+        repo.set_config("user.name", "testuser").unwrap();
+
+        let keypair = suture_core::signing::SigningKeypair::generate();
+        let keys_dir = dir_path.join(".suture").join("keys");
+        std::fs::create_dir_all(&keys_dir).unwrap();
+        std::fs::write(keys_dir.join("default.ed25519"), keypair.private_key_bytes()).unwrap();
+        repo.set_config("signing.key", "default").unwrap();
+
+        let file_path = dir_path.join("hello.txt");
+        std::fs::write(&file_path, "hello").unwrap();
+        repo.add("hello.txt").unwrap();
+        repo.commit("test commit").unwrap();
+
+        let (_, head_id) = repo.head().unwrap();
+        let patch = repo.dag().get_patch(&head_id).unwrap();
+        repo.meta().store_public_key(&patch.author, &keypair.public_key_bytes()).unwrap();
+
+        let canonical = suture_core::signing::canonical_patch_bytes(
+            &patch.operation_type.to_string(),
+            &patch.touch_set.addresses(),
+            &patch.target_path,
+            &patch.payload,
+            &patch.parent_ids,
+            &patch.author,
+            &patch.message,
+            patch.timestamp,
+        );
+        let sig = keypair.sign(&canonical);
+        repo.meta().store_signature(&patch.id.to_hex(), &sig.to_bytes()).unwrap();
+
+        let prev = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&dir_path).unwrap();
+        let result = cmd::verify::cmd_verify("HEAD", false).await;
+        std::env::set_current_dir(&prev).unwrap();
+        assert!(result.is_ok());
+        drop(dir);
     }
 }

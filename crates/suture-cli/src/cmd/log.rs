@@ -1,5 +1,41 @@
 use crate::ref_utils::parse_time_filter;
 
+fn verify_status(
+    repo: &suture_core::repository::Repository,
+    patch: &suture_core::patch::types::Patch,
+) -> &'static str {
+    let pub_key = match repo.meta().get_public_key(&patch.author) {
+        Ok(Some(k)) => k,
+        _ => return "\u{2014} unsigned",
+    };
+    let sig = match repo.meta().get_signature(&patch.id.to_hex()) {
+        Ok(Some(s)) => s,
+        _ => return "\u{2014} unsigned",
+    };
+    let pub_key_arr: [u8; 32] = match pub_key.try_into() {
+        Ok(k) => k,
+        Err(_) => return "\u{2717} INVALID",
+    };
+    let sig_arr: [u8; 64] = match sig.try_into() {
+        Ok(s) => s,
+        Err(_) => return "\u{2717} INVALID",
+    };
+    let canonical = suture_core::signing::canonical_patch_bytes(
+        &patch.operation_type.to_string(),
+        &patch.touch_set.addresses(),
+        &patch.target_path,
+        &patch.payload,
+        &patch.parent_ids,
+        &patch.author,
+        &patch.message,
+        patch.timestamp,
+    );
+    match suture_core::signing::verify_signature(&pub_key_arr, &canonical, &sig_arr) {
+        Ok(()) => "\u{2713} VALID",
+        Err(_) => "\u{2717} INVALID",
+    }
+}
+
 fn relative_time(timestamp: u64) -> String {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -30,6 +66,7 @@ pub(crate) async fn cmd_log(
     diff: bool,
     audit: bool,
     audit_format: &str,
+    verify: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     fn format_stat(patch: &suture_core::patch::types::Patch) -> String {
         let files = patch.touch_set.addresses();
@@ -121,7 +158,15 @@ pub(crate) async fn cmd_log(
         if oneline {
             for patch in &patches {
                 let short_hash = patch.id.to_hex().chars().take(8).collect::<String>();
-                if stat {
+                if verify {
+                    let vstatus = verify_status(&repo, patch);
+                    if stat {
+                        let stat_str = format_stat(patch);
+                        println!("{} {} | {} [{}]", short_hash, patch.message, stat_str.trim(), vstatus);
+                    } else {
+                        println!("{} {} [{}]", short_hash, patch.message, vstatus);
+                    }
+                } else if stat {
                     let stat_str = format_stat(patch);
                     println!("{} {} | {}", short_hash, patch.message, stat_str.trim());
                 } else {
@@ -132,10 +177,12 @@ pub(crate) async fn cmd_log(
         }
 
         for (i, patch) in patches.iter().enumerate() {
-            if i == 0 {
-                println!("* {} {}", patch.id.to_hex(), patch.message);
+            let prefix = if i == 0 { "* " } else { "  " };
+            if verify {
+                let vstatus = verify_status(&repo, patch);
+                println!("{}{} {} [{}]", prefix, patch.id.to_hex(), patch.message, vstatus);
             } else {
-                println!("  {} {}", patch.id.to_hex(), patch.message);
+                println!("{}{} {}", prefix, patch.id.to_hex(), patch.message);
             }
             if stat {
                 println!("{}", format_stat(patch));

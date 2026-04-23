@@ -64,3 +64,6 @@ tar = "0.4"
 
 [features]
 node = ["dep:suture-node"]
+
+[dev-dependencies]
+tempfile = "3"

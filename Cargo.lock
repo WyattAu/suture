@@ -4197,6 +4197,7 @@ dependencies = [
  "suture-protocol",
  "suture-tui",
  "tar",
+ "tempfile",
  "tokio",
  "toml",
 ]
