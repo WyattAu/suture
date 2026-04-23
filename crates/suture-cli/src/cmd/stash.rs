@@ -9,6 +9,10 @@ pub(crate) async fn cmd_stash(
             let idx = repo.stash_push(message.as_deref())?;
             println!("Saved as stash@{{{}}}", idx);
         }
+        StashAction::Save { message } => {
+            let idx = repo.stash_push(message.as_deref())?;
+            println!("Saved as stash@{{{}}}", idx);
+        }
         StashAction::Pop => {
             let stashes_before = repo.stash_list()?;
             if stashes_before.is_empty() {
@@ -58,6 +62,26 @@ pub(crate) async fn cmd_stash(
         }
         StashAction::Show { index } => {
             stash_show(&repo, *index)?;
+        }
+        StashAction::Clear { dry_run } => {
+            let stashes = repo.stash_list()?;
+            if stashes.is_empty() {
+                println!("No stashes to clear.");
+                return Ok(());
+            }
+            let count = stashes.len();
+            if *dry_run {
+                println!("Would drop {} stash(es):", count);
+                for s in &stashes {
+                    println!("  stash@{{{}}}: {}", s.index, s.message);
+                }
+            } else {
+                let indices: Vec<usize> = stashes.iter().map(|s| s.index).collect();
+                for idx in &indices {
+                    repo.stash_drop(*idx)?;
+                }
+                println!("Dropped {} stash(es)", count);
+            }
         }
     }
     Ok(())

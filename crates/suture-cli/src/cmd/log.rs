@@ -67,6 +67,7 @@ pub(crate) async fn cmd_log(
     audit: bool,
     audit_format: &str,
     verify: bool,
+    diff_filter: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     fn format_stat(patch: &suture_core::patch::types::Patch) -> String {
         let files = patch.touch_set.addresses();
@@ -148,6 +149,25 @@ pub(crate) async fn cmd_log(
         if let Some(grep_filter) = grep {
             let grep_lower = grep_filter.to_lowercase();
             patches.retain(|p| p.message.to_lowercase().contains(&grep_lower));
+        }
+        if let Some(filter) = diff_filter {
+            let filter_chars: std::collections::HashSet<char> = filter.chars().collect();
+            let has_a = filter_chars.contains(&'A');
+            let has_m = filter_chars.contains(&'M');
+            let has_d = filter_chars.contains(&'D');
+            patches.retain(|p| {
+                let (added, modified, deleted) = classify_files(&repo, p);
+                if has_a && !added.is_empty() {
+                    return true;
+                }
+                if has_m && !modified.is_empty() {
+                    return true;
+                }
+                if has_d && !deleted.is_empty() {
+                    return true;
+                }
+                false
+            });
         }
 
         if patches.is_empty() {

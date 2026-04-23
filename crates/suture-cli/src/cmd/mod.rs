@@ -1,4 +1,5 @@
 pub mod add;
+pub mod apply;
 pub mod archive;
 pub mod bisect;
 pub mod clean;

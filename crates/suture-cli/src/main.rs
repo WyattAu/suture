@@ -182,6 +182,9 @@ EXAMPLES:
         /// Verify commit signatures
         #[arg(long)]
         verify: bool,
+        /// Filter by diff status: A (added), D (deleted), M (modified), or combinations like AD
+        #[arg(long)]
+        diff_filter: Option<String>,
     },
     /// Switch to a different branch
     #[command(after_long_help = "\
@@ -337,13 +340,33 @@ EXAMPLES:
         #[arg(short, long)]
         output: Option<String>,
     },
+    /// Apply a patch/diff file to the working tree
+    #[command(after_long_help = "\
+EXAMPLES:
+    suture apply fix.patch        # Apply a patch file
+    suture apply -R fix.patch     # Apply in reverse
+    suture apply --stat fix.patch # Show summary only")]
+    Apply {
+        /// Path to the patch/diff file
+        patch_file: String,
+        /// Apply in reverse
+        #[arg(short = 'R', long)]
+        reverse: bool,
+        /// Show summary instead of applying
+        #[arg(long)]
+        stat: bool,
+    },
     /// Apply a specific commit onto the current branch
     #[command(after_long_help = "\
 EXAMPLES:
-    suture cherry-pick abc123  # Apply commit onto current branch")]
+    suture cherry-pick abc123  # Apply commit onto current branch
+    suture cherry-pick -n abc123  # Apply without committing")]
     CherryPick {
         /// Commit hash to cherry-pick
         commit: String,
+        /// Apply changes to working tree and staging area without committing
+        #[arg(short = 'n', long)]
+        no_commit: bool,
     },
     /// Rebase the current branch onto another branch
     #[command(after_long_help = "\
@@ -457,6 +480,9 @@ EXAMPLES:
         /// Rebase local commits on top of fetched remote history
         #[arg(long)]
         rebase: bool,
+        /// Stash changes before pulling and pop after
+        #[arg(long)]
+        autostash: bool,
     },
     /// Fetch patches from a remote Hub without merging
     #[command(after_long_help = "\
@@ -592,7 +618,14 @@ EXAMPLES:
         verbose: bool,
     },
     /// Garbage collect unreachable objects
-    Gc,
+    Gc {
+        /// Show what would be pruned without actually deleting
+        #[arg(long)]
+        dry_run: bool,
+        /// Also prune old reflog entries and repack blobs
+        #[arg(long)]
+        aggressive: bool,
+    },
     /// Search for a pattern in tracked files
     #[command(after_long_help = "\
 EXAMPLES:
@@ -624,7 +657,11 @@ EXAMPLES:
         context: Option<usize>,
     },
     /// Verify repository integrity
-    Fsck,
+    Fsck {
+        /// Also verify blob integrity, parent chains, and branch refs
+        #[arg(long)]
+        full: bool,
+    },
     /// Check repository health and configuration
     Doctor {
         /// Automatically fix detected issues
@@ -841,6 +878,14 @@ pub(crate) enum StashAction {
         #[arg(short, long)]
         message: Option<String>,
     },
+    /// Stash current changes (alias for push)
+    #[command(
+        after_long_help = "EXAMPLES:\n    suture stash save             # Stash current changes\n    suture stash save -m \"WIP\"     # Stash with message"
+    )]
+    Save {
+        #[arg(short, long)]
+        message: Option<String>,
+    },
     /// Pop the most recent stash
     #[command(after_long_help = "EXAMPLES:\n    suture stash pop")]
     Pop,
@@ -872,6 +917,13 @@ pub(crate) enum StashAction {
         /// Stash index (default: 0 = latest)
         #[arg(default_value_t = 0)]
         index: usize,
+    },
+    /// Drop all stash entries
+    #[command(after_long_help = "EXAMPLES:\n    suture stash clear           # Drop all stashes\n    suture stash clear --dry-run  # Preview what would be dropped")]
+    Clear {
+        /// Show how many would be dropped without actually dropping
+        #[arg(long)]
+        dry_run: bool,
     },
 }
 
@@ -980,6 +1032,8 @@ pub(crate) enum WorktreeAction {
         /// Worktree name
         name: String,
     },
+    /// Prune worktree entries whose directories no longer exist
+    Prune,
 }
 
 #[derive(Subcommand, Debug)]
@@ -1133,6 +1187,7 @@ async fn main() {
             audit,
             audit_format,
             verify,
+            diff_filter,
         } => {
             cmd::log::cmd_log(
                 branch.as_deref(),
@@ -1149,6 +1204,7 @@ async fn main() {
                 audit,
                 &audit_format,
                 verify,
+                diff_filter.as_deref(),
             )
             .await
         }
@@ -1204,7 +1260,8 @@ async fn main() {
             )
             .await
         }
-        Commands::CherryPick { commit } => cmd::cherry_pick::cmd_cherry_pick(&commit).await,
+        Commands::Apply { patch_file, reverse, stat } => cmd::apply::cmd_apply(&patch_file, reverse, stat).await,
+        Commands::CherryPick { commit, no_commit } => cmd::cherry_pick::cmd_cherry_pick(&commit, no_commit).await,
         Commands::Rebase {
             branch,
             interactive,
@@ -1239,7 +1296,7 @@ async fn main() {
             force,
             branch,
         } => cmd::push::cmd_push(&remote, force, branch.as_deref()).await,
-        Commands::Pull { remote, rebase } => cmd::pull::cmd_pull(&remote, rebase).await,
+        Commands::Pull { remote, rebase, autostash } => cmd::pull::cmd_pull(&remote, rebase, autostash).await,
         Commands::Fetch { remote, depth } => cmd::fetch::cmd_fetch(&remote, depth).await,
         Commands::Clone { url, dir, depth } => {
             cmd::clone::cmd_clone(&url, dir.as_deref(), depth).await
@@ -1300,7 +1357,7 @@ async fn main() {
         }
         Commands::Notes { action } => cmd::notes::cmd_notes(&action).await,
         Commands::Worktree { action } => cmd::worktree::cmd_worktree(&action).await,
-        Commands::Gc => cmd::gc::cmd_gc().await,
+        Commands::Gc { dry_run, aggressive } => cmd::gc::cmd_gc(dry_run, aggressive).await,
         Commands::Grep {
             pattern,
             paths,
@@ -1321,7 +1378,7 @@ async fn main() {
             )
             .await
         }
-        Commands::Fsck => cmd::fsck::cmd_fsck().await,
+        Commands::Fsck { full } => cmd::fsck::cmd_fsck(full).await,
         Commands::Doctor { fix } => cmd::doctor::cmd_doctor(fix).await,
         Commands::Clean { dry_run, dirs, paths } => cmd::clean::cmd_clean(dry_run, dirs, &paths).await,
         Commands::Describe { commit_ref, all, tags } => cmd::describe::cmd_describe(&commit_ref, all, tags).await,
@@ -2171,6 +2228,379 @@ mod tests {
         let result = cmd::verify::cmd_verify("HEAD", false).await;
         std::env::set_current_dir(&prev).unwrap();
         assert!(result.is_ok());
+        drop(dir);
+    }
+
+    // ── Defence Workflow Tests ──
+
+    #[tokio::test]
+    async fn test_defence_audit_trail_workflow() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path().to_path_buf();
+        let prev = std::env::current_dir().unwrap();
+        let mut repo = suture_core::repository::Repository::init(&dir_path, "Defence Analyst").unwrap();
+
+        for (name, msg) in [
+            ("requirements.txt", "Add system requirements v1.0"),
+            ("test_plan.md", "Add test plan for radar module"),
+            ("risk_assessment.txt", "Add risk assessment for subsystem"),
+        ] {
+            std::fs::write(dir_path.join(name), "content").unwrap();
+            repo.add(name).unwrap();
+            repo.commit(msg).unwrap();
+        }
+
+        repo.create_branch("feature/radar-v2", None).unwrap();
+        repo.checkout("feature/radar-v2").unwrap();
+
+        std::fs::write(dir_path.join("radar_v2_spec.txt"), "spec").unwrap();
+        repo.add("radar_v2_spec.txt").unwrap();
+        repo.commit("Add radar v2 specification").unwrap();
+
+        std::fs::write(dir_path.join("radar_v2_spec.txt"), "spec updated").unwrap();
+        repo.add("radar_v2_spec.txt").unwrap();
+        repo.commit("Update radar v2 spec with signal params").unwrap();
+
+        repo.checkout("main").unwrap();
+        repo.execute_merge("feature/radar-v2").unwrap();
+
+        let keypair = suture_core::signing::SigningKeypair::generate();
+        let keys_dir = dir_path.join(".suture").join("keys");
+        std::fs::create_dir_all(&keys_dir).unwrap();
+        std::fs::write(keys_dir.join("default.ed25519"), keypair.private_key_bytes()).unwrap();
+        repo.set_config("signing.key", "default").unwrap();
+
+        std::fs::write(dir_path.join("signed_doc.txt"), "classified content").unwrap();
+        repo.add("signed_doc.txt").unwrap();
+        repo.commit("Add signed classified document").unwrap();
+
+        drop(repo);
+        std::env::set_current_dir(&dir_path).unwrap();
+        let result = cmd::log::cmd_log(None, false, false, false, None, None, false, None, None, false, false, true, "text", false, None).await;
+        assert!(result.is_ok());
+
+        std::env::set_current_dir(&prev).unwrap();
+        drop(dir);
+    }
+
+    #[tokio::test]
+    async fn test_defence_classification_detection() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path().to_path_buf();
+        let prev = std::env::current_dir().unwrap();
+        let mut repo = suture_core::repository::Repository::init(&dir_path, "Analyst").unwrap();
+
+        std::fs::write(dir_path.join("report.txt"), "UNCLASSIFIED\n\nReport body here.").unwrap();
+        repo.add("report.txt").unwrap();
+        repo.commit("Add unclassified report").unwrap();
+
+        let (_, head_id) = repo.head().unwrap();
+        let head_hex = head_id.to_hex();
+
+        std::fs::write(dir_path.join("report.txt"), "SECRET\n\nUpdated report body.").unwrap();
+        repo.add("report.txt").unwrap();
+        repo.commit("Update report classification to SECRET").unwrap();
+
+        drop(repo);
+        std::env::set_current_dir(&dir_path).unwrap();
+        let result = cmd::diff::cmd_diff(Some(&head_hex), None, false, false, false, true, false).await;
+        assert!(result.is_ok());
+
+        std::env::set_current_dir(&prev).unwrap();
+        drop(dir);
+    }
+
+    #[tokio::test]
+    async fn test_defence_signed_commit_verify() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path().to_path_buf();
+        let prev = std::env::current_dir().unwrap();
+        let mut repo = suture_core::repository::Repository::init(&dir_path, "Defence Officer").unwrap();
+
+        let keypair = suture_core::signing::SigningKeypair::generate();
+        let keys_dir = dir_path.join(".suture").join("keys");
+        std::fs::create_dir_all(&keys_dir).unwrap();
+        std::fs::write(keys_dir.join("default.ed25519"), keypair.private_key_bytes()).unwrap();
+        repo.set_config("signing.key", "default").unwrap();
+
+        std::fs::write(dir_path.join("mission_brief.txt"), "Mission brief content").unwrap();
+        repo.add("mission_brief.txt").unwrap();
+        let patch_id = repo.commit("Add mission brief").unwrap();
+        let patch = repo.dag().get_patch(&patch_id).unwrap();
+        repo.meta().store_public_key(&patch.author, &keypair.public_key_bytes()).unwrap();
+        let canonical = suture_core::signing::canonical_patch_bytes(
+            &patch.operation_type.to_string(),
+            &patch.touch_set.addresses(),
+            &patch.target_path,
+            &patch.payload,
+            &patch.parent_ids,
+            &patch.author,
+            &patch.message,
+            patch.timestamp,
+        );
+        let sig = keypair.sign(&canonical);
+        repo.meta().store_signature(&patch.id.to_hex(), &sig.to_bytes()).unwrap();
+
+        drop(repo);
+        std::env::set_current_dir(&dir_path).unwrap();
+        let result = cmd::verify::cmd_verify("HEAD", false).await;
+        assert!(result.is_ok());
+
+        std::env::set_current_dir(&prev).unwrap();
+        drop(dir);
+    }
+
+    // ── Film Workflow Tests ──
+
+    #[tokio::test]
+    async fn test_film_branching_workflow() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path().to_path_buf();
+        let prev = std::env::current_dir().unwrap();
+        let mut repo = suture_core::repository::Repository::init(&dir_path, "Director").unwrap();
+
+        std::fs::write(dir_path.join("scene_01.txt"), "Scene 1: Opening shot\nCamera pans across landscape").unwrap();
+        repo.add("scene_01.txt").unwrap();
+        repo.commit("Add scene 01 initial version").unwrap();
+
+        repo.create_branch("vfx/explosion", None).unwrap();
+        repo.checkout("vfx/explosion").unwrap();
+
+        std::fs::write(dir_path.join("scene_01.txt"), "Scene 1: Opening shot\nCamera pans across landscape\n[VFX: explosion at frame 240]\n[COMPOSITING: smoke overlay]").unwrap();
+        repo.add("scene_01.txt").unwrap();
+        repo.commit("Add VFX explosion notes to scene 01").unwrap();
+
+        repo.checkout("main").unwrap();
+
+        repo.create_branch("editor/cut_2", None).unwrap();
+        repo.checkout("editor/cut_2").unwrap();
+
+        std::fs::write(dir_path.join("scene_01.txt"), "Scene 1: Opening shot\nCamera pans across landscape\n[EDITOR: trim first 10 frames]\n[EDITOR: cross-dissolve to scene 02]").unwrap();
+        repo.add("scene_01.txt").unwrap();
+        repo.commit("Add editor cut notes to scene 01").unwrap();
+
+        repo.checkout("main").unwrap();
+        let result = repo.execute_merge("vfx/explosion");
+        assert!(result.is_ok());
+
+        drop(repo);
+        std::env::set_current_dir(&prev).unwrap();
+        drop(dir);
+    }
+
+    #[tokio::test]
+    async fn test_film_blame_history() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path().to_path_buf();
+        let prev = std::env::current_dir().unwrap();
+        let mut repo = suture_core::repository::Repository::init(&dir_path, "Writer").unwrap();
+
+        let content = "Line 1: FADE IN\nLine 2: INT. OFFICE - DAY\nLine 3: John sits at desk\nLine 4: JOHN\nLine 5: (typing)\n";
+        std::fs::write(dir_path.join("script.txt"), content).unwrap();
+        repo.add("script.txt").unwrap();
+        repo.commit("Add initial script draft").unwrap();
+
+        let updated = "Line 1: FADE IN\nLine 2: INT. OFFICE - DAY\nLine 3: John stands and paces\nLine 4: JOHN\nLine 5: (typing)\n";
+        std::fs::write(dir_path.join("script.txt"), updated).unwrap();
+        repo.add("script.txt").unwrap();
+        repo.commit("Revise line 3 - change action").unwrap();
+
+        drop(repo);
+        std::env::set_current_dir(&dir_path).unwrap();
+        let result_full = cmd::blame::cmd_blame("script.txt", None, None).await;
+        assert!(result_full.is_ok());
+
+        let result_range = cmd::blame::cmd_blame("script.txt", None, Some("2,4")).await;
+        assert!(result_range.is_ok());
+
+        std::env::set_current_dir(&prev).unwrap();
+        drop(dir);
+    }
+
+    // ── YouTube/PE Workflow Tests ──
+
+    #[tokio::test]
+    async fn test_youtube_export_workflow() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path().to_path_buf();
+        let prev = std::env::current_dir().unwrap();
+        let mut repo = suture_core::repository::Repository::init(&dir_path, "ContentCreator").unwrap();
+
+        std::fs::create_dir_all(dir_path.join("drafts")).unwrap();
+        std::fs::write(dir_path.join("drafts/thumbnail_ideas.txt"), "Idea 1: bold text\nIdea 2: face closeup").unwrap();
+        std::fs::write(dir_path.join("drafts/script_draft.md"), "# Video Script\n## Intro\nHey everyone!").unwrap();
+        std::fs::write(dir_path.join("drafts/budget.csv"), "item,cost\ncamera,500\nediting,200").unwrap();
+        repo.add("drafts/thumbnail_ideas.txt").unwrap();
+        repo.add("drafts/script_draft.md").unwrap();
+        repo.add("drafts/budget.csv").unwrap();
+        repo.commit("Add video production assets").unwrap();
+
+        drop(repo);
+        std::env::set_current_dir(&dir_path).unwrap();
+        let export_dir = dir.path().join("client_delivery");
+        let result = cmd::export::cmd_export(export_dir.to_str().unwrap(), None, false).await;
+        assert!(result.is_ok());
+        assert!(export_dir.join("drafts/thumbnail_ideas.txt").exists());
+        assert!(export_dir.join("drafts/script_draft.md").exists());
+        assert!(export_dir.join("drafts/budget.csv").exists());
+
+        std::env::set_current_dir(&prev).unwrap();
+        drop(dir);
+    }
+
+    #[tokio::test]
+    async fn test_youtube_sync_workflow() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path().to_path_buf();
+        let prev = std::env::current_dir().unwrap();
+        let mut repo = suture_core::repository::Repository::init(&dir_path, "YouTuber").unwrap();
+
+        std::fs::write(dir_path.join("video_notes.txt"), "Video planning notes").unwrap();
+        repo.add("video_notes.txt").unwrap();
+        repo.commit("Add video notes").unwrap();
+
+        drop(repo);
+        std::env::set_current_dir(&dir_path).unwrap();
+        let result = cmd::sync::cmd_sync("origin", true, false, None).await;
+        assert!(result.is_ok());
+
+        std::env::set_current_dir(&prev).unwrap();
+        drop(dir);
+    }
+
+    #[tokio::test]
+    async fn test_youtube_diff_summary() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path().to_path_buf();
+        let prev = std::env::current_dir().unwrap();
+        let mut repo = suture_core::repository::Repository::init(&dir_path, "Producer").unwrap();
+
+        std::fs::write(dir_path.join("script.txt"), "Original script content").unwrap();
+        std::fs::write(dir_path.join("notes.txt"), "Production notes v1").unwrap();
+        repo.add("script.txt").unwrap();
+        repo.add("notes.txt").unwrap();
+        repo.commit("Add initial production files").unwrap();
+
+        let (_, first_id) = repo.head().unwrap();
+        let first_hex = first_id.to_hex();
+
+        std::fs::write(dir_path.join("script.txt"), "Updated script content with changes").unwrap();
+        std::fs::write(dir_path.join("notes.txt"), "Production notes v2 updated").unwrap();
+        repo.add("script.txt").unwrap();
+        repo.add("notes.txt").unwrap();
+        repo.commit("Update production files").unwrap();
+
+        drop(repo);
+        std::env::set_current_dir(&dir_path).unwrap();
+        let result = cmd::diff::cmd_diff(Some(&first_hex), Some("HEAD"), false, false, false, false, true).await;
+        assert!(result.is_ok());
+
+        std::env::set_current_dir(&prev).unwrap();
+        drop(dir);
+    }
+
+    // ── General Workflow Tests ──
+
+    #[tokio::test]
+    async fn test_collaboration_workflow() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path().to_path_buf();
+        let prev = std::env::current_dir().unwrap();
+        let mut repo = suture_core::repository::Repository::init(&dir_path, "Collaborator").unwrap();
+
+        std::fs::write(dir_path.join("README.md"), "# Project\n\nGetting started guide.").unwrap();
+        repo.add("README.md").unwrap();
+        repo.commit("Initial commit").unwrap();
+
+        repo.create_branch("feature/add-auth", None).unwrap();
+        repo.checkout("feature/add-auth").unwrap();
+
+        std::fs::write(dir_path.join("auth.rs"), "fn login() { unimplemented!() }").unwrap();
+        repo.add("auth.rs").unwrap();
+        repo.commit("Add authentication module").unwrap();
+
+        repo.checkout("main").unwrap();
+        repo.execute_merge("feature/add-auth").unwrap();
+        repo.create_tag("v1.0", None).unwrap();
+        repo.set_config("tag.v1.0.message", "release 1.0").unwrap();
+
+        drop(repo);
+        std::env::set_current_dir(&dir_path).unwrap();
+
+        let _ = cmd::describe::cmd_describe("HEAD", false, false).await;
+        let _ = cmd::verify::cmd_verify("HEAD", false).await;
+        let _ = cmd::log::cmd_log(None, false, false, false, None, None, false, None, None, true, false, false, "text", false, None).await;
+        let _ = cmd::show::cmd_show("HEAD", true).await;
+
+        std::fs::write(dir_path.join("README.md"), "# Project\n\nUpdated getting started.").unwrap();
+        cmd::add::cmd_add(&["README.md".to_string()], false, false).await.unwrap();
+
+        let _ = cmd::stash::cmd_stash(&StashAction::Push { message: Some("WIP readme update".to_string()) }).await;
+        let _ = cmd::stash::cmd_stash(&StashAction::List).await;
+        let _ = cmd::stash::cmd_stash(&StashAction::Show { index: 0 }).await;
+        let _ = cmd::stash::cmd_stash(&StashAction::Pop).await;
+        let _ = cmd::reflog::cmd_reflog(false).await;
+
+        std::env::set_current_dir(&prev).unwrap();
+        drop(dir);
+    }
+
+    #[tokio::test]
+    async fn test_undo_redo_workflow() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path().to_path_buf();
+        let prev = std::env::current_dir().unwrap();
+        let mut repo = suture_core::repository::Repository::init(&dir_path, "Developer").unwrap();
+
+        for i in 1..=3 {
+            let name = format!("file_{i}.txt");
+            std::fs::write(dir_path.join(&name), format!("content {i}")).unwrap();
+            repo.add(&name).unwrap();
+            repo.commit(&format!("Add file {i}")).unwrap();
+        }
+
+        drop(repo);
+        std::env::set_current_dir(&dir_path).unwrap();
+
+        let result = cmd::undo::cmd_undo(None, false).await;
+        assert!(result.is_ok());
+        let _ = cmd::reflog::cmd_reflog(false).await;
+        let _ = cmd::doctor::cmd_doctor(false).await;
+        let _ = cmd::fsck::cmd_fsck(false).await;
+
+        std::env::set_current_dir(&prev).unwrap();
+        drop(dir);
+    }
+
+    #[tokio::test]
+    async fn test_clean_workflow() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path().to_path_buf();
+        let prev = std::env::current_dir().unwrap();
+        let mut repo = suture_core::repository::Repository::init(&dir_path, "Developer").unwrap();
+
+        std::fs::write(dir_path.join("tracked.txt"), "tracked").unwrap();
+        repo.add("tracked.txt").unwrap();
+        repo.commit("Add tracked file").unwrap();
+
+        std::fs::write(dir_path.join("untracked_a.txt"), "junk a").unwrap();
+        std::fs::write(dir_path.join("untracked_b.txt"), "junk b").unwrap();
+
+        drop(repo);
+        std::env::set_current_dir(&dir_path).unwrap();
+
+        let dry_run = cmd::clean::cmd_clean(true, false, &[]).await;
+        assert!(dry_run.is_ok());
+        assert!(dir_path.join("untracked_a.txt").exists());
+        assert!(dir_path.join("untracked_b.txt").exists());
+
+        let clean = cmd::clean::cmd_clean(false, false, &[]).await;
+        assert!(clean.is_ok());
+        assert!(!dir_path.join("untracked_a.txt").exists());
+        assert!(!dir_path.join("untracked_b.txt").exists());
+        assert!(dir_path.join("tracked.txt").exists());
+
+        std::env::set_current_dir(&prev).unwrap();
         drop(dir);
     }
 }

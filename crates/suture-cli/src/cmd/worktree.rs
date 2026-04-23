@@ -40,5 +40,29 @@ pub(crate) async fn cmd_worktree(
             println!("Worktree '{}' removed", name);
             Ok(())
         }
+        crate::WorktreeAction::Prune => {
+            let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+            let worktrees = repo.list_worktrees()?;
+            let mut pruned = 0usize;
+
+            for wt in &worktrees {
+                if wt.is_main {
+                    continue;
+                }
+                let wt_path = std::path::Path::new(&wt.path);
+                if !wt_path.exists() {
+                    let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+                    repo.remove_worktree(&wt.name)?;
+                    pruned += 1;
+                }
+            }
+
+            if pruned > 0 {
+                println!("Pruned {} stale worktree entries", pruned);
+            } else {
+                println!("No stale worktree entries found.");
+            }
+            Ok(())
+        }
     }
 }
