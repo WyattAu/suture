@@ -264,6 +264,43 @@ target/
         }
     }
 
+    // Check 13: Audit chain compliance
+    println!();
+    println!("── Compliance ──");
+    let audit_path = root.join(".suture").join("audit").join("chain.log");
+    if audit_path.exists() {
+        println!("✓ Audit chain exists");
+        let audit = suture_core::audit::AuditLog::open(&audit_path).unwrap();
+        match audit.verify_chain() {
+            Ok((total, first_invalid)) => match first_invalid {
+                None => println!("✓ Audit chain valid ({} entries)", total),
+                Some(i) => {
+                    println!("✗ Audit chain TAMPERED at entry {}", i);
+                    issues += 1;
+                    remaining += 1;
+                }
+            },
+            Err(e) => {
+                println!("✗ Audit chain verification failed: {}", e);
+                issues += 1;
+                remaining += 1;
+            }
+        }
+    } else {
+        println!("⚠ No audit chain (run commits to create one)");
+        warnings += 1;
+    }
+
+    match repo.get_config("signing.key") {
+        Ok(Some(key_name)) => {
+            println!("✓ Signing key configured: {}", key_name);
+        }
+        _ => {
+            println!("⚠ No signing.key configured (non-repudiation disabled)");
+            warnings += 1;
+        }
+    }
+
     // Summary
     println!();
     if issues == 0 && warnings == 0 {

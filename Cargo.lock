@@ -548,6 +548,7 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
+ "serde",
  "wasm-bindgen",
  "windows-link",
 ]
@@ -4216,6 +4217,7 @@ name = "suture-core"
 version = "5.0.0"
 dependencies = [
  "blake3",
+ "chrono",
  "dirs",
  "ed25519-dalek",
  "proptest",

@@ -32,6 +32,7 @@
 //! # Ok::<(), suture_core::repository::RepoError>(())
 //! ```
 
+pub mod audit;
 pub mod cas;
 pub mod dag;
 pub mod diff;

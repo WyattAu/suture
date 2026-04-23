@@ -1,3 +1,5 @@
+use crate::ClassificationAction;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClassificationChange {
     Added(String),
@@ -11,6 +13,18 @@ pub struct ClassificationResult {
     pub change: ClassificationChange,
     pub old_count: usize,
     pub new_count: usize,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub(crate) struct ClassificationEvent {
+    pub seq: usize,
+    pub timestamp: String,
+    pub commit: String,
+    pub author: String,
+    pub file: String,
+    pub event_type: String,
+    pub from: String,
+    pub to: String,
 }
 
 fn classification_level(marking: &str) -> u8 {
@@ -242,4 +256,350 @@ fn get_content(
         return blob;
     }
     std::fs::read(repo.root().join(path)).unwrap_or_default()
+}
+
+fn change_to_event_type(change: &ClassificationChange) -> (&'static str, String, String) {
+    match change {
+        ClassificationChange::Added(m) => ("ADDED", String::new(), m.clone()),
+        ClassificationChange::Removed(m) => ("REMOVED", m.clone(), String::new()),
+        ClassificationChange::Upgraded { from, to } => ("UPGRADED", from.clone(), to.clone()),
+        ClassificationChange::Downgraded { from, to } => ("DOWNGRADED", from.clone(), to.clone()),
+    }
+}
+
+fn csv_escape(s: &str) -> String {
+    if s.contains(',') || s.contains('"') || s.contains('\n') {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s.to_string()
+    }
+}
+
+pub(crate) async fn cmd_classification(
+    action: &ClassificationAction,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match action {
+        ClassificationAction::Scan {
+            since,
+            format,
+            filter,
+        } => cmd_scan(since.as_deref(), format, filter.as_deref()).await,
+        ClassificationAction::Report { output } => cmd_report(output.as_deref()).await,
+    }
+}
+
+async fn cmd_scan(
+    since: Option<&str>,
+    format: &str,
+    filter: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+
+    let branches = repo.list_branches();
+    let mut seen = std::collections::HashSet::new();
+    let mut all_patches = Vec::new();
+
+    for (_, tip_id) in &branches {
+        let chain = repo.dag().patch_chain(tip_id);
+        for pid in &chain {
+            if seen.insert(*pid)
+                && let Some(patch) = repo.dag().get_patch(pid)
+            {
+                all_patches.push(patch.clone());
+            }
+        }
+    }
+
+    if let Some(since_ref) = since {
+        let since_id = repo.resolve_ref(since_ref)?;
+        all_patches.retain(|p| {
+            repo.dag()
+                .patch_chain(&since_id)
+                .contains(&p.id)
+        });
+    }
+
+    all_patches.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+
+    let mut events: Vec<ClassificationEvent> = Vec::new();
+    let mut commits_with_events = std::collections::HashSet::new();
+    let mut files_with_events = std::collections::HashSet::new();
+    let mut seq = 0usize;
+
+    for patch in &all_patches {
+        let parent_hex = patch
+            .parent_ids
+            .first()
+            .map(|h| h.to_hex())
+            .unwrap_or_default();
+        let commit_hex = patch.id.to_hex();
+        let from_ref = if parent_hex.is_empty() {
+            None
+        } else {
+            Some(parent_hex.as_str())
+        };
+
+        let entries = repo.diff(from_ref, Some(commit_hex.as_str())).unwrap_or_default();
+        let results = analyze_classification_changes(&entries, &repo);
+
+        for r in &results {
+            let (event_type, from, to) = change_to_event_type(&r.change);
+            if let Some(f) = filter
+                && !event_type.eq_ignore_ascii_case(f)
+            {
+                continue;
+            }
+            seq += 1;
+            let dt = chrono::DateTime::from_timestamp(patch.timestamp as i64, 0)
+                .unwrap_or_default()
+                .to_rfc3339();
+            events.push(ClassificationEvent {
+                seq,
+                timestamp: dt,
+                commit: commit_hex.clone(),
+                author: patch.author.clone(),
+                file: r.path.clone(),
+                event_type: event_type.to_string(),
+                from,
+                to,
+            });
+            commits_with_events.insert(commit_hex.clone());
+            files_with_events.insert(r.path.clone());
+        }
+    }
+
+    match format {
+        "json" => {
+            println!("{}", serde_json::to_string_pretty(&events)?);
+        }
+        "csv" => {
+            println!("seq,timestamp,commit,author,file,event_type,from,to");
+            for e in &events {
+                println!(
+                    "{},{},{},{},{},{},{},{}",
+                    e.seq,
+                    csv_escape(&e.timestamp),
+                    csv_escape(&e.commit),
+                    csv_escape(&e.author),
+                    csv_escape(&e.file),
+                    csv_escape(&e.event_type),
+                    csv_escape(&e.from),
+                    csv_escape(&e.to),
+                );
+            }
+        }
+        _ => {
+            if events.is_empty() {
+                println!("No classification events found.");
+            } else {
+                println!(
+                    "{:<5} {:<28} {:<20} {:<10} {:<12} {:<12} {:<12}",
+                    "SEQ", "TIMESTAMP", "FILE", "EVENT", "FROM", "TO", "AUTHOR"
+                );
+                for e in &events {
+                    let short_author = if e.author.len() > 10 {
+                        format!("{}...", &e.author[..10])
+                    } else {
+                        e.author.clone()
+                    };
+                    println!(
+                        "{:<5} {:<28} {:<20} {:<10} {:<12} {:<12} {:<12}",
+                        e.seq,
+                        e.timestamp,
+                        if e.file.len() > 18 {
+                            format!("{}...", &e.file[..18])
+                        } else {
+                            e.file.clone()
+                        },
+                        e.event_type,
+                        e.from,
+                        e.to,
+                        short_author,
+                    );
+                }
+            }
+        }
+    }
+
+    println!(
+        "\nFound {} classification events across {} commits, {} files",
+        events.len(),
+        commits_with_events.len(),
+        files_with_events.len()
+    );
+
+    Ok(())
+}
+
+async fn cmd_report(output: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+
+    let branches = repo.list_branches();
+    let mut seen = std::collections::HashSet::new();
+    let mut all_patches = Vec::new();
+
+    for (_, tip_id) in &branches {
+        let chain = repo.dag().patch_chain(tip_id);
+        for pid in &chain {
+            if seen.insert(*pid)
+                && let Some(patch) = repo.dag().get_patch(pid)
+            {
+                all_patches.push(patch.clone());
+            }
+        }
+    }
+
+    all_patches.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+    let total_commits = all_patches.len();
+
+    let mut events: Vec<ClassificationEvent> = Vec::new();
+    let mut current_state: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut file_change_count: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut chain_of_custody: std::collections::HashMap<String, Vec<(String, String, String)>> =
+        std::collections::HashMap::new();
+    let mut seq = 0usize;
+
+    for patch in &all_patches {
+        let parent_hex = patch
+            .parent_ids
+            .first()
+            .map(|h| h.to_hex())
+            .unwrap_or_default();
+        let commit_hex = patch.id.to_hex();
+        let from_ref = if parent_hex.is_empty() {
+            None
+        } else {
+            Some(parent_hex.as_str())
+        };
+
+        let entries = repo.diff(from_ref, Some(commit_hex.as_str())).unwrap_or_default();
+        let results = analyze_classification_changes(&entries, &repo);
+
+        for r in &results {
+            let (event_type, from, to) = change_to_event_type(&r.change);
+            seq += 1;
+            let dt = chrono::DateTime::from_timestamp(patch.timestamp as i64, 0)
+                .unwrap_or_default()
+                .to_rfc3339();
+            let short_hash = commit_hex.chars().take(12).collect::<String>();
+
+            events.push(ClassificationEvent {
+                seq,
+                timestamp: dt,
+                commit: commit_hex.clone(),
+                author: patch.author.clone(),
+                file: r.path.clone(),
+                event_type: event_type.to_string(),
+                from: from.clone(),
+                to: to.clone(),
+            });
+
+            *file_change_count.entry(r.path.clone()).or_insert(0) += 1;
+
+            match &r.change {
+                ClassificationChange::Added(m) | ClassificationChange::Upgraded { to: m, .. } => {
+                    current_state.insert(r.path.clone(), m.clone());
+                }
+                ClassificationChange::Removed(_) => {
+                    current_state.remove(&r.path);
+                }
+                ClassificationChange::Downgraded { to: m, .. } => {
+                    current_state.insert(r.path.clone(), m.clone());
+                }
+            }
+
+            chain_of_custody
+                .entry(r.path.clone())
+                .or_default()
+                .push((short_hash, patch.author.clone(), event_type.to_string()));
+        }
+    }
+
+    let added_count = events.iter().filter(|e| e.event_type == "ADDED").count();
+    let removed_count = events.iter().filter(|e| e.event_type == "REMOVED").count();
+    let upgraded_count = events.iter().filter(|e| e.event_type == "UPGRADED").count();
+    let downgraded_count = events.iter().filter(|e| e.event_type == "DOWNGRADED").count();
+
+    let mut sorted_files: Vec<(String, usize)> = file_change_count.iter().map(|(k, &v)| (k.clone(), v)).collect();
+    sorted_files.sort_by(|a, b| b.1.cmp(&a.1));
+
+    let above_unclassified: Vec<(String, String)> = current_state
+        .iter()
+        .filter(|(_, cls)| classification_level(cls) > 1)
+        .map(|(f, c)| (f.clone(), c.clone()))
+        .collect();
+
+    let repo_name = std::env::current_dir()
+        .unwrap_or_default()
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+    let scan_time = chrono::Utc::now().to_rfc3339();
+
+    let mut report = String::new();
+    report.push_str("============================================\n");
+    report.push_str("  CLASSIFICATION COMPLIANCE REPORT\n");
+    report.push_str("============================================\n\n");
+    report.push_str(&format!("Repository:   {}\n", repo_name));
+    report.push_str(&format!("Scan Time:    {}\n", scan_time));
+    report.push_str(&format!("Total Commits Scanned: {}\n", total_commits));
+    report.push_str(&format!("Total Classification Events: {}\n\n", events.len()));
+
+    report.push_str("--- Event Breakdown ---\n");
+    report.push_str(&format!("  Added:     {}\n", added_count));
+    report.push_str(&format!("  Removed:   {}\n", removed_count));
+    report.push_str(&format!("  Upgraded:  {}\n", upgraded_count));
+    report.push_str(&format!("  Downgraded: {}\n\n", downgraded_count));
+
+    report.push_str("--- Files with Most Classification Changes ---\n");
+    if sorted_files.is_empty() {
+        report.push_str("  (none)\n\n");
+    } else {
+        for (file, count) in sorted_files.iter().take(10) {
+            report.push_str(&format!("  {} ({} changes)\n", file, count));
+        }
+        report.push('\n');
+    }
+
+    report.push_str("--- Current Classification State ---\n");
+    if current_state.is_empty() {
+        report.push_str("  No files currently classified.\n\n");
+    } else {
+        for (file, cls) in &current_state {
+            report.push_str(&format!("  {} [{}]\n", file, cls));
+        }
+        report.push('\n');
+    }
+
+    report.push_str("--- Files Currently Above UNCLASSIFIED ---\n");
+    if above_unclassified.is_empty() {
+        report.push_str("  (none)\n\n");
+    } else {
+        for (file, cls) in &above_unclassified {
+            report.push_str(&format!("  {} [{}]\n", file, cls));
+        }
+        report.push('\n');
+    }
+
+    report.push_str("--- Chain of Custody Summary ---\n");
+    if chain_of_custody.is_empty() {
+        report.push_str("  No classification changes recorded.\n\n");
+    } else {
+        for (file, entries) in &chain_of_custody {
+            report.push_str(&format!("  {}:\n", file));
+            for (hash, author, evt) in entries {
+                report.push_str(&format!("    {} — {} ({})\n", hash, author, evt));
+            }
+        }
+        report.push('\n');
+    }
+
+    if let Some(output_path) = output {
+        std::fs::write(output_path, &report)?;
+        println!("Report written to {}", output_path);
+    } else {
+        print!("{report}");
+    }
+
+    Ok(())
 }

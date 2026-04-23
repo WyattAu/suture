@@ -668,6 +668,21 @@ EXAMPLES:
         #[arg(long)]
         fix: bool,
     },
+    /// Inspect the tamper-evident audit log
+    Audit {
+        /// Verify chain integrity
+        #[arg(long)]
+        verify: bool,
+        /// Display all entries
+        #[arg(long)]
+        show: bool,
+        /// Show entry count
+        #[arg(long)]
+        count: bool,
+        /// Show last N entries (default: 10)
+        #[arg(long)]
+        tail: Option<usize>,
+    },
     /// Remove untracked files from the working tree
     #[command(after_long_help = "\
 EXAMPLES:
@@ -742,6 +757,11 @@ EXAMPLES:
     Hook {
         #[command(subcommand)]
         action: HookAction,
+    },
+    /// Bulk classification marking scanning and compliance reporting
+    Classification {
+        #[command(subcommand)]
+        action: ClassificationAction,
     },
     /// Undo the last operation (commit, merge, checkout, etc.)
     ///
@@ -1104,6 +1124,28 @@ pub(crate) enum DriverAction {
     List,
 }
 
+#[derive(Subcommand, Debug, Clone)]
+pub(crate) enum ClassificationAction {
+    /// Scan all commits for classification marking changes
+    Scan {
+        /// Only scan commits since this ref (default: all)
+        #[arg(long)]
+        since: Option<String>,
+        /// Output format
+        #[arg(long, default_value = "text")]
+        format: String,
+        /// Only show events of this type (added, removed, upgraded, downgraded)
+        #[arg(long)]
+        filter: Option<String>,
+    },
+    /// Generate classification compliance report
+    Report {
+        /// Output file (default: stdout)
+        #[arg(long)]
+        output: Option<String>,
+    },
+}
+
 #[derive(Subcommand, Debug)]
 pub(crate) enum HookAction {
     /// List all configured hooks
@@ -1380,6 +1422,7 @@ async fn main() {
         }
         Commands::Fsck { full } => cmd::fsck::cmd_fsck(full).await,
         Commands::Doctor { fix } => cmd::doctor::cmd_doctor(fix).await,
+        Commands::Audit { verify, show, count, tail } => cmd::audit::cmd_audit(verify, show, count, tail).await,
         Commands::Clean { dry_run, dirs, paths } => cmd::clean::cmd_clean(dry_run, dirs, &paths).await,
         Commands::Describe { commit_ref, all, tags } => cmd::describe::cmd_describe(&commit_ref, all, tags).await,
         Commands::RevParse { refs, short, verify } => cmd::rev_parse::cmd_rev_parse(&refs, short, verify).await,
@@ -1392,6 +1435,7 @@ async fn main() {
             };
             cmd::hook::cmd_hook(&hook_action).await
         }
+        Commands::Classification { action } => cmd::classification::cmd_classification(&action).await,
         Commands::Git { action } => {
             let git_action = match action {
                 GitAction::Import { path } => cmd::git::GitAction::Import { path },
@@ -2619,6 +2663,212 @@ mod tests {
         assert!(!dir_path.join("untracked_a.txt").exists());
         assert!(!dir_path.join("untracked_b.txt").exists());
         assert!(dir_path.join("tracked.txt").exists());
+
+        std::env::set_current_dir(&prev).unwrap();
+        drop(dir);
+    }
+
+    #[tokio::test]
+    async fn test_audit_verify_clean_chain() {
+        let _cwd = cwd_guard();
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path().to_path_buf();
+        let prev = std::env::current_dir().unwrap();
+        let mut repo = suture_core::repository::Repository::init(&dir_path, "auditor").unwrap();
+        repo.set_config("user.name", "auditor").unwrap();
+
+        for i in 1..=3 {
+            let name = format!("file_{}.txt", i);
+            std::fs::write(dir_path.join(&name), format!("content {}", i)).unwrap();
+            repo.add(&name).unwrap();
+            let patch_id = repo.commit(&format!("commit {}", i)).unwrap();
+            let audit_dir = repo.root().join(".suture").join("audit").join("chain.log");
+            let audit = suture_core::audit::AuditLog::open(&audit_dir).unwrap();
+            let details = serde_json::json!({
+                "patch_id": patch_id.to_hex(),
+                "message": format!("commit {}", i),
+            })
+            .to_string();
+            audit.append("auditor", "commit", &details).unwrap();
+        }
+
+        let audit_path = dir_path.join(".suture").join("audit").join("chain.log");
+        assert!(audit_path.exists());
+
+        drop(repo);
+        std::env::set_current_dir(&dir_path).unwrap();
+
+        let result = cmd::audit::cmd_audit(true, false, false, None).await;
+        assert!(result.is_ok());
+
+        let audit = suture_core::audit::AuditLog::open(&audit_path).unwrap();
+        let (total, first_invalid) = audit.verify_chain().unwrap();
+        assert_eq!(total, 3);
+        assert!(first_invalid.is_none());
+
+        std::env::set_current_dir(&prev).unwrap();
+        drop(dir);
+    }
+
+    #[tokio::test]
+    async fn test_audit_log_commits() {
+        let _cwd = cwd_guard();
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path().to_path_buf();
+        let prev = std::env::current_dir().unwrap();
+        let mut repo = suture_core::repository::Repository::init(&dir_path, "committer").unwrap();
+        repo.set_config("user.name", "committer").unwrap();
+
+        let audit_path = dir_path.join(".suture").join("audit").join("chain.log");
+        let audit = suture_core::audit::AuditLog::open(&audit_path).unwrap();
+
+        for msg in ["first commit", "second commit"] {
+            std::fs::write(dir_path.join("a.txt"), msg).unwrap();
+            repo.add("a.txt").unwrap();
+            let patch_id = repo.commit(msg).unwrap();
+            let details = serde_json::json!({
+                "patch_id": patch_id.to_hex(),
+                "message": msg,
+            })
+            .to_string();
+            audit.append("committer", "commit", &details).unwrap();
+        }
+
+        assert!(audit_path.exists());
+
+        let entries = audit.entries().unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].sequence, 0);
+        assert_eq!(entries[0].action, "commit");
+        assert_eq!(entries[1].sequence, 1);
+        assert_eq!(entries[1].action, "commit");
+
+        drop(repo);
+        std::env::set_current_dir(&prev).unwrap();
+        drop(dir);
+    }
+
+    #[test]
+    fn test_classification_scan_parse() {
+        let cli = parse(&["suture", "classification", "scan", "--format", "json"]);
+        match cli.command {
+            Commands::Classification { action } => match action {
+                ClassificationAction::Scan { format, since, filter } => {
+                    assert_eq!(format, "json");
+                    assert!(since.is_none());
+                    assert!(filter.is_none());
+                }
+                other => panic!("expected Scan, got {other:?}"),
+            },
+            other => panic!("expected Classification, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_classification_scan_with_since_and_filter() {
+        let cli = parse(&["suture", "classification", "scan", "--since", "main", "--filter", "upgraded"]);
+        match cli.command {
+            Commands::Classification { action } => match action {
+                ClassificationAction::Scan { since, filter, .. } => {
+                    assert_eq!(since.as_deref(), Some("main"));
+                    assert_eq!(filter.as_deref(), Some("upgraded"));
+                }
+                other => panic!("expected Scan, got {other:?}"),
+            },
+            other => panic!("expected Classification, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_classification_report_parse() {
+        let cli = parse(&["suture", "classification", "report", "--output", "report.txt"]);
+        match cli.command {
+            Commands::Classification { action } => match action {
+                ClassificationAction::Report { output } => {
+                    assert_eq!(output.as_deref(), Some("report.txt"));
+                }
+                other => panic!("expected Report, got {other:?}"),
+            },
+            other => panic!("expected Classification, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_classification_scan() {
+        let _cwd = cwd_guard();
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path().to_path_buf();
+        let prev = std::env::current_dir().unwrap();
+        let mut repo = suture_core::repository::Repository::init(&dir_path, "Analyst").unwrap();
+
+        std::fs::write(dir_path.join("report.txt"), "UNCLASSIFIED\n\nInitial report.").unwrap();
+        repo.add("report.txt").unwrap();
+        repo.commit("Add unclassified report").unwrap();
+
+        std::fs::write(dir_path.join("report.txt"), "SECRET\n\nUpdated classified content.").unwrap();
+        repo.add("report.txt").unwrap();
+        repo.commit("Upgrade report to SECRET").unwrap();
+
+        std::fs::write(dir_path.join("report.txt"), "TOP SECRET\n\nHighly classified content.").unwrap();
+        repo.add("report.txt").unwrap();
+        repo.commit("Upgrade report to TOP SECRET").unwrap();
+
+        std::fs::write(dir_path.join("report.txt"), "Some normal text without markings").unwrap();
+        repo.add("report.txt").unwrap();
+        repo.commit("Remove classification markings").unwrap();
+
+        drop(repo);
+        std::env::set_current_dir(&dir_path).unwrap();
+
+        let result = cmd::classification::cmd_classification(
+            &ClassificationAction::Scan {
+                since: None,
+                format: "text".to_string(),
+                filter: None,
+            },
+        )
+        .await;
+        assert!(result.is_ok());
+
+        std::env::set_current_dir(&prev).unwrap();
+        drop(dir);
+    }
+
+    #[tokio::test]
+    async fn test_classification_report() {
+        let _cwd = cwd_guard();
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path().to_path_buf();
+        let prev = std::env::current_dir().unwrap();
+        let mut repo = suture_core::repository::Repository::init(&dir_path, "Analyst").unwrap();
+
+        std::fs::write(dir_path.join("doc1.txt"), "UNCLASSIFIED\nDoc one").unwrap();
+        repo.add("doc1.txt").unwrap();
+        repo.commit("Add doc1").unwrap();
+
+        std::fs::write(dir_path.join("doc1.txt"), "CONFIDENTIAL\nDoc one updated").unwrap();
+        repo.add("doc1.txt").unwrap();
+        repo.commit("Classify doc1 as CONFIDENTIAL").unwrap();
+
+        std::fs::write(dir_path.join("doc2.txt"), "SECRET\nDoc two classified").unwrap();
+        repo.add("doc2.txt").unwrap();
+        repo.commit("Add doc2 as SECRET").unwrap();
+
+        drop(repo);
+        std::env::set_current_dir(&dir_path).unwrap();
+
+        let output_path = dir.path().join("compliance_report.txt");
+        let result = cmd::classification::cmd_classification(
+            &ClassificationAction::Report {
+                output: Some(output_path.to_str().unwrap().to_string()),
+            },
+        )
+        .await;
+        assert!(result.is_ok());
+        assert!(output_path.exists());
+        let report_content = std::fs::read_to_string(&output_path).unwrap();
+        assert!(report_content.contains("CLASSIFICATION COMPLIANCE REPORT"));
+        assert!(report_content.contains("Chain of Custody"));
 
         std::env::set_current_dir(&prev).unwrap();
         drop(dir);

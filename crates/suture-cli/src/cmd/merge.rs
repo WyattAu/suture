@@ -91,10 +91,29 @@ pub(crate) async fn cmd_merge(
 
         let (branch, head_id) = repo.head()?;
         let mut post_extra = std::collections::HashMap::new();
-        post_extra.insert("SUTURE_BRANCH".to_string(), branch);
+        post_extra.insert("SUTURE_BRANCH".to_string(), branch.clone());
         post_extra.insert("SUTURE_HEAD".to_string(), head_id.to_hex());
         post_extra.insert("SUTURE_MERGE_SOURCE".to_string(), source.to_string());
         run_hook_if_exists(repo.root(), "post-merge", post_extra)?;
+
+        {
+            let author = repo
+                .get_config("user.name")
+                .unwrap_or(None)
+                .unwrap_or_default();
+            let audit_dir = repo.root().join(".suture").join("audit").join("chain.log");
+            if let Ok(audit) = suture_core::audit::AuditLog::open(&audit_dir) {
+                let merge_id = result.merge_patch_id.map(|id| id.to_hex());
+                let details = serde_json::json!({
+                    "source": source,
+                    "merge_patch_id": merge_id,
+                    "patches_applied": result.patches_applied,
+                    "strategy": strategy,
+                })
+                .to_string();
+                let _ = audit.append(&author, "merge", &details);
+            }
+        }
 
         return Ok(());
     }

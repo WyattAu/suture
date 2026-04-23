@@ -1,0 +1,62 @@
+#!/bin/bash
+# suture-merge-driver — npm-installed Git merge driver wrapper
+#
+# Locates the suture binary (dev build, downloaded binary, or PATH)
+# and delegates to `suture merge-file` with all arguments passed through.
+#
+# Git calls this as: suture-merge-driver %O %A %B %P
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PKG_DIR="$(dirname "$SCRIPT_DIR")"
+
+detect_platform() {
+    local os arch
+    os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+    case "$(uname -m)" in
+        x86_64|amd64) arch="x64" ;;
+        aarch64|arm64) arch="arm64" ;;
+        *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+    esac
+    echo "${os}-${arch}"
+}
+
+PLATFORM="$(detect_platform)"
+
+find_suture() {
+    # 1. Development mode: local Rust build
+    if [ -f "$PKG_DIR/../../target/release/suture" ]; then
+        echo "$PKG_DIR/../../target/release/suture"
+        return
+    fi
+
+    # 2. Installed mode: prebuilt binary from GitHub Releases
+    if [ -f "$PKG_DIR/binaries/$PLATFORM/suture" ]; then
+        echo "$PKG_DIR/binaries/$PLATFORM/suture"
+        return
+    fi
+
+    # 3. System PATH
+    if command -v suture &>/dev/null; then
+        echo "suture"
+        return
+    fi
+
+    return 1
+}
+
+SUTURE_BIN="$(find_suture)" || {
+    echo "suture: binary not found." >&2
+    echo "" >&2
+    echo "Install options:" >&2
+    echo "  1. npm install -g suture-merge-driver   (downloads prebuilt binary)" >&2
+    echo "  2. cargo install suture-cli              (build from source)" >&2
+    echo "  3. Set SUTURE_PATH env var               (use custom binary)" >&2
+    echo "" >&2
+    echo "If already installed, run:" >&2
+    echo "  node \"${PKG_DIR}/download-binary.js\"" >&2
+    exit 1
+}
+
+exec "$SUTURE_BIN" merge-file "$@"

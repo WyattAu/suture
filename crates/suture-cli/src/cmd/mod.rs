@@ -1,6 +1,7 @@
 pub mod add;
 pub mod apply;
 pub mod archive;
+pub mod audit;
 pub mod bisect;
 pub mod clean;
 pub mod classification;

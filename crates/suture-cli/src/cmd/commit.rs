@@ -27,6 +27,32 @@ pub(crate) async fn cmd_commit(message: &str, all: bool) -> Result<(), Box<dyn s
     let patch_id = repo.commit(message)?;
     println!("Committed: {}", patch_id);
 
+    {
+        let author = repo
+            .get_config("user.name")
+            .unwrap_or(None)
+            .unwrap_or_default();
+        let audit_dir = repo.root().join(".suture").join("audit").join("chain.log");
+        let audit = suture_core::audit::AuditLog::open(&audit_dir)?;
+        let patch = repo.dag().get_patch(&patch_id);
+        let touch_set: Vec<String> = patch
+            .as_ref()
+            .map(|p| p.touch_set.addresses())
+            .unwrap_or_default();
+        let parent_ids: Vec<String> = patch
+            .as_ref()
+            .map(|p| p.parent_ids.iter().map(|id| id.to_hex()).collect())
+            .unwrap_or_default();
+        let details = serde_json::json!({
+            "patch_id": patch_id.to_hex(),
+            "files": touch_set,
+            "message": message,
+            "parents": parent_ids,
+        })
+        .to_string();
+        let _ = audit.append(&author, "commit", &details);
+    }
+
     if let Ok(Some(key_name)) = repo.get_config("signing.key") {
         let key_path = std::path::Path::new(".suture")
             .join("keys")
