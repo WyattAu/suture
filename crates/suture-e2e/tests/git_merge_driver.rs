@@ -96,6 +96,7 @@ fn git_ok(dir: &Path, args: &[&str], suture_path: &Path) -> String {
 }
 
 #[test]
+#[ignore = "requires git + compiled suture binary + merge driver script; run manually with: cargo test -p suture-e2e --test git_merge_driver -- --ignored"]
 fn test_git_merge_driver_clean_merge() {
     let (_tmp, repo) = setup_git_repo();
     let suture = suture_bin();

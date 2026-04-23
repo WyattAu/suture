@@ -164,7 +164,7 @@ impl LanguageServer for SutureLsp {
 
         let line = params.text_document_position_params.position.line as usize + 1;
 
-        let blame_entries = match repo.blame(&relative_str) {
+        let blame_entries = match repo.blame(&relative_str, None) {
             Ok(b) => b,
             Err(_) => return Ok(None),
         };

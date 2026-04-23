@@ -1503,8 +1503,15 @@ fn error_hint(msg: &str) -> Option<&'static str> {
 }
 
 #[cfg(test)]
+pub(crate) fn cwd_guard() -> std::sync::MutexGuard<'static, ()> {
+    static CWD_LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+    CWD_LOCK.get_or_init(|| std::sync::Mutex::new(())).lock().unwrap()
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
+    use clap::Parser;
 
     fn parse(args: &[&str]) -> Cli {
         Cli::try_parse_from(args).unwrap_or_else(|e| panic!("failed to parse {:?}: {e}", args))
@@ -2171,6 +2178,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_verify_unsigned_commit() {
+        let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
         let mut repo = suture_core::repository::Repository::init(&dir_path, "testuser").unwrap();
@@ -2190,6 +2198,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_verify_signed_commit() {
+        let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
         let mut repo = suture_core::repository::Repository::init(&dir_path, "testuser").unwrap();
@@ -2235,6 +2244,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_defence_audit_trail_workflow() {
+        let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
         let prev = std::env::current_dir().unwrap();
@@ -2285,6 +2295,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_defence_classification_detection() {
+        let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
         let prev = std::env::current_dir().unwrap();
@@ -2312,6 +2323,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_defence_signed_commit_verify() {
+        let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
         let prev = std::env::current_dir().unwrap();
@@ -2354,6 +2366,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_film_branching_workflow() {
+        let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
         let prev = std::env::current_dir().unwrap();
@@ -2390,6 +2403,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_film_blame_history() {
+        let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
         let prev = std::env::current_dir().unwrap();
@@ -2421,6 +2435,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_youtube_export_workflow() {
+        let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
         let prev = std::env::current_dir().unwrap();
@@ -2450,6 +2465,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_youtube_sync_workflow() {
+        let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
         let prev = std::env::current_dir().unwrap();
@@ -2470,6 +2486,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_youtube_diff_summary() {
+        let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
         let prev = std::env::current_dir().unwrap();
@@ -2503,6 +2520,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_collaboration_workflow() {
+        let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
         let prev = std::env::current_dir().unwrap();
@@ -2547,6 +2565,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_undo_redo_workflow() {
+        let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
         let prev = std::env::current_dir().unwrap();
@@ -2574,6 +2593,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_clean_workflow() {
+        let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
         let prev = std::env::current_dir().unwrap();
