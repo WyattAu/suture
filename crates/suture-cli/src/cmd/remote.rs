@@ -23,6 +23,10 @@ pub(crate) async fn cmd_remote(
             repo.remove_remote(name)?;
             println!("Remote '{}' removed", name);
         }
+        RemoteAction::Rename { old_name, new_name } => {
+            repo.rename_remote(old_name, new_name)?;
+            println!("Renamed remote '{}' → '{}'", old_name, new_name);
+        }
         RemoteAction::Login { name } => {
             let remote_url = repo.get_remote_url(name)?;
 

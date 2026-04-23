@@ -3396,6 +3396,39 @@ impl Repository {
         Ok(remotes)
     }
 
+    /// Rename a configured remote.
+    pub fn rename_remote(&self, old_name: &str, new_name: &str) -> Result<(), RepoError> {
+        let old_url_key = format!("remote.{}.url", old_name);
+        let new_url_key = format!("remote.{}.url", new_name);
+
+        if self.meta.get_config(&old_url_key)?.is_none() {
+            return Err(RepoError::Custom(format!("remote '{}' not found", old_name)));
+        }
+        if self.meta.get_config(&new_url_key)?.is_some() {
+            return Err(RepoError::Custom(format!(
+                "remote '{}' already exists",
+                new_name
+            )));
+        }
+
+        let url = self
+            .meta
+            .get_config(&old_url_key)?
+            .ok_or_else(|| RepoError::Custom("remote url not found".to_string()))?;
+
+        self.meta.set_config(&new_url_key, &url)?;
+        self.meta.delete_config(&old_url_key)?;
+
+        if let Some(token) = self.meta.get_config(&format!("remote.{}.token", old_name))? {
+            self.meta
+                .set_config(&format!("remote.{}.token", new_name), &token)?;
+            self.meta
+                .delete_config(&format!("remote.{}.token", old_name))?;
+        }
+
+        Ok(())
+    }
+
     /// Remove a configured remote.
     pub fn remove_remote(&self, name: &str) -> Result<(), RepoError> {
         let key = format!("remote.{}.url", name);

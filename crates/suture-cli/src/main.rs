@@ -615,6 +615,16 @@ EXAMPLES:
         #[command(subcommand)]
         action: BisectAction,
     },
+    /// Manage repository hooks
+    #[command(after_long_help = "\
+EXAMPLES:
+    suture hook list                # List all hooks with their scripts
+    suture hook run pre-commit      # Manually trigger a hook
+    suture hook edit pre-commit     # Open hook in $EDITOR")]
+    Hook {
+        #[command(subcommand)]
+        action: HookAction,
+    },
     /// Undo the last operation (commit, merge, checkout, etc.)
     ///
     /// Uses the reflog to rewind HEAD to its previous state.
@@ -643,6 +653,27 @@ EXAMPLES:
         /// Custom message for the squashed commit (default: combined messages)
         #[arg(short, long)]
         message: Option<String>,
+    },
+    /// Synchronize with remote — commit changes and push/pull
+    #[command(after_long_help = "\
+EXAMPLES:
+    suture sync                     # Auto-commit staged+unstaged, then push/pull
+    suture sync --no-push           # Auto-commit but don't push
+    suture sync --pull-only         # Only pull from remote
+    suture sync --message 'WIP'     # Custom commit message")]
+    Sync {
+        /// Auto-commit but don't push
+        #[arg(long)]
+        no_push: bool,
+        /// Only pull from remote (don't commit or push)
+        #[arg(long)]
+        pull_only: bool,
+        /// Custom commit message (default: auto-generated)
+        #[arg(short = 'm', long)]
+        message: Option<String>,
+        /// Remote to sync with (default: origin)
+        #[arg(default_value = "origin")]
+        remote: String,
     },
     /// Launch terminal UI
     Tui,
@@ -774,6 +805,14 @@ pub(crate) enum RemoteAction {
     Remove {
         /// Remote name
         name: String,
+    },
+    /// Rename a remote
+    #[command(after_long_help = "EXAMPLES:\n    suture remote rename upstream origin")]
+    Rename {
+        /// Current remote name
+        old_name: String,
+        /// New name
+        new_name: String,
     },
     /// Authenticate with a remote Hub and store a token
     #[command(
@@ -918,6 +957,22 @@ pub(crate) enum DriverAction {
     Uninstall,
     /// Show current merge driver status
     List,
+}
+
+#[derive(Subcommand, Debug)]
+pub(crate) enum HookAction {
+    /// List all configured hooks
+    List,
+    /// Manually execute a hook
+    Run {
+        /// Hook name (e.g., pre-commit, pre-push)
+        name: String,
+    },
+    /// Create or edit a hook in $EDITOR
+    Edit {
+        /// Hook name (e.g., pre-commit, pre-push)
+        name: String,
+    },
 }
 
 #[tokio::main]
@@ -1174,6 +1229,14 @@ async fn main() {
         Commands::Fsck => cmd::fsck::cmd_fsck().await,
         Commands::Doctor { fix } => cmd::doctor::cmd_doctor(fix).await,
         Commands::Bisect { action } => cmd::bisect::cmd_bisect(&action).await,
+        Commands::Hook { action } => {
+            let hook_action = match action {
+                HookAction::List => cmd::hook::HookAction::List,
+                HookAction::Run { name } => cmd::hook::HookAction::Run { name: name.clone() },
+                HookAction::Edit { name } => cmd::hook::HookAction::Edit { name: name.clone() },
+            };
+            cmd::hook::cmd_hook(&hook_action).await
+        }
         Commands::Git { action } => {
             let git_action = match action {
                 GitAction::Import { path } => cmd::git::GitAction::Import { path },
@@ -1191,6 +1254,14 @@ async fn main() {
         }
         Commands::Squash { count, message } => {
             cmd::squash::cmd_squash(count, message.as_deref()).await
+        }
+        Commands::Sync {
+            remote,
+            no_push,
+            pull_only,
+            message,
+        } => {
+            cmd::sync::cmd_sync(&remote, no_push, pull_only, message.as_deref()).await
         }
         Commands::Undo { steps, hard } => cmd::undo::cmd_undo(steps, hard).await,
         Commands::Version => cmd::version::cmd_version().await,
