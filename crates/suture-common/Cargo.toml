@@ -1,6 +1,6 @@
 [package]
 name = "suture-common"
-version = "1.2.0"
+version = "5.0.0"
 edition = "2024"
 license.workspace = true
 repository.workspace = true

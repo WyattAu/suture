@@ -31,6 +31,7 @@ pub(crate) async fn cmd_diff(
     cached: bool,
     integrity: bool,
     name_only: bool,
+    classification: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use suture_core::engine::diff::DiffType;
     use suture_core::engine::merge::diff_lines;
@@ -67,6 +68,18 @@ pub(crate) async fn cmd_diff(
         let report = build_integrity_report(&entries, &repo, from, to, cached)?;
         let formatted = suture_core::integrity::format_integrity_report(&report);
         println!("{formatted}");
+        return Ok(());
+    }
+
+    // Classification analysis mode: detect classification marking changes
+    if classification {
+        let results = super::classification::analyze_classification_changes(&entries, &repo);
+        let report = super::classification::format_classification_report(&results);
+        if report.is_empty() {
+            println!("No classification changes detected.");
+        } else {
+            println!("{report}");
+        }
         return Ok(());
     }
 

@@ -39,6 +39,9 @@ EXAMPLES:
         /// Repository type: video, document, or data (default: auto-detect)
         #[arg(short, long)]
         r#type: Option<String>,
+        /// Repository template to bootstrap from (video, document, data, report)
+        #[arg(long)]
+        template: Option<String>,
     },
     /// Show repository status
     #[command(after_long_help = "\
@@ -134,7 +137,9 @@ EXAMPLES:
     suture log --all           # Show commits across all branches
     suture log --author alice  # Filter by author
     suture log --grep \"fix\"   # Filter by message pattern
-    suture log --since \"2 weeks ago\"  # Filter by date")]
+    suture log --since \"2 weeks ago\"  # Filter by date
+    suture log --audit         # Export structured audit trail (compliance format)
+    suture log --audit --format json    # Audit trail in JSON format")]
     Log {
         /// Branch to show log for (default: HEAD)
         branch: Option<String>,
@@ -168,6 +173,12 @@ EXAMPLES:
         /// Show patch content (diff) for each commit
         #[arg(long)]
         diff: bool,
+        /// Export structured audit trail (compliance format)
+        #[arg(long)]
+        audit: bool,
+        /// Output format for --audit (json, csv, text)
+        #[arg(long, default_value = "text")]
+        audit_format: String,
     },
     /// Switch to a different branch
     #[command(after_long_help = "\
@@ -252,6 +263,9 @@ EXAMPLES:
         /// Show only names of changed files
         #[arg(long)]
         name_only: bool,
+        /// Detect classification marking changes (defence/compliance)
+        #[arg(long)]
+        classification: bool,
     },
     /// Revert a commit
     #[command(after_long_help = "\
@@ -624,6 +638,22 @@ EXAMPLES:
     },
     /// Launch terminal UI
     Tui,
+    /// Export a clean snapshot without repository metadata
+    #[command(after_long_help = "\
+EXAMPLES:
+    suture export ../client-delivery       # Export HEAD to a directory
+    suture export ../v2 main              # Export specific branch
+    suture export ../snapshot v1.0        # Export a tag
+    suture export --zip ../delivery.zip   # Export as zip file")]
+    Export {
+        /// Destination path (directory or zip file)
+        destination: String,
+        /// Commit, branch, or tag to export (default: HEAD)
+        commit: Option<String>,
+        /// Export as zip file instead of directory
+        #[arg(long)]
+        zip: bool,
+    },
     /// Create an archive of the repository
     #[command(after_long_help = "\
 EXAMPLES:
@@ -902,8 +932,8 @@ async fn main() {
     }
 
     let result = match cli.command {
-        Commands::Init { path, r#type } => {
-            cmd::init::cmd_init(&path, r#type.as_deref()).await
+        Commands::Init { path, r#type, template } => {
+            cmd::init::cmd_init(&path, r#type.as_deref(), template.as_deref()).await
         }
         Commands::Status => cmd::status::cmd_status().await,
         Commands::Ignore { action } => {
@@ -946,6 +976,8 @@ async fn main() {
             until,
             stat,
             diff,
+            audit,
+            audit_format,
         } => {
             cmd::log::cmd_log(
                 branch.as_deref(),
@@ -959,6 +991,8 @@ async fn main() {
                 until.as_deref(),
                 stat,
                 diff,
+                audit,
+                &audit_format,
             )
             .await
         }
@@ -983,8 +1017,9 @@ async fn main() {
             cached,
             integrity,
             name_only,
+            classification,
         } => {
-            cmd::diff::cmd_diff(from.as_deref(), to.as_deref(), cached, integrity, name_only).await
+            cmd::diff::cmd_diff(from.as_deref(), to.as_deref(), cached, integrity, name_only, classification).await
         }
         Commands::Revert { commit, message } => {
             cmd::revert::cmd_revert(&commit, message.as_deref()).await
@@ -1151,6 +1186,13 @@ async fn main() {
         Commands::Undo { steps, hard } => cmd::undo::cmd_undo(steps, hard).await,
         Commands::Version => cmd::version::cmd_version().await,
         Commands::Tui => cmd::tui::cmd_tui().await,
+        Commands::Export {
+            destination,
+            commit,
+            zip,
+        } => {
+            cmd::export::cmd_export(&destination, commit.as_deref(), zip).await
+        }
         Commands::Archive {
             commit,
             output,
@@ -1234,9 +1276,10 @@ mod tests {
     fn test_init_default() {
         let cli = parse(&["suture", "init"]);
         match cli.command {
-            Commands::Init { path, r#type } => {
+            Commands::Init { path, r#type, template } => {
                 assert_eq!(path, ".");
                 assert!(r#type.is_none());
+                assert!(template.is_none());
             }
             other => panic!("expected Init, got {other:?}"),
         }
@@ -1246,9 +1289,10 @@ mod tests {
     fn test_init_with_path() {
         let cli = parse(&["suture", "init", "/tmp/myrepo"]);
         match cli.command {
-            Commands::Init { path, r#type } => {
+            Commands::Init { path, r#type, template } => {
                 assert_eq!(path, "/tmp/myrepo");
                 assert!(r#type.is_none());
+                assert!(template.is_none());
             }
             other => panic!("expected Init, got {other:?}"),
         }
@@ -1258,8 +1302,9 @@ mod tests {
     fn test_init_with_type() {
         let cli = parse(&["suture", "init", "--type", "video"]);
         match cli.command {
-            Commands::Init { r#type, .. } => {
+            Commands::Init { r#type, template, .. } => {
                 assert_eq!(r#type.as_deref(), Some("video"));
+                assert!(template.is_none());
             }
             other => panic!("expected Init, got {other:?}"),
         }
@@ -1269,9 +1314,34 @@ mod tests {
     fn test_init_with_type_and_path() {
         let cli = parse(&["suture", "init", "my-project", "-t", "document"]);
         match cli.command {
-            Commands::Init { path, r#type } => {
+            Commands::Init { path, r#type, template } => {
                 assert_eq!(path, "my-project");
                 assert_eq!(r#type.as_deref(), Some("document"));
+                assert!(template.is_none());
+            }
+            other => panic!("expected Init, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_init_with_template() {
+        let cli = parse(&["suture", "init", "--template", "report"]);
+        match cli.command {
+            Commands::Init { template, r#type, .. } => {
+                assert_eq!(template.as_deref(), Some("report"));
+                assert!(r#type.is_none());
+            }
+            other => panic!("expected Init, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_init_with_type_and_template() {
+        let cli = parse(&["suture", "init", "--type", "data", "--template", "report"]);
+        match cli.command {
+            Commands::Init { r#type, template, .. } => {
+                assert_eq!(r#type.as_deref(), Some("data"));
+                assert_eq!(template.as_deref(), Some("report"));
             }
             other => panic!("expected Init, got {other:?}"),
         }
@@ -1311,12 +1381,14 @@ mod tests {
                 to,
                 integrity,
                 name_only,
+                classification,
             } => {
                 assert!(cached);
                 assert!(from.is_none());
                 assert!(to.is_none());
                 assert!(!integrity);
                 assert!(!name_only);
+                assert!(!classification);
             }
             other => panic!("expected Diff, got {other:?}"),
         }
@@ -1332,12 +1404,14 @@ mod tests {
                 to,
                 integrity,
                 name_only,
+                classification,
             } => {
                 assert!(!cached);
                 assert_eq!(from.as_deref(), Some("HEAD~1"));
                 assert_eq!(to.as_deref(), Some("HEAD"));
                 assert!(!integrity);
                 assert!(!name_only);
+                assert!(!classification);
             }
             other => panic!("expected Diff, got {other:?}"),
         }

@@ -1,6 +1,7 @@
 pub mod add;
 pub mod archive;
 pub mod bisect;
+pub mod classification;
 pub mod git;
 pub mod blame;
 pub mod branch;
@@ -11,6 +12,7 @@ pub mod commit;
 pub mod config;
 pub mod diff;
 pub mod doctor;
+pub mod export;
 pub mod drivers;
 pub mod fetch;
 pub mod fsck;

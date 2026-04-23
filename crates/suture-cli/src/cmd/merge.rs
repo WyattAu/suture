@@ -103,6 +103,53 @@ pub(crate) async fn cmd_merge(
     let conflicts = result.unresolved_conflicts;
     let mut remaining: Vec<ConflictInfo> = Vec::new();
     let mut resolved_count = 0usize;
+    let mut ooxml_resolved = 0usize;
+
+    // OOXML files (.docx, .xlsx, .pptx) are ZIP-based binary formats.
+    // Writing text conflict markers inside a ZIP corrupts the file,
+    // making it impossible to open in Word/Excel/PowerPoint.
+    // For non-"theirs" strategies, restore "ours" version and generate a report.
+    let conflicts = if dry_run {
+        let ooxml_count = conflicts.iter().filter(|c| is_ooxml_file(&c.path)).count();
+        if ooxml_count > 0 {
+            println!(
+                "Note: {} OOXML file(s) will have your version preserved (conflict markers would corrupt binary format)",
+                ooxml_count
+            );
+        }
+        conflicts
+    } else if matches!(merge_strategy, MergeStrategy::Theirs) {
+        // Theirs strategy writes correct binary blobs — include OOXML in normal flow
+        conflicts
+    } else {
+        let (ooxml, text): (Vec<_>, Vec<_>) = conflicts
+            .into_iter()
+            .partition(|c| is_ooxml_file(&c.path));
+
+        if !ooxml.is_empty() {
+            for conflict in &ooxml {
+                if let Some(hash) = conflict.our_content_hash
+                    && let Ok(blob) = repo.cas().get_blob(&hash)
+                {
+                    if let Err(e) = std::fs::write(&conflict.path, &blob) {
+                        eprintln!("Warning: could not restore '{}': {}", conflict.path, e);
+                    } else {
+                        ooxml_resolved += 1;
+                        let _ = repo.add(&conflict.path);
+                    }
+                }
+            }
+            if let Err(e) = generate_ooxml_conflict_report(&ooxml, repo.root()) {
+                eprintln!("Warning: could not write conflict report: {}", e);
+            }
+            println!(
+                "Preserved your version for {} OOXML file(s) (see .suture_conflicts/report.md)",
+                ooxml.len()
+            );
+        }
+
+        text
+    };
 
     if dry_run {
         if result.patches_applied > 0 {
@@ -172,9 +219,9 @@ pub(crate) async fn cmd_merge(
             // (our content is already in the working tree)
             println!(
                 "Resolved {} conflict(s) by keeping our version",
-                conflicts.len()
+                ooxml_resolved + conflicts.len()
             );
-            resolved_count = conflicts.len();
+            resolved_count += conflicts.len();
         }
         MergeStrategy::Theirs => {
             // Take their version for all conflicts
@@ -283,16 +330,28 @@ pub(crate) async fn cmd_merge(
     }
 
     if remaining.is_empty() {
-        println!(
-            "All conflicts resolved. {} via {}.",
-            resolved_count,
-            match merge_strategy {
-                MergeStrategy::Semantic => "semantic drivers",
-                MergeStrategy::Ours => "keeping our version",
-                MergeStrategy::Theirs => "keeping their version",
-                MergeStrategy::Manual => unreachable!(),
-            }
-        );
+        let via = match merge_strategy {
+            MergeStrategy::Semantic => "semantic drivers",
+            MergeStrategy::Ours => "keeping our version",
+            MergeStrategy::Theirs => "keeping their version",
+            MergeStrategy::Manual => unreachable!(),
+        };
+        if ooxml_resolved > 0 && resolved_count > ooxml_resolved {
+            println!(
+                "All conflicts resolved. {} via {}, {} OOXML preserved.",
+                resolved_count - ooxml_resolved, via, ooxml_resolved
+            );
+        } else if ooxml_resolved > 0 {
+            println!(
+                "All {} conflict(s) resolved. {} OOXML file(s) preserved (your version).",
+                resolved_count, ooxml_resolved
+            );
+        } else {
+            println!(
+                "All conflicts resolved. {} via {}.",
+                resolved_count, via
+            );
+        }
         println!("Run `suture commit` to finalize the merge.");
     } else {
         println!("Edit the file(s), then run `suture commit` to resolve");
@@ -307,4 +366,61 @@ fn indent(s: &str, prefix: &str) -> String {
         .map(|line| format!("{}{}", prefix, line))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn is_ooxml_file(path: &str) -> bool {
+    std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase())
+        .is_some_and(|ext| matches!(ext.as_str(), "docx" | "xlsx" | "pptx"))
+}
+
+fn generate_ooxml_conflict_report(
+    conflicts: &[suture_core::repository::ConflictInfo],
+    root: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let report_dir = root.join(".suture_conflicts");
+    std::fs::create_dir_all(&report_dir)?;
+
+    let mut report = String::from("=== Merge Conflicts ===\n\n");
+
+    for conflict in conflicts {
+        let ext = std::path::Path::new(&conflict.path)
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_uppercase())
+            .unwrap_or_else(|| "UNKNOWN".to_string());
+
+        report.push_str(&format!("{} ({})\n", conflict.path, ext));
+        report.push_str(
+            "  Could not automatically merge. Your version has been preserved.\n\n",
+        );
+
+        if conflict.our_content_hash.is_some() {
+            let our_size = std::fs::metadata(&conflict.path)
+                .map(|m| m.len())
+                .unwrap_or(0);
+            report.push_str(&format!("  Your version: {} bytes\n", our_size));
+            if let Some(their_hash) = conflict.their_content_hash {
+                let hex = suture_common::Hash::to_hex(&their_hash);
+                report.push_str(&format!("  Their version: blob {}\n", &hex[..12]));
+            }
+            if let Some(base_hash) = conflict.base_content_hash {
+                let hex = suture_common::Hash::to_hex(&base_hash);
+                report.push_str(&format!("  Base version: blob {}\n", &hex[..12]));
+            }
+        }
+
+        report.push_str("\n  To resolve:\n");
+        report.push_str("    1. Open the file (your version is preserved)\n");
+        report.push_str("    2. Contact the other editor to see their changes\n");
+        report.push_str(&format!(
+            "    3. Make your edits and run: suture add {} && suture commit \"resolved conflict\"\n\n",
+            conflict.path
+        ));
+    }
+
+    std::fs::write(report_dir.join("report.md"), report)?;
+    Ok(())
 }

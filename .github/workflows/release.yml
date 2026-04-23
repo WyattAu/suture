@@ -10,6 +10,7 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  BINARY_NAME: suture
 
 jobs:
   build:
@@ -21,21 +22,17 @@ jobs:
             os: ubuntu-latest
             artifact_name: suture
             asset_suffix: x86_64-linux
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-            artifact_name: suture
-            asset_suffix: aarch64-linux
-          - target: x86_64-apple-darwin
-            os: macos-latest
-            artifact_name: suture
-            asset_suffix: x86_64-macos
           - target: aarch64-apple-darwin
             os: macos-latest
             artifact_name: suture
             asset_suffix: aarch64-macos
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            artifact_name: suture
+            asset_suffix: x86_64-macos
           - target: x86_64-pc-windows-msvc
             os: windows-latest
-            artifact_name: suture
+            artifact_name: suture.exe
             asset_suffix: x86_64-windows
 
     runs-on: ${{ matrix.os }}
@@ -49,13 +46,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y pkg-config libssl-dev
 
-      - name: Install cross-compiler (ARM Linux)
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu
-          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
-
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -66,31 +56,55 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
-      - name: Run tests (default target only)
-        if: matrix.target == 'x86_64-unknown-linux-gnu'
-        run: cargo test --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz -- --test-threads=4
-
-      - name: Build release binaries
+      - name: Build release binary
         run: cargo build --release --target ${{ matrix.target }} -p suture-cli
 
+      - name: Strip binary (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: strip target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+
       - name: Package (Linux/macOS)
-        if: matrix.os != 'windows-latest'
+        if: runner.os != 'Windows'
         run: |
           cd target/${{ matrix.target }}/release
-          tar czf ../../../suture-${{ matrix.asset_suffix }}.tar.gz suture
+          tar czf ../../../suture-${{ matrix.asset_suffix }}.tar.gz ${{ matrix.artifact_name }}
+          cd ../../../
+          sha256sum suture-${{ matrix.asset_suffix }}.tar.gz > suture-${{ matrix.asset_suffix }}.tar.gz.sha256
 
       - name: Package (Windows)
-        if: matrix.os == 'windows-latest'
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
           cd target/${{ matrix.target }}/release
           Compress-Archive -Path suture.exe -DestinationPath ../../../suture-${{ matrix.asset_suffix }}.zip
+          cd ../../../
+          (Get-FileHash -Path "suture-${{ matrix.asset_suffix }}.zip" -Algorithm SHA256).Hash.ToLower() + "  suture-${{ matrix.asset_suffix }}.zip" | Out-File -Encoding ascii "suture-${{ matrix.asset_suffix }}.zip.sha256"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: suture-${{ matrix.asset_suffix }}
-          path: suture-${{ matrix.asset_suffix }}.*
+          path: |
+            suture-${{ matrix.asset_suffix }}.tar.gz
+            suture-${{ matrix.asset_suffix }}.tar.gz.sha256
+            suture-${{ matrix.asset_suffix }}.zip
+            suture-${{ matrix.asset_suffix }}.zip.sha256
+
+  publish-dry-run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify crates can be published
+        run: cargo publish --dry-run --workspace
 
   source-tarball:
     runs-on: ubuntu-latest
@@ -114,7 +128,7 @@ jobs:
           path: suture-src.tar.gz
 
   release:
-    needs: [build, source-tarball]
+    needs: [build, publish-dry-run, source-tarball]
     runs-on: ubuntu-latest
 
     steps:

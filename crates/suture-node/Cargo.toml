@@ -1,6 +1,6 @@
 [package]
 name = "suture-node"
-version = "0.1.0"
+version = "5.0.0"
 edition = "2024"
 license.workspace = true
 publish = false
@@ -9,6 +9,6 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-suture-core = { path = "../suture-core", version = "1.1.0" }
+suture-core = { path = "../suture-core", version = "5.0.0" }
 napi = { version = "3", features = ["napi9"] }
 napi-derive = "3"

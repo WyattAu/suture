@@ -4137,7 +4137,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "suture-bench"
-version = "1.1.0"
+version = "5.0.0"
 dependencies = [
  "criterion",
  "serde_json",
@@ -4155,9 +4155,10 @@ dependencies = [
 
 [[package]]
 name = "suture-cli"
-version = "2.6.0"
+version = "5.0.0"
 dependencies = [
  "base64 0.22.1",
+ "chrono",
  "clap",
  "clap_complete",
  "clap_complete_nushell",
@@ -4202,7 +4203,7 @@ dependencies = [
 
 [[package]]
 name = "suture-common"
-version = "1.2.0"
+version = "5.0.0"
 dependencies = [
  "blake3",
  "serde",
@@ -4211,7 +4212,7 @@ dependencies = [
 
 [[package]]
 name = "suture-core"
-version = "1.2.0"
+version = "5.0.0"
 dependencies = [
  "blake3",
  "dirs",
@@ -4232,7 +4233,7 @@ dependencies = [
 
 [[package]]
 name = "suture-daemon"
-version = "1.2.0"
+version = "5.0.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -4256,7 +4257,7 @@ dependencies = [
 
 [[package]]
 name = "suture-driver"
-version = "1.2.0"
+version = "5.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -4268,7 +4269,7 @@ dependencies = [
 
 [[package]]
 name = "suture-driver-csv"
-version = "1.2.0"
+version = "5.0.0"
 dependencies = [
  "csv",
  "suture-driver",
@@ -4276,7 +4277,7 @@ dependencies = [
 
 [[package]]
 name = "suture-driver-docx"
-version = "1.2.0"
+version = "5.0.0"
 dependencies = [
  "quick-xml",
  "serde",
@@ -4288,7 +4289,7 @@ dependencies = [
 
 [[package]]
 name = "suture-driver-example"
-version = "1.2.0"
+version = "5.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -4298,7 +4299,7 @@ dependencies = [
 
 [[package]]
 name = "suture-driver-feed"
-version = "1.2.0"
+version = "5.0.0"
 dependencies = [
  "roxmltree",
  "suture-driver",
@@ -4306,7 +4307,7 @@ dependencies = [
 
 [[package]]
 name = "suture-driver-html"
-version = "1.2.0"
+version = "5.0.0"
 dependencies = [
  "roxmltree",
  "suture-driver",
@@ -4314,14 +4315,14 @@ dependencies = [
 
 [[package]]
 name = "suture-driver-ical"
-version = "1.2.0"
+version = "5.0.0"
 dependencies = [
  "suture-driver",
 ]
 
 [[package]]
 name = "suture-driver-image"
-version = "1.2.0"
+version = "5.0.0"
 dependencies = [
  "image",
  "suture-driver",
@@ -4329,7 +4330,7 @@ dependencies = [
 
 [[package]]
 name = "suture-driver-json"
-version = "1.2.0"
+version = "5.0.0"
 dependencies = [
  "serde_json",
  "suture-driver",
@@ -4337,14 +4338,14 @@ dependencies = [
 
 [[package]]
 name = "suture-driver-markdown"
-version = "1.2.0"
+version = "5.0.0"
 dependencies = [
  "suture-driver",
 ]
 
 [[package]]
 name = "suture-driver-otio"
-version = "1.2.0"
+version = "5.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -4354,7 +4355,7 @@ dependencies = [
 
 [[package]]
 name = "suture-driver-pdf"
-version = "1.2.0"
+version = "5.0.0"
 dependencies = [
  "lopdf",
  "suture-driver",
@@ -4362,7 +4363,7 @@ dependencies = [
 
 [[package]]
 name = "suture-driver-pptx"
-version = "1.2.0"
+version = "5.0.0"
 dependencies = [
  "quick-xml",
  "serde",
@@ -4373,14 +4374,14 @@ dependencies = [
 
 [[package]]
 name = "suture-driver-sql"
-version = "1.2.0"
+version = "5.0.0"
 dependencies = [
  "suture-driver",
 ]
 
 [[package]]
 name = "suture-driver-svg"
-version = "1.2.0"
+version = "5.0.0"
 dependencies = [
  "roxmltree",
  "suture-driver",
@@ -4388,7 +4389,7 @@ dependencies = [
 
 [[package]]
 name = "suture-driver-toml"
-version = "1.2.0"
+version = "5.0.0"
 dependencies = [
  "suture-driver",
  "toml",
@@ -4396,7 +4397,7 @@ dependencies = [
 
 [[package]]
 name = "suture-driver-xlsx"
-version = "1.2.0"
+version = "5.0.0"
 dependencies = [
  "quick-xml",
  "serde",
@@ -4406,7 +4407,7 @@ dependencies = [
 
 [[package]]
 name = "suture-driver-xml"
-version = "1.2.0"
+version = "5.0.0"
 dependencies = [
  "roxmltree",
  "suture-driver",
@@ -4414,7 +4415,7 @@ dependencies = [
 
 [[package]]
 name = "suture-driver-yaml"
-version = "1.2.0"
+version = "5.0.0"
 dependencies = [
  "serde",
  "serde_yaml",
@@ -4423,7 +4424,7 @@ dependencies = [
 
 [[package]]
 name = "suture-e2e"
-version = "1.1.0"
+version = "5.0.0"
 dependencies = [
  "axum",
  "image",
@@ -4445,7 +4446,7 @@ dependencies = [
 
 [[package]]
 name = "suture-fuzz"
-version = "1.1.0"
+version = "5.0.0"
 dependencies = [
  "proptest",
  "serde_json",
@@ -4457,7 +4458,7 @@ dependencies = [
 
 [[package]]
 name = "suture-hub"
-version = "1.2.0"
+version = "5.0.0"
 dependencies = [
  "async-trait",
  "axum",
@@ -4496,7 +4497,7 @@ dependencies = [
 
 [[package]]
 name = "suture-lsp"
-version = "1.2.0"
+version = "5.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -4512,7 +4513,7 @@ dependencies = [
 
 [[package]]
 name = "suture-merge"
-version = "0.2.0"
+version = "5.0.0"
 dependencies = [
  "suture-driver",
  "suture-driver-csv",
@@ -4533,7 +4534,7 @@ dependencies = [
 
 [[package]]
 name = "suture-node"
-version = "0.1.0"
+version = "5.0.0"
 dependencies = [
  "napi",
  "napi-derive",
@@ -4542,7 +4543,7 @@ dependencies = [
 
 [[package]]
 name = "suture-ooxml"
-version = "1.2.0"
+version = "5.0.0"
 dependencies = [
  "quick-xml",
  "serde",
@@ -4554,7 +4555,7 @@ dependencies = [
 
 [[package]]
 name = "suture-protocol"
-version = "1.2.0"
+version = "5.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -4564,7 +4565,7 @@ dependencies = [
 
 [[package]]
 name = "suture-raft"
-version = "0.2.0"
+version = "5.0.0"
 dependencies = [
  "async-trait",
  "rand 0.8.6",
@@ -4578,7 +4579,7 @@ dependencies = [
 
 [[package]]
 name = "suture-s3"
-version = "0.2.0"
+version = "5.0.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -4596,7 +4597,7 @@ dependencies = [
 
 [[package]]
 name = "suture-tui"
-version = "1.2.0"
+version = "5.0.0"
 dependencies = [
  "crossterm",
  "ratatui",
@@ -4617,7 +4618,7 @@ dependencies = [
 
 [[package]]
 name = "suture-vfs"
-version = "0.2.0"
+version = "5.0.0"
 dependencies = [
  "anyhow",
  "async-stream",

@@ -13,6 +13,8 @@ pub(crate) async fn cmd_log(
     until: Option<&str>,
     stat: bool,
     diff: bool,
+    audit: bool,
+    audit_format: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     fn format_stat(patch: &suture_core::patch::types::Patch) -> String {
         let files = patch.touch_set.addresses();
@@ -26,10 +28,15 @@ pub(crate) async fn cmd_log(
             format!(" {} files changed: {}", count, files.join(", "))
         }
     }
+
     let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
 
     let since_ts = since.map(parse_time_filter).transpose()?;
     let until_ts = until.map(parse_time_filter).transpose()?;
+
+    if audit {
+        return cmd_audit(&repo, audit_format, since_ts, until_ts, author, grep).await;
+    }
 
     let show_graph = graph && !all;
 
@@ -251,4 +258,194 @@ pub(crate) async fn cmd_log(
     }
 
     Ok(())
+}
+
+#[derive(serde::Serialize)]
+struct AuditEntry {
+    timestamp: String,
+    author: String,
+    commit: String,
+    parents: Vec<String>,
+    message: String,
+    files_changed: Vec<String>,
+    files_added: Vec<String>,
+    files_modified: Vec<String>,
+    files_deleted: Vec<String>,
+}
+
+async fn cmd_audit(
+    repo: &suture_core::repository::Repository,
+    audit_format: &str,
+    since_ts: Option<u64>,
+    until_ts: Option<u64>,
+    author: Option<&str>,
+    grep: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let branches = repo.list_branches();
+    let mut seen = std::collections::HashSet::new();
+    let mut all_patches = Vec::new();
+
+    for (_, tip_id) in &branches {
+        let chain = repo.dag().patch_chain(tip_id);
+        for pid in &chain {
+            if seen.insert(*pid)
+                && let Some(patch) = repo.dag().get_patch(pid)
+            {
+                all_patches.push(patch.clone());
+            }
+        }
+    }
+
+    if let Some(since) = since_ts {
+        all_patches.retain(|p| p.timestamp >= since);
+    }
+    if let Some(until) = until_ts {
+        all_patches.retain(|p| p.timestamp <= until);
+    }
+    if let Some(author_filter) = author {
+        all_patches.retain(|p| p.author.contains(author_filter));
+    }
+    if let Some(grep_filter) = grep {
+        let grep_lower = grep_filter.to_lowercase();
+        all_patches.retain(|p| p.message.to_lowercase().contains(&grep_lower));
+    }
+
+    all_patches.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+
+    let entries: Vec<AuditEntry> = all_patches
+        .iter()
+        .map(|patch| {
+            let dt = chrono::DateTime::from_timestamp(patch.timestamp as i64, 0)
+                .unwrap_or_default()
+                .to_rfc3339();
+            let files_changed: Vec<String> = patch.touch_set.addresses();
+
+            let (files_added, files_modified, files_deleted) =
+                classify_files(repo, patch);
+
+            AuditEntry {
+                timestamp: dt,
+                author: patch.author.clone(),
+                commit: patch.id.to_hex(),
+                parents: patch.parent_ids.iter().map(|h| h.to_hex()).collect(),
+                message: patch.message.clone(),
+                files_changed: files_changed.clone(),
+                files_added,
+                files_modified,
+                files_deleted,
+            }
+        })
+        .collect();
+
+    match audit_format {
+        "json" => {
+            let json = serde_json::to_string_pretty(&entries)?;
+            println!("{json}");
+        }
+        "csv" => {
+            println!("timestamp,author,commit_hash,message,files_changed");
+            for entry in &entries {
+                let ts = csv_escape(&entry.timestamp);
+                let author = csv_escape(&entry.author);
+                let hash = csv_escape(&entry.commit);
+                let msg = csv_escape(&entry.message);
+                let files = csv_escape(&entry.files_changed.join("; "));
+                println!("{ts},{author},{hash},{msg},{files}");
+            }
+        }
+        _ => {
+            let repo_path = std::env::current_dir()
+                .unwrap_or_default()
+                .display()
+                .to_string();
+            let generated = chrono::Utc::now().to_rfc3339();
+            let total = entries.len();
+            println!("=== AUDIT TRAIL ===");
+            println!("Repository: {repo_path}");
+            println!("Generated:  {generated}");
+            println!("Total commits: {total}");
+            println!();
+            for entry in &entries {
+                let short_hash = entry.commit.chars().take(12).collect::<String>();
+                println!("--- Commit {short_hash} ---");
+                println!("Timestamp:   {}", entry.timestamp);
+                println!("Author:      {}", entry.author);
+                println!("Message:     {}", entry.message);
+                for f in &entry.files_changed {
+                    let op = classify_file_label(f, &entry.files_added, &entry.files_modified, &entry.files_deleted);
+                    println!("Files:       {f} ({op})");
+                }
+                if entry.files_changed.is_empty() {
+                    println!("Files:       (none)");
+                }
+                println!("Parents:     {}", entry.parents.join(", "));
+                println!();
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn classify_files(
+    repo: &suture_core::repository::Repository,
+    patch: &suture_core::patch::types::Patch,
+) -> (Vec<String>, Vec<String>, Vec<String>) {
+    let parent_hex = patch
+        .parent_ids
+        .first()
+        .map(|h| h.to_hex())
+        .unwrap_or_default();
+    let commit_hex = patch.id.to_hex();
+    let from = if parent_hex.is_empty() {
+        None
+    } else {
+        Some(parent_hex.as_str())
+    };
+
+    let entries = repo.diff(from, Some(commit_hex.as_str())).unwrap_or_default();
+
+    use suture_core::engine::diff::DiffType;
+    let mut added = Vec::new();
+    let mut modified = Vec::new();
+    let mut deleted = Vec::new();
+
+    for entry in &entries {
+        match &entry.diff_type {
+            DiffType::Added => added.push(entry.path.clone()),
+            DiffType::Modified => modified.push(entry.path.clone()),
+            DiffType::Deleted => deleted.push(entry.path.clone()),
+            DiffType::Renamed { old_path, new_path } => {
+                deleted.push(old_path.clone());
+                added.push(new_path.clone());
+            }
+        }
+    }
+
+    (added, modified, deleted)
+}
+
+fn classify_file_label(
+    file: &str,
+    added: &[String],
+    modified: &[String],
+    deleted: &[String],
+) -> &'static str {
+    if added.iter().any(|f| f == file) {
+        "added"
+    } else if modified.iter().any(|f| f == file) {
+        "modified"
+    } else if deleted.iter().any(|f| f == file) {
+        "deleted"
+    } else {
+        "changed"
+    }
+}
+
+fn csv_escape(s: &str) -> String {
+    if s.contains(',') || s.contains('"') || s.contains('\n') {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s.to_string()
+    }
 }

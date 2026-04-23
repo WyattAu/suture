@@ -1,103 +1,139 @@
-# Quickstart
+# Quickstart: Stop Losing Work to Google Drive
 
-Get started with Suture in under 5 minutes.
+You've been there. Two people edit the same Word doc. Someone saves over someone else's work. Google Drive creates "Copy of proposal_FINAL_v2_REAL.docx." There has to be a better way. There is.
 
-## Install
+---
 
-**From source (requires Rust 1.85+):**
+## Install (10 seconds)
+
+Head to [github.com/WyattAu/suture/releases](https://github.com/WyattAu/suture/releases), grab the binary for your OS, and drop it somewhere on your PATH. On a Mac with Homebrew:
 
 ```bash
-cargo install --path crates/suture-cli
+brew install suture
 ```
 
-**Build from repo:**
+On Linux or Windows, download from GitHub Releases and unzip. That's it. No Rust toolchain needed.
 
-```bash
-git clone https://github.com/WyattAu/suture.git
-cd suture
-cargo build --release --bin suture
-# Binary at target/release/suture
+Verify it works:
+
+```
+$ suture --version
+suture 0.1.0
 ```
 
-## First Repo
+---
+
+## Your First Repository (10 seconds)
 
 ```bash
-suture init my-project
-cd my-project
-suture config user.name "Your Name"
-
-echo "Hello, Suture" > README.md
-suture add .
-suture commit "initial commit"
-suture log
+cd ~/Documents
+suture init
 ```
 
-## Branching and Merging
+```
+Initialized empty Suture repository in /Users/you/Documents/.suture/
+```
+
+Track your proposal:
 
 ```bash
-suture branch feature
-suture checkout feature
+suture add proposal.docx
+suture commit "initial draft"
+```
 
-echo "new feature" >> README.md
-suture add .
-suture commit "add feature"
+```
+[main abc1234] initial draft
+ 1 file changed, 1 insertion (+1), 0 deletions (-0)
+```
 
+Done. Suture now knows about every paragraph, table, and heading in that document.
+
+---
+
+## Branch and Edit (15 seconds)
+
+Your coworker Alice needs to update the executive summary while you rework the pricing section. No more "I'll wait for you to finish."
+
+```bash
+suture branch alice-edits
+suture checkout alice-edits
+```
+
+```
+Switched to branch 'alice-edits'
+```
+
+Alice opens `proposal.docx` in Word and rewrites paragraph 2 (the executive summary). She saves, then:
+
+```bash
+suture add proposal.docx
+suture commit "updated executive summary"
+```
+
+```
+[alice-edits def5678] updated executive summary
+ 1 file changed, 1 insertion (+1), 1 deletion (-1)
+```
+
+---
+
+## Merge Without Tears (15 seconds)
+
+Meanwhile, you've been on `main`, editing paragraph 5 (the pricing table). You saved and committed:
+
+```bash
 suture checkout main
-suture merge feature
+# (you edited paragraph 5 in Word)
+suture add proposal.docx
+suture commit "updated pricing table"
 ```
 
-## Remote and Hub
+Now bring Alice's changes in:
 
 ```bash
-suture remote add origin http://localhost:50051
-suture push
-suture pull
+suture merge alice-edits
 ```
 
-Start a hub:
+```
+Merge made by the 'ort' strategy.
+DOCX merge: proposal.docx
+  Merged 2 paragraph-level changes (0 conflicts)
+  Paragraph 2: updated executive summary  (from alice-edits)
+  Paragraph 5: updated pricing table       (from main)
+Clean merge. 2 patches applied.
+```
+
+Open `proposal.docx`. Alice's new executive summary is there. Your pricing table is there. Nothing got overwritten. No conflict markers. No "Copy of" files.
 
 ```bash
-suture-hub --db hub.db
-# Web UI at http://localhost:50051
+suture log --oneline
 ```
 
-Clone from a hub:
-
-```bash
-suture clone http://localhost:50051/my-project
+```
+*   789abcd Merge branch 'alice-edits'
+|\
+| * def5678 updated executive summary
+* | ghi0123 updated pricing table
+|/
+* abc1234 initial draft
 ```
 
-## Semantic Merge Demo
+---
 
-Two developers edit different keys in the same JSON file -- no conflict.
+## What Just Happened?
 
-```bash
-# Base: create config.json and commit on main
-echo '{"database": {"host": "localhost", "port": 5432}}' > config.json
-suture add .
-suture commit "base config"
+Google Drive (and Dropbox, OneDrive, etc.) treat your `.docx` file as a black box of bytes. When two people save changes, the last save wins. Period.
 
-# Developer A: change host on a branch
-suture branch dev-a
-suture checkout dev-a
-echo '{"database": {"host": "db.prod.internal", "port": 5432}}' > config.json
-suture add . && suture commit "point to production db"
+Suture cracks open the DOCX file and reads its *structure* -- paragraphs, headings, tables, images. When Alice changed paragraph 2 and you changed paragraph 5, Suture saw two independent edits to two different parts of the document. It merged them automatically.
 
-# Developer B: change port on main
-suture checkout main
-echo '{"database": {"host": "localhost", "port": 3306}}' > config.json
-suture add . && suture commit "switch to mysql port"
+This is called **semantic merge**. It works the same way for Excel (cell-level), PowerPoint (slide-level), JSON (field-level), YAML (key-level), and a dozen other formats.
 
-# Merge -- both changes applied cleanly
-suture merge dev-a
-cat config.json
-# {"database": {"host": "db.prod.internal", "port": 3306}}
-```
+The result: version control for everything, not just code.
 
-Suture parsed the JSON, detected that `host` and `port` are independent keys, and merged both changes. No conflict markers.
+---
 
 ## Next Steps
 
-- [Semantic Merge Deep Dive](semantic-merge.md)
-- [CLI Reference](cli-reference.md)
-- [Hub Guide](hub.md)
+- [Semantic Merge Deep Dive](semantic-merge.md) -- how it works under the hood
+- [Document Authors Guide](document-authors.md) -- branching strategies for Word, Excel, PowerPoint
+- [CLI Reference](cli-reference.md) -- the full command list

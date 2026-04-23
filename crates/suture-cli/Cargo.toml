@@ -1,6 +1,6 @@
 [package]
 name = "suture-cli"
-version = "2.6.0"
+version = "5.0.0"
 edition = "2024"
 description = "A patch-based version control system with semantic merge for structured files"
 license.workspace = true
@@ -15,29 +15,29 @@ name = "suture"
 path = "src/main.rs"
 
 [dependencies]
-suture-core = { path = "../suture-core", version = "1.2.0" }
-suture-common = { path = "../suture-common", version = "1.2.0" }
-suture-protocol = { path = "../suture-protocol", version = "1.2.0" }
-suture-driver = { path = "../suture-driver", version = "1.2.0" }
-suture-driver-json = { path = "../suture-driver-json", version = "1.2.0" }
-suture-driver-toml = { path = "../suture-driver-toml", version = "1.2.0" }
-suture-driver-csv = { path = "../suture-driver-csv", version = "1.2.0" }
-suture-driver-yaml = { path = "../suture-driver-yaml", version = "1.2.0" }
-suture-driver-xml = { path = "../suture-driver-xml", version = "1.2.0" }
-suture-driver-svg = { path = "../suture-driver-svg", version = "1.2.0" }
-suture-ooxml = { path = "../suture-ooxml", version = "1.2.0" }
-suture-driver-docx = { path = "../suture-driver-docx", version = "1.2.0" }
-suture-driver-xlsx = { path = "../suture-driver-xlsx", version = "1.2.0" }
-suture-driver-pptx = { path = "../suture-driver-pptx", version = "1.2.0" }
-suture-driver-markdown = { path = "../suture-driver-markdown", version = "1.2.0" }
-suture-driver-sql = { path = "../suture-driver-sql", version = "1.2.0" }
-suture-driver-image = { path = "../suture-driver-image", version = "1.2.0" }
-suture-driver-pdf = { path = "../suture-driver-pdf", version = "1.2.0" }
-suture-driver-html = { path = "../suture-driver-html", version = "1.2.0" }
-suture-driver-ical = { path = "../suture-driver-ical", version = "1.2.0" }
-suture-driver-feed = { path = "../suture-driver-feed", version = "1.2.0" }
-suture-driver-otio = { path = "../suture-driver-otio", version = "1.2.0" }
-suture-tui = { path = "../suture-tui", version = "1.2.0" }
+suture-core = { path = "../suture-core", version = "5.0.0" }
+suture-common = { path = "../suture-common", version = "5.0.0" }
+suture-protocol = { path = "../suture-protocol", version = "5.0.0" }
+suture-driver = { path = "../suture-driver", version = "5.0.0" }
+suture-driver-json = { path = "../suture-driver-json", version = "5.0.0" }
+suture-driver-toml = { path = "../suture-driver-toml", version = "5.0.0" }
+suture-driver-csv = { path = "../suture-driver-csv", version = "5.0.0" }
+suture-driver-yaml = { path = "../suture-driver-yaml", version = "5.0.0" }
+suture-driver-xml = { path = "../suture-driver-xml", version = "5.0.0" }
+suture-driver-svg = { path = "../suture-driver-svg", version = "5.0.0" }
+suture-ooxml = { path = "../suture-ooxml", version = "5.0.0" }
+suture-driver-docx = { path = "../suture-driver-docx", version = "5.0.0" }
+suture-driver-xlsx = { path = "../suture-driver-xlsx", version = "5.0.0" }
+suture-driver-pptx = { path = "../suture-driver-pptx", version = "5.0.0" }
+suture-driver-markdown = { path = "../suture-driver-markdown", version = "5.0.0" }
+suture-driver-sql = { path = "../suture-driver-sql", version = "5.0.0" }
+suture-driver-image = { path = "../suture-driver-image", version = "5.0.0" }
+suture-driver-pdf = { path = "../suture-driver-pdf", version = "5.0.0" }
+suture-driver-html = { path = "../suture-driver-html", version = "5.0.0" }
+suture-driver-ical = { path = "../suture-driver-ical", version = "5.0.0" }
+suture-driver-feed = { path = "../suture-driver-feed", version = "5.0.0" }
+suture-driver-otio = { path = "../suture-driver-otio", version = "5.0.0" }
+suture-tui = { path = "../suture-tui", version = "5.0.0" }
 clap = { version = "4.5", features = ["derive"] }
 clap_complete = "4.6"
 clap_complete_nushell = "4.6"
@@ -53,7 +53,8 @@ hex = "0.4"
 toml = "0.8"
 libc = "0.2"
 regex = "1"
-suture-node = { path = "../suture-node", version = "0.1.0", optional = true }
+chrono = "0.4"
+suture-node = { path = "../suture-node", version = "5.0.0", optional = true }
 # NOTE: suture-node is excluded from publish (requires Node.js/napi-rs).
 # For publishing, the 'node' feature is not included in the default features.
 # The dependency above will cause a publish warning but is optional.

@@ -54,6 +54,15 @@
 | **5C** | Distribution & Adoption | Installers, migration tooling, documentation overhaul | v4.1 | 🔄 In Progress |
 | **6D** | Library v0.2 + GitHub Action | suture-merge v0.2 with DOCX/XLSX/PPTX, suture-action, blog post, dep bumps | v4.1 | ✅ Complete |
 | **7A** | Production VCS CLI | 10 new commands/flags, progress indicators, binary diff fix | v4.1 | ✅ Complete |
+| **8A** | Version Unification | All crates bumped to v5.0.0 for coherent publishing | v5.0 | ✅ Complete |
+| **8B** | Release Pipeline | GitHub Actions binary release (Linux/macOS/Windows) | v5.0 | ✅ Complete |
+| **8C** | Quickstart | 60-second quickstart for non-developers | v5.0 | ✅ Complete |
+| **9A** | Defence: Audit Trail | `suture log --audit` with JSON/CSV/text export | v5.0 | ✅ Complete |
+| **9B** | Defence: Classification | `suture diff --classification` marking change detection | v5.0 | ✅ Complete |
+| **9C** | OOXML Conflict UX | OOXML conflicts preserve file integrity, generate report | v5.0 | ✅ Complete |
+| **9D** | Export Command | `suture export` for clean client delivery | v5.0 | ✅ Complete |
+| **9E** | Template Repos | `suture init --template document|video|data|report` | v5.0 | ✅ Complete |
+| **10A** | Onboarding | Welcome banner on first `suture init` | v5.0 | ✅ Complete |
 
 ### Direction A — Product Polish (v1.3–v1.4) ✅
 
@@ -396,11 +405,74 @@
 - Three-panel layout: file list, hunk detail, key bindings footer
 - Per-file resolved hunk count display
 
+### Direction 8A — Version Unification (v5.0) ✅
+
+- All 36 crates bumped to v5.0.0 (coherent versioning across workspace)
+- Inter-crate dependency version constraints updated to match
+
+### Direction 8B — Release Pipeline (v5.0) ✅
+
+- GitHub Actions release workflow: build matrix (Linux x86_64, macOS x86_64 + aarch64, Windows x86_64)
+- Stripped binaries for smaller downloads
+- SHA256 checksum files for verification
+- `cargo publish --dry-run` validation job
+- Source tarball generation
+
+### Direction 8C — Quickstart (v5.0) ✅
+
+- 60-second quickstart at `docs/quickstart.md` targeting non-developers
+- Real-world scenario: two people editing a Word document
+- Installation, init, branch, edit, merge, semantic merge explanation
+
+### Direction 9A — Defence: Audit Trail (v5.0) ✅
+
+- `suture log --audit` — Structured audit trail export for compliance
+- `--audit-format json|csv|text` — Three output formats
+- JSON: machine-readable array with timestamps, authors, file changes, parent hashes
+- CSV: spreadsheet-friendly with header row
+- Text: human-readable formatted report with repository metadata
+- Supports `--since`, `--until`, `--author`, `--grep` filters
+
+### Direction 9B — Defence: Classification Detection (v5.0) ✅
+
+- `suture diff --classification` — Detect security classification marking changes
+- Supports NATO, US, UK, AU classification hierarchies
+- Detects: ADDED, REMOVED, UPGRADED (higher classification), DOWNGRADED (lower)
+- Works on text files and DOCX (Office XML) format
+- Classification levels: UNCLASSIFIED < CUI/RESTRICTED < CONFIDENTIAL < SECRET < TOP SECRET
+
+### Direction 9C — OOXML Conflict UX (v5.0) ✅
+
+- OOXML files (.docx, .xlsx, .pptx) no longer get corrupted by conflict markers
+- On conflict: preserves "ours" version, generates `.suture_conflicts/report.md`
+- Conflict report shows file type, blob hashes, and resolution instructions
+- Dry-run mode prints OOXML conflict handling note
+
+### Direction 9D — Export Command (v5.0) ✅
+
+- `suture export <dir>` — Export clean snapshot without `.suture/` metadata
+- `suture export --zip <file>` — Export as zip archive
+- `suture export <dir> main` — Export specific branch or tag
+- Skips `.suture/` directory automatically
+
+### Direction 9E — Template Repos (v5.0) ✅
+
+- `suture init --template document|video|data|report` — Bootstrap from templates
+- 4 templates: document (defence/PE), video (film), data (general), report (quarterly)
+- Templates create `.sutureignore`, `README.md`, and directory structure
+- `--type` now also applies the matching template
+
+### Direction 10A — Onboarding (v5.0) ✅
+
+- Welcome banner shown on first `suture init` (when no global config exists)
+- Box-drawing character banner with ANSI colors
+- Shows quick start commands and configuration hints
+
 ## Quality Gate Compliance
 
 | Gate | Status | Details |
 |------|--------|---------|
-| Tests | ✅ 1427 passing | 0 failures across 37 crates (1 ignored: perf 10K) |
+| Tests | ✅ 1450+ passing | 0 failures across 37 crates (1 ignored: perf 10K) |
 | Property-based tests | ✅ 21 proptest suites | 10K+ cases via proptest |
 | Benchmarks | ✅ 28 Criterion functions | repo ops, semantic merge, protocol, compression |
 | Clippy | ✅ Zero warnings | `cargo clippy --workspace -- -D warnings` clean |
