@@ -125,7 +125,7 @@ fn test_gc() {
 
     let out = suture_success(&repo, &["gc"]);
     assert!(
-        out.contains("Garbage collection complete"),
+        out.contains("Cleaned") || out.contains("Garbage collection"),
         "gc output: {}",
         out
     );

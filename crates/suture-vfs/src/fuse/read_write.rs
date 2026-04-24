@@ -816,6 +816,9 @@ impl Filesystem for RwFilesystem {
     }
 }
 
+unsafe impl Send for RwFilesystem {}
+unsafe impl Sync for RwFilesystem {}
+
 pub async fn mount_rw(
     repo_path: &str,
     mountpoint: &Path,

@@ -119,7 +119,7 @@ fn test_history_and_reflog() {
     // gc -> garbage collect (should not error)
     let out = suture_success(&repo, &["gc"]);
     assert!(
-        out.contains("Garbage collection complete") || out.contains("gc"),
+        out.contains("Cleaned") || out.contains("Garbage collection") || out.contains("gc"),
         "gc output: {}",
         out
     );

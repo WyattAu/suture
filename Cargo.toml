@@ -8,6 +8,10 @@ exclude = [
     "desktop-app",
 ]
 
+# CWD-dependent tests must run sequentially (set_current_dir is process-global)
+[profile.test]
+threads = 1
+
 [workspace.package]
 license = "Apache-2.0"
 repository = "https://github.com/WyattAu/suture"

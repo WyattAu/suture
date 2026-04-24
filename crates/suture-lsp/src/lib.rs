@@ -42,49 +42,53 @@ impl SutureLsp {
     }
 
     async fn publish_file_diagnostics(&self, uri: &Url) {
-        let Some((repo, relative_str, _)) = self.get_repo_and_relative(uri).await else {
-            return;
-        };
-
-        let mut diagnostics: Vec<Diagnostic> = Vec::new();
-
-        let head_tree = repo.snapshot_head().ok();
-        let is_tracked = head_tree
-            .as_ref()
-            .is_some_and(|tree| tree.get(&relative_str).is_some());
-
-        let repo_status = repo.status().ok();
-        let file_status = repo_status.as_ref().and_then(|s| {
-            s.staged_files
-                .iter()
-                .find(|(p, _)| *p == relative_str)
-                .map(|(_, status)| *status)
-        });
-
-        if !is_tracked {
-            diagnostics.push(Diagnostic::new_simple(
-                Range::new(Position::new(0, 0), Position::new(0, 1)),
-                format!("File \"{}\" is not tracked by suture", relative_str),
-            ));
-        } else if let Some(status) = file_status {
-            let (severity, label) = match status {
-                FileStatus::Added => (DiagnosticSeverity::HINT, "staged as new"),
-                FileStatus::Modified => (DiagnosticSeverity::HINT, "staged with modifications"),
-                FileStatus::Deleted => (DiagnosticSeverity::WARNING, "staged for deletion"),
-                FileStatus::Clean | FileStatus::Untracked => {
-                    (DiagnosticSeverity::INFORMATION, "clean")
-                }
+        let (relative_str, diagnostics) = {
+            let Some((repo, relative_str, _)) = self.get_repo_and_relative(uri).await else {
+                return;
             };
-            diagnostics.push(Diagnostic::new(
-                Range::new(Position::new(0, 0), Position::new(0, 1)),
-                Some(severity),
-                Some(NumberOrString::String("suture".to_string())),
-                Some("suture".to_string()),
-                label.to_string(),
-                None,
-                None,
-            ));
-        }
+
+            let mut diagnostics: Vec<Diagnostic> = Vec::new();
+
+            let head_tree = repo.snapshot_head().ok();
+            let is_tracked = head_tree
+                .as_ref()
+                .is_some_and(|tree| tree.get(&relative_str).is_some());
+
+            let repo_status = repo.status().ok();
+            let file_status = repo_status.as_ref().and_then(|s| {
+                s.staged_files
+                    .iter()
+                    .find(|(p, _)| *p == relative_str)
+                    .map(|(_, status)| *status)
+            });
+
+            if !is_tracked {
+                diagnostics.push(Diagnostic::new_simple(
+                    Range::new(Position::new(0, 0), Position::new(0, 1)),
+                    format!("File \"{}\" is not tracked by suture", relative_str),
+                ));
+            } else if let Some(status) = file_status {
+                let (severity, label) = match status {
+                    FileStatus::Added => (DiagnosticSeverity::HINT, "staged as new"),
+                    FileStatus::Modified => (DiagnosticSeverity::HINT, "staged with modifications"),
+                    FileStatus::Deleted => (DiagnosticSeverity::WARNING, "staged for deletion"),
+                    FileStatus::Clean | FileStatus::Untracked => {
+                        (DiagnosticSeverity::INFORMATION, "clean")
+                    }
+                };
+                diagnostics.push(Diagnostic::new(
+                    Range::new(Position::new(0, 0), Position::new(0, 1)),
+                    Some(severity),
+                    Some(NumberOrString::String("suture".to_string())),
+                    Some("suture".to_string()),
+                    label.to_string(),
+                    None,
+                    None,
+                ));
+            }
+
+            (relative_str, diagnostics)
+        };
 
         self.client
             .log_message(

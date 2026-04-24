@@ -1,6 +1,7 @@
 //! Fuzz target for JSON semantic merge
 #![no_main]
 use libfuzzer_sys::fuzz_target;
+use suture_driver::SutureDriver;
 
 fuzz_target!(|data: &[u8]| {
     let parts: Vec<&[u8]> = data.splitn(3, |&b| b == 0).collect();
