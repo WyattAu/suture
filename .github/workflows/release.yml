@@ -7,12 +7,15 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
   BINARY_NAME: suture
 
 jobs:
+  # ── Build release binaries for all platforms ──────────────────────
   build:
     strategy:
       fail-fast: false
@@ -36,7 +39,7 @@ jobs:
             asset_suffix: x86_64-windows
 
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v4
@@ -95,9 +98,13 @@ jobs:
             suture-${{ matrix.asset_suffix }}.zip
             suture-${{ matrix.asset_suffix }}.zip.sha256
 
-  publish-dry-run:
+  # ── Publish to crates.io ─────────────────────────────────────────
+  publish-crates:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
+    needs: []  # Run in parallel with builds (no dependency on them)
+    if: ${{ secrets.CARGO_REGISTRY_TOKEN != '' }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -109,12 +116,86 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Verify crates can be published
-        run: cargo publish --dry-run --workspace
+      - name: Cache Cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: publish
 
+      # Verify everything builds and tests pass before publishing
+      - name: Test workspace
+        run: cargo test --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp --exclude suture-driver-pdf --exclude suture-driver-image --exclude suture-driver-svg --exclude suture-driver-pptx -- --test-threads=1
+
+      # Publish crates in dependency order using the existing script
+      - name: Publish to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: bash scripts/publish.sh --real
+
+  # ── Publish npm package ──────────────────────────────────────────
+  publish-npm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [build]
+    if: ${{ secrets.NPM_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Download Linux binary
+        uses: actions/download-artifact@v4
+        with:
+          name: suture-x86_64-linux
+          path: /tmp/binaries
+
+      - name: Update npm version from git tag
+        working-directory: packages/suture-merge-driver
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          npm version "$TAG" --no-git-tag-version
+
+      - name: Publish to npm
+        working-directory: packages/suture-merge-driver
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public
+
+  # ── Publish pip package ──────────────────────────────────────────
+  publish-pip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [build]
+    if: ${{ secrets.PYPI_API_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build tools
+        run: pip install build twine
+
+      - name: Build package
+        working-directory: packages/suture-merge-py
+        run: python -m build
+
+      - name: Publish to PyPI
+        working-directory: packages/suture-merge-py
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: twine upload dist/*
+
+  # ── Source tarball ────────────────────────────────────────────────
   source-tarball:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -124,7 +205,6 @@ jobs:
             --exclude='.git' \
             --exclude='target' \
             --exclude='.direnv' \
-            --exclude='.ruff_cache' \
             --exclude='node_modules' \
             .
 
@@ -134,10 +214,12 @@ jobs:
           name: suture-source
           path: suture-src.tar.gz
 
+  # ── Create GitHub Release ────────────────────────────────────────
   release:
-    needs: [build, publish-dry-run, source-tarball]
+    needs: [build, publish-crates, source-tarball]
+    if: always()  # Always create release even if publish is skipped (no token)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
@@ -155,14 +237,14 @@ jobs:
           echo "Verify artifacts with:" >> CHECKSUMS.md
           echo '```' >> CHECKSUMS.md
           for f in artifacts/*.sha256; do
-            cat "$f" >> CHECKSUMS.md
+            [ -f "$f" ] && cat "$f" >> CHECKSUMS.md
           done
           echo '```' >> CHECKSUMS.md
 
-      - name: Create draft GitHub Release
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/*
           generate_release_notes: true
-          draft: true
+          draft: false
           body_path: CHECKSUMS.md
