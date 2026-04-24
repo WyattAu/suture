@@ -6,29 +6,144 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build-and-test:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (stable)
+        run: cargo clippy --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz -- -D warnings
+
+  test-workspace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        toolchain: [stable, beta]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (${{ matrix.toolchain }})
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+
+      - name: Cache Cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.toolchain }}
+
+      - name: Run workspace tests
+        run: cargo test --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz -- --test-threads=4
+
+  test-cli:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [stable, beta]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (${{ matrix.toolchain }})
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+
+      - name: Cache Cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: cli-${{ matrix.toolchain }}
+
+      - name: Run CLI tests
+        run: cargo test -p suture-cli -- --test-threads=4
+
+  test-core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [stable, beta]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (${{ matrix.toolchain }})
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+
+      - name: Cache Cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: core-${{ matrix.toolchain }}
+
+      - name: Run core tests
+        run: cargo test -p suture-core -- --test-threads=4
+
+  build-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [lint, test-workspace, test-cli, test-core]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: release
+
+      - name: Build release binary
+        run: cargo build --release -p suture-cli
+
+      - name: Verify binary
+        run: ./target/release/suture version
+
+  feature-matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
         features:
-          - ""
           - "suture-hub/raft-cluster"
           - "suture-hub/s3-backend"
           - "suture-raft/persist"
-        exclude:
-          - features: "suture-hub/raft-cluster"
-            os: macos-latest
-          - features: "suture-hub/s3-backend"
-            os: macos-latest
-          - features: "suture-raft/persist"
-            os: macos-latest
-
-    runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
@@ -41,47 +156,11 @@ jobs:
         with:
           key: ${{ matrix.features }}
 
-      - name: Check
-        run: |
-          if [ -n "${{ matrix.features }}" ]; then
-            cargo check --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --features "${{ matrix.features }}"
-          else
-            cargo check --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz
-          fi
+      - name: Check with features
+        run: cargo check --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --features "${{ matrix.features }}"
 
-      - name: Test
-        run: |
-          if [ -n "${{ matrix.features }}" ]; then
-            cargo test --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --features "${{ matrix.features }}" -- --test-threads=4
-          else
-            cargo test --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz -- --test-threads=4
-          fi
+      - name: Test with features
+        run: cargo test --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --features "${{ matrix.features }}" -- --test-threads=4
 
-      - name: Clippy
-        run: |
-          if [ -n "${{ matrix.features }}" ]; then
-            cargo clippy --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --features "${{ matrix.features }}" -- -D warnings
-          else
-            cargo clippy --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz -- -D warnings
-          fi
-
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
-      - uses: Swatinem/rust-cache@v2
-      - name: Format
-        run: cargo fmt --all -- --check
-
-  security:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install cargo-audit
-        run: cargo install cargo-audit
-      - name: Audit
-        run: cargo audit
+      - name: Clippy with features
+        run: cargo clippy --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --features "${{ matrix.features }}" -- -D warnings

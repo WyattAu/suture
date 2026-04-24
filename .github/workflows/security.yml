@@ -1,0 +1,55 @@
+name: Security
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * 1"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+
+      - name: Run cargo audit
+        run: cargo audit
+
+      - name: Run clippy (deny warnings)
+        run: cargo clippy --workspace -- -D warnings
+
+      - name: Check for hardcoded secrets
+        run: |
+          if git log -p | grep -iE '(password|secret|token|api_key).*=.*["\x27][^"\x27]{8,}'; then
+            echo "::warning::Potential hardcoded secrets detected in git history"
+          else
+            echo "No hardcoded secrets detected"
+          fi
+
+      - name: Generate SBOM
+        run: |
+          cargo tree --depth 1 > sbom.txt
+          cat sbom.txt
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.txt
+          retention-days: 90

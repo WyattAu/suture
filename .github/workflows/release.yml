@@ -36,6 +36,7 @@ jobs:
             asset_suffix: x86_64-windows
 
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v4
@@ -58,6 +59,10 @@ jobs:
 
       - name: Build release binary
         run: cargo build --release --target ${{ matrix.target }} -p suture-cli
+
+      - name: Verify binary
+        run: ./target/${{ matrix.target }}/release/${{ matrix.artifact_name }} version
+        shell: bash
 
       - name: Strip binary (Linux/macOS)
         if: runner.os != 'Windows'
@@ -92,6 +97,7 @@ jobs:
 
   publish-dry-run:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -108,6 +114,7 @@ jobs:
 
   source-tarball:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -130,6 +137,7 @@ jobs:
   release:
     needs: [build, publish-dry-run, source-tarball]
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v4
@@ -140,8 +148,21 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      - name: Create GitHub Release
+      - name: Generate checksums manifest
+        run: |
+          echo "## Checksums" > CHECKSUMS.md
+          echo "" >> CHECKSUMS.md
+          echo "Verify artifacts with:" >> CHECKSUMS.md
+          echo '```' >> CHECKSUMS.md
+          for f in artifacts/*.sha256; do
+            cat "$f" >> CHECKSUMS.md
+          done
+          echo '```' >> CHECKSUMS.md
+
+      - name: Create draft GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/*
           generate_release_notes: true
+          draft: true
+          body_path: CHECKSUMS.md

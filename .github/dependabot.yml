@@ -4,10 +4,7 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-      timezone: "UTC"
     open-pull-requests-limit: 10
-    reviewers:
-      - "WyattAu"
     labels:
       - "dependencies"
       - "automated"
@@ -16,7 +13,6 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-      timezone: "UTC"
     labels:
       - "dependencies"
-      - "automated"
+      - "github-actions"
