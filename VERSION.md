@@ -97,6 +97,9 @@
 | **24B** | YouTube Batch | suture report, batch ops, export templates | v5.0 | ✅ Complete |
 | **26** | VS Code Extension | Merge driver config, repo commands, auto-detect | v5.0 | ✅ Complete |
 | **27** | Final Sweep | 1,436 tests, 0 failures, all docs updated | v5.0 | ✅ Complete |
+| **28** | Performance | 5 bottlenecks: lazy patches, topo sort O(n), fast classify, hex lookup, Rc ancestors | v5.0 | ✅ Complete |
+| **29** | Security | 7 fuzz targets, dependency audit, wasmtime note | v5.0 | ✅ Complete |
+| **31** | CI/CD | Dependabot, security scanning, test matrix, issue templates | v5.0 | ✅ Complete |
 
 ### Direction A — Product Polish (v1.3–v1.4) ✅
 
