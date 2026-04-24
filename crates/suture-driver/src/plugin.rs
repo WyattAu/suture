@@ -243,9 +243,12 @@ impl WasmDriverPlugin {
                 .unwrap_or_else(|| "unknown".to_string());
         let extensions_storage = Self::call_extensions_export(&mut store, &instance);
 
-        let extensions: Vec<&'static str> = extensions_storage
+        let extensions: Vec<&str> = extensions_storage
             .iter()
-            .map(|s| Box::leak(s.clone().into_boxed_str()))
+            .map(|s| {
+                let leaked: &'static str = Box::leak(s.clone().into_boxed_str());
+                leaked
+            })
             .collect();
 
         let plugin = Self {
