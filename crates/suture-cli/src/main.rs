@@ -3233,4 +3233,141 @@ mod tests {
         std::env::set_current_dir(&prev).unwrap();
         drop(dir);
     }
+
+    #[tokio::test]
+    async fn test_timeline_workflow() {
+        let _cwd = cwd_guard();
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path().to_path_buf();
+        let prev = std::env::current_dir().unwrap();
+        let mut repo = suture_core::repository::Repository::init(&dir_path, "editor").unwrap();
+        repo.set_config("user.name", "Film Editor").unwrap();
+
+        let otio_content = r#"{
+            "OTIO_SCHEMA": "0.15.0",
+            "name": "Scene 1 - Hero Shot",
+            "metadata": {"code": 25},
+            "tracks": [
+                {"kind": "Video", "name": "V1"},
+                {"kind": "Audio", "name": "A1"}
+            ]
+        }"#;
+        std::fs::write(dir_path.join("scene.otio"), otio_content).unwrap();
+        repo.add("scene.otio").unwrap();
+        repo.commit("Add scene timeline").unwrap();
+
+        drop(repo);
+        std::env::set_current_dir(&dir_path).unwrap();
+        let result = cmd::timeline::cmd_timeline(&TimelineAction::List { otio_only: false }).await;
+        assert!(result.is_ok());
+
+        std::env::set_current_dir(&prev).unwrap();
+        drop(dir);
+    }
+
+    #[tokio::test]
+    async fn test_report_workflow() {
+        let _cwd = cwd_guard();
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path().to_path_buf();
+        let prev = std::env::current_dir().unwrap();
+        let mut repo = suture_core::repository::Repository::init(&dir_path, "analyst").unwrap();
+        repo.set_config("user.name", "Data Analyst").unwrap();
+
+        std::fs::write(dir_path.join("data.csv"), "a,b\n1,2\n3,4\n").unwrap();
+        repo.add("data.csv").unwrap();
+        repo.commit("Add dataset").unwrap();
+
+        std::fs::write(dir_path.join("data.csv"), "a,b\n1,2\n3,5\n").unwrap();
+        repo.add("data.csv").unwrap();
+        repo.commit("Fix data point").unwrap();
+
+        drop(repo);
+        std::env::set_current_dir(&dir_path).unwrap();
+        let result = cmd::report::cmd_report(&cmd::report::ReportType::Stats { at: "HEAD".to_string() }).await;
+        assert!(result.is_ok());
+
+        std::env::set_current_dir(&prev).unwrap();
+        drop(dir);
+    }
+
+    #[tokio::test]
+    async fn test_batch_stage_pattern_workflow() {
+        let _cwd = cwd_guard();
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path().to_path_buf();
+        let prev = std::env::current_dir().unwrap();
+        let repo = suture_core::repository::Repository::init(&dir_path, "user").unwrap();
+
+        for i in 0..5 {
+            std::fs::write(dir_path.join(format!("file_{i}.txt")), format!("content {i}")).unwrap();
+        }
+
+        drop(repo);
+        std::env::set_current_dir(&dir_path).unwrap();
+        let result = cmd::batch::cmd_batch(&cmd::batch::BatchAction::Stage {
+            pattern: "file_*.txt".to_string(),
+        }).await;
+        assert!(result.is_ok());
+
+        std::env::set_current_dir(&prev).unwrap();
+        drop(dir);
+    }
+
+    #[tokio::test]
+    async fn test_audit_verify_workflow() {
+        let _cwd = cwd_guard();
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path().to_path_buf();
+        let prev = std::env::current_dir().unwrap();
+        let mut repo = suture_core::repository::Repository::init(&dir_path, "auditor").unwrap();
+        repo.set_config("user.name", "Security Officer").unwrap();
+
+        std::fs::write(dir_path.join("doc.txt"), "UNCLASSIFIED\nContent here\n").unwrap();
+        repo.add("doc.txt").unwrap();
+        let patch_id = repo.commit("Add classified document").unwrap();
+
+        let audit_path = dir_path.join(".suture").join("audit").join("chain.log");
+        let audit = suture_core::audit::AuditLog::open(&audit_path).unwrap();
+        let details = serde_json::json!({
+            "patch_id": patch_id.to_hex(),
+            "message": "Add classified document",
+        }).to_string();
+        audit.append("Security Officer", "commit", &details).unwrap();
+
+        drop(repo);
+        std::env::set_current_dir(&dir_path).unwrap();
+        let result = cmd::audit::cmd_audit(true, false, false, None).await;
+        assert!(result.is_ok());
+
+        std::env::set_current_dir(&prev).unwrap();
+        drop(dir);
+    }
+
+    #[tokio::test]
+    async fn test_clean_dry_run_workflow() {
+        let _cwd = cwd_guard();
+        let dir = tempfile::tempdir().unwrap();
+        let dir_path = dir.path().to_path_buf();
+        let prev = std::env::current_dir().unwrap();
+        let mut repo = suture_core::repository::Repository::init(&dir_path, "user").unwrap();
+
+        std::fs::write(dir_path.join("tracked.txt"), "kept").unwrap();
+        repo.add("tracked.txt").unwrap();
+        repo.commit("Initial").unwrap();
+
+        std::fs::write(dir_path.join("untracked.txt"), "will be cleaned").unwrap();
+        std::fs::write(dir_path.join("temp.log"), "temporary").unwrap();
+
+        drop(repo);
+        std::env::set_current_dir(&dir_path).unwrap();
+        let result = cmd::clean::cmd_clean(true, false, &[]).await;
+        assert!(result.is_ok());
+
+        assert!(dir_path.join("untracked.txt").exists());
+        assert!(dir_path.join("temp.log").exists());
+
+        std::env::set_current_dir(&prev).unwrap();
+        drop(dir);
+    }
 }
