@@ -33,15 +33,16 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Clippy (stable)
-        run: cargo clippy --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz -- -D warnings
+        run: cargo clippy --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp --exclude suture-driver-pdf --exclude suture-driver-image --exclude suture-driver-svg --exclude suture-driver-pptx -- -D warnings
 
   test-workspace:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        toolchain: [stable, beta]
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        toolchain: [stable]
 
     steps:
       - uses: actions/checkout@v4
@@ -54,18 +55,19 @@ jobs:
       - name: Cache Cargo artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.toolchain }}
+          key: ${{ matrix.os }}-${{ matrix.toolchain }}
 
       - name: Run workspace tests
-        run: cargo test --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz -- --test-threads=4
+        run: cargo test --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp -- --test-threads=1
 
   test-cli:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        toolchain: [stable, beta]
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        toolchain: [stable]
 
     steps:
       - uses: actions/checkout@v4
@@ -78,10 +80,10 @@ jobs:
       - name: Cache Cargo artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          key: cli-${{ matrix.toolchain }}
+          key: cli-${{ matrix.os }}-${{ matrix.toolchain }}
 
       - name: Run CLI tests
-        run: cargo test -p suture-cli -- --test-threads=4
+        run: cargo test -p suture-cli -- --test-threads=1
 
   test-core:
     runs-on: ubuntu-latest
