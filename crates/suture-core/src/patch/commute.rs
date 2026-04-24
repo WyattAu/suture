@@ -168,4 +168,100 @@ mod tests {
         ];
         assert!(!all_commute(&patches));
     }
+
+    mod proptests {
+        use super::*;
+        use crate::patch::types::{OperationType, Patch, TouchSet};
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn commute_commutativity_class_symmetric(
+                addrs1 in proptest::collection::vec("[a-z]{1,5}", 0..10),
+                addrs2 in proptest::collection::vec("[a-z]{1,5}", 0..10),
+            ) {
+                let p1 = Patch::new(
+                    OperationType::Modify,
+                    TouchSet::from_addrs(addrs1.iter()),
+                    None,
+                    vec![],
+                    vec![],
+                    "proptest".to_string(),
+                    "patch1".to_string(),
+                );
+                let p2 = Patch::new(
+                    OperationType::Modify,
+                    TouchSet::from_addrs(addrs2.iter()),
+                    None,
+                    vec![],
+                    vec![],
+                    "proptest".to_string(),
+                    "patch2".to_string(),
+                );
+                let r1 = commute(&p1, &p2);
+                let r2 = commute(&p2, &p1);
+                match (&r1, &r2) {
+                    (CommuteResult::Commutes, CommuteResult::Commutes) => {},
+                    (CommuteResult::DoesNotCommute { conflict_addresses: c1 },
+                     CommuteResult::DoesNotCommute { conflict_addresses: c2 }) => {
+                        let mut s1: Vec<_> = c1.clone();
+                        let mut s2: Vec<_> = c2.clone();
+                        s1.sort();
+                        s2.sort();
+                        prop_assert_eq!(s1, s2, "conflict addresses should match");
+                    }
+                    _ => prop_assert!(false, "commute results should both be Commutes or both DoesNotCommute: {:?} vs {:?}", r1, r2),
+                }
+            }
+
+            #[test]
+            fn disjoint_always_commutes(
+                addrs1 in proptest::collection::vec("[a-z]{1,5}", 0..10),
+                addrs2 in proptest::collection::vec("[a-z]{1,5}", 0..10),
+            ) {
+                let set1: std::collections::HashSet<_> = addrs1.iter().collect();
+                let set2: std::collections::HashSet<_> = addrs2.iter().collect();
+                prop_assume!(set1.is_disjoint(&set2));
+
+                let p1 = Patch::new(
+                    OperationType::Modify,
+                    TouchSet::from_addrs(addrs1.iter()),
+                    None,
+                    vec![],
+                    vec![],
+                    "proptest".to_string(),
+                    "p1".to_string(),
+                );
+                let p2 = Patch::new(
+                    OperationType::Modify,
+                    TouchSet::from_addrs(addrs2.iter()),
+                    None,
+                    vec![],
+                    vec![],
+                    "proptest".to_string(),
+                    "p2".to_string(),
+                );
+                prop_assert_eq!(commute(&p1, &p2), CommuteResult::Commutes);
+            }
+
+            #[test]
+            fn identity_commutes_with_any(
+                addrs in proptest::collection::vec("[a-z]{1,5}", 0..10),
+            ) {
+                let parent = Hash::from_data(b"proptest-parent");
+                let identity = Patch::identity(parent, "proptest".to_string());
+                let p = Patch::new(
+                    OperationType::Modify,
+                    TouchSet::from_addrs(addrs.iter()),
+                    None,
+                    vec![],
+                    vec![],
+                    "proptest".to_string(),
+                    "p".to_string(),
+                );
+                prop_assert_eq!(commute(&identity, &p), CommuteResult::Commutes);
+                prop_assert_eq!(commute(&p, &identity), CommuteResult::Commutes);
+            }
+        }
+    }
 }

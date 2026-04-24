@@ -37,3 +37,11 @@ harness = false
 [[bench]]
 name = "hub_perf"
 harness = false
+
+[[bench]]
+name = "repo_bench"
+harness = false
+
+[[bench]]
+name = "merge_bench"
+harness = false

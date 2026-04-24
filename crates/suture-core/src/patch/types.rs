@@ -482,4 +482,127 @@ mod tests {
         let result = ts1.subtract(&ts2);
         assert_eq!(result.len(), 2);
     }
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn patch_id_deterministic(addr in "[a-zA-Z0-9]{1,50}") {
+                let p1 = Patch::new(
+                    OperationType::Modify,
+                    TouchSet::single(&addr),
+                    Some(format!("file_{}", addr)),
+                    addr.clone().into_bytes(),
+                    vec![],
+                    "proptest".to_string(),
+                    format!("edit {}", addr),
+                );
+                let p2 = Patch::new(
+                    OperationType::Modify,
+                    TouchSet::single(&addr),
+                    Some(format!("file_{}", addr)),
+                    addr.clone().into_bytes(),
+                    vec![],
+                    "proptest".to_string(),
+                    format!("edit {}", addr),
+                );
+                prop_assert_eq!(p1.id, p2.id);
+            }
+
+            #[test]
+            fn touch_set_insert_contains(addr in "[a-z]{1,30}") {
+                let mut ts = TouchSet::empty();
+                ts.insert(&addr);
+                prop_assert!(ts.contains(&addr));
+                prop_assert_eq!(ts.len(), 1);
+            }
+
+            #[test]
+            fn touch_set_union_sizes(
+                n1 in 0usize..20,
+                n2 in 0usize..20,
+                seed in 0u64..10_000
+            ) {
+                let mut rng = simple_rng(seed);
+                let addrs1: Vec<String> = (0..n1).map(|i| format!("addr_{:04}_{}", rng(), i)).collect();
+                let addrs2: Vec<String> = (0..n2).map(|i| format!("addr_{:04}_{}", rng(), i)).collect();
+                let ts1 = TouchSet::from_addrs(addrs1.iter());
+                let ts2 = TouchSet::from_addrs(addrs2.iter());
+                let union = ts1.union(&ts2);
+                let expected = addrs1.iter().chain(addrs2.iter()).collect::<std::collections::HashSet<_>>();
+                prop_assert_eq!(union.len(), expected.len());
+            }
+
+            #[test]
+            fn touch_set_intersection_symmetric(
+                addrs1 in proptest::collection::vec("[a-z]{1,5}", 0..20),
+                addrs2 in proptest::collection::vec("[a-z]{1,5}", 0..20),
+            ) {
+                let ts1 = TouchSet::from_addrs(addrs1.iter());
+                let ts2 = TouchSet::from_addrs(addrs2.iter());
+                let inter1 = ts1.intersection(&ts2);
+                let inter2 = ts2.intersection(&ts1);
+                prop_assert_eq!(inter1.len(), inter2.len());
+            }
+
+            #[test]
+            fn touch_set_subtract_removes(
+                addrs1 in proptest::collection::vec("[a-z]{1,5}", 1..20),
+                addrs2 in proptest::collection::vec("[a-z]{1,5}", 0..20),
+            ) {
+                let ts1 = TouchSet::from_addrs(addrs1.iter());
+                let ts2 = TouchSet::from_addrs(addrs2.iter());
+                let result = ts1.subtract(&ts2);
+                for addr in &addrs2 {
+                    prop_assert!(!result.contains(addr));
+                }
+            }
+
+            #[test]
+            fn disjoint_touch_sets_commute(
+                addr1 in "[a-z]{1,10}",
+                addr2 in "[a-z]{1,10}",
+            ) {
+                prop_assume!(addr1 != addr2);
+                let p1 = Patch::new(
+                    OperationType::Modify,
+                    TouchSet::single(&addr1),
+                    Some(format!("file_{}", addr1)),
+                    vec![],
+                    vec![],
+                    "proptest".to_string(),
+                    format!("edit {}", addr1),
+                );
+                let p2 = Patch::new(
+                    OperationType::Modify,
+                    TouchSet::single(&addr2),
+                    Some(format!("file_{}", addr2)),
+                    vec![],
+                    vec![],
+                    "proptest".to_string(),
+                    format!("edit {}", addr2),
+                );
+                prop_assert!(!p1.touch_set.intersects(&p2.touch_set));
+            }
+
+            #[test]
+            fn same_addr_touch_sets_overlap(addr in "[a-z]{1,10}") {
+                let ts1 = TouchSet::single(&addr);
+                let ts2 = TouchSet::single(&addr);
+                prop_assert!(ts1.intersects(&ts2));
+                let inter = ts1.intersection(&ts2);
+                prop_assert_eq!(inter.len(), 1);
+                prop_assert!(inter.contains(&addr));
+            }
+        }
+
+        fn simple_rng(mut seed: u64) -> impl FnMut() -> u64 {
+            move || {
+                seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+                seed
+            }
+        }
+    }
 }

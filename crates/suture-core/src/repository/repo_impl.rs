@@ -5636,4 +5636,64 @@ mod tests {
             commit_time
         );
     }
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn roundtrip_commit(message in "[a-z ]{1,50}") {
+                let dir = tempfile::tempdir().unwrap();
+                let mut repo = Repository::init(dir.path(), "test").unwrap();
+
+                let file_path = dir.path().join("test.txt");
+                std::fs::write(&file_path, "hello world").unwrap();
+                repo.add("test.txt").unwrap();
+                repo.commit(&message).unwrap();
+
+                let patches = repo.log(None).unwrap();
+                prop_assert!(patches.iter().any(|p| p.message == message));
+            }
+
+            #[test]
+            fn roundtrip_n_commits(
+                n in 1usize..10,
+                prefix in "[a-z]{1,5}"
+            ) {
+                let dir = tempfile::tempdir().unwrap();
+                let mut repo = Repository::init(dir.path(), "test").unwrap();
+
+                for i in 0..n {
+                    let file = format!("file_{}.txt", i);
+                    std::fs::write(dir.path().join(&file), format!("content {}", i)).unwrap();
+                    repo.add(&file).unwrap();
+                    repo.commit(&format!("{} commit {}", prefix, i)).unwrap();
+                }
+
+                let log = repo.log(None).unwrap();
+                prop_assert_eq!(log.len(), n + 1);
+                for i in 0..n {
+                    let msg = format!("{} commit {}", prefix, i);
+                    prop_assert!(log.iter().any(|p| p.message == msg),
+                        "log missing commit message: {}", msg);
+                }
+            }
+
+            #[test]
+            fn snapshot_after_commit(content in ".{1,100}") {
+                let dir = tempfile::tempdir().unwrap();
+                let mut repo = Repository::init(dir.path(), "test").unwrap();
+
+                std::fs::write(dir.path().join("data.txt"), &content).unwrap();
+                repo.add("data.txt").unwrap();
+                repo.commit("add data").unwrap();
+
+                let tree = repo.snapshot_head().unwrap();
+                prop_assert!(tree.contains("data.txt"));
+                let expected_hash = Hash::from_data(content.as_bytes());
+                prop_assert_eq!(tree.get("data.txt"), Some(&expected_hash));
+            }
+        }
+    }
 }

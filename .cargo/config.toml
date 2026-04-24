@@ -1,0 +1,7 @@
+[build]
+# Use all available cores for compilation
+jobs = 8
+
+[target.x86_64-unknown-linux-gnu]
+# Use system linker (faster than rust-lld for large workspaces)
+linker = "gcc"

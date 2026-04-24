@@ -8,9 +8,8 @@ exclude = [
     "desktop-app",
 ]
 
-# CWD-dependent tests must run sequentially (set_current_dir is process-global)
-[profile.test]
-threads = 1
+# Note: CWD-dependent tests in suture-cli use a mutex guard.
+# CI should use: cargo test -- --test-threads=1
 
 [workspace.package]
 license = "Apache-2.0"
