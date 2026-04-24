@@ -1,0 +1,35 @@
+.TH SUTURE-GIT "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-git \- Interact with Git repositories
+.SH SYNOPSIS
+.B suture git [\\fIoptions\\fR] \\fIcommand\\fR
+.SH DESCRIPTION
+Interact with Git repositories.
+.SH SUBCOMMANDS
+.TP
+.B import
+Import Git history into the current Suture repository
+.TP
+.B log
+Show Git commits that would be imported
+.TP
+.B status
+Show import summary
+.TP
+.B driver
+Manage Suture as a Git merge driver
+.SH OPTIONS
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH EXAMPLES
+.nf
+suture git import ./my\-project     # Import Git history into Suture
+suture git log ./my\-project        # Preview Git commits to import
+suture git status ./my\-project     # Show import summary
+.fi
+.SH SEE ALSO
+.BR suture (1)

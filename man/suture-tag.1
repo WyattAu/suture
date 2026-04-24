@@ -1,0 +1,41 @@
+.TH SUTURE-TAG "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-tag \- Tag operations
+.SH SYNOPSIS
+.B suture tag [\\fIoptions\\fR] [\\fIname\\fR]
+.SH DESCRIPTION
+Tag operations.
+.SH OPTIONS
+.TP
+.BR \\\-t, \\\-\\\-target \\fI<target>\\fR
+Target commit/branch (default: HEAD)
+.TP
+.BR \\\-d, \\\-\\\-delete
+Delete a tag
+.TP
+.BR \\\-l, \\\-\\\-list
+List tags
+.TP
+.BR \\\-a, \\\-\\\-annotate
+Create an annotated tag with a message
+.TP
+.BR \\\-m, \\\-\\\-message \\fI<msg>\\fR
+Tag message (required with \-\-annotate)
+.TP
+.BR \\\-\\\-sort \\fI<field>\\fR
+Sort tags by "date" (newest first) or "name" (alphabetical)
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH EXAMPLES
+.nf
+suture tag                 # List tags
+suture tag v1.0            # Create lightweight tag
+suture tag v1.0 \\\-m "release 1.0"  # Create annotated tag
+suture tag \\\-d v0.9         # Delete a tag
+.fi
+.SH SEE ALSO
+.BR suture (1)

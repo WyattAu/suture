@@ -1,0 +1,26 @@
+.TH SUTURE-BISECT "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-bisect \- Binary search for bug\-introducing commit
+.SH SYNOPSIS
+.B suture bisect [\\fIoptions\\fR] \\fIcommand\\fR
+.SH DESCRIPTION
+Binary search for bug\-introducing commit.
+.SH SUBCOMMANDS
+.TP
+.B start
+Start a bisect session
+.TP
+.B run
+Automatically bisect using a test command
+.TP
+.B reset
+Reset/cancel a bisect session
+.SH OPTIONS
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH SEE ALSO
+.BR suture (1)

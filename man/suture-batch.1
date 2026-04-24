@@ -1,0 +1,26 @@
+.TH SUTURE-BATCH "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-batch \- Batch operations for managing multiple files or clients
+.SH SYNOPSIS
+.B suture batch [\\fIoptions\\fR] \\fIcommand\\fR
+.SH DESCRIPTION
+Batch operations for managing multiple files or clients.
+.SH SUBCOMMANDS
+.TP
+.B stage
+Stage files matching a pattern
+.TP
+.B commit
+Commit files matching a pattern
+.TP
+.B export\-clients
+Export multiple clients at once
+.SH OPTIONS
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH SEE ALSO
+.BR suture (1)

@@ -1,0 +1,25 @@
+.TH SUTURE-PUSH "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-push \- Push patches to a remote Hub
+.SH SYNOPSIS
+.B suture push [\\fIoptions\\fR] [\\fIremote\\fR] [\\fIbranch\\fR]
+.SH DESCRIPTION
+Push patches to a remote Hub.
+.SH OPTIONS
+.TP
+.BR \\\-\\\-force
+Force push even if not fast\-forward
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH EXAMPLES
+.nf
+suture push                # Push all branches to origin
+suture push \\\-\\\-force        # Force push (skip fast\-forward check)
+suture push origin feature # Push only "feature" branch to "origin"
+.fi
+.SH SEE ALSO
+.BR suture (1)

@@ -1,0 +1,28 @@
+.TH SUTURE-IGNORE "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-ignore \- Inspect .sutureignore patterns
+.SH SYNOPSIS
+.B suture ignore [\\fIoptions\\fR] \\fIcommand\\fR
+.SH DESCRIPTION
+Inspect .sutureignore patterns.
+.SH SUBCOMMANDS
+.TP
+.B list
+List current ignore patterns
+.TP
+.B check
+Check if a path matches any ignore pattern
+.SH OPTIONS
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH EXAMPLES
+.nf
+suture ignore list         # List ignore patterns
+suture ignore check foo.o  # Check if a path is ignored
+.fi
+.SH SEE ALSO
+.BR suture (1)

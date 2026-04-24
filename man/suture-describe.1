@@ -1,0 +1,28 @@
+.TH SUTURE-DESCRIBE "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-describe \- Describe a commit using the nearest tag
+.SH SYNOPSIS
+.B suture describe [\\fIoptions\\fR] [\\fIcommit\-ref\\fR]
+.SH DESCRIPTION
+Describe a commit using the nearest tag.
+.SH OPTIONS
+.TP
+.BR \\\-\\\-all
+Search all tags (not just annotated)
+.TP
+.BR \\\-\\\-tags
+Only search tags (default behavior)
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH EXAMPLES
+.nf
+suture describe             # Describe HEAD
+suture describe HEAD~3      # Describe a specific commit
+suture describe \\\-\\\-all       # Search all tags
+.fi
+.SH SEE ALSO
+.BR suture (1)

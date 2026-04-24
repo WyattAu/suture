@@ -1,0 +1,29 @@
+.TH SUTURE-CLEAN "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-clean \- Remove untracked files from the working tree
+.SH SYNOPSIS
+.B suture clean [\\fIoptions\\fR] [\\fIpaths\\fR]...
+.SH DESCRIPTION
+Remove untracked files from the working tree.
+.SH OPTIONS
+.TP
+.BR \\\-n, \\\-\\\-dry\-run
+Show what would be deleted without actually deleting
+.TP
+.BR \\\-d, \\\-\\\-dirs
+Also remove empty untracked directories
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH EXAMPLES
+.nf
+suture clean                # Remove all untracked files
+suture clean \\\-n             # Preview what would be deleted
+suture clean \\\-d             # Also remove empty untracked directories
+suture clean build/         # Only clean files under build/
+.fi
+.SH SEE ALSO
+.BR suture (1)

@@ -1,0 +1,19 @@
+.TH SUTURE-FSCK "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-fsck \- Verify repository integrity
+.SH SYNOPSIS
+.B suture fsck [\\fIoptions\\fR]
+.SH DESCRIPTION
+Verify repository integrity.
+.SH OPTIONS
+.TP
+.BR \\\-\\\-full
+Also verify blob integrity, parent chains, and branch refs
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH SEE ALSO
+.BR suture (1)

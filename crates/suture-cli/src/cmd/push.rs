@@ -1,3 +1,4 @@
+use crate::cmd::user_error;
 use crate::remote_proto::{
     BlobRef, BranchProto, PushRequest, PushResponse, check_handshake, derive_repo_id,
     hex_to_hash_proto, patch_to_proto, sign_push_request,
@@ -10,10 +11,24 @@ pub(crate) async fn cmd_push(
     force: bool,
     branch: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
-    let url = repo.get_remote_url(remote)?;
+    let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))
+        .map_err(|e| user_error("failed to open repository", e))?;
 
-    check_handshake(&url).await?;
+    let remotes = repo.list_remotes().unwrap_or_default();
+    if !remotes.iter().any(|r| r.0 == remote) {
+        return Err(format!(
+            "remote '{remote}' not found (use 'suture remote add {remote} <url>' to add it)"
+        )
+        .into());
+    }
+
+    let url = repo
+        .get_remote_url(remote)
+        .map_err(|e| user_error(&format!("failed to get URL for remote '{remote}'"), e))?;
+
+    check_handshake(&url)
+        .await
+        .map_err(|e| user_error(&format!("failed to connect to remote '{remote}'"), e))?;
 
     let branches = repo.list_branches();
     let branches_to_push: Vec<(String, suture_common::Hash)> = if let Some(branch_name) = branch {
@@ -27,7 +42,7 @@ pub(crate) async fn cmd_push(
 
     if branches_to_push.is_empty() {
         if let Some(branch_name) = branch {
-            return Err(format!("branch '{}' not found", branch_name).into());
+            return Err(format!("branch '{branch_name}' not found locally (use 'suture branch' to list branches)").into());
         }
         return Err("no branches to push".into());
     }
@@ -114,7 +129,8 @@ pub(crate) async fn cmd_push(
         force,
     };
 
-    let push_body = sign_push_request(&repo, push_body)?;
+    let push_body = sign_push_request(&repo, push_body)
+        .map_err(|e| user_error("failed to sign push request", e))?;
 
     eprintln!(
         "Pushing {} patch(es), {} blob(s) to {}...",
@@ -138,13 +154,17 @@ pub(crate) async fn cmd_push(
         .post(format!("{}/push", url))
         .json(&push_body)
         .send()
-        .await?;
+        .await
+        .map_err(|e| user_error(&format!("network error pushing to '{remote}'"), e))?;
 
     if resp.status().is_success() {
-        let result: PushResponse = resp.json().await?;
+        let result: PushResponse = resp.json().await
+            .map_err(|e| user_error("failed to parse push response", e))?;
         if result.success {
-            let (_, head_id) = repo.head()?;
-            repo.set_config(&push_state_key, &head_id.to_hex())?;
+            let (_, head_id) = repo.head()
+                .map_err(|e| user_error("failed to get HEAD after push", e))?;
+            repo.set_config(&push_state_key, &head_id.to_hex())
+                .map_err(|e| user_error("failed to save push state", e))?;
             println!("Push successful ({} patch(es))", patches.len());
 
             let (branch_display, head_id) = repo.head()?;
@@ -155,11 +175,12 @@ pub(crate) async fn cmd_push(
             post_extra.insert("SUTURE_PUSH_PATCHES".to_string(), patches.len().to_string());
             run_hook_if_exists(repo.root(), "post-push", post_extra)?;
         } else {
-            eprintln!("Push failed: {:?}", result.error);
+            return Err(format!("push rejected: {}", result.error.unwrap_or_default()).into());
         }
     } else {
-        let text = resp.text().await?;
-        eprintln!("Push failed: {}", text);
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("push failed (HTTP {status}): {text}").into());
     }
 
     Ok(())

@@ -1,0 +1,28 @@
+.TH SUTURE-AUDIT "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-audit \- Inspect the tamper\-evident audit log
+.SH SYNOPSIS
+.B suture audit [\\fIoptions\\fR]
+.SH DESCRIPTION
+Inspect the tamper\-evident audit log.
+.SH OPTIONS
+.TP
+.BR \\\-\\\-verify
+Verify chain integrity
+.TP
+.BR \\\-\\\-show
+Display all entries
+.TP
+.BR \\\-\\\-count
+Show entry count
+.TP
+.BR \\\-\\\-tail \\fI<n>\\fR
+Show last N entries (default: 10)
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH SEE ALSO
+.BR suture (1)

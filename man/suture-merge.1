@@ -1,0 +1,29 @@
+.TH SUTURE-MERGE "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-merge \- Merge a branch into the current branch
+.SH SYNOPSIS
+.B suture merge [\\fIoptions\\fR] \\fIsource\\fR
+.SH DESCRIPTION
+Merge a branch into the current branch.
+.SH OPTIONS
+.TP
+.BR \\\-\\\-dry\-run
+Preview merge without modifying the working tree
+.TP
+.BR \\\-s, \\\-\\\-strategy \\fI<strategy>\\fR
+Conflict resolution strategy: semantic, ours, theirs, manual (default: semantic)
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH EXAMPLES
+.nf
+suture merge feature       # Merge feature into current branch
+suture merge \\\-\\\-dry\-run feature  # Preview merge
+suture merge \\\-s ours feature    # Auto\-resolve by keeping our version
+suture merge \\\-s theirs feature  # Auto\-resolve by keeping their version
+.fi
+.SH SEE ALSO
+.BR suture (1)

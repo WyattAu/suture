@@ -1,3 +1,4 @@
+use crate::cmd::user_error;
 use crate::style::run_hook_if_exists;
 
 /// Merge conflict resolution strategy.
@@ -40,7 +41,23 @@ pub(crate) async fn cmd_merge(
         )
     })?;
 
-    let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+    let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))
+        .map_err(|e| user_error("failed to open repository", e))?;
+
+    let status = repo.status().map_err(|e| user_error("failed to check repository status", e))?;
+    if !status.staged_files.is_empty() {
+        return Err("cannot merge with staged changes (commit or stash them first)".into());
+    }
+
+    let branches: Vec<String> = repo.list_branches().into_iter().map(|(n, _)| n).collect();
+    if !branches.contains(&source.to_string()) && repo.resolve_ref(source).is_err() {
+        let hint = if let Some(suggestion) = crate::fuzzy::suggest(source, &branches) {
+            format!(" (did you mean '{}'?)", suggestion)
+        } else {
+            String::new()
+        };
+        return Err(format!("branch '{}' not found{hint} (use 'suture branch' to create it)", source).into());
+    }
 
     let (branch, head_id) = repo
         .head()
@@ -60,9 +77,9 @@ pub(crate) async fn cmd_merge(
     }
 
     let result = if dry_run {
-        repo.preview_merge(source)?
+        repo.preview_merge(source).map_err(|e| user_error("failed to preview merge", e))?
     } else {
-        repo.execute_merge(source)?
+        repo.execute_merge(source).map_err(|e| user_error("merge failed", e))?
     };
 
     if result.is_clean {

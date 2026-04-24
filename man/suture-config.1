@@ -1,0 +1,26 @@
+.TH SUTURE-CONFIG "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-config \- Get or set configuration values
+.SH SYNOPSIS
+.B suture config [\\fIoptions\\fR] [\\fIkey=value\\fR]...
+.SH DESCRIPTION
+Get or set configuration values.
+.SH OPTIONS
+.TP
+.BR \\\-\\\-global
+Operate on the global config (~/.config/suture/config.toml) instead of the repo config
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH EXAMPLES
+.nf
+suture config              # List all config
+suture config user.name    # Get a config value
+suture config user.name=Alice  # Set a config value
+suture config \\\-\\\-global user.name=Alice  # Set global config
+.fi
+.SH SEE ALSO
+.BR suture (1)

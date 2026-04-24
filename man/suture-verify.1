@@ -1,0 +1,25 @@
+.TH SUTURE-VERIFY "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-verify \- Verify commit signatures
+.SH SYNOPSIS
+.B suture verify [\\fIoptions\\fR] [\\fIcommit\-ref\\fR]
+.SH DESCRIPTION
+Verify commit signatures.
+.SH OPTIONS
+.TP
+.BR \\\-v, \\\-\\\-verbose
+Show key details (author, fingerprint, patch id)
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH EXAMPLES
+.nf
+suture verify             # Verify HEAD commit signature
+suture verify abc123      # Verify specific commit
+suture verify \\\-v HEAD     # Show key details
+.fi
+.SH SEE ALSO
+.BR suture (1)

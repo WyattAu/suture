@@ -1,0 +1,28 @@
+.TH SUTURE-REV_PARSE "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-rev\-parse \- Parse revision names to hashes
+.SH SYNOPSIS
+.B suture rev\-parse [\\fIoptions\\fR] [\\fIrefs\\fR]...
+.SH DESCRIPTION
+Parse revision names to hashes.
+.SH OPTIONS
+.TP
+.BR \\\-\\\-short
+Output abbreviated hash
+.TP
+.BR \\\-\\\-verify
+Verify the ref exists (error if not)
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH EXAMPLES
+.nf
+suture rev\-parse HEAD       # Resolve HEAD to full hash
+suture rev\-parse \\\-\\\-short HEAD  # Abbreviated hash
+suture rev\-parse \\\-\\\-verify main  # Verify ref exists
+.fi
+.SH SEE ALSO
+.BR suture (1)

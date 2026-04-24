@@ -1,0 +1,29 @@
+.TH SUTURE-NOTES "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-notes \- Manage commit notes
+.SH SYNOPSIS
+.B suture notes [\\fIoptions\\fR] \\fIcommand\\fR
+.SH DESCRIPTION
+Manage commit notes.
+.SH SUBCOMMANDS
+.TP
+.B add
+Add a note to a commit
+.TP
+.B list
+List notes for a commit
+.TP
+.B show
+Show notes for a commit (alias for list)
+.TP
+.B remove
+Remove a note from a commit
+.SH OPTIONS
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH SEE ALSO
+.BR suture (1)

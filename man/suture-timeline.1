@@ -1,0 +1,32 @@
+.TH SUTURE-TIMELINE "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-timeline \- OTIO timeline operations
+.SH SYNOPSIS
+.B suture timeline [\\fIoptions\\fR] \\fIcommand\\fR
+.SH DESCRIPTION
+OTIO timeline operations.
+.SH SUBCOMMANDS
+.TP
+.B import
+Import an OTIO timeline into the repo
+.TP
+.B export
+Export the current timeline to OTIO format
+.TP
+.B summary
+Show timeline summary (clips, duration, tracks)
+.TP
+.B diff
+Diff two timeline versions
+.TP
+.B list
+List timeline\-related files in the repo
+.SH OPTIONS
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH SEE ALSO
+.BR suture (1)

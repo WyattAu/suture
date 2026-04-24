@@ -1,0 +1,28 @@
+.TH SUTURE-APPLY "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-apply \- Apply a patch/diff file to the working tree
+.SH SYNOPSIS
+.B suture apply [\\fIoptions\\fR] \\fIpatch\-file\\fR
+.SH DESCRIPTION
+Apply a patch/diff file to the working tree.
+.SH OPTIONS
+.TP
+.BR \\\-R, \\\-\\\-reverse
+Apply in reverse
+.TP
+.BR \\\-\\\-stat
+Show summary instead of applying
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH EXAMPLES
+.nf
+suture apply fix.patch        # Apply a patch file
+suture apply \\\-R fix.patch     # Apply in reverse
+suture apply \\\-\\\-stat fix.patch # Show summary only
+.fi
+.SH SEE ALSO
+.BR suture (1)

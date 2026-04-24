@@ -1,0 +1,40 @@
+.TH SUTURE-BRANCH "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-branch \- Branch operations
+.SH SYNOPSIS
+.B suture branch [\\fIoptions\\fR] [\\fIname\\fR]
+.SH DESCRIPTION
+Branch operations.
+.SH OPTIONS
+.TP
+.BR \\\-t, \\\-\\\-target \\fI<target>\\fR
+Start branch from this target (branch name or HEAD)
+.TP
+.BR \\\-d, \\\-\\\-delete
+Delete a branch
+.TP
+.BR \\\-l, \\\-\\\-list
+List branches
+.TP
+.BR \\\-\\\-protect
+Protect a branch from force\-push/deletion
+.TP
+.BR \\\-\\\-unprotect
+Unprotect a branch
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH EXAMPLES
+.nf
+suture branch              # List branches
+suture branch \\\-\\\-list       # List branches (explicit)
+suture branch feature      # Create branch "feature"
+suture branch \\\-d old\-branch  # Delete a branch
+suture branch \\\-\\\-protect main   # Protect "main" from force\-push
+suture branch \\\-\\\-unprotect main # Unprotect "main"
+.fi
+.SH SEE ALSO
+.BR suture (1)

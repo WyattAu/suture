@@ -1,0 +1,211 @@
+.TH SUTURE "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture \- Universal Semantic Version Control System
+.SH SYNOPSIS
+.B suture
+[\fIoptions\fR] \fIcommand\fR [\fIargs\fR]
+.SH DESCRIPTION
+Suture is a universal semantic version control system that supports
+video (OTIO), document (DOCX/XLSX/PPTX), and data (CSV/JSON/XML/YAML)
+workflows with content-aware semantic diffing, merging, and integrity
+verification.
+.SH COMMANDS
+.TP
+.B init
+Initialize a new Suture repository
+.TP
+.B status
+Show repository status
+.TP
+.B ignore
+Inspect .sutureignore patterns
+.TP
+.B add
+Add files to the staging area
+.TP
+.B rm
+Remove files from the working tree and staging area
+.TP
+.B commit
+Create a commit
+.TP
+.B branch
+Branch operations
+.TP
+.B log
+Show commit history
+.TP
+.B checkout
+Switch to a different branch
+.TP
+.B switch
+Switch to a different branch (modern alternative to checkout)
+.TP
+.B restore
+Restore working tree files
+.TP
+.B mv
+Move or rename a tracked file
+.TP
+.B diff
+Show differences between commits or branches
+.TP
+.B revert
+Revert a commit
+.TP
+.B merge
+Merge a branch into the current branch
+.TP
+.B merge\-file
+Perform three\-way file merge
+.TP
+.B apply
+Apply a patch/diff file to the working tree
+.TP
+.B cherry\-pick
+Apply a specific commit onto the current branch
+.TP
+.B rebase
+Rebase the current branch onto another branch
+.TP
+.B blame
+Show per\-line commit attribution for a file
+.TP
+.B tag
+Tag operations
+.TP
+.B config
+Get or set configuration values
+.TP
+.B remote
+Remote operations
+.TP
+.B push
+Push patches to a remote Hub
+.TP
+.B pull
+Pull patches from a remote Hub
+.TP
+.B fetch
+Fetch patches from a remote Hub without merging
+.TP
+.B ls\-remote
+List references on a remote Hub
+.TP
+.B clone
+Clone a repository from a remote Hub
+.TP
+.B reset
+Reset HEAD to a specific commit
+.TP
+.B key
+Signing key management
+.TP
+.B stash
+Stash management
+.TP
+.B completions
+Generate shell completions
+.TP
+.B show
+Show detailed information about a commit
+.TP
+.B reflog
+Show the reference log (HEAD movements)
+.TP
+.B drivers
+List available semantic drivers
+.TP
+.B shortlog
+Show compact commit summary grouped by author
+.TP
+.B notes
+Manage commit notes
+.TP
+.B worktree
+Manage working trees
+.TP
+.B version
+Show version information
+.TP
+.B verify
+Verify commit signatures
+.TP
+.B gc
+Garbage collect unreachable objects
+.TP
+.B grep
+Search for a pattern in tracked files
+.TP
+.B fsck
+Verify repository integrity
+.TP
+.B doctor
+Check repository health and configuration
+.TP
+.B audit
+Inspect the tamper\-evident audit log
+.TP
+.B clean
+Remove untracked files from the working tree
+.TP
+.B describe
+Describe a commit using the nearest tag
+.TP
+.B rev\-parse
+Parse revision names to hashes
+.TP
+.B git
+Interact with Git repositories
+.TP
+.B bisect
+Binary search for bug\-introducing commit
+.TP
+.B hook
+Manage repository hooks
+.TP
+.B classification
+Bulk classification marking scanning and compliance reporting
+.TP
+.B undo
+Undo the last operation
+.TP
+.B squash
+Squash N commits into one
+.TP
+.B sync
+Synchronize with remote
+.TP
+.B tui
+Launch terminal UI
+.TP
+.B export
+Export a clean snapshot without repository metadata
+.TP
+.B report
+Generate reports about the repository
+.TP
+.B batch
+Batch operations for managing multiple files or clients
+.TP
+.B timeline
+OTIO timeline operations
+.TP
+.B archive
+Create an archive of the repository
+.SH OPTIONS
+.TP
+.BR \-C " " \fI<REPO_PATH>\fR
+Run as if suture was started in <path>.
+.TP
+.BR \-h ", " \-\-help
+Print help.
+.TP
+.BR \-V ", " \-\-version
+Print version.
+.SH SEE ALSO
+.BR suture-init (1),
+.BR suture-add (1),
+.BR suture-commit (1),
+.BR suture-log (1),
+.BR suture-diff (1)

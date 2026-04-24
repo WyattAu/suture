@@ -1,0 +1,71 @@
+.TH SUTURE-LOG "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-log \- Show commit history
+.SH SYNOPSIS
+.B suture log [\\fIoptions\\fR] [\\fIbranch\\fR]
+.SH DESCRIPTION
+Show commit history.
+.SH OPTIONS
+.TP
+.BR \\\-g, \\\-\\\-graph
+Show ASCII graph of branch topology
+.TP
+.BR \\\-\\\-first\-parent
+Show only the first\-parent chain (skip merge parents)
+.TP
+.BR \\\-\\\-oneline
+Show compact one\-line format
+.TP
+.BR \\\-\\\-author \\fI<author>\\fR
+Filter by author name
+.TP
+.BR \\\-\\\-grep \\fI<pattern>\\fR
+Filter by commit message pattern
+.TP
+.BR \\\-\\\-all
+Show commits across all branches
+.TP
+.BR \\\-\\\-since \\fI<date>\\fR
+Show commits newer than a date/time
+.TP
+.BR \\\-\\\-until \\fI<date>\\fR
+Show commits older than a date/time
+.TP
+.BR \\\-\\\-stat
+Show which files changed in each commit
+.TP
+.BR \\\-\\\-diff
+Show patch content (diff) for each commit
+.TP
+.BR \\\-\\\-audit
+Export structured audit trail (compliance format)
+.TP
+.BR \\\-\\\-audit\-format \\fI<format>\\fR
+Output format for \-\-audit (json, csv, text)
+.TP
+.BR \\\-\\\-verify
+Verify commit signatures
+.TP
+.BR \\\-\\\-diff\-filter \\fI<filter>\\fR
+Filter by diff status: A (added), D (deleted), M (modified)
+.TP
+.BR \\\-\\\-limit \\fI<n>\\fR
+Limit number of commits shown (default: 100, 0 = unlimited)
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH EXAMPLES
+.nf
+suture log                 # Show log for HEAD
+suture log \\\-\\\-oneline       # Compact one\-line format
+suture log \\\-\\\-graph         # ASCII graph of branch topology
+suture log \\\-\\\-all           # Show commits across all branches
+suture log \\\-\\\-author alice  # Filter by author
+suture log \\\-\\\-grep "fix"   # Filter by message pattern
+suture log \\\-\\\-audit         # Export structured audit trail
+.fi
+.SH SEE ALSO
+.BR suture (1)

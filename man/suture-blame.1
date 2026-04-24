@@ -1,0 +1,27 @@
+.TH SUTURE-BLAME "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-blame \- Show per\-line commit attribution for a file
+.SH SYNOPSIS
+.B suture blame [\\fIoptions\\fR] \\fIpath\\fR
+.SH DESCRIPTION
+Show per\-line commit attribution for a file.
+.SH OPTIONS
+.TP
+.BR \\\-\\\-at \\fI<commit>\\fR
+Blame as of a specific commit (default: HEAD)
+.TP
+.BR \\\-L, \\\-\\\-lines \\fI<range>\\fR
+Only show lines in range (e.g., \-L 10,20)
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH EXAMPLES
+.nf
+suture blame src/main.rs          # Show line\-by\-line attribution at HEAD
+suture blame src/main.rs \\\-\\\-at HEAD~3  # Show attribution as of HEAD~3
+.fi
+.SH SEE ALSO
+.BR suture (1)

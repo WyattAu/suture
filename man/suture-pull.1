@@ -1,0 +1,28 @@
+.TH SUTURE-PULL "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-pull \- Pull patches from a remote Hub
+.SH SYNOPSIS
+.B suture pull [\\fIoptions\\fR] [\\fIremote\\fR]
+.SH DESCRIPTION
+Pull patches from a remote Hub.
+.SH OPTIONS
+.TP
+.BR \\\-\\\-rebase
+Rebase local commits on top of fetched remote history
+.TP
+.BR \\\-\\\-autostash
+Stash changes before pulling and pop after
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH EXAMPLES
+.nf
+suture pull                # Pull and merge from origin
+suture pull \\\-\\\-rebase       # Pull with rebase
+suture pull upstream       # Pull from a specific remote
+.fi
+.SH SEE ALSO
+.BR suture (1)

@@ -1,0 +1,25 @@
+.TH SUTURE-CLONE "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-clone \- Clone a repository from a remote Hub
+.SH SYNOPSIS
+.B suture clone [\\fIoptions\\fR] \\fIurl\\fR [\\fIdir\\fR]
+.SH DESCRIPTION
+Clone a repository from a remote Hub.
+.SH OPTIONS
+.TP
+.BR \\\-d, \\\-\\\-depth \\fI<n>\\fR
+Shallow clone: fetch only the last N patches
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH EXAMPLES
+.nf
+suture clone http://localhost:50051/my\-repo
+suture clone http://localhost:50051/my\-repo my\-local\-dir
+suture clone \\\-\\\-depth 10 http://localhost:50051/my\-repo
+.fi
+.SH SEE ALSO
+.BR suture (1)

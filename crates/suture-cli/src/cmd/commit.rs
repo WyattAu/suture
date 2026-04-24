@@ -1,13 +1,24 @@
+use crate::cmd::user_error;
 use crate::style::run_hook_if_exists;
 use ed25519_dalek::Signer;
 
 pub(crate) async fn cmd_commit(message: &str, all: bool) -> Result<(), Box<dyn std::error::Error>> {
-    let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+    if message.trim().is_empty() {
+        return Err("commit message cannot be empty".into());
+    }
+
+    let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))
+        .map_err(|e| user_error("failed to open repository", e))?;
     if all {
-        let count = repo.add_all()?;
+        let count = repo.add_all().map_err(|e| user_error("failed to stage files", e))?;
         if count > 0 {
             println!("Staged {} file(s)", count);
         }
+    }
+
+    let status = repo.status().map_err(|e| user_error("failed to check repository status", e))?;
+    if status.staged_files.is_empty() {
+        return Err("nothing to commit (use 'suture add' to stage files)".into());
     }
 
     // Run pre-commit hook
@@ -24,7 +35,7 @@ pub(crate) async fn cmd_commit(message: &str, all: bool) -> Result<(), Box<dyn s
     extra.insert("SUTURE_HEAD".to_string(), head_id.to_hex());
     run_hook_if_exists(repo.root(), "pre-commit", extra)?;
 
-    let patch_id = repo.commit(message)?;
+    let patch_id = repo.commit(message).map_err(|e| user_error("failed to create commit", e))?;
     println!("Committed: {}", patch_id);
 
     {
@@ -33,7 +44,8 @@ pub(crate) async fn cmd_commit(message: &str, all: bool) -> Result<(), Box<dyn s
             .unwrap_or(None)
             .unwrap_or_default();
         let audit_dir = repo.root().join(".suture").join("audit").join("chain.log");
-        let audit = suture_core::audit::AuditLog::open(&audit_dir)?;
+        let audit = suture_core::audit::AuditLog::open(&audit_dir)
+            .map_err(|e| user_error("failed to open audit log", e))?;
         let patch = repo.dag().get_patch(&patch_id);
         let touch_set: Vec<String> = patch
             .as_ref()

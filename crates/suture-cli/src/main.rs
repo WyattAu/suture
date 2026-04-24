@@ -656,7 +656,7 @@ EXAMPLES:
         #[arg(short = 'F', long)]
         fixed_string: bool,
         /// Show N lines of context around matches
-        #[arg(short = 'C', long)]
+        #[arg(short = 'U', long)]
         context: Option<usize>,
     },
     /// Verify repository integrity

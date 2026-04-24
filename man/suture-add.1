@@ -1,0 +1,29 @@
+.TH SUTURE-ADD "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-add \- Add files to the staging area
+.SH SYNOPSIS
+.B suture add [\\fIoptions\\fR] [\\fIpaths\\fR]...
+.SH DESCRIPTION
+Add files to the staging area.
+.SH OPTIONS
+.TP
+.BR \\\-a, \\\-\\\-all
+Add all files (respecting .sutureignore)
+.TP
+.BR \\\-p, \\\-\\\-patch
+Interactively review and choose which files to stage
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH EXAMPLES
+.nf
+suture add file.txt        # Stage a specific file
+suture add src/            # Stage all files in src/
+suture add \\\-\\\-all           # Stage all modified/deleted files
+suture add \\\-p              # Interactively choose which files to stage
+.fi
+.SH SEE ALSO
+.BR suture (1)

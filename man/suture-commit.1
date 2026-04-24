@@ -1,0 +1,25 @@
+.TH SUTURE-COMMIT "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-commit \- Create a commit
+.SH SYNOPSIS
+.B suture commit [\\fIoptions\\fR] \\fImessage\\fR
+.SH DESCRIPTION
+Create a commit.
+.SH OPTIONS
+.TP
+.BR \\\-a, \\\-\\\-all
+Auto\-stage all modified/deleted files before committing
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH EXAMPLES
+.nf
+suture commit "fix typo"    # Commit staged changes
+suture commit \\\-a "update"  # Auto\-stage all and commit
+suture commit \\\-\\\-all "WIP"  # Same as above
+.fi
+.SH SEE ALSO
+.BR suture (1)

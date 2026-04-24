@@ -1,0 +1,31 @@
+.TH SUTURE-ARCHIVE "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-archive \- Create an archive of the repository
+.SH SYNOPSIS
+.B suture archive [\\fIoptions\\fR] \\\-o \\fIoutput\\fR [\\fIcommit\\fR]
+.SH DESCRIPTION
+Create an archive of the repository.
+.SH OPTIONS
+.TP
+.BR \\\-o, \\\-\\\-output \\fI<path>\\fR
+Output file path
+.TP
+.BR \\\-f, \\\-\\\-format \\fI<fmt>\\fR
+Archive format (default: auto\-detect from output extension)
+.TP
+.BR \\\-\\\-prefix \\fI<prefix>\\fR
+Prefix directory in the archive (default: repo name)
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH EXAMPLES
+.nf
+suture archive \\\-o project.tar.gz         # Archive HEAD as tar.gz
+suture archive \\\-\\\-format zip \\\-o out.zip   # Archive HEAD as zip
+suture archive main \\\-o release.tar.gz    # Archive a specific branch
+.fi
+.SH SEE ALSO
+.BR suture (1)

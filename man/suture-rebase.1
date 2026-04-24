@@ -1,0 +1,31 @@
+.TH SUTURE-REBASE "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-rebase \- Rebase the current branch onto another branch
+.SH SYNOPSIS
+.B suture rebase [\\fIoptions\\fR] \\fIbranch\\fR
+.SH DESCRIPTION
+Rebase the current branch onto another branch.
+.SH OPTIONS
+.TP
+.BR \\\-i, \\\-\\\-interactive
+Interactive rebase \-\- open editor to reorder/edit/squash commits
+.TP
+.BR \\\-\\\-resume, \\\-\\\-continue
+Continue an in\-progress interactive rebase
+.TP
+.BR \\\-\\\-abort
+Abort an in\-progress interactive rebase
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH EXAMPLES
+.nf
+suture rebase main         # Rebase current branch onto "main"
+suture rebase \\\-i main      # Interactive rebase onto "main"
+suture rebase \\\-\\\-abort      # Abort an in\-progress rebase
+.fi
+.SH SEE ALSO
+.BR suture (1)

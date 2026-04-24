@@ -1,0 +1,36 @@
+.TH SUTURE-WORKTREE "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-worktree \- Manage working trees
+.SH SYNOPSIS
+.B suture worktree [\\fIoptions\\fR] \\fIcommand\\fR
+.SH DESCRIPTION
+Manage working trees.
+.SH SUBCOMMANDS
+.TP
+.B add
+Create a new worktree
+.TP
+.B list
+List all worktrees
+.TP
+.B remove
+Remove a worktree
+.TP
+.B prune
+Prune worktree entries whose directories no longer exist
+.SH OPTIONS
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH EXAMPLES
+.nf
+suture worktree add ../feature   # Create worktree at ../feature
+suture worktree add hotfix \\\-b fix   # Create "hotfix" on new branch "fix"
+suture worktree list             # List all worktrees
+suture worktree remove feature   # Remove worktree "feature"
+.fi
+.SH SEE ALSO
+.BR suture (1)

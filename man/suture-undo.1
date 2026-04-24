@@ -1,0 +1,28 @@
+.TH SUTURE-UNDO "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-undo \- Undo the last operation (commit, merge, checkout, etc.)
+.SH SYNOPSIS
+.B suture undo [\\fIoptions\\fR]
+.SH DESCRIPTION
+Undo the last operation (commit, merge, checkout, etc.).
+.SH OPTIONS
+.TP
+.BR \\\-s, \\\-\\\-steps \\fI<n>\\fR
+Number of operations to undo (default: 1)
+.TP
+.BR \\\-\\\-hard
+Discard working tree changes (like \-\-hard reset)
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH EXAMPLES
+.nf
+suture undo                # Undo the last operation (soft)
+suture undo \\\-\\\-steps 3      # Undo the last 3 operations
+suture undo \\\-\\\-hard         # Undo and discard working changes
+.fi
+.SH SEE ALSO
+.BR suture (1)

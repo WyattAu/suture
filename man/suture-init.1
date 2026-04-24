@@ -1,0 +1,30 @@
+.TH SUTURE-INIT "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-init \- Initialize a new Suture repository
+.SH SYNOPSIS
+.B suture init [\\fIoptions\\fR] [\\fIpath\\fR]
+.SH DESCRIPTION
+Initialize a new Suture repository.
+.SH OPTIONS
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-t, \\\-\\\-type \\fI<type>\\fR
+Repository type: video, document, or data (default: auto\-detect)
+.TP
+.BR \\\-\\\-template \\fI<template>\\fR
+Repository template to bootstrap from (video, document, data, report)
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH EXAMPLES
+.nf
+suture init                         # Initialize in current directory
+suture init my\-project              # Initialize in a new directory
+suture init \\\-\\\-type video            # Configure for video workflows
+suture init \\\-\\\-type document         # Configure for document workflows
+suture init \\\-\\\-type data             # Configure for data workflows
+.fi
+.SH SEE ALSO
+.BR suture (1)

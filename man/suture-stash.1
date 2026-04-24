@@ -1,0 +1,44 @@
+.TH SUTURE-STASH "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-stash \- Stash management
+.SH SYNOPSIS
+.B suture stash [\\fIoptions\\fR] \\fIcommand\\fR
+.SH DESCRIPTION
+Stash management.
+.SH SUBCOMMANDS
+.TP
+.B push
+Stash current changes
+.TP
+.B save
+Stash current changes (alias for push)
+.TP
+.B pop
+Pop the most recent stash
+.TP
+.B apply
+Apply a specific stash
+.TP
+.B list
+List stashes
+.TP
+.B drop
+Drop a specific stash
+.TP
+.B branch
+Create and checkout a new branch from a stash entry
+.TP
+.B show
+Show stash contents
+.TP
+.B clear
+Drop all stash entries
+.SH OPTIONS
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH SEE ALSO
+.BR suture (1)

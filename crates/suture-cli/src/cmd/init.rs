@@ -1,5 +1,6 @@
 use std::path::{Path as StdPath, PathBuf};
 
+use crate::cmd::user_error;
 use crate::style::{ANSI_BOLD_CYAN, ANSI_RESET};
 
 struct TemplateEntry {
@@ -69,12 +70,15 @@ fn apply_template(repo_path: &StdPath, template_name: &str) -> Result<(), Box<dy
         let full_path = repo_path.join(entry.path);
         if let Some(content) = &entry.content {
             if let Some(parent) = full_path.parent() {
-                std::fs::create_dir_all(parent)?;
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| user_error(&format!("failed to create directory '{}'", parent.display()), e))?;
             }
-            std::fs::write(&full_path, content)?;
+            std::fs::write(&full_path, content)
+                .map_err(|e| user_error(&format!("failed to write '{}'", entry.path), e))?;
             created_files.push(entry.path.to_string());
         } else {
-            std::fs::create_dir_all(&full_path)?;
+            std::fs::create_dir_all(&full_path)
+                .map_err(|e| user_error(&format!("failed to create directory '{}'", entry.path), e))?;
             created_files.push(format!("{}/", entry.path));
         }
     }
@@ -92,11 +96,17 @@ pub(crate) async fn cmd_init(
     template: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let repo_path = PathBuf::from(path);
-    let repo = suture_core::repository::Repository::init(&repo_path, "unknown")?;
+
+    if repo_path.join(".suture").exists() {
+        return Err("already a suture repository (use 'suture doctor' to check health)".into());
+    }
+
+    let repo = suture_core::repository::Repository::init(&repo_path, "unknown")
+        .map_err(|e| user_error("failed to initialize repository", e))?;
 
     let resolved_type = if let Some(ty) = repo_type {
         suture_core::file_type::RepoType::from_str_value(ty)
-            .ok_or_else(|| format!("unknown repo type: {ty} (expected: video, document, data)"))?
+            .ok_or_else(|| format!("unknown repo type '{ty}' (expected: video, document, data)"))?
     } else {
         let detected = suture_core::file_type::auto_detect_repo_type(&repo_path);
         if let Some(rt) = detected {
@@ -123,15 +133,17 @@ pub(crate) async fn cmd_init(
         let existing = std::fs::read_to_string(&config_path).unwrap_or_default();
         if !existing.contains("repo.type") {
             let updated = format!("{existing}\n{config_entry}\n");
-            std::fs::write(&config_path, updated)?;
+            std::fs::write(&config_path, updated)
+                .map_err(|e| user_error("failed to write config", e))?;
         }
     } else {
-        std::fs::write(&config_path, format!("{config_entry}\n"))?;
+        std::fs::write(&config_path, format!("{config_entry}\n"))
+            .map_err(|e| user_error("failed to write config", e))?;
     }
 
     let effective_template = template.or(repo_type);
     if let Some(tmpl) = effective_template {
-        apply_template(&repo_path, tmpl)?;
+        apply_template(&repo_path, tmpl).map_err(|e| user_error("failed to apply template", e))?;
     }
 
     println!(

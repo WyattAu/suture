@@ -1,0 +1,34 @@
+.TH SUTURE-MERGE_FILE "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-merge\-file \- Perform three\-way file merge
+.SH SYNOPSIS
+.B suture merge\-file [\\fIoptions\\fR] \\fIbase\\fR \\fIours\\fR \\fItheirs\\fR
+.SH DESCRIPTION
+Perform three\-way file merge.
+.SH OPTIONS
+.TP
+.BR \\\-o, \\\-\\\-output \\fI<path>\\fR
+Write merged result to a file instead of stdout
+.TP
+.BR \\\-\\\-driver \\fI<driver>\\fR
+Use a semantic merge driver (json, yaml, toml, csv, xml, markdown, docx, xlsx, pptx)
+.TP
+.BR \\\-\\\-label\-ours \\fI<label>\\fR
+Label for "ours" side in conflict markers
+.TP
+.BR \\\-\\\-label\-theirs \\fI<label>\\fR
+Label for "theirs" side in conflict markers
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH EXAMPLES
+.nf
+suture merge\-file base.txt ours.txt theirs.txt
+suture merge\-file \\\-\\\-driver json base.json ours.json theirs.json
+suture merge\-file \\\-\\\-driver yaml \\\-o merged.yaml base.yaml ours.yaml theirs.yaml
+.fi
+.SH SEE ALSO
+.BR suture (1)

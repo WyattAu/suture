@@ -1,0 +1,24 @@
+.TH SUTURE-RM "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-rm \- Remove files from the working tree and staging area
+.SH SYNOPSIS
+.B suture rm [\\fIoptions\\fR] [\\fIpaths\\fR]...
+.SH DESCRIPTION
+Remove files from the working tree and staging area.
+.SH OPTIONS
+.TP
+.BR \\\-c, \\\-\\\-cached
+Only remove from staging area, keep the file on disk
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH EXAMPLES
+.nf
+suture rm file.txt         # Remove file from tree and staging
+suture rm \\\-\\\-cached file    # Remove from staging only, keep on disk
+.fi
+.SH SEE ALSO
+.BR suture (1)

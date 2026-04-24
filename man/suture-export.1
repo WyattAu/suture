@@ -1,0 +1,38 @@
+.TH SUTURE-EXPORT "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-export \- Export a clean snapshot without repository metadata
+.SH SYNOPSIS
+.B suture export [\\fIoptions\\fR] \\fIoutput\\fR
+.SH DESCRIPTION
+Export a clean snapshot without repository metadata.
+.SH OPTIONS
+.TP
+.BR \\\-\\\-zip
+Export as zip instead of directory
+.TP
+.BR \\\-\\\-at \\fI<ref>\\fR
+Commit ref to export (default: HEAD)
+.TP
+.BR \\\-\\\-template \\fI<dir>\\fR
+Custom template directory (files to include in export)
+.TP
+.BR \\\-\\\-include\-meta
+Include .suture metadata in export
+.TP
+.BR \\\-\\\-client \\fI<name>\\fR
+Client name (creates {output}/{client}/ subdirectory)
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH EXAMPLES
+.nf
+suture export ../client\-delivery       # Export HEAD to a directory
+suture export ../v2 main              # Export specific branch
+suture export \\\-\\\-zip ../delivery.zip   # Export as zip file
+suture export \\\-\\\-include\-meta ./full\-export
+.fi
+.SH SEE ALSO
+.BR suture (1)

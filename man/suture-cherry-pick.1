@@ -1,0 +1,24 @@
+.TH SUTURE-CHERRY_PICK "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-cherry\-pick \- Apply a specific commit onto the current branch
+.SH SYNOPSIS
+.B suture cherry\-pick [\\fIoptions\\fR] \\fIcommit\\fR
+.SH DESCRIPTION
+Apply a specific commit onto the current branch.
+.SH OPTIONS
+.TP
+.BR \\\-n, \\\-\\\-no\-commit
+Apply changes to working tree and staging area without committing
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH EXAMPLES
+.nf
+suture cherry\-pick abc123  # Apply commit onto current branch
+suture cherry\-pick \\\-n abc123  # Apply without committing
+.fi
+.SH SEE ALSO
+.BR suture (1)

@@ -57,3 +57,7 @@ pub mod undo;
 pub mod verify;
 pub mod version;
 pub mod worktree;
+
+pub(crate) fn user_error(ctx: &str, e: impl std::fmt::Display) -> Box<dyn std::error::Error> {
+    Box::new(std::io::Error::other(format!("{ctx}: {e}")))
+}

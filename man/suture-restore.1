@@ -1,0 +1,28 @@
+.TH SUTURE-RESTORE "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-restore \- Restore working tree files
+.SH SYNOPSIS
+.B suture restore [\\fIoptions\\fR] [\\fIpaths\\fR]...
+.SH DESCRIPTION
+Restore working tree files.
+.SH OPTIONS
+.TP
+.BR \\\-s, \\\-\\\-source \\fI<commit>\\fR
+Restore from a specific commit (default: HEAD)
+.TP
+.BR \\\-\\\-staged
+Restore staged files (unstage)
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH EXAMPLES
+.nf
+suture restore file.txt          # Restore file from HEAD
+suture restore \\\-\\\-staged file.txt # Unstage a file
+suture restore \\\-\\\-source HEAD~2 file.txt  # Restore from specific commit
+.fi
+.SH SEE ALSO
+.BR suture (1)

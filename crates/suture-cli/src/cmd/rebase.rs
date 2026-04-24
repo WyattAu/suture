@@ -1,3 +1,4 @@
+use crate::cmd::user_error;
 use crate::style::run_hook_if_exists;
 
 pub(crate) async fn cmd_rebase(
@@ -6,11 +7,28 @@ pub(crate) async fn cmd_rebase(
     resume: bool,
     abort: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+    let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))
+        .map_err(|e| user_error("failed to open repository", e))?;
+
+    let branches: Vec<String> = repo.list_branches().into_iter().map(|(n, _)| n).collect();
+    if !branches.contains(&branch.to_string()) && repo.resolve_ref(branch).is_err() {
+        let hint = if let Some(suggestion) = crate::fuzzy::suggest(branch, &branches) {
+            format!(" (did you mean '{}'?)", suggestion)
+        } else {
+            String::new()
+        };
+        return Err(format!("branch '{branch}' not found{hint} (use 'suture branch' to create it)").into());
+    }
+
+    let status = repo.status().map_err(|e| user_error("failed to check repository status", e))?;
+    if !status.staged_files.is_empty() {
+        return Err("cannot rebase with staged changes (commit or stash them first)".into());
+    }
 
     // Handle --abort
     if abort {
-        repo.rebase_abort()?;
+        repo.rebase_abort()
+            .map_err(|e| user_error("failed to abort rebase", e))?;
         println!("Rebase aborted.");
         return Ok(());
     }
@@ -42,7 +60,8 @@ pub(crate) async fn cmd_rebase(
     pre_extra.insert("SUTURE_REBASE_ONTO".to_string(), branch.to_string());
     run_hook_if_exists(repo.root(), "pre-rebase", pre_extra)?;
 
-    let result = repo.rebase(branch)?;
+    let result = repo.rebase(branch)
+        .map_err(|e| user_error(&format!("rebase onto '{branch}' failed"), e))?;
     if result.patches_replayed > 0 {
         println!(
             "Rebase onto '{}': {} patch(es) replayed",
@@ -69,7 +88,7 @@ async fn cmd_rebase_interactive(
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Resolve the base commit
     let base_bn = suture_common::BranchName::new(base_branch)
-        .map_err(|e| format!("invalid branch name '{}': {}", base_branch, e))?;
+        .map_err(|e| format!("invalid branch name '{base_branch}': {e}"))?;
     let base_id = repo.dag().get_branch(&base_bn).ok_or_else(|| {
         let branches: Vec<String> = repo.list_branches().into_iter().map(|(n, _)| n).collect();
         if let Some(suggestion) = crate::fuzzy::suggest(base_branch, &branches) {
@@ -83,7 +102,8 @@ async fn cmd_rebase_interactive(
     })?;
 
     // Generate TODO file
-    let todo_content = repo.generate_rebase_todo(&base_id)?;
+    let todo_content = repo.generate_rebase_todo(&base_id)
+        .map_err(|e| user_error("failed to generate rebase plan", e))?;
     if todo_content
         .lines()
         .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
@@ -127,7 +147,8 @@ async fn cmd_rebase_interactive(
     }
 
     // Parse TODO into plan
-    let plan = repo.parse_rebase_todo(&edited, &base_id)?;
+    let plan = repo.parse_rebase_todo(&edited, &base_id)
+        .map_err(|e| user_error("failed to parse rebase plan", e))?;
 
     // Show plan summary
     let pick_count = plan
@@ -167,7 +188,8 @@ async fn cmd_rebase_interactive(
     run_hook_if_exists(repo.root(), "pre-rebase", pre_extra)?;
 
     // Execute the plan
-    let new_tip = repo.rebase_interactive(&plan, &base_id)?;
+    let new_tip = repo.rebase_interactive(&plan, &base_id)
+        .map_err(|e| user_error("interactive rebase failed", e))?;
 
     let (branch_after, head_after) = repo.head()?;
     let mut post_extra = std::collections::HashMap::new();

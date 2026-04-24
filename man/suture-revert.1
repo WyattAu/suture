@@ -1,0 +1,24 @@
+.TH SUTURE-REVERT "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-revert \- Revert a commit
+.SH SYNOPSIS
+.B suture revert [\\fIoptions\\fR] \\fIcommit\\fR
+.SH DESCRIPTION
+Revert a commit.
+.SH OPTIONS
+.TP
+.BR \\\-m, \\\-\\\-message \\fI<msg>\\fR
+Custom revert message
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH EXAMPLES
+.nf
+suture revert abc123       # Revert a commit
+suture revert abc123 \\\-m "revert fix"  # With custom message
+.fi
+.SH SEE ALSO
+.BR suture (1)

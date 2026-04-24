@@ -1,0 +1,23 @@
+.TH SUTURE-COMPLETIONS "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-completions \- Generate shell completions
+.SH SYNOPSIS
+.B suture completions [\\fIoptions\\fR] \\fIshell\\fR
+.SH DESCRIPTION
+Generate shell completions.
+.SH OPTIONS
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH EXAMPLES
+.nf
+suture completions bash > ~/.bash_completion.d/suture
+suture completions zsh > ~/.zfunc/_suture
+suture completions fish > ~/.config/fish/completions/suture.fish
+suture completions nushell | save \\\-f ~/.cache/suture/completions.nu
+.fi
+.SH SEE ALSO
+.BR suture (1)

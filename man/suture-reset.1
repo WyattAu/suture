@@ -1,0 +1,25 @@
+.TH SUTURE-RESET "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-reset \- Reset HEAD to a specific commit
+.SH SYNOPSIS
+.B suture reset [\\fIoptions\\fR] \\fItarget\\fR
+.SH DESCRIPTION
+Reset HEAD to a specific commit.
+.SH OPTIONS
+.TP
+.BR \\\-m, \\\-\\\-mode \\fI<mode>\\fR
+Reset mode: soft, mixed, hard (default: mixed)
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH EXAMPLES
+.nf
+suture reset HEAD~1        # Reset to parent (mixed mode)
+suture reset abc123 \\\-\\\-soft  # Keep changes staged
+suture reset abc123 \\\-\\\-hard  # Discard all changes
+.fi
+.SH SEE ALSO
+.BR suture (1)

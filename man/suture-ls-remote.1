@@ -1,0 +1,21 @@
+.TH SUTURE-LS_REMOTE "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-ls\-remote \- List references (branches) on a remote Hub
+.SH SYNOPSIS
+.B suture ls\-remote [\\fIoptions\\fR] \\fIremote\-or\-url\\fR
+.SH DESCRIPTION
+List references (branches) on a remote Hub.
+.SH OPTIONS
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH EXAMPLES
+.nf
+suture ls\-remote http://localhost:50051/my\-repo
+suture ls\-remote origin
+.fi
+.SH SEE ALSO
+.BR suture (1)

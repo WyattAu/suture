@@ -1,0 +1,24 @@
+.TH SUTURE-SQUASH "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-squash \- Squash N commits into one
+.SH SYNOPSIS
+.B suture squash [\\fIoptions\\fR] \\fIcount\\fR
+.SH DESCRIPTION
+Squash N commits into one.
+.SH OPTIONS
+.TP
+.BR \\\-m, \\\-\\\-message \\fI<msg>\\fR
+Custom message for the squashed commit (default: combined messages)
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH EXAMPLES
+.nf
+suture squash 3            # Squash last 3 commits
+suture squash 3 \\\-m "combined"  # With custom message
+.fi
+.SH SEE ALSO
+.BR suture (1)

@@ -1,0 +1,25 @@
+.TH SUTURE-CHECKOUT "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-checkout \- Switch to a different branch
+.SH SYNOPSIS
+.B suture checkout [\\fIoptions\\fR] [\\fIbranch\\fR]
+.SH DESCRIPTION
+Switch to a different branch.
+.SH OPTIONS
+.TP
+.BR \\\-b, \\\-\\\-new\-branch \\fI<name>\\fR
+Create a new branch before switching
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH EXAMPLES
+.nf
+suture checkout main       # Switch to "main" branch
+suture checkout \\\-b feature # Create and switch to "feature"
+suture checkout \\\-b feat main  # Create "feat" from "main"
+.fi
+.SH SEE ALSO
+.BR suture (1)

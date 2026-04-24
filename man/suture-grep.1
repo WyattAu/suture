@@ -1,0 +1,25 @@
+.TH SUTURE-GREP "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-grep \- Search for a pattern in tracked files
+.SH SYNOPSIS
+.B suture grep [\\fIoptions\\fR] \\fIpattern\\fR [\\fIpaths\\fR]...
+.SH DESCRIPTION
+Search for a pattern in tracked files.
+.SH OPTIONS
+.TP
+.BR \\\-i, \\\-\\\-ignore\-case
+Case insensitive matching
+.TP
+.BR \\\-n, \\\-\\\-line\-number
+Show line numbers
+.TP
+.BR \\\-\\\-context \\fI<n>\\fR
+Show context lines around matches
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH SEE ALSO
+.BR suture (1)

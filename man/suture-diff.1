@@ -1,0 +1,45 @@
+.TH SUTURE-DIFF "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-diff \- Show differences between commits or branches
+.SH SYNOPSIS
+.B suture diff [\\fIoptions\\fR]
+.SH DESCRIPTION
+Show differences between commits or branches.
+.SH OPTIONS
+.TP
+.BR \\\-f, \\\-\\\-from \\fI<ref>\\fR
+From ref (commit hash or branch name). Omit for HEAD
+.TP
+.BR \\\-t, \\\-\\\-to \\fI<ref>\\fR
+To ref (commit hash or branch name). Omit for working tree
+.TP
+.BR \\\-\\\-cached
+Show staged changes (diff of staging area vs HEAD)
+.TP
+.BR \\\-\\\-integrity
+Show supply chain integrity analysis (entropy, risk indicators)
+.TP
+.BR \\\-\\\-name\-only
+Show only names of changed files
+.TP
+.BR \\\-\\\-classification
+Detect classification marking changes (defence/compliance)
+.TP
+.BR \\\-\\\-summary
+Human\-readable change summary (no diff output)
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH EXAMPLES
+.nf
+suture diff                              # Working tree vs staging area
+suture diff \\\-\\\-cached                     # Staging area vs HEAD
+suture diff \\\-\\\-from main \\\-\\\-to feature     # Compare two branches
+suture diff \\\-\\\-integrity                  # Supply chain integrity analysis
+suture diff \\\-\\\-summary                    # Human\-readable change summary
+.fi
+.SH SEE ALSO
+.BR suture (1)

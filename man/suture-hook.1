@@ -1,0 +1,32 @@
+.TH SUTURE-HOOK "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-hook \- Manage repository hooks
+.SH SYNOPSIS
+.B suture hook [\\fIoptions\\fR] \\fIcommand\\fR
+.SH DESCRIPTION
+Manage repository hooks.
+.SH SUBCOMMANDS
+.TP
+.B list
+List all configured hooks
+.TP
+.B run
+Manually execute a hook
+.TP
+.B edit
+Create or edit a hook in $EDITOR
+.SH OPTIONS
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH EXAMPLES
+.nf
+suture hook list                # List all hooks with their scripts
+suture hook run pre\-commit      # Manually trigger a hook
+suture hook edit pre\-commit     # Open hook in $EDITOR
+.fi
+.SH SEE ALSO
+.BR suture (1)

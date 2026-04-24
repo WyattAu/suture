@@ -1,0 +1,35 @@
+.TH SUTURE-REMOTE "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-remote \- Remote operations
+.SH SYNOPSIS
+.B suture remote [\\fIoptions\\fR] \\fIcommand\\fR
+.SH DESCRIPTION
+Remote operations.
+.SH SUBCOMMANDS
+.TP
+.B add
+Add a remote Hub
+.TP
+.B list
+List configured remotes
+.TP
+.B remove
+Remove a configured remote
+.TP
+.B rename
+Rename a remote
+.TP
+.B login
+Authenticate with a remote Hub and store a token
+.TP
+.B mirror
+Mirror a remote repository locally
+.SH OPTIONS
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH SEE ALSO
+.BR suture (1)

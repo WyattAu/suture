@@ -1,3 +1,5 @@
+use crate::cmd::user_error;
+
 pub(crate) async fn cmd_tag(
     name: Option<&str>,
     target: Option<&str>,
@@ -7,7 +9,8 @@ pub(crate) async fn cmd_tag(
     message: Option<&str>,
     sort: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+    let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))
+        .map_err(|e| user_error("failed to open repository", e))?;
 
     if list || name.is_none() {
         let mut tags = repo.list_tags()?;
@@ -56,14 +59,24 @@ pub(crate) async fn cmd_tag(
     }
 
     let name =
-        name.ok_or_else(|| "branch name required (use --list to show branches)".to_string())?;
+        name.ok_or_else(|| "tag name required (use --list to show tags)".to_string())?;
     if delete {
-        repo.delete_tag(name)?;
+        let tags = repo.list_tags().map_err(|e| user_error("failed to list tags", e))?;
+        if !tags.iter().any(|(t, _)| t == name) {
+            return Err(format!("tag '{name}' not found (use 'suture tag --list' to see available tags)").into());
+        }
+        repo.delete_tag(name)
+            .map_err(|e| user_error(&format!("failed to delete tag '{name}'"), e))?;
         let msg_key = format!("tag.{}.message", name);
         let _ = repo.meta().delete_config(&msg_key);
         println!("Deleted tag '{}'", name);
     } else {
-        repo.create_tag(name, target)?;
+        let tags = repo.list_tags().map_err(|e| user_error("failed to list tags", e))?;
+        if tags.iter().any(|(t, _)| t == name) {
+            return Err(format!("tag '{name}' already exists (delete it first with 'suture tag -d {name}')").into());
+        }
+        repo.create_tag(name, target)
+            .map_err(|e| user_error(&format!("failed to create tag '{name}'"), e))?;
         let target_id = repo
             .resolve_tag(name)?
             .ok_or_else(|| format!("created tag '{}', but could not resolve it", name))?;

@@ -1,0 +1,26 @@
+.TH SUTURE-REPORT "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-report \- Generate reports about the repository
+.SH SYNOPSIS
+.B suture report [\\fIoptions\\fR] \\fIcommand\\fR
+.SH DESCRIPTION
+Generate reports about the repository.
+.SH SUBCOMMANDS
+.TP
+.B change
+Generate a change summary report (what changed between two refs)
+.TP
+.B activity
+Generate a contributor/activity report
+.TP
+.B stats
+Generate a file statistics report
+.SH OPTIONS
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH SEE ALSO
+.BR suture (1)

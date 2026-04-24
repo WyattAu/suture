@@ -1,3 +1,5 @@
+use crate::cmd::user_error;
+
 pub(crate) async fn cmd_branch(
     name: Option<&str>,
     target: Option<&str>,
@@ -6,7 +8,8 @@ pub(crate) async fn cmd_branch(
     protect: bool,
     unprotect: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+    let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))
+        .map_err(|e| user_error("failed to open repository", e))?;
 
     if protect || unprotect {
         let branch_name = name.ok_or("--protect/--unprotect requires a branch name")?;
@@ -83,18 +86,24 @@ pub(crate) async fn cmd_branch(
         if !branches.iter().any(|b| b == name) {
             if let Some(suggestion) = crate::fuzzy::suggest(name, &branches) {
                 return Err(format!(
-                    "branch '{}' not found (did you mean '{}'?)",
-                    name, suggestion
+                    "branch '{name}' not found (did you mean '{}'?)",
+                    suggestion
                 )
                 .into());
             } else {
-                return Err(format!("branch '{}' not found", name).into());
+                return Err(format!("branch '{name}' not found (use 'suture branch --list' to see available branches)").into());
             }
         }
-        repo.delete_branch(name)?;
+        repo.delete_branch(name)
+            .map_err(|e| user_error(&format!("failed to delete branch '{name}'"), e))?;
         println!("Deleted branch '{}'", name);
     } else {
-        repo.create_branch(name, target)?;
+        let existing: Vec<String> = repo.list_branches().into_iter().map(|(n, _)| n).collect();
+        if existing.iter().any(|b| b == name) {
+            return Err(format!("branch '{name}' already exists (use 'suture checkout {name}' to switch to it)").into());
+        }
+        repo.create_branch(name, target)
+            .map_err(|e| user_error(&format!("failed to create branch '{name}'"), e))?;
         println!("Created branch '{}'", name);
     }
     Ok(())

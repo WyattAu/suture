@@ -1,0 +1,22 @@
+.TH SUTURE-GC "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-gc \- Garbage collect unreachable objects
+.SH SYNOPSIS
+.B suture gc [\\fIoptions\\fR]
+.SH DESCRIPTION
+Garbage collect unreachable objects.
+.SH OPTIONS
+.TP
+.BR \\\-\\\-dry\-run
+Show what would be pruned without actually deleting
+.TP
+.BR \\\-\\\-aggressive
+Also prune old reflog entries and repack blobs
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH SEE ALSO
+.BR suture (1)

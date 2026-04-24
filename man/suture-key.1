@@ -1,0 +1,26 @@
+.TH SUTURE-KEY "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-key \- Signing key management
+.SH SYNOPSIS
+.B suture key [\\fIoptions\\fR] \\fIcommand\\fR
+.SH DESCRIPTION
+Signing key management.
+.SH SUBCOMMANDS
+.TP
+.B generate
+Generate a new Ed25519 keypair
+.TP
+.B list
+List local signing keys (public keys)
+.TP
+.B public
+Show the public key for a named key
+.SH OPTIONS
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH SEE ALSO
+.BR suture (1)

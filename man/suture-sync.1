@@ -1,0 +1,32 @@
+.TH SUTURE-SYNC "1" "April 2026" "Suture v5.0.0" "User Commands"
+.SH NAME
+suture\-sync \- Synchronize with remote \-\- commit changes and push/pull
+.SH SYNOPSIS
+.B suture sync [\\fIoptions\\fR] [\\fIremote\\fR]
+.SH DESCRIPTION
+Synchronize with remote \-\- commit changes and push/pull.
+.SH OPTIONS
+.TP
+.BR \\\-\\\-no\-push
+Auto\-commit but don't push
+.TP
+.BR \\\-\\\-pull\-only
+Only pull from remote (don't commit or push)
+.TP
+.BR \\\-m, \\\-\\\-message \\fI<msg>\\fR
+Custom commit message (default: auto\-generated)
+.TP
+.BR \\\-C \\fI<REPO_PATH>\\fR
+Run as if suture was started in <path>
+.TP
+.BR \\\-h, \\\-\\\-help
+Print help
+.SH EXAMPLES
+.nf
+suture sync                     # Auto\-commit staged+unstaged, then push/pull
+suture sync \\\-\\\-no\-push           # Auto\-commit but don't push
+suture sync \\\-\\\-pull\-only         # Only pull from remote
+suture sync \\\-\\\-message 'WIP'     # Custom commit message
+.fi
+.SH SEE ALSO
+.BR suture (1)
