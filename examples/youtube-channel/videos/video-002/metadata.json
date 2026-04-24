@@ -1,0 +1,29 @@
+{
+  "video_id": "video-002",
+  "title": "Procedural Generation Deep Dive: Noise, Waves, and Infinite Worlds",
+  "description": "An in-depth look at procedural generation techniques for games. We explore Perlin noise, simplex noise, wave function collapse, and how to combine them to create infinite, interesting worlds.\n\nTopics covered:\n- What is procedural generation?\n- Random vs. procedural\n- Perlin noise explained\n- Simplex noise implementation\n- Wave function collapse\n- Combining techniques\n- Real-time demo in Godot",
+  "tags": [
+    "procedural generation",
+    "perlin noise",
+    "game development",
+    "godot",
+    "programming tutorial",
+    "algorithm"
+  ],
+  "category": "28",
+  "visibility": "public",
+  "status": "published",
+  "published_at": "2025-01-17T14:00:00Z",
+  "thumbnail": {
+    "style": "illustrated",
+    "background_color": "#0f3460",
+    "text_color": "#ffffff",
+    "accent": "#53d8fb",
+    "template": "deep_dive_v1"
+  },
+  "stats": {
+    "views": 189000,
+    "likes": 14200,
+    "comments": 620
+  }
+}

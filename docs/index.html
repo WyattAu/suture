@@ -3,255 +3,313 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Suture — Version Control That Understands Your Files</title>
-<meta name="description" content="A patch-based VCS with semantic merge. Understands JSON, YAML, SQL, DOCX, and 13+ formats. Only flags genuine conflicts.">
+<title>Suture — Version Control for Everyone, Not Just Code</title>
+<meta name="description" content="Universal semantic version control system. Replace Google Drive sync with branching, merging, and audit trails for documents. 20+ file formats supported.">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-:root{--bg:#0d1117;--bg2:#161b22;--bg3:#1c2333;--fg:#c9d1d9;--fg2:#8b949e;--accent:#00d4aa;--accent2:#00ffcc;--border:#30363d;--mono:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;--sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif}
+:root{
+  --bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a2e;
+  --fg:#e2e2f0;--fg2:#8888a8;
+  --accent:#7c3aed;--accent2:#3b82f6;--accent-grad:linear-gradient(135deg,#7c3aed,#3b82f6);
+  --border:#2a2a3e;
+  --mono:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+  --radius:12px;
+}
+html{scroll-behavior:smooth}
 body{background:var(--bg);color:var(--fg);font-family:var(--sans);line-height:1.7;overflow-x:hidden}
-a{color:var(--accent);text-decoration:none}
-a:hover{color:var(--accent2);text-decoration:underline}
-.container{max-width:960px;margin:0 auto;padding:0 24px}
-section{padding:72px 0}
-h1,h2,h3{color:#e6edf3;font-weight:700}
-h2{font-size:1.75rem;margin-bottom:16px;letter-spacing:-0.02em}
-h3{font-size:1.1rem;margin-bottom:8px}
-pre{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:20px;overflow-x:auto;font-size:.875rem;line-height:1.6;color:var(--fg)}
-code{font-family:var(--mono);font-size:.9em}
-.inline-code{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-size:.85em}
-.badge{display:inline-block;background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:4px 14px;font-size:.8rem;color:var(--fg2);font-family:var(--mono)}
-.badge:hover{border-color:var(--accent);color:var(--accent);text-decoration:none}
+a{color:var(--accent);text-decoration:none;transition:color .15s}
+a:hover{color:#a78bfa}
+.container{max-width:1100px;margin:0 auto;padding:0 24px}
+section{padding:80px 0}
+h1,h2,h3{color:#fff;font-weight:700;letter-spacing:-.02em}
+h2{font-size:2rem;margin-bottom:12px}
+h3{font-size:1.1rem}
+code,.mono{font-family:var(--mono)}
+pre{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:20px 24px;overflow-x:auto;font-size:.85rem;line-height:1.7}
+pre code{color:var(--fg)}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:12px 28px;border-radius:8px;font-size:.95rem;font-weight:600;transition:all .2s;cursor:pointer}
+.btn-primary{background:var(--accent-grad);color:#fff;border:none}
+.btn-primary:hover{opacity:.9;color:#fff;transform:translateY(-1px);box-shadow:0 8px 24px rgba(124,58,237,.3)}
+.btn-outline{background:transparent;border:1px solid var(--border);color:var(--fg)}
+.btn-outline:hover{border-color:var(--accent);color:var(--accent)}
 
-/* Hero */
-.hero{text-align:center;padding:100px 0 80px;position:relative}
-.hero::before{content:'';position:absolute;top:0;left:50%;transform:translateX(-50%);width:600px;height:600px;background:radial-gradient(circle,rgba(0,212,170,.06) 0%,transparent 70%);pointer-events:none}
-.logo{font-family:var(--mono);font-size:4rem;font-weight:800;color:#e6edf3;letter-spacing:-0.04em;margin-bottom:8px}
-.logo span{color:var(--accent)}
-.tagline{font-size:1.25rem;color:var(--fg2);max-width:560px;margin:0 auto 32px}
+nav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(10,10,15,.85);backdrop-filter:blur(12px);border-bottom:1px solid var(--border)}
+nav .container{display:flex;align-items:center;justify-content:space-between;height:60px}
+.nav-logo{font-family:var(--mono);font-weight:800;font-size:1.2rem;color:#fff}
+.nav-logo span{color:var(--accent)}
+.nav-links{display:flex;gap:24px;align-items:center}
+.nav-links a{color:var(--fg2);font-size:.875rem}
+.nav-links a:hover{color:#fff}
+
+.hero{text-align:center;padding:140px 0 100px;position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;top:-200px;left:50%;transform:translateX(-50%);width:800px;height:800px;background:radial-gradient(circle,rgba(124,58,237,.12) 0%,rgba(59,130,246,.06) 40%,transparent 70%);pointer-events:none}
+.hero h1{font-size:clamp(2rem,5vw,3.5rem);max-width:700px;margin:0 auto 20px;background:var(--accent-grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero .subtitle{font-size:1.15rem;color:var(--fg2);max-width:600px;margin:0 auto 40px}
 .hero-actions{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
-.btn{display:inline-block;padding:10px 24px;border-radius:6px;font-size:.95rem;font-weight:600;transition:all .15s}
-.btn-primary{background:var(--accent);color:#0d1117}
-.btn-primary:hover{background:var(--accent2);text-decoration:none}
-.btn-secondary{border:1px solid var(--border);color:var(--fg)}
-.btn-secondary:hover{border-color:var(--accent);color:var(--accent);text-decoration:none}
+.hero .install-hint{margin-top:24px;color:var(--fg2);font-size:.85rem}
+.hero .install-hint code{background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:.85em;color:var(--fg)}
 
-/* Semantic merge */
-.merge-demo{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:24px}
-.merge-box{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:20px;position:relative}
-.merge-box.conflict{border-color:#f85149}
-.merge-box.clean{border-color:var(--accent)}
-.merge-label{position:absolute;top:-10px;left:16px;background:var(--bg);padding:0 8px;font-size:.75rem;font-family:var(--mono);font-weight:600;letter-spacing:.05em;text-transform:uppercase}
-.merge-label.fail{color:#f85149}
-.merge-label.pass{color:var(--accent)}
-.merge-box pre{border:none;background:var(--bg);padding:16px;margin:0}
+.section-label{font-family:var(--mono);font-size:.75rem;text-transform:uppercase;letter-spacing:.1em;color:var(--accent);margin-bottom:8px}
+.section-desc{color:var(--fg2);max-width:600px;margin-bottom:32px}
 
-/* Domain cards */
-.domain-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;margin-top:24px}
-.domain-card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:24px;transition:border-color .15s}
-.domain-card:hover{border-color:var(--accent)}
-.domain-card h3{margin-bottom:4px}
-.domain-card .domain-icon{font-size:1.5rem;margin-bottom:8px;display:block}
-.domain-card p{font-size:.875rem;color:var(--fg2);margin-bottom:12px}
-.domain-card .domain-link{font-size:.85rem;color:var(--accent);font-weight:600}
+.features-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px}
+.feature-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:28px 24px;transition:all .2s}
+.feature-card:hover{border-color:var(--accent);transform:translateY(-2px)}
+.feature-icon{width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.3rem;margin-bottom:16px}
+.feature-icon.purple{background:rgba(124,58,237,.15);color:#a78bfa}
+.feature-icon.blue{background:rgba(59,130,246,.15);color:#60a5fa}
+.feature-icon.green{background:rgba(34,197,94,.15);color:#4ade80}
+.feature-icon.amber{background:rgba(245,158,11,.15);color:#fbbf24}
+.feature-icon.rose{background:rgba(244,63,94,.15);color:#fb7185}
+.feature-icon.cyan{background:rgba(6,182,212,.15);color:#22d3ee}
+.feature-card h3{margin-bottom:6px}
+.feature-card p{color:var(--fg2);font-size:.875rem}
 
-/* Features */
-.features-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;margin-top:24px}
-.feature-card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:20px;transition:border-color .15s}
-.feature-card:hover{border-color:var(--accent)}
-.feature-card .icon{font-size:1.5rem;margin-bottom:8px;display:block}
-.feature-card h3{margin-bottom:4px}
-.feature-card p{font-size:.875rem;color:var(--fg2)}
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:32px;counter-reset:step;position:relative}
+.step{counter-increment:step;position:relative;padding-left:60px}
+.step::before{content:counter(step);position:absolute;left:0;top:0;width:40px;height:40px;border-radius:50%;background:var(--accent-grad);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.1rem;color:#fff}
+.step h3{margin-bottom:4px}
+.step p{color:var(--fg2);font-size:.875rem}
+.step code{display:block;margin-top:8px;font-size:.8rem;color:var(--accent);background:var(--bg3);padding:8px 12px;border-radius:6px;border:1px solid var(--border)}
 
-/* Footer */
-footer{border-top:1px solid var(--border);padding:32px 0;text-align:center;color:var(--fg2);font-size:.85rem}
-footer a{margin:0 8px}
+.formats-grid{display:flex;flex-wrap:wrap;gap:10px}
+.format-badge{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 18px;font-family:var(--mono);font-size:.8rem;font-weight:600;color:var(--fg);transition:all .15s}
+.format-badge:hover{border-color:var(--accent);color:var(--accent)}
 
-/* Responsive */
-@media(max-width:640px){
-  .logo{font-size:2.5rem}
-  .merge-demo{grid-template-columns:1fr}
-  .domain-grid,.features-grid{grid-template-columns:1fr}
-  section{padding:48px 0}
-  .hero{padding:64px 0 48px}
+.install-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}
+.install-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.install-card-header{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;border-bottom:1px solid var(--border);font-size:.8rem;font-weight:600}
+.install-card-header .platform{color:var(--fg)}
+.install-card-header .copy-btn{background:none;border:1px solid var(--border);color:var(--fg2);padding:3px 10px;border-radius:4px;cursor:pointer;font-size:.75rem;font-family:var(--mono);transition:all .15s}
+.install-card-header .copy-btn:hover{border-color:var(--accent);color:var(--accent)}
+.install-card pre{border:none;border-radius:0;margin:0;padding:16px 20px;font-size:.825rem}
+
+footer{border-top:1px solid var(--border);padding:40px 0;text-align:center;color:var(--fg2);font-size:.85rem}
+footer .footer-links{display:flex;gap:20px;justify-content:center;flex-wrap:wrap;margin-bottom:12px}
+footer .footer-links a{color:var(--fg2)}
+footer .footer-links a:hover{color:#fff}
+
+@media(max-width:768px){
+  .nav-links{display:none}
+  .hero{padding:110px 0 70px}
+  section{padding:60px 0}
+  h2{font-size:1.5rem}
+  .features-grid,.install-grid{grid-template-columns:1fr}
+  .steps{grid-template-columns:1fr;gap:28px}
 }
 </style>
 </head>
 <body>
 
+<nav>
+  <div class="container">
+    <a href="#" class="nav-logo">/suture<span>/</span></a>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#how-it-works">How It Works</a>
+      <a href="#formats">Formats</a>
+      <a href="#install">Install</a>
+      <a href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</nav>
+
 <section class="hero">
   <div class="container">
-    <div class="logo">/suture<span>/</span></div>
-    <p class="tagline">Version control that understands your files. Git is to text files what Suture is to Word docs, spreadsheets, and video timelines.</p>
+    <p class="section-label">Universal Semantic Version Control</p>
+    <h1>Version Control for Everyone, Not Just Code</h1>
+    <p class="subtitle">Semantic merge for 20+ file formats. No more merge conflicts in JSON, YAML, or Word docs. Replace Google Drive sync with branching, history, and audit trails.</p>
     <div class="hero-actions">
-      <a class="btn btn-primary" href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">GitHub</a>
-      <a class="btn btn-secondary" href="./quickstart.html">Quick Start</a>
-      <a class="btn btn-secondary" href="./why-suture.html">Why Suture?</a>
+      <a href="#install" class="btn btn-primary">Install Suture</a>
+      <a href="./quickstart.html" class="btn btn-outline">Documentation</a>
+      <a href="https://github.com/WyattAu/suture" target="_blank" rel="noopener" class="btn btn-outline">GitHub &nearr;</a>
     </div>
-    <p style="margin-top:24px"><code class="inline-code">cargo install suture-cli</code></p>
-    <div style="margin-top:16px">
-      <a class="badge" href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">Apache 2.0</a>
-      <a class="badge" href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">Rust</a>
-      <a class="badge" href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">16 format drivers</a>
-    </div>
+    <p class="install-hint">or just run <code>cargo install suture-cli</code></p>
   </div>
 </section>
 
-<section style="background:var(--bg2)">
+<section id="features">
   <div class="container">
-    <h2>Semantic Merge</h2>
-    <p style="color:var(--fg2);margin-bottom:4px">Two people edit <code class="inline-code">config.json</code> &mdash; one changes <code class="inline-code">host</code>, the other changes <code class="inline-code">port</code>. Git sees overlapping lines. Suture sees non-overlapping keys.</p>
-    <div class="merge-demo">
-      <div class="merge-box conflict">
-        <span class="merge-label fail">git merge</span>
-<pre>{
-  &lt;&lt;&lt;&lt;&lt;&lt;&lt; HEAD
-  "host": "prod",
-  "port": 8080
-  =======
-  "host": "staging"
-  "port": 3000
-  &gt;&gt;&gt;&gt;&gt; staging
-}</pre>
-      </div>
-      <div class="merge-box clean">
-        <span class="merge-label pass">suture merge</span>
-<pre>{
-  "host": "staging",   &larr; theirs
-  "port": 8080         &larr; ours
-}</pre>
-      </div>
-    </div>
-    <p style="color:var(--fg2);font-size:.875rem;margin-top:16px"><a href="./semantic-merge.html">Learn how semantic merge works &rarr;</a></p>
-  </div>
-</section>
-
-<section>
-  <div class="container">
-    <h2>Who Is Suture For?</h2>
-    <div class="domain-grid">
-      <div class="domain-card">
-        <span class="domain-icon">&square;</span>
-        <h3>Video Editors</h3>
-        <p>Version control for NLE timelines. Track clip edits, grade changes, and reorders at the semantic level.</p>
-        <a class="domain-link" href="./video-editors.html">Suture for Video Editors &rarr;</a>
-      </div>
-      <div class="domain-card">
-        <span class="domain-icon">Aa</span>
-        <h3>Document Authors</h3>
-        <p>Merge Word docs at the paragraph level, Excel at the cell level, PowerPoint at the slide level.</p>
-        <a class="domain-link" href="./document-authors.html">Suture for Document Authors &rarr;</a>
-      </div>
-      <div class="domain-card">
-        <span class="domain-icon">{ }</span>
-        <h3>Data Science</h3>
-        <p>Branch and merge experiments. Semantic merge for YAML configs, CSV results, and JSON pipelines.</p>
-        <a class="domain-link" href="./data-science.html">Suture for Data Science &rarr;</a>
-      </div>
-      <div class="domain-card">
-        <span class="domain-icon">&lt;/&gt;</span>
-        <h3>DevOps &amp; Config</h3>
-        <p>Kubernetes YAML, Docker Compose, CI configs &mdash; concurrent edits to different keys never conflict.</p>
-        <a class="domain-link" href="./quickstart.html">Get started &rarr;</a>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section>
-  <div class="container">
-    <h2>Features</h2>
+    <p class="section-label">Features</p>
+    <h2>Everything Git Does for Code, Suture Does for Documents</h2>
+    <p class="section-desc">Branch, merge, tag, blame, sync, and audit — for JSON configs, Word docs, spreadsheets, and more.</p>
     <div class="features-grid">
       <div class="feature-card">
-        <span class="icon">16</span>
-        <h3>Semantic Drivers</h3>
-        <p>JSON, YAML, TOML, CSV, XML, Markdown, DOCX, XLSX, PPTX, SQL, PDF, images, OTIO.</p>
+        <div class="feature-icon purple">&#x1f9ec;</div>
+        <h3>Semantic Merge</h3>
+        <p>Understands structure in 20+ formats. Two people editing different JSON keys? Merged automatically — zero conflicts.</p>
       </div>
       <div class="feature-card">
-        <span class="icon">mount</span>
-        <h3>FUSE + WebDAV</h3>
-        <p>Mount repos as filesystems. Any editor saves directly; patches are created automatically.</p>
+        <div class="feature-icon green">&#x2728;</div>
+        <h3>No More Merge Conflicts</h3>
+        <p>Structural awareness means parallel edits to different sections, fields, or slides always merge cleanly.</p>
       </div>
       <div class="feature-card">
-        <span class="icon">hub</span>
-        <h3>Suture Hub</h3>
-        <p>Self-hosted collaboration server with web UI, auth, push/pull, mirrors, and search.</p>
+        <div class="feature-icon blue">&#x1f500;</div>
+        <h3>Branch &amp; Tag</h3>
+        <p>Git-like branching and tagging for documents. Experiment with configs, proposals, or budgets without risk.</p>
       </div>
       <div class="feature-card">
-        <span class="icon">cli</span>
-        <h3>37 CLI Commands</h3>
-        <p>init, add, commit, branch, merge, rebase, cherry-pick, push, pull, tag, blame, and more.</p>
+        <div class="feature-icon cyan">&#x1f504;</div>
+        <h3>Sync Anywhere</h3>
+        <p>Replace Google Drive sync with real version control. Push, pull, and mirror repos across machines and teams.</p>
       </div>
       <div class="feature-card">
-        <span class="icon">tui</span>
-        <h3>Terminal UI</h3>
-        <p>7-tab TUI: status, log, staging, diff, branches, remote, help.</p>
+        <div class="feature-icon amber">&#x1f50d;</div>
+        <h3>Audit Trail</h3>
+        <p>Tamper-evident commit log with cryptographic signatures, blame view, and full history — for compliance and accountability.</p>
       </div>
       <div class="feature-card">
-        <span class="icon">git</span>
-        <h3>Git Merge Driver</h3>
-        <p>Use Suture for semantic merging inside your existing Git repos.</p>
+        <div class="feature-icon rose">&#x1f310;</div>
+        <h3>Cross-Platform</h3>
+        <p>Linux, macOS, Windows. Plus a native desktop app and VS Code extension for seamless integration.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon purple">&#x2328;&#xfe0f;</div>
+        <h3>50+ CLI Commands</h3>
+        <p>init, add, commit, branch, merge, rebase, cherry-pick, push, pull, tag, blame, log, diff, status, and many more.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon blue">&#x1f3e2;</div>
+        <h3>Enterprise Ready</h3>
+        <p>Document classification, access controls, compliance reporting, and self-hosted Suture Hub for team collaboration.</p>
       </div>
     </div>
   </div>
 </section>
 
-<section style="background:var(--bg2)">
+<section id="how-it-works" style="background:var(--bg2)">
   <div class="container">
-    <h2>Quick Start</h2>
-<pre><code><span style="color:var(--fg2)">$</span> <span style="color:var(--accent)">suture init</span>
-<span style="color:var(--fg2)">$</span> <span style="color:var(--accent)">suture config</span> user.name "Your Name"
-
-<span style="color:var(--fg2)">$</span> <span style="color:var(--accent)">echo</span> '{"host": "localhost", "port": 3000}' > config.json
-<span style="color:var(--fg2)">$</span> <span style="color:var(--accent)">suture add</span> . && <span style="color:var(--accent)">suture commit</span> "base config"
-
-<span style="color:var(--fg2)">$</span> <span style="color:var(--accent)">suture branch</span> staging && <span style="color:var(--accent)">suture checkout</span> staging
-<span style="color:var(--fg2)">$</span> <span style="color:var(--accent)">echo</span> '{"host": "staging", "port": 3000}' > config.json
-<span style="color:var(--fg2)">$</span> <span style="color:var(--accent)">suture add</span> . && <span style="color:var(--accent)">suture commit</span> "point to staging"
-
-<span style="color:var(--fg2)">$</span> <span style="color:var(--accent)">suture checkout</span> main
-<span style="color:var(--fg2)">$</span> <span style="color:var(--accent)">echo</span> '{"host": "localhost", "port": 8080}' > config.json
-<span style="color:var(--fg2)">$</span> <span style="color:var(--accent)">suture add</span> . && <span style="color:var(--accent)">suture commit</span> "change port"
-
-<span style="color:var(--fg2)">$</span> <span style="color:var(--accent)">suture merge</span> staging
-<span style="color:var(--fg2)">$</span> cat config.json
-{"host": "staging", "port": 8080}   <span style="color:var(--fg2)">&larr; both changes, zero conflicts</span></code></pre>
-    <p style="margin-top:16px"><a href="./quickstart.html">Full quickstart guide &rarr;</a></p>
+    <p class="section-label">How It Works</p>
+    <h2>Three Steps to Document Version Control</h2>
+    <p class="section-desc">If you've used Git, you already know Suture. The same mental model — applied to every file type.</p>
+    <div class="steps">
+      <div class="step">
+        <h3>Init</h3>
+        <p>Initialize a Suture repository in any folder. It tracks everything — configs, docs, spreadsheets.</p>
+        <code>suture init</code>
+      </div>
+      <div class="step">
+        <h3>Add &amp; Commit</h3>
+        <p>Stage changes and create commits with messages. Suture generates semantic patches, not line diffs.</p>
+        <code>suture add . &amp;&amp; suture commit "update config"</code>
+      </div>
+      <div class="step">
+        <h3>Branch &amp; Merge</h3>
+        <p>Create branches for experiments. Merge them back — Suture resolves structural conflicts automatically.</p>
+        <code>suture merge feature-branch</code>
+      </div>
+    </div>
   </div>
 </section>
 
-<section>
+<section id="formats">
   <div class="container">
-    <h2>Install</h2>
-<pre><code><span style="color:var(--fg2)"># From crates.io (requires Rust 1.85+)</span>
-cargo install suture-cli
+    <p class="section-label">Format Support</p>
+    <h2>Semantic Merge for 20+ File Formats</h2>
+    <p class="section-desc">Structured data, documents, configs, media metadata — Suture understands them all at the semantic level.</p>
+    <div class="formats-grid">
+      <span class="format-badge">JSON</span>
+      <span class="format-badge">YAML</span>
+      <span class="format-badge">TOML</span>
+      <span class="format-badge">CSV</span>
+      <span class="format-badge">XML</span>
+      <span class="format-badge">HTML</span>
+      <span class="format-badge">Markdown</span>
+      <span class="format-badge">DOCX</span>
+      <span class="format-badge">XLSX</span>
+      <span class="format-badge">PPTX</span>
+      <span class="format-badge">iCal</span>
+      <span class="format-badge">SVG</span>
+      <span class="format-badge">SQL</span>
+      <span class="format-badge">Protobuf</span>
+      <span class="format-badge">AVRO</span>
+      <span class="format-badge">CBOR</span>
+      <span class="format-badge">msgpack</span>
+      <span class="format-badge">plist</span>
+      <span class="format-badge">OTIO</span>
+    </div>
+  </div>
+</section>
 
-<span style="color:var(--fg2)"># Build from source</span>
-git clone https://github.com/WyattAu/suture.git
-cd suture && cargo build --release --bin suture
-
-<span style="color:var(--fg2)"># Homebrew (macOS / Linux)</span>
-brew install wyattau/tap/suture
-
-<span style="color:var(--fg2)"># Arch Linux (AUR)</span>
-paru -S suture-git</code></pre>
+<section id="install" style="background:var(--bg2)">
+  <div class="container">
+    <p class="section-label">Install</p>
+    <h2>Get Started in Seconds</h2>
+    <p class="section-desc">Install via your preferred package manager or build from source.</p>
+    <div class="install-grid">
+      <div class="install-card">
+        <div class="install-card-header">
+          <span class="platform">macOS</span>
+          <button class="copy-btn" data-copy="brew install suture">Copy</button>
+        </div>
+        <pre><code>brew install suture</code></pre>
+      </div>
+      <div class="install-card">
+        <div class="install-card-header">
+          <span class="platform">Linux</span>
+          <button class="copy-btn" data-copy="curl -fsSL https://suture.dev/install.sh | sh">Copy</button>
+        </div>
+        <pre><code>curl -fsSL https://suture.dev/install.sh | sh</code></pre>
+      </div>
+      <div class="install-card">
+        <div class="install-card-header">
+          <span class="platform">Windows</span>
+          <button class="copy-btn" data-copy="winget install suture">Copy</button>
+        </div>
+        <pre><code>winget install suture</code></pre>
+      </div>
+      <div class="install-card">
+        <div class="install-card-header">
+          <span class="platform">npm (merge driver)</span>
+          <button class="copy-btn" data-copy="npm install -g suture-merge-driver">Copy</button>
+        </div>
+        <pre><code>npm install -g suture-merge-driver</code></pre>
+      </div>
+      <div class="install-card">
+        <div class="install-card-header">
+          <span class="platform">pip (merge driver)</span>
+          <button class="copy-btn" data-copy="pip install suture-merge-driver">Copy</button>
+        </div>
+        <pre><code>pip install suture-merge-driver</code></pre>
+      </div>
+      <div class="install-card">
+        <div class="install-card-header">
+          <span class="platform">Cargo</span>
+          <button class="copy-btn" data-copy="cargo install suture-cli">Copy</button>
+        </div>
+        <pre><code>cargo install suture-cli</code></pre>
+      </div>
+    </div>
   </div>
 </section>
 
 <footer>
   <div class="container">
-    <a href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">GitHub</a>
-    <a href="./why-suture.html">Why Suture?</a>
-    <a href="./comparing-with-git.html">Suture vs. Git</a>
-    <a href="./video-editors.html">Video Editors</a>
-    <a href="./document-authors.html">Document Authors</a>
-    <a href="./data-science.html">Data Science</a>
-    <a href="./quickstart.html">Quick Start</a>
-    <a href="./cli-reference.html">CLI Reference</a>
-    <a href="./semantic-merge.html">Semantic Merge</a>
-    <a href="https://github.com/WyattAu/suture/blob/main/LICENSE" target="_blank" rel="noopener">Apache 2.0</a>
-    <p style="margin-top:12px">&copy; 2025 WyattAu &middot; Suture VCS</p>
+    <div class="footer-links">
+      <a href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">GitHub</a>
+      <a href="./quickstart.html">Quick Start</a>
+      <a href="./semantic-merge.html">Semantic Merge</a>
+      <a href="./cli-reference.html">CLI Reference</a>
+      <a href="./why-suture.html">Why Suture?</a>
+      <a href="https://github.com/WyattAu/suture/blob/main/LICENSE" target="_blank" rel="noopener">Apache-2.0</a>
+    </div>
+    <p>&copy; 2026 WyattAu &middot; Suture VCS</p>
   </div>
 </footer>
 
+<script>
+document.querySelectorAll('.copy-btn').forEach(function(btn){
+  btn.addEventListener('click',function(){
+    var text=this.getAttribute('data-copy');
+    navigator.clipboard.writeText(text).then(function(){
+      var orig=btn.textContent;
+      btn.textContent='Copied!';
+      setTimeout(function(){btn.textContent=orig},1500);
+    });
+  });
+});
+</script>
 </body>
 </html>

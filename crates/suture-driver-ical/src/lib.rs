@@ -43,8 +43,8 @@ impl IcalDriver {
                 component_stack.push((comp_type.to_string(), Vec::new()));
             } else if let Some(rest) = line.strip_prefix("END:") {
                 let end_type = rest.trim();
-                if let Some((comp_type, props)) = component_stack.pop() {
-                    if comp_type == end_type {
+                if let Some((comp_type, props)) = component_stack.pop()
+                    && comp_type == end_type {
                         if component_stack.is_empty() {
                             components.push((comp_type, props));
                         } else if let Some(parent) = component_stack.last_mut() {
@@ -59,12 +59,10 @@ impl IcalDriver {
                                 .push((format!("END:{comp_type}"), comp_type.clone()));
                         }
                     }
-                }
-            } else if let Some(entry) = component_stack.last_mut() {
-                if let Some((key, value)) = Self::parse_property_line(line) {
+            } else if let Some(entry) = component_stack.last_mut()
+                && let Some((key, value)) = Self::parse_property_line(line) {
                     entry.1.push((key, value));
                 }
-            }
         }
 
         Ok(components)

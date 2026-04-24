@@ -1,0 +1,29 @@
+{
+  "video_id": "video-001",
+  "title": "Building a 2D Platformer in Godot 4 — Complete Beginner Tutorial",
+  "description": "Learn how to build a complete 2D platformer game from scratch using Godot 4. In this tutorial, we cover player movement, jumping, collision detection, enemies, and collectibles.\n\nTimestamps:\n0:00 - Project setup\n2:30 - Player scene\n8:15 - Movement and physics\n15:00 - Jump mechanics\n22:30 - Tilemaps and level design\n31:00 - Enemies\n40:00 - Collectibles\n47:00 - UI and menus\n55:00 - Building and exporting",
+  "tags": [
+    "godot 4",
+    "godot tutorial",
+    "2d platformer",
+    "game development",
+    "beginner tutorial",
+    "godot engine"
+  ],
+  "category": "28",
+  "visibility": "public",
+  "status": "published",
+  "published_at": "2025-01-14T14:00:00Z",
+  "thumbnail": {
+    "style": "text_overlay",
+    "background_color": "#16213e",
+    "text_color": "#ffffff",
+    "accent": "#e94560",
+    "template": "tutorial_v2"
+  },
+  "stats": {
+    "views": 245000,
+    "likes": 18500,
+    "comments": 890
+  }
+}

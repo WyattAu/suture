@@ -326,11 +326,10 @@ fn content_fingerprint(node: &OtioNode) -> String {
                 sr.start_time.value.to_bits().hash(&mut hasher);
             }
             // Extract target_url from media_reference
-            if let Some(mr) = &cl.media_reference {
-                if let Some(url) = mr.get("target_url").and_then(|v| v.as_str()) {
+            if let Some(mr) = &cl.media_reference
+                && let Some(url) = mr.get("target_url").and_then(|v| v.as_str()) {
                     url.hash(&mut hasher);
                 }
-            }
         }
         OtioNode::Track(tr) => {
             "track".hash(&mut hasher);
@@ -632,8 +631,8 @@ fn rebuild_children_with_merged(
 
                 // First pass: replace existing children with their merged versions
                 for item in arr.iter() {
-                    if let Some(_schema) = item.get("OTIO_SCHEMA").and_then(|v| v.as_str()) {
-                        if let Ok(node) = parse_otio_node(item) {
+                    if let Some(_schema) = item.get("OTIO_SCHEMA").and_then(|v| v.as_str())
+                        && let Ok(node) = parse_otio_node(item) {
                             let fp = content_fingerprint(&node);
                             placed_fps.insert(fp.clone());
                             if let Some((_, merged_node)) = merged_nodes.iter().find(|(f, _)| *f == fp)
@@ -642,7 +641,6 @@ fn rebuild_children_with_merged(
                                 continue;
                             }
                         }
-                    }
                     new_arr.push(item.clone());
                 }
 
@@ -827,6 +825,12 @@ pub struct ChangeDescription {
 pub struct LegacyOtioDriver {
     elements: Vec<TimelineElement>,
     raw_json: serde_json::Value,
+}
+
+impl Default for LegacyOtioDriver {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl LegacyOtioDriver {

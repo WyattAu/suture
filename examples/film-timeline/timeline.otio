@@ -1,0 +1,95 @@
+{
+  "OTIO_SCHEMA": "Timeline.1",
+  "name": "The Last Horizon - Rough Cut",
+  "metadata": {
+    "project": "The Last Horizon",
+    "director": "Jane Chen",
+    "editor": "Marcus Rivera",
+    "frame_rate": 24
+  },
+  "tracks": [
+    {
+      "OTIO_SCHEMA": "Track.1",
+      "name": "Video",
+      "kind": "Video",
+      "children": [
+        {
+          "OTIO_SCHEMA": "Clip.1",
+          "name": "Scene 1 - Dawn at Sea",
+          "source_range": {
+            "OTIO_SCHEMA": "TimeRange.1",
+            "start_time": { "OTIO_SCHEMA": "RationalTime.1", "value": 0, "rate": 24 },
+            "duration": { "OTIO_SCHEMA": "RationalTime.1", "value": 720, "rate": 24 }
+          },
+          "markers": [
+            {
+              "OTIO_SCHEMA": "Marker.1",
+              "name": "Hold for color grade",
+              "color": "RED",
+              "marked_range": {
+                "OTIO_SCHEMA": "TimeRange.1",
+                "start_time": { "OTIO_SCHEMA": "RationalTime.1", "value": 0, "rate": 24 },
+                "duration": { "OTIO_SCHEMA": "RationalTime.1", "value": 120, "rate": 24 }
+              }
+            }
+          ]
+        },
+        {
+          "OTIO_SCHEMA": "Clip.1",
+          "name": "Scene 2 - The Lighthouse",
+          "source_range": {
+            "OTIO_SCHEMA": "TimeRange.1",
+            "start_time": { "OTIO_SCHEMA": "RationalTime.1", "value": 0, "rate": 24 },
+            "duration": { "OTIO_SCHEMA": "RationalTime.1", "value": 1440, "rate": 24 }
+          }
+        },
+        {
+          "OTIO_SCHEMA": "Clip.1",
+          "name": "Scene 3 - The Storm",
+          "source_range": {
+            "OTIO_SCHEMA": "TimeRange.1",
+            "start_time": { "OTIO_SCHEMA": "RationalTime.1", "value": 0, "rate": 24 },
+            "duration": { "OTIO_SCHEMA": "RationalTime.1", "value": 960, "rate": 24 }
+          },
+          "markers": [
+            {
+              "OTIO_SCHEMA": "Marker.1",
+              "name": "Needs VFX comp",
+              "color": "YELLOW",
+              "marked_range": {
+                "OTIO_SCHEMA": "TimeRange.1",
+                "start_time": { "OTIO_SCHEMA": "RationalTime.1", "value": 480, "rate": 24 },
+                "duration": { "OTIO_SCHEMA": "RationalTime.1", "value": 240, "rate": 24 }
+              }
+            }
+          ]
+        },
+        {
+          "OTIO_SCHEMA": "Clip.1",
+          "name": "Scene 4 - Calm After",
+          "source_range": {
+            "OTIO_SCHEMA": "TimeRange.1",
+            "start_time": { "OTIO_SCHEMA": "RationalTime.1", "value": 0, "rate": 24 },
+            "duration": { "OTIO_SCHEMA": "RationalTime.1", "value": 1080, "rate": 24 }
+          }
+        },
+        {
+          "OTIO_SCHEMA": "Clip.1",
+          "name": "Scene 5 - Departure",
+          "source_range": {
+            "OTIO_SCHEMA": "TimeRange.1",
+            "start_time": { "OTIO_SCHEMA": "RationalTime.1", "value": 0, "rate": 24 },
+            "duration": { "OTIO_SCHEMA": "RationalTime.1", "value": 600, "rate": 24 }
+          }
+        }
+      ]
+    },
+    {
+      "OTIO_SCHEMA": "Track.1",
+      "name": "Audio",
+      "kind": "Audio",
+      "children": []
+    }
+  ],
+  "global_start_time": null
+}

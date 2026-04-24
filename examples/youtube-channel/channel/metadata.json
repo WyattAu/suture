@@ -1,0 +1,33 @@
+{
+  "name": "ByteForge Studios",
+  "description": "Tutorials, devlogs, and deep dives into game development, creative coding, and indie game production. New videos every Tuesday and Friday.",
+  "url": "https://youtube.com/@byteforgestudios",
+  "created_at": "2023-03-15",
+  "country": "US",
+  "language": "en",
+  "keywords": [
+    "game development",
+    "indie games",
+    "creative coding",
+    "unity tutorials",
+    "godot tutorials",
+    "devlog",
+    "programming"
+  ],
+  "branding": {
+    "banner_color": "#1a1a2e",
+    "accent_color": "#e94560",
+    "links": [
+      { "title": "Discord", "url": "https://discord.gg/byteforge" },
+      { "title": "Patreon", "url": "https://patreon.com/byteforge" },
+      { "title": "GitHub", "url": "https://github.com/byteforgestudios" }
+    ]
+  },
+  "upload_schedule": "Tuesday, Friday",
+  "default_video_settings": {
+    "visibility": "public",
+    "category": "28",
+    "language": "en",
+    "default_comment_policy": "allowed"
+  }
+}

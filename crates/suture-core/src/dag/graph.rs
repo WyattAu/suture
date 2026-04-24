@@ -392,7 +392,7 @@ impl PatchDag {
         }
 
         for ancestor_id in ancestors.iter() {
-            if let Some(node) = self.nodes.get(&ancestor_id) {
+            if let Some(node) = self.nodes.get(ancestor_id) {
                 patches.push(node.patch.clone());
             }
         }

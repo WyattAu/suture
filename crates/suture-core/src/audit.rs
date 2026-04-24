@@ -136,7 +136,7 @@ impl AuditLog {
         }
         let file = std::fs::File::open(&self.path)?;
         let reader = BufReader::new(file);
-        let last_line = reader.lines().filter_map(|l| l.ok()).last();
+        let last_line = reader.lines().map_while(Result::ok).last();
         match last_line {
             Some(line) => {
                 let entry: AuditEntry = serde_json::from_str(&line)
@@ -156,11 +156,10 @@ impl AuditLog {
         let reader = BufReader::new(file);
         let mut entries = Vec::new();
         for line in reader.lines() {
-            if let Ok(line) = line {
-                if let Ok(entry) = serde_json::from_str::<AuditEntry>(&line) {
+            if let Ok(line) = line
+                && let Ok(entry) = serde_json::from_str::<AuditEntry>(&line) {
                     entries.push(entry);
                 }
-            }
         }
         Ok(entries)
     }

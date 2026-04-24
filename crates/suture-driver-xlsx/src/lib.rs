@@ -520,8 +520,8 @@ impl XlsxDriver {
             Some(pos) => {
                 // Find the closing > of the opening tag
                 let after = &original_xml[pos..];
-                let tag_end = after.find('>').map(|i| pos + i + 1).unwrap_or(pos);
-                tag_end
+                
+                after.find('>').map(|i| pos + i + 1).unwrap_or(pos)
             }
             None => return original_xml.to_string(),
         };

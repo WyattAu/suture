@@ -1689,7 +1689,7 @@ impl Repository {
         self.invalidate_head_cache();
 
         let ref_label = if is_detached {
-            format!("{}", &target_id.to_hex()[..12])
+            target_id.to_hex()[..12].to_string()
         } else {
             branch_name.to_string()
         };

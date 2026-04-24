@@ -1,0 +1,32 @@
+{
+  "app_name": "ByteForge Studio",
+  "common": {
+    "save": "Guardar",
+    "cancel": "Cancelar",
+    "delete": "Eliminar",
+    "confirm": "Confirmar",
+    "close": "Cerrar",
+    "back": "Atrás",
+    "next": "Siguiente",
+    "loading": "Cargando...",
+    "error": "Ocurrió un error",
+    "success": "Éxito",
+    "search": "Buscar",
+    "no_results": "No se encontraron resultados"
+  },
+  "nav": {
+    "dashboard": "Panel",
+    "projects": "Proyectos",
+    "settings": "Configuración",
+    "profile": "Perfil",
+    "help": "Ayuda y Soporte"
+  },
+  "projects": {
+    "new_project": "Nuevo Proyecto",
+    "open_project": "Abrir Proyecto",
+    "import_project": "Importar Proyecto",
+    "export_project": "Exportar Proyecto",
+    "recent_projects": "Proyectos Recientes",
+    "no_projects": "¡Aún no hay proyectos. ¡Crea el primero!"
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "environment": "production",
+  "region": "us-east-1",
+  "vpc": {
+    "cidr_block": "10.0.0.0/16",
+    "enable_dns_support": true,
+    "enable_dns_hostnames": true
+  },
+  "subnets": [
+    {
+      "name": "public-subnet-a",
+      "cidr_block": "10.0.1.0/24",
+      "availability_zone": "us-east-1a",
+      "type": "public",
+      "map_public_ip_on_launch": true
+    },
+    {
+      "name": "private-subnet-a",
+      "cidr_block": "10.0.2.0/24",
+      "availability_zone": "us-east-1a",
+      "type": "private"
+    }
+  ],
+  "security_groups": [
+    {
+      "name": "web-sg",
+      "description": "Allow HTTP, HTTPS, and SSH from bastion",
+      "ingress": [
+        { "protocol": "tcp", "port": 80, "source": "0.0.0.0/0" },
+        { "protocol": "tcp", "port": 443, "source": "0.0.0.0/0" },
+        { "protocol": "tcp", "port": 22, "source": "10.0.1.0/24" }
+      ],
+      "egress": [
+        { "protocol": "-1", "port": 0, "source": "0.0.0.0/0" }
+      ]
+    }
+  ],
+  "instances": [
+    {
+      "name": "web-server-01",
+      "instance_type": "t3.medium",
+      "subnet": "public-subnet-a",
+      "security_groups": ["web-sg"],
+      "ami_id": "ami-0c55b159cbfafe1f0"
+    }
+  ]
+}

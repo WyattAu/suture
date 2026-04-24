@@ -265,7 +265,7 @@ fn col_to_letter(col: usize) -> String {
     let mut n = col;
     loop {
         result.insert(0, (b'A' + (n % 26) as u8) as char);
-        n = n / 26;
+        n /= 26;
         if n == 0 {
             break;
         }

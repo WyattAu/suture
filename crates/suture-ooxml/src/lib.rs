@@ -273,7 +273,7 @@ fn resolve_relative_path(base_part: &str, target: &str) -> String {
 
     if target.starts_with('/') {
         // Absolute path within the archive (starts with /)
-        target[1..].to_string()
+        target.strip_prefix('/').unwrap_or(target).to_string()
     } else if dir.is_empty() {
         target.to_string()
     } else {

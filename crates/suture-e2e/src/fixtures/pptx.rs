@@ -157,7 +157,7 @@ fn make_pptx(slide_names: &[impl AsRef<str>]) -> String {
         // Individual slide files
         for (i, name) in slide_names.iter().enumerate() {
             zip.start_file(
-                &format!("ppt/slides/slide{}.xml", i + 1),
+                format!("ppt/slides/slide{}.xml", i + 1),
                 zip::write::SimpleFileOptions::default(),
             )
             .unwrap();
