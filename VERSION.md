@@ -100,6 +100,13 @@
 | **28** | Performance | 5 bottlenecks: lazy patches, topo sort O(n), fast classify, hex lookup, Rc ancestors | v5.0 | ✅ Complete |
 | **29** | Security | 7 fuzz targets, dependency audit, wasmtime note | v5.0 | ✅ Complete |
 | **31** | CI/CD | Dependabot, security scanning, test matrix, issue templates | v5.0 | ✅ Complete |
+| **32A** | Man Pages | 62 roff man pages + Makefile + generator script | v5.0 | ✅ Complete |
+| **32B** | Error Messages | User-friendly errors with fuzzy suggestions (13 commands) | v5.0 | ✅ Complete |
+| **33A** | Shell Completions | All 60+ commands auto-covered via clap | v5.0 | ✅ Complete |
+| **33B** | API Docs | Rustdoc for Repository, Patch, PatchDag, AuditLog | v5.0 | ✅ Complete |
+| **34** | Node.js Bindings | suture-node: 15 napi-rs functions + TypeScript types | v5.0 | ✅ Complete |
+| **35** | E2E Tests | 16 workflow tests (defence, film, YouTube, general) | v5.0 | ✅ Complete |
+| **36** | Desktop Guide | Platform build instructions for Linux/macOS/Windows | v5.0 | ✅ Complete |
 
 ### Direction A — Product Polish (v1.3–v1.4) ✅
 
