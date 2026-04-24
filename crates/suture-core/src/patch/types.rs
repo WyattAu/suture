@@ -1,6 +1,13 @@
-//! Core patch types.
+//! # Patch Types
 //!
-//! A `Patch` represents a semantic operation on a project state. Each patch has:
+//! Core types for the patch algebra that underpins Suture's version control.
+//!
+//! A `Patch` represents a single atomic change to the repository. Patches form
+//! a directed acyclic graph (DAG) through parent references.
+//!
+//! A `Patch` transforms a project state by modifying a set of addresses
+//! (its "touch set"). Patches are immutable once created.
+//! Each patch has:
 //! - A unique identifier (BLAKE3 hash of its content)
 //! - A set of parent patch IDs (typically one, two for merge commits)
 //! - An operation type and payload
@@ -157,6 +164,13 @@ impl TouchSet {
 ///
 /// A patch transforms a project state by modifying a set of addresses
 /// (its "touch set"). Patches are immutable once created.
+///
+/// Patches form a DAG through `parent_ids`. Each patch has:
+/// - A unique BLAKE3 hash (`id`)
+/// - Zero or more parent patches
+/// - An operation type (create, modify, delete, rename, merge)
+/// - A touch set (files affected)
+/// - An optional payload (file content or metadata)
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Patch {
     /// Unique identifier (BLAKE3 hash of patch content).

@@ -1,10 +1,19 @@
-//! Patch DAG graph data structure.
+//! # Patch DAG
 //!
-//! An in-memory representation of the patch DAG, supporting:
+//! An in-memory directed acyclic graph (DAG) of patches, serving as the
+//! core history data structure for a Suture repository.
+//!
+//! The DAG stores [`Patch`] nodes connected by parent-child edges.
+//! Each branch name maps to a tip patch. Ancestor queries and
+//! Lowest Common Ancestor (LCA) computation are supported for
+//! merge-base detection and rebasing.
+//!
+//! Supports:
 //! - Adding patches with parent edges
 //! - Ancestor queries
 //! - Lowest Common Ancestor (LCA) computation
 //! - Acyclicity enforcement
+//! - Branch creation, deletion, and lookup
 
 use crate::patch::types::{Patch, PatchId};
 use std::cell::RefCell;

@@ -1,4 +1,9 @@
-//! The Suture Repository — high-level API for version control operations.
+//! # Suture Repository
+//!
+//! The core version control repository. Provides operations for:
+//! - Initializing, opening, and cloning repositories
+//! - Staging, committing, branching, and merging changes
+//! - Viewing history, diffs, and blame information
 //!
 //! A Repository combines:
 //! - `BlobStore` (CAS) for content-addressed blob storage
@@ -16,10 +21,27 @@
 //!     HEAD            # Current branch reference
 //! ```
 //!
-//! .sutureignore (in repo root):
-//!   build/
-//!   *.o
-//!   target/
+//! # Example
+//!
+//! ```no_run
+//! use suture_core::repository::Repository;
+//! use std::path::Path;
+//!
+//! // Initialize a new repository
+//! let mut repo = Repository::init(
+//!     Path::new("./my-project"),
+//!     "Author Name"
+//! )?;
+//!
+//! // Stage and commit files
+//! repo.add("README.md")?;
+//! repo.commit("Initial commit")?;
+//!
+//! // Create a branch and switch to it
+//! repo.create_branch("feature", None)?;
+//! repo.checkout("feature")?;
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
 
 use crate::cas::store::{BlobStore, CasError};
 use crate::dag::graph::{DagError, PatchDag};
@@ -228,6 +250,13 @@ impl Repository {
     }
 
     /// Initialize a new Suture repository at the given path.
+    ///
+    /// Creates the `.suture/` directory structure, initializes the content-addressable
+    /// storage, creates a root patch, and sets up the default `main` branch.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RepoError::AlreadyExists`] if `.suture/` already exists at `path`.
     pub fn init(path: &Path, author: &str) -> Result<Self, RepoError> {
         let suture_dir = path.join(".suture");
         if suture_dir.exists() {
@@ -290,9 +319,14 @@ impl Repository {
             is_worktree: false,
         })
     }
+    /// Open an existing Suture repository.
     ///
     /// Reconstructs the full DAG from the metadata database by loading
     /// all stored patches and their edges.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RepoError::NotARepository`] if `.suture/` does not exist at `path`.
     pub fn open(path: &Path) -> Result<Self, RepoError> {
         let suture_dir = path.join(".suture");
         if !suture_dir.exists() {
@@ -478,7 +512,11 @@ impl Repository {
     // Branch Operations
     // =========================================================================
 
-    /// Create a new branch.
+    /// Create a new branch pointing at the given target (defaults to HEAD).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RepoError::Custom`] if HEAD is not set and no target is provided.
     pub fn create_branch(&mut self, name: &str, target: Option<&str>) -> Result<(), RepoError> {
         let branch = BranchName::new(name)?;
         let target_id = match target {
@@ -870,7 +908,7 @@ impl Repository {
     // Staging & Commit
     // =========================================================================
 
-    /// Get repository status.
+    /// Get repository status (current branch, staged files, patch count).
     pub fn status(&self) -> Result<RepoStatus, RepoError> {
         let working_set = self.meta.working_set()?;
         let branches = self.list_branches();
@@ -898,7 +936,10 @@ impl Repository {
         })
     }
 
-    /// Add a file to the staging area (working set).
+    /// Stage a file path for inclusion in the next commit.
+    ///
+    /// If the file has been deleted from disk but is tracked, it is staged as deleted.
+    /// If the file does not exist on disk and is not tracked, returns an error.
     pub fn add(&self, path: &str) -> Result<(), RepoError> {
         let repo_path = RepoPath::new(path)?;
         let full_path = self.root.join(path);
@@ -984,7 +1025,10 @@ impl Repository {
         Ok(false)
     }
 
-    /// Create a commit from the working set.
+    /// Create a commit from all currently staged changes.
+    ///
+    /// Returns the [`PatchId`] of the newly created patch.
+    /// If no files are staged, returns [`RepoError::NothingToCommit`].
     pub fn commit(&mut self, message: &str) -> Result<PatchId, RepoError> {
         let old_head = self.head().map(|(_, id)| id).unwrap_or(Hash::ZERO);
         let working_set = self.meta.working_set()?;
@@ -2205,7 +2249,11 @@ impl Repository {
         }
     }
 
-    /// Execute a merge: applies patches from source_branch into the current branch.
+    /// Merge a source branch into the current HEAD branch.
+    ///
+    /// Applies patches unique to `source_branch` on top of the current HEAD.
+    /// If conflicts arise, they are recorded in the returned [`MergeExecutionResult`]
+    /// and must be resolved before further commits.
     pub fn execute_merge(
         &mut self,
         source_branch: &str,
@@ -3321,7 +3369,9 @@ impl Repository {
     // Log
     // =========================================================================
 
-    /// Get the patch history (log) for a branch (first-parent chain only).
+    /// View commit history for a branch (first-parent chain only).
+    ///
+    /// If `branch` is `None`, defaults to HEAD.
     pub fn log(&self, branch: Option<&str>) -> Result<Vec<Patch>, RepoError> {
         let target_id = match branch {
             Some(name) => {
