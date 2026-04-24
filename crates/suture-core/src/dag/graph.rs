@@ -9,6 +9,7 @@
 use crate::patch::types::{Patch, PatchId};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::rc::Rc;
 use suture_common::BranchName;
 use thiserror::Error;
 
@@ -82,7 +83,7 @@ pub struct PatchDag {
     /// Cache of ancestor sets, keyed by patch ID.
     /// Populated lazily by `ancestors()`; stable because `add_patch()` only
     /// creates new nodes (existing nodes' ancestor sets never change).
-    ancestor_cache: RefCell<HashMap<PatchId, HashSet<PatchId>>>,
+    ancestor_cache: RefCell<HashMap<PatchId, Rc<HashSet<PatchId>>>>,
 }
 
 impl Default for PatchDag {
@@ -192,13 +193,11 @@ impl PatchDag {
     /// result in O(1). The cache is safe without invalidation because
     /// `add_patch()` only creates new nodes — existing nodes' ancestor sets
     /// never change.
-    pub fn ancestors(&self, id: &PatchId) -> HashSet<PatchId> {
-        // Check cache first
+    pub fn ancestors(&self, id: &PatchId) -> Rc<HashSet<PatchId>> {
         if let Some(cached) = self.ancestor_cache.borrow().get(id) {
-            return cached.clone();
+            return Rc::clone(cached);
         }
 
-        // BFS to compute ancestor set
         let mut ancestors = HashSet::new();
         let mut queue: VecDeque<PatchId> = VecDeque::new();
 
@@ -221,11 +220,11 @@ impl PatchDag {
             }
         }
 
-        // Store in cache
+        let result = Rc::new(ancestors);
         self.ancestor_cache
             .borrow_mut()
-            .insert(*id, ancestors.clone());
-        ancestors
+            .insert(*id, Rc::clone(&result));
+        result
     }
 
     /// Find the Lowest Common Ancestor (LCA) of two patches.
@@ -383,7 +382,7 @@ impl PatchDag {
             patches.push(node.patch.clone());
         }
 
-        for ancestor_id in ancestors {
+        for ancestor_id in ancestors.iter() {
             if let Some(node) = self.nodes.get(&ancestor_id) {
                 patches.push(node.patch.clone());
             }

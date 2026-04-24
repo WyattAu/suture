@@ -236,8 +236,8 @@ target/
         let mut reachable: std::collections::HashSet<_> = std::collections::HashSet::new();
         for (_name, tip_id) in &branches {
             reachable.insert(*tip_id);
-            for anc in dag.ancestors(tip_id) {
-                reachable.insert(anc);
+            for anc in dag.ancestors(tip_id).iter() {
+                reachable.insert(*anc);
             }
         }
         let orphan_count = all_ids.iter().filter(|id| !reachable.contains(id)).count();

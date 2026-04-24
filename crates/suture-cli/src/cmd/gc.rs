@@ -8,8 +8,8 @@ pub(crate) async fn cmd_gc(dry_run: bool, aggressive: bool) -> Result<(), Box<dy
     let mut reachable: std::collections::HashSet<suture_common::Hash> = std::collections::HashSet::new();
     for (_name, tip_id) in &branches {
         reachable.insert(*tip_id);
-        for anc in repo.dag().ancestors(tip_id) {
-            reachable.insert(anc);
+        for anc in repo.dag().ancestors(tip_id).iter() {
+            reachable.insert(*anc);
         }
     }
 

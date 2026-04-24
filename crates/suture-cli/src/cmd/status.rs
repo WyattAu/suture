@@ -176,12 +176,14 @@ fn compute_ahead_behind(
     let local_ancestors = repo.dag().ancestors(local_head);
     let remote_ancestors = repo.dag().ancestors(remote_tip);
 
-    let local_reachable: HashSet<_> = local_ancestors
-        .into_iter()
+    let local_reachable: HashSet<_> = (*local_ancestors)
+        .iter()
+        .copied()
         .chain(std::iter::once(*local_head))
         .collect();
-    let remote_reachable: HashSet<_> = remote_ancestors
-        .into_iter()
+    let remote_reachable: HashSet<_> = (*remote_ancestors)
+        .iter()
+        .copied()
         .chain(std::iter::once(*remote_tip))
         .collect();
 

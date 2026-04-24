@@ -151,10 +151,15 @@ fn parse_tree_entries(data: &[u8]) -> Vec<(String, String, String)> {
         }
         let mode = String::from_utf8_lossy(&data[pos..space]).to_string();
         let name = String::from_utf8_lossy(&data[space + 1..null]).to_string();
-        let sha: String = data[null + 1..null + 21]
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect();
+        const HEX_CHARS: &[u8; 16] = b"0123456789abcdef";
+        let sha: String = {
+            let mut s = String::with_capacity(40);
+            for b in &data[null + 1..null + 21] {
+                s.push(HEX_CHARS[(b >> 4) as usize] as char);
+                s.push(HEX_CHARS[(b & 0x0f) as usize] as char);
+            }
+            s
+        };
         entries.push((mode, name, sha));
         pos = null + 21;
     }

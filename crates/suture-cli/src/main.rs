@@ -185,6 +185,9 @@ EXAMPLES:
         /// Filter by diff status: A (added), D (deleted), M (modified), or combinations like AD
         #[arg(long)]
         diff_filter: Option<String>,
+        /// Limit number of commits shown (default: 100, 0 = unlimited)
+        #[arg(long, default_value_t = 100)]
+        limit: usize,
     },
     /// Switch to a different branch
     #[command(after_long_help = "\
@@ -1357,6 +1360,7 @@ async fn main() {
             audit_format,
             verify,
             diff_filter,
+            limit,
         } => {
             cmd::log::cmd_log(
                 branch.as_deref(),
@@ -1374,6 +1378,7 @@ async fn main() {
                 &audit_format,
                 verify,
                 diff_filter.as_deref(),
+                limit,
             )
             .await
         }
@@ -2508,7 +2513,7 @@ mod tests {
 
         drop(repo);
         std::env::set_current_dir(&dir_path).unwrap();
-        let result = cmd::log::cmd_log(None, false, false, false, None, None, false, None, None, false, false, true, "text", false, None).await;
+        let result = cmd::log::cmd_log(None, false, false, false, None, None, false, None, None, false, false, true, "text", false, None, 0).await;
         assert!(result.is_ok());
 
         std::env::set_current_dir(&prev).unwrap();
@@ -2769,7 +2774,7 @@ mod tests {
 
         let _ = cmd::describe::cmd_describe("HEAD", false, false).await;
         let _ = cmd::verify::cmd_verify("HEAD", false).await;
-        let _ = cmd::log::cmd_log(None, false, false, false, None, None, false, None, None, true, false, false, "text", false, None).await;
+        let _ = cmd::log::cmd_log(None, false, false, false, None, None, false, None, None, true, false, false, "text", false, None, 0).await;
         let _ = cmd::show::cmd_show("HEAD", true).await;
 
         std::fs::write(dir_path.join("README.md"), "# Project\n\nUpdated getting started.").unwrap();

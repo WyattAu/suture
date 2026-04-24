@@ -68,6 +68,7 @@ pub(crate) async fn cmd_log(
     audit_format: &str,
     verify: bool,
     diff_filter: Option<&str>,
+    limit: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
     fn format_stat(patch: &suture_core::patch::types::Patch) -> String {
         let files = patch.touch_set.addresses();
@@ -156,7 +157,7 @@ pub(crate) async fn cmd_log(
             let has_m = filter_chars.contains(&'M');
             let has_d = filter_chars.contains(&'D');
             patches.retain(|p| {
-                let (added, modified, deleted) = classify_files(&repo, p);
+                let (added, modified, deleted) = classify_files_fast(p);
                 if has_a && !added.is_empty() {
                     return true;
                 }
@@ -175,8 +176,15 @@ pub(crate) async fn cmd_log(
             return Ok(());
         }
 
+        let total = patches.len();
+
         if oneline {
-            for patch in &patches {
+            let display_patches: Vec<_> = if limit > 0 {
+                patches.iter().take(limit).collect()
+            } else {
+                patches.iter().collect()
+            };
+            for patch in display_patches {
                 let short_hash = patch.id.to_hex().chars().take(8).collect::<String>();
                 if verify {
                     let vstatus = verify_status(&repo, patch);
@@ -192,6 +200,9 @@ pub(crate) async fn cmd_log(
                 } else {
                     println!("{} {}", short_hash, patch.message);
                 }
+            }
+            if limit > 0 && total > limit {
+                println!("... and {} more commits (use --limit 0 to show all)", total - limit);
             }
             return Ok(());
         }
@@ -250,7 +261,7 @@ pub(crate) async fn cmd_log(
     branches.sort_by(|a, b| a.0.cmp(&b.0));
     let head_branch = repo.head().map(|(name, _)| name).unwrap_or_default();
 
-    let all_patches = repo.all_patches();
+    let all_patches = repo.all_patches_ref();
     let mut commit_groups: Vec<(Vec<suture_core::patch::types::PatchId>, String, u64)> = Vec::new();
     let mut seen_messages: std::collections::HashMap<(String, u64), usize> =
         std::collections::HashMap::new();
@@ -450,7 +461,7 @@ async fn cmd_audit(
             let files_changed: Vec<String> = patch.touch_set.addresses();
 
             let (files_added, files_modified, files_deleted) =
-                classify_files(repo, patch);
+                classify_files_fast(patch);
 
             AuditEntry {
                 timestamp: dt,
@@ -516,6 +527,32 @@ async fn cmd_audit(
     Ok(())
 }
 
+fn classify_files_fast(
+    patch: &suture_core::patch::types::Patch,
+) -> (Vec<String>, Vec<String>, Vec<String>) {
+    use suture_core::patch::types::OperationType;
+
+    let change_type = match patch.operation_type {
+        OperationType::Create => "added",
+        OperationType::Delete => "deleted",
+        OperationType::Move => "renamed",
+        OperationType::Modify
+        | OperationType::Metadata
+        | OperationType::Merge
+        | OperationType::Identity
+        | OperationType::Batch => "modified",
+    };
+
+    let files = patch.touch_set.addresses();
+    match change_type {
+        "added" => (files, Vec::new(), Vec::new()),
+        "deleted" => (Vec::new(), Vec::new(), files),
+        "modified" => (Vec::new(), files, Vec::new()),
+        _ => (Vec::new(), files, Vec::new()),
+    }
+}
+
+#[allow(dead_code)]
 fn classify_files(
     repo: &suture_core::repository::Repository,
     patch: &suture_core::patch::types::Patch,

@@ -323,34 +323,63 @@ impl Repository {
                 .collect()
         };
 
-        // Load each patch and add to DAG, parents first
-        let mut loaded: HashSet<PatchId> = HashSet::new();
-        let mut attempts = 0;
-        while loaded.len() < all_patch_ids.len() && attempts < all_patch_ids.len() + 1 {
-            for patch_id in &all_patch_ids {
-                if loaded.contains(patch_id) {
-                    continue;
+        // Load all patches from metadata, then topologically sort before
+        // inserting into the DAG. This is O(n) instead of the previous
+        // O(n^2) retry loop that rescanned the full list each pass.
+        let mut patch_map: HashMap<PatchId, Patch> = HashMap::new();
+        for id in &all_patch_ids {
+            if let Ok(p) = meta.get_patch(id) {
+                patch_map.insert(*id, p);
+            }
+        }
+
+        // Kahn's algorithm: sort so parents come before children
+        let mut in_degree: HashMap<PatchId, usize> = HashMap::new();
+        let mut children: HashMap<PatchId, Vec<PatchId>> = HashMap::new();
+        for (id, patch) in &patch_map {
+            in_degree.entry(*id).or_insert(0);
+            for parent_id in &patch.parent_ids {
+                if patch_map.contains_key(parent_id) {
+                    *in_degree.entry(*id).or_insert(0) += 1;
+                    children.entry(*parent_id).or_default().push(*id);
                 }
-                if let Ok(patch) = meta.get_patch(patch_id) {
-                    // Check if all parents are loaded
-                    let parents_ready = patch
-                        .parent_ids
-                        .iter()
-                        .all(|pid| loaded.contains(pid) || *pid == Hash::ZERO);
-                    if parents_ready {
-                        // Filter out non-existent parents (root commits)
-                        let valid_parents: Vec<PatchId> = patch
-                            .parent_ids
-                            .iter()
-                            .filter(|pid| loaded.contains(pid))
-                            .copied()
-                            .collect();
-                        let _ = dag.add_patch(patch, valid_parents);
-                        loaded.insert(*patch_id);
+            }
+        }
+
+        let mut queue: VecDeque<PatchId> = in_degree
+            .iter()
+            .filter(|&(_, &deg)| deg == 0)
+            .map(|(&id, _)| id)
+            .collect();
+
+        let mut processed: HashSet<PatchId> = HashSet::new();
+
+        while let Some(id) = queue.pop_front() {
+            if let Some(patch) = patch_map.remove(&id) {
+                let valid_parents: Vec<PatchId> = patch
+                    .parent_ids
+                    .iter()
+                    .filter(|pid| processed.contains(pid))
+                    .copied()
+                    .collect();
+                let _ = dag.add_patch(patch, valid_parents);
+                processed.insert(id);
+                if let Some(kids) = children.get(&id) {
+                    for &child_id in kids {
+                        if let Some(deg) = in_degree.get_mut(&child_id) {
+                            *deg -= 1;
+                            if *deg == 0 {
+                                queue.push_back(child_id);
+                            }
+                        }
                     }
                 }
             }
-            attempts += 1;
+        }
+
+        // Insert any remaining patches (cycles or missing parents)
+        for (_, patch) in patch_map {
+            let _ = dag.add_patch(patch, Vec::new());
         }
 
         // Recreate branches
@@ -770,7 +799,7 @@ impl Repository {
     pub fn patches_since(&self, since_id: &PatchId) -> Vec<Patch> {
         let since_ancestors = self.dag.ancestors(since_id);
         // Include since_id itself in the "already known" set
-        let mut known = since_ancestors;
+        let mut known = (*since_ancestors).clone();
         known.insert(*since_id);
 
         // Walk from all branch tips, collect patches not in `known`
@@ -2607,8 +2636,9 @@ impl Repository {
             });
         }
 
-        let mut head_ancestors = self.dag.ancestors(&lca_id);
-        head_ancestors.insert(lca_id);
+        let head_ancestors = self.dag.ancestors(&lca_id);
+        let mut head_known = (*head_ancestors).clone();
+        head_known.insert(lca_id);
 
         let mut to_replay: Vec<Patch> = Vec::new();
         let mut visited = HashSet::new();
@@ -2760,7 +2790,7 @@ impl Repository {
     /// all patches that are NOT ancestors of `base`.
     pub fn patches_since_base(&self, base: &PatchId) -> Vec<Patch> {
         let base_ancestors = self.dag.ancestors(base);
-        let mut exclusion = base_ancestors;
+        let mut exclusion = (*base_ancestors).clone();
         exclusion.insert(*base);
 
         let (_, head_id) = self
@@ -3653,6 +3683,28 @@ impl Repository {
             .collect()
     }
 
+    /// Returns references to all patches without cloning.
+    /// Use this for read-only iteration over patches.
+    pub fn all_patches_ref(&self) -> Vec<&Patch> {
+        self.dag
+            .patch_ids()
+            .iter()
+            .filter_map(|id| self.dag.get_patch(id))
+            .collect()
+    }
+
+    /// Returns a page of patches ordered by timestamp (newest first).
+    pub fn patches_page(&self, offset: usize, limit: usize) -> Vec<&Patch> {
+        let mut patches: Vec<&Patch> = self.all_patches_ref();
+        patches.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        patches.into_iter().skip(offset).take(limit).collect()
+    }
+
+    /// Returns the total number of patches.
+    pub fn patch_count(&self) -> usize {
+        self.dag.patch_ids().len()
+    }
+
     // =========================================================================
     // Garbage Collection
     // =========================================================================
@@ -3674,8 +3726,8 @@ impl Repository {
         let mut reachable: HashSet<PatchId> = HashSet::new();
         for (_name, tip_id) in &branches {
             reachable.insert(*tip_id);
-            for anc in self.dag.ancestors(tip_id) {
-                reachable.insert(anc);
+            for anc in self.dag.ancestors(tip_id).iter() {
+                reachable.insert(*anc);
             }
         }
 

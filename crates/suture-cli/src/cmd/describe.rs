@@ -24,7 +24,7 @@ pub(crate) async fn cmd_describe(
 
     let commit_ancestors = repo.dag().ancestors(&target.id);
     let mut all_reachable: std::collections::HashSet<suture_common::Hash> =
-        commit_ancestors.into_iter().collect();
+        (*commit_ancestors).iter().copied().collect();
     all_reachable.insert(target.id);
 
     let mut best_tag: Option<(String, usize)> = None;

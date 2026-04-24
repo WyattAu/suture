@@ -50,7 +50,13 @@ impl Hash {
 
     /// Convert to a 64-character lowercase hex string.
     pub fn to_hex(&self) -> String {
-        self.0.iter().map(|b| format!("{b:02x}")).collect()
+        const HEX_CHARS: &[u8; 16] = b"0123456789abcdef";
+        let mut s = String::with_capacity(64);
+        for byte in &self.0 {
+            s.push(HEX_CHARS[(byte >> 4) as usize] as char);
+            s.push(HEX_CHARS[(byte & 0x0f) as usize] as char);
+        }
+        s
     }
 
     /// The zero hash (all zeros). Used as a sentinel value.
