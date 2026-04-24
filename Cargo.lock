@@ -4552,7 +4552,14 @@ version = "5.0.0"
 dependencies = [
  "napi",
  "napi-derive",
+ "serde_json",
+ "suture-common",
  "suture-core",
+ "suture-driver",
+ "suture-driver-csv",
+ "suture-driver-json",
+ "suture-driver-toml",
+ "suture-driver-yaml",
 ]
 
 [[package]]

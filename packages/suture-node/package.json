@@ -1,0 +1,42 @@
+{
+  "name": "suture-node",
+  "version": "5.0.0",
+  "description": "Node.js native bindings for Suture VCS — init, commit, merge, log, and semantic merge for structured files",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "*.node"
+  ],
+  "scripts": {
+    "build": "cargo-cp --release --strip",
+    "install": "node-gyp-build",
+    "test": "node test.js"
+  },
+  "napi": {
+    "name": "suture",
+    "triples": {}
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^2",
+    "cargo-cp": "^0.1",
+    "node-gyp-build": "^4"
+  },
+  "keywords": [
+    "suture",
+    "vcs",
+    "version-control",
+    "semantic-merge",
+    "json",
+    "yaml",
+    "toml",
+    "csv"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/WyattAu/suture.git",
+    "directory": "crates/suture-node"
+  }
+}
