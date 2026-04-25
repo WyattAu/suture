@@ -191,6 +191,7 @@ impl SvgDriver {
             if new_matched.contains(&i) {
                 continue;
             }
+            #[allow(clippy::unnecessary_to_owned)]
             if old_id_map.contains_key(&Self::node_id(*new_c).unwrap_or_default().to_string()) {
                 continue;
             }
@@ -204,6 +205,7 @@ impl SvgDriver {
             if old_matched.contains(&i) {
                 continue;
             }
+            #[allow(clippy::unnecessary_to_owned)]
             if new_id_map.contains_key(&Self::node_id(*old_c).unwrap_or_default().to_string()) {
                 continue;
             }

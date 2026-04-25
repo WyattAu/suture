@@ -1630,8 +1630,8 @@ async fn main() {
             message,
         } => match action {
             Some(SyncAction::Start) => cmd::sync::cmd_sync_start().await,
-            Some(SyncAction::Stop) => cmd::sync::cmd_sync_stop().map_err(Into::into),
-            Some(SyncAction::Status) => cmd::sync::cmd_sync_status().map_err(Into::into),
+            Some(SyncAction::Stop) => cmd::sync::cmd_sync_stop(),
+            Some(SyncAction::Status) => cmd::sync::cmd_sync_status(),
             None => {
                 cmd::sync::cmd_sync(&remote, no_push, pull_only, message.as_deref()).await
             }

@@ -66,10 +66,10 @@ impl PptxDriver {
     fn extract_slide_name(content: &str) -> Option<String> {
         for line in content.lines() {
             let trimmed = line.trim();
-            if trimmed.contains("<p:cNvPr ") {
-                if let Some(name) = Self::extract_attr(trimmed, "name") {
-                    return Some(name);
-                }
+            if trimmed.contains("<p:cNvPr ")
+                && let Some(name) = Self::extract_attr(trimmed, "name")
+            {
+                return Some(name);
             }
         }
         None
@@ -212,14 +212,14 @@ impl PptxDriver {
 
         // Detect modified slides (same ID, different content)
         for slide in new {
-            if let Some(base_slide) = base_by_id.get(&slide.slide_id) {
-                if slide.content_hash != base_slide.content_hash {
-                    changes.push(SemanticChange::Modified {
-                        path: format!("/slides/{}", slide.part_path),
-                        old_value: format!("slide_id={}, hash={:016x}", slide.slide_id, base_slide.content_hash),
-                        new_value: format!("slide_id={}, hash={:016x}", slide.slide_id, slide.content_hash),
-                    });
-                }
+            if let Some(base_slide) = base_by_id.get(&slide.slide_id)
+                && slide.content_hash != base_slide.content_hash
+            {
+                changes.push(SemanticChange::Modified {
+                    path: format!("/slides/{}", slide.part_path),
+                    old_value: format!("slide_id={}, hash={:016x}", slide.slide_id, base_slide.content_hash),
+                    new_value: format!("slide_id={}, hash={:016x}", slide.slide_id, slide.content_hash),
+                });
             }
         }
 
@@ -388,12 +388,12 @@ impl PptxDriver {
 
         // Append new slides (not in base)
         for &id in &all_ids {
-            if !base_by_id.contains_key(&id) {
-                if ours_by_id.contains_key(&id) || theirs_by_id.contains_key(&id) {
-                    // Check if this ID was remapped (de-duplicated)
-                    if new_slide_sources.contains_key(&id) {
-                        appended_new.push(id);
-                    }
+            if !base_by_id.contains_key(&id)
+                && (ours_by_id.contains_key(&id) || theirs_by_id.contains_key(&id))
+            {
+                // Check if this ID was remapped (de-duplicated)
+                if new_slide_sources.contains_key(&id) {
+                    appended_new.push(id);
                 }
             }
         }
@@ -442,14 +442,14 @@ impl PptxDriver {
 
         // Copy any media files referenced by the slide's rels
         if let Some(id_map) = src_doc.part_rels.get(&slide.part_path) {
-            for (_rid, target) in id_map {
+            for target in id_map.values() {
                 let resolved = resolve_relative_path(&slide.part_path, target);
-                if !dst_doc.parts.contains_key(&resolved) {
-                    if let Some(part) = src_doc.get_part(&resolved) {
-                        dst_doc
-                            .parts
-                            .insert(part.path.clone(), part.clone());
-                    }
+                if !dst_doc.parts.contains_key(&resolved)
+                    && let Some(part) = src_doc.get_part(&resolved)
+                {
+                    dst_doc
+                        .parts
+                        .insert(part.path.clone(), part.clone());
                 }
             }
         }
@@ -476,8 +476,8 @@ fn resolve_relative_path(base_part: &str, target: &str) -> String {
         .rsplit_once('/')
         .map(|(d, _)| d)
         .unwrap_or("");
-    if target.starts_with('/') {
-        target[1..].to_string()
+    if let Some(stripped) = target.strip_prefix('/') {
+        stripped.to_string()
     } else if dir.is_empty() {
         target.to_string()
     } else {
@@ -629,15 +629,15 @@ impl SutureDriver for PptxDriver {
 
                 let base_hash = base_by_id[&slide.slide_id].content_hash;
                 if slide.content_hash != base_hash {
-                    if let Some(src_slide) = ours_by_id.get(&slide.slide_id) {
-                        if src_slide.content_hash == slide.content_hash {
-                            Self::copy_slide_parts(src_slide, &ours_doc, &mut doc);
-                        }
+                    if let Some(src_slide) = ours_by_id.get(&slide.slide_id)
+                        && src_slide.content_hash == slide.content_hash
+                    {
+                        Self::copy_slide_parts(src_slide, &ours_doc, &mut doc);
                     }
-                    if let Some(src_slide) = theirs_by_id.get(&slide.slide_id) {
-                        if src_slide.content_hash == slide.content_hash {
-                            Self::copy_slide_parts(src_slide, &theirs_doc, &mut doc);
-                        }
+                    if let Some(src_slide) = theirs_by_id.get(&slide.slide_id)
+                        && src_slide.content_hash == slide.content_hash
+                    {
+                        Self::copy_slide_parts(src_slide, &theirs_doc, &mut doc);
                     }
                 }
             }

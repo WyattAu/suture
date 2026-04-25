@@ -83,13 +83,11 @@ pub(crate) async fn cmd_merge(
         if let Ok(entries) = std::fs::read_dir(root) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.is_file() {
-                    if let Ok(relative) = path.strip_prefix(root) {
-                        if let Ok(content) = std::fs::read_to_string(&path) {
+                if path.is_file()
+                    && let Ok(relative) = path.strip_prefix(root)
+                        && let Ok(content) = std::fs::read_to_string(&path) {
                             map.insert(relative.to_string_lossy().to_string(), content);
                         }
-                    }
-                }
             }
         }
         map
@@ -599,7 +597,7 @@ fn semantic_remerge_both_modified(
     pre_merge_files: &std::collections::HashMap<String, String>,
     pre_merge_head_id: &Option<suture_common::Hash>,
 ) -> Result<usize, Box<dyn std::error::Error>> {
-    use std::collections::HashSet;
+    
     use std::path::Path as StdPath;
 
     let registry = crate::driver_registry::builtin_registry();
@@ -623,7 +621,7 @@ fn semantic_remerge_both_modified(
     // merge needs to correctly combine both sides' changes.
     let lca_id = repo
         .dag()
-        .lca(&head_id, &source_id)
+        .lca(head_id, &source_id)
         .ok_or_else(|| "no common ancestor found for merge".to_string())?;
 
     // Build LCA file tree snapshot to get the base content for 3-way merge.
@@ -712,7 +710,7 @@ fn semantic_remerge_both_modified(
         }
 
         // Try semantic 3-way merge with the YAML driver
-        let merged_content = match driver.merge(&base, ours, theirs) {
+        let merged_content = match driver.merge(base, ours, theirs) {
             Ok(Some(content)) => content,
             _ => manual_line_merge(ours, theirs),
         };

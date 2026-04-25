@@ -45,7 +45,7 @@
 
 use crate::cas::store::{BlobStore, CasError};
 use crate::dag::graph::{DagError, PatchDag};
-use crate::engine::apply::{ApplyError, apply_patch, apply_patch_chain, resolve_payload_to_hash};
+    use crate::engine::apply::{apply_patch_chain, apply_patch_mut, resolve_payload_to_hash, ApplyError};
 use crate::engine::diff::{DiffEntry, DiffType, diff_trees};
 use crate::engine::tree::FileTree;
 use crate::metadata::MetaError;
@@ -307,7 +307,7 @@ impl Repository {
 
         // Store snapshot engine version so Repository::open() doesn't
         // wipe the file_trees cache on first open of a fresh repo.
-        meta.set_config("snapshot_engine_version", "2")?;
+        meta.set_config("snapshot_engine_version", "3")?;
 
         // Load ignore patterns
         let ignore_patterns = load_ignore_patterns(path);
@@ -350,10 +350,12 @@ impl Repository {
         let meta = crate::metadata::MetadataStore::open(&suture_dir.join("metadata.db"))?;
 
         // Snapshot cache migration: if the engine version has changed, clear
-        // all cached file_trees from SQLite. Stale caches from before the
-        // DAG-aware snapshot fix (patch_chain_full) would return incorrect
-        // trees for merge commits.
-        const SNAPSHOT_ENGINE_VERSION: &str = "2";
+        // all cached file_trees from SQLite. Version history:
+        //   "1" — initial (no migration logic)
+        //   "2" — DAG-aware snapshot (patch_chain_full for merge correctness)
+        //   "3" — incremental mutable apply (apply_patch_mut) + in-memory cache
+        //         persistence across commits
+        const SNAPSHOT_ENGINE_VERSION: &str = "3";
         let stored_version = meta
             .get_config("snapshot_engine_version")
             .unwrap_or(None);
@@ -1139,13 +1141,16 @@ impl Repository {
         // Persist the file tree for this commit tip (enables O(1) cold-load later).
         // Incremental computation: apply the new patch to the parent's cached tree
         // instead of replaying the entire chain (which is O(n) per commit).
+        // Performance optimization (v3): clone parent tree once, apply mutably,
+        // update in-memory cache directly (no invalidate → no SQLite round-trip
+        // on the next snapshot_head() call).
         let tree = if head_id != Hash::ZERO {
-            // Load parent's tree from SQLite (stored on previous commit), then
-            // apply just the new batch patch. Falls back to full replay only if
-            // the parent's tree is missing from cache.
             match self.snapshot(&head_id) {
-                Ok(parent_tree) => apply_patch(&parent_tree, &batch_patch, resolve_payload_to_hash)
-                    .unwrap_or_else(|_| self.snapshot_uncached(&patch_id).unwrap_or_default()),
+                Ok(parent_tree) => {
+                    let mut tree = parent_tree;
+                    let _ = apply_patch_mut(&mut tree, &batch_patch, resolve_payload_to_hash);
+                    tree
+                }
                 Err(_) => self.snapshot_uncached(&patch_id).unwrap_or_default(),
             }
         } else {
@@ -1158,7 +1163,11 @@ impl Repository {
             let _ = self.meta.store_file_tree(&patch_id, &tree);
         }
 
-        self.invalidate_head_cache();
+        // Update in-memory cache directly instead of invalidating.
+        // This avoids a SQLite round-trip on the next snapshot_head() call.
+        *self.cached_head_snapshot.borrow_mut() = Some(tree);
+        *self.cached_head_id.borrow_mut() = Some(patch_id);
+        *self.cached_head_branch.borrow_mut() = Some(branch_name.clone());
 
         let _ = self.record_reflog(&old_head, &patch_id, &format!("commit: {}", message));
 

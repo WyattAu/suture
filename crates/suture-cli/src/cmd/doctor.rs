@@ -274,8 +274,7 @@ target/
             Ok(a) => a,
             Err(e) => {
                 println!("✗ Audit chain exists but cannot be read: {}", e);
-                issues += 1;
-                remaining += 1;
+                // Early return — issues/remaining not used in summary
                 return Ok(());
             }
         };

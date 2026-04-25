@@ -2,6 +2,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use suture_driver::{DriverError, SemanticChange, SutureDriver};
 
+type Component = (String, Vec<(String, String)>);
+
 pub struct IcalDriver;
 
 impl IcalDriver {
@@ -29,10 +31,10 @@ impl IcalDriver {
         lines
     }
 
-    fn parse_ical(content: &str) -> Result<Vec<(String, Vec<(String, String)>)>, DriverError> {
+    fn parse_ical(content: &str) -> Result<Vec<Component>, DriverError> {
         let lines = Self::unfold_lines(content);
-        let mut components: Vec<(String, Vec<(String, String)>)> = Vec::new();
-        let mut component_stack: Vec<(String, Vec<(String, String)>)> = Vec::new();
+        let mut components: Vec<Component> = Vec::new();
+        let mut component_stack: Vec<Component> = Vec::new();
 
         for line in &lines {
             if line.is_empty() {
@@ -92,7 +94,7 @@ impl IcalDriver {
     }
 
     fn components_by_uid(
-        components: &[(String, Vec<(String, String)>)],
+        components: &[Component],
     ) -> BTreeMap<String, Vec<(String, String)>> {
         let mut map = BTreeMap::new();
         for (comp_type, props) in components {
@@ -163,7 +165,7 @@ impl IcalDriver {
         changes
     }
 
-    fn serialize_components(components: &[(String, Vec<(String, String)>)]) -> String {
+    fn serialize_components(components: &[Component]) -> String {
         let mut output = String::new();
         output.push_str("BEGIN:VCALENDAR\r\n");
         output.push_str("VERSION:2.0\r\n");
@@ -180,8 +182,8 @@ impl IcalDriver {
     }
 
     fn extract_inner_components(
-        components: &[(String, Vec<(String, String)>)],
-    ) -> Vec<(String, Vec<(String, String)>)> {
+        components: &[Component],
+    ) -> Vec<Component> {
         let mut inner = Vec::new();
         for (comp_type, props) in components {
             if *comp_type == "VCALENDAR" {
@@ -206,10 +208,10 @@ impl IcalDriver {
     }
 
     fn merge_components(
-        base: &[(String, Vec<(String, String)>)],
-        ours: &[(String, Vec<(String, String)>)],
-        theirs: &[(String, Vec<(String, String)>)],
-    ) -> Result<Option<Vec<(String, Vec<(String, String)>)>>, DriverError> {
+        base: &[Component],
+        ours: &[Component],
+        theirs: &[Component],
+    ) -> Result<Option<Vec<Component>>, DriverError> {
         let base_by_uid = Self::components_by_uid(base);
         let ours_by_uid = Self::components_by_uid(ours);
         let theirs_by_uid = Self::components_by_uid(theirs);
@@ -221,7 +223,7 @@ impl IcalDriver {
             .cloned()
             .collect();
 
-        let mut merged: Vec<(String, Vec<(String, String)>)> = Vec::new();
+        let mut merged: Vec<Component> = Vec::new();
 
         for uid_key in &all_uids {
             let in_base = base_by_uid.contains_key(uid_key);
@@ -350,7 +352,7 @@ impl IcalDriver {
     }
 }
 
-fn merged_components_from_props(
+fn _merged_components_from_props(
     merged: &mut Vec<String>,
     comp_type: &str,
     merged_props: &[(String, String)],
