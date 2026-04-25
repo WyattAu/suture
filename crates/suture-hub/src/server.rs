@@ -2601,14 +2601,25 @@ pub async fn list_users_handler(
 
     let store = hub.storage.read().await;
     match store.list_users() {
-        Ok(users) => (
-            StatusCode::OK,
-            Json(crate::types::ListUsersResponse {
-                success: true,
-                error: None,
-                users,
-            }),
-        ),
+        Ok(users) => {
+            // Redact API tokens before returning — they are secrets that
+            // must never be exposed in list responses.
+            let users: Vec<_> = users
+                .into_iter()
+                .map(|mut u| {
+                    u.api_token = None;
+                    u
+                })
+                .collect();
+            (
+                StatusCode::OK,
+                Json(crate::types::ListUsersResponse {
+                    success: true,
+                    error: None,
+                    users,
+                }),
+            )
+        }
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(crate::types::ListUsersResponse {

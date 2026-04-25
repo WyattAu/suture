@@ -29,14 +29,15 @@ pub enum StorageError {
 }
 
 /// Persistent SQLite storage for the hub.
+///
+/// The SQLite connection is wrapped in a `std::sync::Mutex` to make this type
+/// `Send + Sync` without requiring `unsafe impl`. All methods acquire the
+/// mutex lock internally. The outer synchronization (tokio::sync::RwLock in
+/// server.rs) provides async-compatible locking; this inner mutex satisfies
+/// the Rust type system's thread-safety requirements.
 pub struct HubStorage {
-    conn: Connection,
+    conn: std::sync::Mutex<Connection>,
 }
-
-// Safety: HubStorage is always accessed through tokio::sync::RwLock in server.rs,
-// which ensures exclusive write access and concurrent read access is safe because
-// rusqlite::Connection serializes its own internal operations.
-unsafe impl Sync for HubStorage {}
 
 /// Mirror row from DB: (repo_name, upstream_url, upstream_repo, last_sync, status)
 type MirrorRow = (String, String, String, Option<i64>, String);
@@ -52,7 +53,9 @@ impl HubStorage {
         }
         let conn = Connection::open(path)?;
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")?;
-        let mut store = Self { conn };
+        let mut store = Self {
+            conn: std::sync::Mutex::new(conn),
+        };
         store.migrate()?;
         Ok(store)
     }
@@ -61,13 +64,16 @@ impl HubStorage {
     pub fn open_in_memory() -> Result<Self, StorageError> {
         let conn = Connection::open_in_memory()?;
         conn.execute_batch("PRAGMA journal_mode=WAL;")?;
-        let mut store = Self { conn };
+        let mut store = Self {
+            conn: std::sync::Mutex::new(conn),
+        };
         store.migrate()?;
         Ok(store)
     }
 
     fn migrate(&mut self) -> Result<(), StorageError> {
-        self.conn.execute_batch(
+        let conn = self.conn.get_mut().expect("not shared yet");
+        conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS repos (
                 repo_id TEXT PRIMARY KEY,
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -175,7 +181,7 @@ impl HubStorage {
             ",
         )?;
 
-        let has_expires: bool = self.conn.query_row(
+        let has_expires: bool = conn.query_row(
             "SELECT COUNT(*) > 0 FROM pragma_table_info('tokens') WHERE name = 'expires_at'",
             [],
             |row| row.get(0),
@@ -187,10 +193,10 @@ impl HubStorage {
                 .unwrap_or_default()
                 .as_secs() as i64;
             let default_expiry = now + (30 * 24 * 60 * 60);
-            self.conn.execute_batch(
+            conn.execute_batch(
                 "ALTER TABLE tokens ADD COLUMN expires_at INTEGER NOT NULL DEFAULT 0;",
             )?;
-            self.conn.execute(
+            conn.execute(
                 "UPDATE tokens SET expires_at = ?1 WHERE expires_at = 0",
                 params![default_expiry],
             )?;
@@ -203,18 +209,24 @@ impl HubStorage {
 
     /// Ensure a repo exists. Returns true if it was newly created.
     pub fn ensure_repo(&self, repo_id: &str) -> Result<bool, StorageError> {
-        self.conn.execute(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        conn.execute(
             "INSERT OR IGNORE INTO repos (repo_id) VALUES (?1)",
             params![repo_id],
         )?;
-        Ok(self.conn.changes() > 0)
+        Ok(conn.changes() > 0)
     }
 
     /// List all repo IDs.
     pub fn list_repos(&self) -> Result<Vec<String>, StorageError> {
-        let mut stmt = self
+        let conn = self
             .conn
-            .prepare("SELECT repo_id FROM repos ORDER BY repo_id")?;
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        let mut stmt = conn.prepare("SELECT repo_id FROM repos ORDER BY repo_id")?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
         let mut ids = Vec::new();
         for row in rows {
@@ -225,7 +237,11 @@ impl HubStorage {
 
     /// Check if a repo exists.
     pub fn repo_exists(&self, repo_id: &str) -> Result<bool, StorageError> {
-        let count: i64 = self.conn.query_row(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        let count: i64 = conn.query_row(
             "SELECT COUNT(*) FROM repos WHERE repo_id = ?1",
             params![repo_id],
             |row| row.get(0),
@@ -248,7 +264,11 @@ impl HubStorage {
         )
         .unwrap_or_default();
 
-        self.conn.execute(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        conn.execute(
             "INSERT OR IGNORE INTO patches (repo_id, patch_id, operation_type, touch_set, target_path, payload, parent_ids, author, message, timestamp)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
@@ -264,7 +284,7 @@ impl HubStorage {
                 patch.timestamp as i64,
             ],
         )?;
-        Ok(self.conn.changes() > 0)
+        Ok(conn.changes() > 0)
     }
 
     /// Get a patch by ID within a repo.
@@ -273,7 +293,11 @@ impl HubStorage {
         repo_id: &str,
         patch_id_hex: &str,
     ) -> Result<Option<PatchProto>, StorageError> {
-        let result = self.conn.query_row(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        let result = conn.query_row(
             "SELECT patch_id, operation_type, touch_set, target_path, payload, parent_ids, author, message, timestamp
              FROM patches WHERE repo_id = ?1 AND patch_id = ?2",
             params![repo_id, patch_id_hex],
@@ -319,7 +343,11 @@ impl HubStorage {
 
     /// Get all patches for a repo.
     pub fn get_all_patches(&self, repo_id: &str) -> Result<Vec<PatchProto>, StorageError> {
-        let mut stmt = self.conn.prepare(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        let mut stmt = conn.prepare(
             "SELECT patch_id, operation_type, touch_set, target_path, payload, parent_ids, author, message, timestamp
              FROM patches WHERE repo_id = ?1",
         )?;
@@ -364,7 +392,11 @@ impl HubStorage {
 
     /// Count patches in a repo.
     pub fn patch_count(&self, repo_id: &str) -> Result<u64, StorageError> {
-        let count: i64 = self.conn.query_row(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        let count: i64 = conn.query_row(
             "SELECT COUNT(*) FROM patches WHERE repo_id = ?1",
             params![repo_id],
             |row| row.get(0),
@@ -381,7 +413,11 @@ impl HubStorage {
         name: &str,
         target_patch_id: &str,
     ) -> Result<(), StorageError> {
-        self.conn.execute(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        conn.execute(
             "INSERT OR REPLACE INTO branches (repo_id, name, target_patch_id) VALUES (?1, ?2, ?3)",
             params![repo_id, name, target_patch_id],
         )?;
@@ -390,7 +426,11 @@ impl HubStorage {
 
     /// Get all branches for a repo.
     pub fn get_branches(&self, repo_id: &str) -> Result<Vec<BranchProto>, StorageError> {
-        let mut stmt = self.conn.prepare(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        let mut stmt = conn.prepare(
             "SELECT name, target_patch_id FROM branches WHERE repo_id = ?1 ORDER BY name",
         )?;
 
@@ -420,7 +460,11 @@ impl HubStorage {
         hash_hex: &str,
         data: &[u8],
     ) -> Result<(), StorageError> {
-        self.conn.execute(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        conn.execute(
             "INSERT OR REPLACE INTO blobs (repo_id, blob_hash, data) VALUES (?1, ?2, ?3)",
             params![repo_id, hash_hex, data],
         )?;
@@ -428,7 +472,11 @@ impl HubStorage {
     }
 
     pub fn delete_blob(&self, repo_id: &str, hash_hex: &str) -> Result<(), StorageError> {
-        self.conn.execute(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        conn.execute(
             "DELETE FROM blobs WHERE repo_id = ?1 AND blob_hash = ?2",
             params![repo_id, hash_hex],
         )?;
@@ -437,7 +485,11 @@ impl HubStorage {
 
     /// Get a blob by hash.
     pub fn get_blob(&self, repo_id: &str, hash_hex: &str) -> Result<Option<Vec<u8>>, StorageError> {
-        let result = self.conn.query_row(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        let result = conn.query_row(
             "SELECT data FROM blobs WHERE repo_id = ?1 AND blob_hash = ?2",
             params![repo_id, hash_hex],
             |row| row.get::<_, Vec<u8>>(0),
@@ -452,9 +504,11 @@ impl HubStorage {
 
     /// Get all blobs for a repo.
     pub fn get_all_blobs(&self, repo_id: &str) -> Result<Vec<BlobRef>, StorageError> {
-        let mut stmt = self
+        let conn = self
             .conn
-            .prepare("SELECT blob_hash, data FROM blobs WHERE repo_id = ?1")?;
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        let mut stmt = conn.prepare("SELECT blob_hash, data FROM blobs WHERE repo_id = ?1")?;
 
         let rows = stmt.query_map(params![repo_id], |row| {
             let hash_hex: String = row.get(0)?;
@@ -497,7 +551,11 @@ impl HubStorage {
         let param_refs: Vec<&dyn rusqlite::types::ToSql> =
             params_vec.iter().map(|p| p.as_ref()).collect();
 
-        let mut stmt = self.conn.prepare(&sql)?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_map(param_refs.as_slice(), |row| {
             let hash_hex: String = row.get(0)?;
             let data: Vec<u8> = row.get(1)?;
@@ -521,7 +579,11 @@ impl HubStorage {
         repo_id: &str,
         branch_name: &str,
     ) -> Result<Option<String>, StorageError> {
-        let result = self.conn.query_row(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        let result = conn.query_row(
             "SELECT target_patch_id FROM branches WHERE repo_id = ?1 AND name = ?2",
             params![repo_id, branch_name],
             |row| row.get::<_, String>(0),
@@ -572,7 +634,11 @@ impl HubStorage {
     // === Branch Protection ===
 
     pub fn protect_branch(&self, repo_id: &str, branch_name: &str) -> Result<(), StorageError> {
-        self.conn.execute(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        conn.execute(
             "INSERT OR IGNORE INTO branch_protection (repo_id, branch_name) VALUES (?1, ?2)",
             params![repo_id, branch_name],
         )?;
@@ -580,7 +646,11 @@ impl HubStorage {
     }
 
     pub fn unprotect_branch(&self, repo_id: &str, branch_name: &str) -> Result<(), StorageError> {
-        self.conn.execute(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        conn.execute(
             "DELETE FROM branch_protection WHERE repo_id = ?1 AND branch_name = ?2",
             params![repo_id, branch_name],
         )?;
@@ -592,7 +662,11 @@ impl HubStorage {
         repo_id: &str,
         branch_name: &str,
     ) -> Result<bool, StorageError> {
-        let count: i64 = self.conn.query_row(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        let count: i64 = conn.query_row(
             "SELECT COUNT(*) FROM branch_protection WHERE repo_id = ?1 AND branch_name = ?2",
             params![repo_id, branch_name],
             |row| row.get(0),
@@ -608,7 +682,11 @@ impl HubStorage {
         author: &str,
         public_key_bytes: &[u8],
     ) -> Result<(), StorageError> {
-        self.conn.execute(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        conn.execute(
             "INSERT OR REPLACE INTO authorized_keys (author, public_key) VALUES (?1, ?2)",
             params![author, public_key_bytes],
         )?;
@@ -617,7 +695,11 @@ impl HubStorage {
 
     /// Get the public key for an author.
     pub fn get_authorized_key(&self, author: &str) -> Result<Option<Vec<u8>>, StorageError> {
-        let result = self.conn.query_row(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        let result = conn.query_row(
             "SELECT public_key FROM authorized_keys WHERE author = ?1",
             params![author],
             |row| row.get::<_, Vec<u8>>(0),
@@ -632,9 +714,12 @@ impl HubStorage {
 
     /// Check if any authorized keys exist (for auth-required vs auth-optional mode).
     pub fn has_authorized_keys(&self) -> Result<bool, StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
         let count: i64 =
-            self.conn
-                .query_row("SELECT COUNT(*) FROM authorized_keys", [], |row| row.get(0))?;
+            conn.query_row("SELECT COUNT(*) FROM authorized_keys", [], |row| row.get(0))?;
         Ok(count > 0)
     }
 
@@ -647,7 +732,11 @@ impl HubStorage {
         description: &str,
         expires_at: i64,
     ) -> Result<(), StorageError> {
-        self.conn.execute(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        conn.execute(
             "INSERT INTO tokens (token, created_at, description, expires_at) VALUES (?1, ?2, ?3, ?4)",
             params![token, created_at as i64, description, expires_at],
         )?;
@@ -659,7 +748,11 @@ impl HubStorage {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs() as i64;
-        let count: i64 = self.conn.query_row(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        let count: i64 = conn.query_row(
             "SELECT COUNT(*) FROM tokens WHERE token = ?1 AND expires_at > ?2",
             params![token, now],
             |row| row.get(0),
@@ -668,16 +761,22 @@ impl HubStorage {
     }
 
     pub fn has_tokens(&self) -> Result<bool, StorageError> {
-        let count: i64 = self
+        let conn = self
             .conn
-            .query_row("SELECT COUNT(*) FROM tokens", [], |row| row.get(0))?;
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        let count: i64 =
+            conn.query_row("SELECT COUNT(*) FROM tokens", [], |row| row.get(0))?;
         Ok(count > 0)
     }
 
     pub fn has_users(&self) -> Result<bool, StorageError> {
-        let count: i64 = self
+        let conn = self
             .conn
-            .query_row("SELECT COUNT(*) FROM users", [], |row| row.get(0))?;
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        let count: i64 =
+            conn.query_row("SELECT COUNT(*) FROM users", [], |row| row.get(0))?;
         Ok(count > 0)
     }
 
@@ -689,16 +788,24 @@ impl HubStorage {
         upstream_url: &str,
         upstream_repo: &str,
     ) -> Result<i64, StorageError> {
-        self.conn.execute(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        conn.execute(
             "INSERT INTO mirrors (repo_name, upstream_url, upstream_repo, last_sync, status)
              VALUES (?1, ?2, ?3, NULL, 'idle')",
             params![repo_name, upstream_url, upstream_repo],
         )?;
-        Ok(self.conn.last_insert_rowid())
+        Ok(conn.last_insert_rowid())
     }
 
     pub fn get_mirror(&self, mirror_id: i64) -> Result<Option<MirrorRow>, StorageError> {
-        let result = self.conn.query_row(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        let result = conn.query_row(
             "SELECT repo_name, upstream_url, upstream_repo, last_sync, status FROM mirrors WHERE id = ?1",
             params![mirror_id],
             |row| {
@@ -724,7 +831,11 @@ impl HubStorage {
         status: &str,
         last_sync: Option<i64>,
     ) -> Result<(), StorageError> {
-        self.conn.execute(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        conn.execute(
             "UPDATE mirrors SET status = ?1, last_sync = COALESCE(?2, last_sync) WHERE id = ?3",
             params![status, last_sync, mirror_id],
         )?;
@@ -732,7 +843,11 @@ impl HubStorage {
     }
 
     pub fn list_mirrors(&self) -> Result<Vec<MirrorListRow>, StorageError> {
-        let mut stmt = self.conn.prepare(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        let mut stmt = conn.prepare(
             "SELECT id, repo_name, upstream_url, upstream_repo, last_sync, status FROM mirrors ORDER BY id",
         )?;
         let rows = stmt.query_map([], |row| {
@@ -753,7 +868,11 @@ impl HubStorage {
     }
 
     pub fn get_mirror_by_repo(&self, repo_name: &str) -> Result<Option<i64>, StorageError> {
-        let result = self.conn.query_row(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        let result = conn.query_row(
             "SELECT id FROM mirrors WHERE repo_name = ?1",
             params![repo_name],
             |row| row.get::<_, i64>(0),
@@ -778,7 +897,11 @@ impl HubStorage {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs() as i64;
-        self.conn.execute(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        conn.execute(
             "INSERT INTO users (username, display_name, role, api_token, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![username, display_name, role, api_token, created_at],
         )?;
@@ -786,7 +909,11 @@ impl HubStorage {
     }
 
     pub fn get_user(&self, username: &str) -> Result<Option<UserInfo>, StorageError> {
-        let result = self.conn.query_row(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        let result = conn.query_row(
             "SELECT username, display_name, role, api_token, created_at FROM users WHERE username = ?1",
             params![username],
             |row| {
@@ -807,7 +934,11 @@ impl HubStorage {
     }
 
     pub fn get_user_by_token(&self, token: &str) -> Result<Option<UserInfo>, StorageError> {
-        let result = self.conn.query_row(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        let result = conn.query_row(
             "SELECT username, display_name, role, api_token, created_at FROM users WHERE api_token = ?1",
             params![token],
             |row| {
@@ -828,7 +959,11 @@ impl HubStorage {
     }
 
     pub fn list_users(&self) -> Result<Vec<UserInfo>, StorageError> {
-        let mut stmt = self.conn.prepare(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        let mut stmt = conn.prepare(
             "SELECT username, display_name, role, api_token, created_at FROM users ORDER BY username",
         )?;
         let rows = stmt.query_map([], |row| {
@@ -848,7 +983,11 @@ impl HubStorage {
     }
 
     pub fn update_user_role(&self, username: &str, role: &str) -> Result<(), StorageError> {
-        self.conn.execute(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        conn.execute(
             "UPDATE users SET role = ?1 WHERE username = ?2",
             params![role, username],
         )?;
@@ -856,33 +995,40 @@ impl HubStorage {
     }
 
     pub fn delete_user(&self, username: &str) -> Result<(), StorageError> {
-        self.conn
-            .execute("DELETE FROM users WHERE username = ?1", params![username])?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        conn.execute("DELETE FROM users WHERE username = ?1", params![username])?;
         Ok(())
     }
 
     pub fn delete_repo(&self, repo_id: &str) -> Result<(), StorageError> {
-        self.conn
-            .execute("DELETE FROM patches WHERE repo_id = ?1", params![repo_id])?;
-        self.conn
-            .execute("DELETE FROM branches WHERE repo_id = ?1", params![repo_id])?;
-        self.conn
-            .execute("DELETE FROM blobs WHERE repo_id = ?1", params![repo_id])?;
-        self.conn.execute(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        conn.execute("DELETE FROM patches WHERE repo_id = ?1", params![repo_id])?;
+        conn.execute("DELETE FROM branches WHERE repo_id = ?1", params![repo_id])?;
+        conn.execute("DELETE FROM blobs WHERE repo_id = ?1", params![repo_id])?;
+        conn.execute(
             "DELETE FROM branch_protection WHERE repo_id = ?1",
             params![repo_id],
         )?;
-        self.conn
-            .execute("DELETE FROM repos WHERE repo_id = ?1", params![repo_id])?;
+        conn.execute("DELETE FROM repos WHERE repo_id = ?1", params![repo_id])?;
         Ok(())
     }
 
     pub fn delete_branch(&self, repo_id: &str, branch_name: &str) -> Result<(), StorageError> {
-        self.conn.execute(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        conn.execute(
             "DELETE FROM branches WHERE repo_id = ?1 AND name = ?2",
             params![repo_id, branch_name],
         )?;
-        self.conn.execute(
+        conn.execute(
             "DELETE FROM branch_protection WHERE repo_id = ?1 AND branch_name = ?2",
             params![repo_id, branch_name],
         )?;
@@ -890,16 +1036,22 @@ impl HubStorage {
     }
 
     pub fn delete_mirror(&self, mirror_id: i64) -> Result<(), StorageError> {
-        self.conn
-            .execute("DELETE FROM mirrors WHERE id = ?1", params![mirror_id])?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        conn.execute("DELETE FROM mirrors WHERE id = ?1", params![mirror_id])?;
         Ok(())
     }
 
     pub fn search_repos(&self, query: &str) -> Result<Vec<String>, StorageError> {
         let pattern = format!("%{query}%");
-        let mut stmt = self
+        let conn = self
             .conn
-            .prepare("SELECT repo_id FROM repos WHERE repo_id LIKE ?1 ORDER BY repo_id")?;
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        let mut stmt =
+            conn.prepare("SELECT repo_id FROM repos WHERE repo_id LIKE ?1 ORDER BY repo_id")?;
         let rows = stmt.query_map(params![pattern], |row| row.get::<_, String>(0))?;
         let mut ids = Vec::new();
         for row in rows {
@@ -985,7 +1137,11 @@ impl HubStorage {
         query: &str,
     ) -> Result<Vec<PatchProto>, StorageError> {
         let pattern = format!("%{query}%");
-        let mut stmt = self.conn.prepare(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        let mut stmt = conn.prepare(
             "SELECT patch_id, operation_type, touch_set, target_path, payload, parent_ids, author, message, timestamp
              FROM patches WHERE repo_id = ?1 AND (author LIKE ?2 OR message LIKE ?3) LIMIT 50",
         )?;
@@ -1034,21 +1190,35 @@ impl HubStorage {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs() as i64;
-        self.conn.execute(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        conn.execute(
             "INSERT INTO replication_peers (peer_url, role, last_sync_seq, status, added_at) VALUES (?1, ?2, 0, 'active', ?3)",
             params![peer_url, role, added_at],
         )?;
-        Ok(self.conn.last_insert_rowid())
+        Ok(conn.last_insert_rowid())
     }
 
     pub fn remove_replication_peer(&self, id: i64) -> Result<(), StorageError> {
-        self.conn
-            .execute("DELETE FROM replication_peers WHERE id = ?1", params![id])?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        conn.execute(
+            "DELETE FROM replication_peers WHERE id = ?1",
+            params![id],
+        )?;
         Ok(())
     }
 
     pub fn list_replication_peers(&self) -> Result<Vec<ReplicationPeer>, StorageError> {
-        let mut stmt = self.conn.prepare(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        let mut stmt = conn.prepare(
             "SELECT id, peer_url, role, last_sync_seq, status, added_at FROM replication_peers ORDER BY id",
         )?;
         let rows = stmt.query_map([], |row| {
@@ -1069,7 +1239,11 @@ impl HubStorage {
     }
 
     pub fn update_peer_sync_seq(&self, peer_id: i64, seq: i64) -> Result<(), StorageError> {
-        self.conn.execute(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        conn.execute(
             "UPDATE replication_peers SET last_sync_seq = ?1 WHERE id = ?2",
             params![seq, peer_id],
         )?;
@@ -1077,7 +1251,11 @@ impl HubStorage {
     }
 
     pub fn get_replication_peer(&self, id: i64) -> Result<Option<ReplicationPeer>, StorageError> {
-        let result = self.conn.query_row(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        let result = conn.query_row(
             "SELECT id, peer_url, role, last_sync_seq, status, added_at FROM replication_peers WHERE id = ?1",
             params![id],
             |row| {
@@ -1109,18 +1287,26 @@ impl HubStorage {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs() as i64;
-        self.conn.execute(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        conn.execute(
             "INSERT INTO replication_log (operation, table_name, row_id, data, timestamp) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![operation, table_name, row_id, data, timestamp],
         )?;
-        Ok(self.conn.last_insert_rowid())
+        Ok(conn.last_insert_rowid())
     }
 
     pub fn get_replication_log(
         &self,
         since_seq: i64,
     ) -> Result<Vec<ReplicationEntry>, StorageError> {
-        let mut stmt = self.conn.prepare(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        let mut stmt = conn.prepare(
             "SELECT seq, operation, table_name, row_id, data, timestamp FROM replication_log WHERE seq > ?1 ORDER BY seq",
         )?;
         let rows = stmt.query_map(params![since_seq], |row| {
@@ -1144,8 +1330,12 @@ impl HubStorage {
         &self,
         entries: &[ReplicationEntry],
     ) -> Result<(), StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
         for entry in entries {
-            self.conn.execute(
+            conn.execute(
                 "INSERT OR IGNORE INTO replication_log (seq, operation, table_name, row_id, data, timestamp) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                 params![entry.seq, entry.operation, entry.table_name, entry.row_id, entry.data, entry.timestamp],
             )?;
@@ -1155,7 +1345,11 @@ impl HubStorage {
 
     pub fn get_replication_status(&self) -> Result<ReplicationStatus, StorageError> {
         let peers = self.list_replication_peers()?;
-        let current_seq: i64 = self.conn.query_row(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        let current_seq: i64 = conn.query_row(
             "SELECT COALESCE(MAX(seq), 0) FROM replication_log",
             [],
             |row| row.get(0),
@@ -1171,7 +1365,11 @@ impl HubStorage {
 
     pub fn create_webhook(&self, webhook: &Webhook) -> Result<(), StorageError> {
         let events_json = serde_json::to_string(&webhook.events).unwrap_or_default();
-        self.conn.execute(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        conn.execute(
             "INSERT INTO webhooks (id, repo_id, url, events, secret, created_at, active) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 webhook.id,
@@ -1187,7 +1385,11 @@ impl HubStorage {
     }
 
     pub fn list_webhooks(&self, repo_id: &str) -> Result<Vec<Webhook>, StorageError> {
-        let mut stmt = self.conn.prepare(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        let mut stmt = conn.prepare(
             "SELECT id, repo_id, url, events, secret, created_at, active FROM webhooks WHERE repo_id = ?1 ORDER BY created_at",
         )?;
         let rows = stmt.query_map(params![repo_id], |row| {
@@ -1211,7 +1413,11 @@ impl HubStorage {
     }
 
     pub fn get_webhook(&self, id: &str) -> Result<Webhook, StorageError> {
-        self.conn.query_row(
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        conn.query_row(
             "SELECT id, repo_id, url, events, secret, created_at, active FROM webhooks WHERE id = ?1",
             params![id],
             |row| {
@@ -1234,9 +1440,11 @@ impl HubStorage {
     }
 
     pub fn delete_webhook(&self, id: &str) -> Result<(), StorageError> {
-        let changes = self
+        let conn = self
             .conn
-            .execute("DELETE FROM webhooks WHERE id = ?1", params![id])?;
+            .lock()
+            .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
+        let changes = conn.execute("DELETE FROM webhooks WHERE id = ?1", params![id])?;
         if changes == 0 {
             return Err(StorageError::Custom(format!("webhook not found: {id}")));
         }
