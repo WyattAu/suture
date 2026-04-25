@@ -33,7 +33,7 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Clippy (stable)
-        run: cargo clippy --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp --exclude suture-driver-pdf --exclude suture-driver-image --exclude suture-driver-svg --exclude suture-driver-pptx -- -D warnings
+        run: cargo clippy --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp -- -D warnings
 
   test-workspace:
     runs-on: ${{ matrix.os }}
@@ -135,6 +135,28 @@ jobs:
 
       - name: Verify binary
         run: ./target/release/suture version
+
+  test-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: build-release
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: e2e
+
+      - name: Build debug binary
+        run: cargo build -p suture-cli
+
+      - name: Run e2e tests
+        run: cargo test -p suture-e2e -- --test-threads=1
 
   feature-matrix:
     runs-on: ubuntu-latest

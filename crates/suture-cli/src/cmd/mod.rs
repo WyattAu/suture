@@ -42,6 +42,7 @@ pub mod report;
 pub mod reset;
 pub mod restore;
 pub mod revert;
+pub mod rollback;
 pub mod rev_parse;
 pub mod repack;
 pub mod rm;

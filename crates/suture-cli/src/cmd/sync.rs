@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use crate::remote_proto::do_pull;
 
 const SYNC_PID_FILE: &str = ".suture/sync.pid";
+const SYNC_LAST_SYNC_FILE: &str = ".suture/sync.last_sync";
 const DEBOUNCE_SECS: u64 = 2;
 const POLL_INTERVAL_SECS: u64 = 1;
 
@@ -418,6 +419,7 @@ pub(crate) fn cmd_sync_stop() -> Result<(), Box<dyn std::error::Error>> {
                     let errno = std::io::Error::last_os_error();
                     if errno.raw_os_error() == Some(3) {
                         remove_pid_file();
+                        remove_last_sync_file();
                         return Err(format!(
                             "process {pid} is not running (removed stale PID file)"
                         )
@@ -439,6 +441,7 @@ pub(crate) fn cmd_sync_stop() -> Result<(), Box<dyn std::error::Error>> {
                 println!("warning: daemon may still be running");
             } else {
                 remove_pid_file();
+                remove_last_sync_file();
                 println!("sync daemon stopped");
             }
         }
@@ -451,22 +454,141 @@ pub(crate) fn cmd_sync_stop() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 pub(crate) fn cmd_sync_status() -> Result<(), Box<dyn std::error::Error>> {
-    match read_pid_file()? {
+    let daemon_alive = match read_pid_file()? {
         Some(pid) => {
             if is_process_alive(pid) {
-                println!("sync daemon is running (PID: {pid})");
+                println!("Sync daemon: running (PID {pid})");
+                true
             } else {
-                println!(
-                    "sync daemon is NOT running (stale PID file for PID: {pid})"
-                );
-                println!("run `suture sync stop` to clean up the stale PID file");
+                println!("Sync daemon: not running (stale PID file for PID: {pid})");
+                println!("Run `suture sync stop` to clean up the stale PID file.");
+                println!();
+                false
             }
         }
         None => {
-            println!("sync daemon is not running");
+            println!("Sync daemon: not running");
+            println!("Run `suture sync start` to begin syncing.");
+            return Ok(());
+        }
+    };
+
+    let last_sync = read_last_sync();
+    match last_sync {
+        Some(ts) => {
+            let ago = format_ago(&ts);
+            println!("Last sync: {ts} ({ago})");
+        }
+        None => {
+            println!("Last sync: never synced");
         }
     }
+
+    let repo = match suture_core::repository::Repository::open(Path::new(".")) {
+        Ok(r) => r,
+        Err(_) => {
+            println!();
+            println!("Not a suture repository.");
+            return Ok(());
+        }
+    };
+
+    let remotes = repo.list_remotes().unwrap_or_default();
+    if let Some((name, url)) = remotes.first() {
+        println!("Remote: {name} ({url})");
+    }
+
+    let branch = match repo.head() {
+        Ok((b, _)) => b,
+        Err(_) => "unknown".to_string(),
+    };
+    println!("Branch: {branch}");
+
+    let conflicts = detect_pending_conflicts(&repo);
+    println!();
+    if conflicts.is_empty() {
+        println!("No conflicts. Everything is in sync.");
+    } else {
+        println!("Conflicts: {} unresolved", conflicts.len());
+        for c in &conflicts {
+            println!("  {c}");
+        }
+        println!();
+        println!("Run `suture merge --strategy semantic` to auto-resolve.");
+    }
+
+    let _ = daemon_alive;
     Ok(())
+}
+
+fn read_last_sync() -> Option<String> {
+    let path = PathBuf::from(SYNC_LAST_SYNC_FILE);
+    std::fs::read_to_string(&path).ok().map(|s| s.trim().to_string())
+}
+
+fn write_last_sync() -> Result<(), Box<dyn std::error::Error>> {
+    let path = PathBuf::from(SYNC_LAST_SYNC_FILE);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let now = chrono::Utc::now();
+    let ts = now.format("%Y-%m-%d %H:%M:%S UTC").to_string();
+    std::fs::write(&path, &ts)?;
+    Ok(())
+}
+
+fn format_ago(iso_ts: &str) -> String {
+    let parsed = chrono::DateTime::parse_from_str(iso_ts, "%Y-%m-%d %H:%M:%S UTC");
+    match parsed {
+        Ok(dt) => {
+            let now = chrono::Utc::now();
+            let duration = now.signed_duration_since(dt.with_timezone(&chrono::Utc));
+            let total_secs = duration.num_seconds().unsigned_abs();
+            if total_secs < 60 {
+                format!("{}s ago", total_secs)
+            } else if total_secs < 3600 {
+                format!("{}m ago", total_secs / 60)
+            } else if total_secs < 86400 {
+                format!("{}h ago", total_secs / 3600)
+            } else {
+                format!("{}d ago", total_secs / 86400)
+            }
+        }
+        Err(_) => "unknown".to_string(),
+    }
+}
+
+fn detect_pending_conflicts(
+    repo: &suture_core::repository::Repository,
+) -> Vec<String> {
+    let mut conflicts = Vec::new();
+
+    if let Ok(Some(json)) = repo.meta().get_config("pending_merge_parents") {
+        if !json.is_empty() && json != "[]" {
+            let parent_ids: Vec<String> = serde_json::from_str(&json).unwrap_or_default();
+            if !parent_ids.is_empty() {
+                let msg = format!("{} pending merge parents (merge in progress)", parent_ids.len());
+                conflicts.push(msg);
+            }
+        }
+    }
+
+    let conflict_report = Path::new(".suture/conflicts/report.md");
+    if conflict_report.exists() {
+        if let Ok(content) = std::fs::read_to_string(conflict_report) {
+            for line in content.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("- ") || trimmed.starts_with("* ") {
+                    let desc = trimmed.trim_start_matches("- ").trim_start_matches("* ");
+                    if !desc.is_empty() && !conflicts.iter().any(|c| c.contains(desc)) {
+                        conflicts.push(desc.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    conflicts
 }
 
 fn pid_file_path() -> PathBuf {
@@ -495,6 +617,11 @@ fn read_pid_file() -> Result<Option<u32>, Box<dyn std::error::Error>> {
 
 fn remove_pid_file() {
     let path = pid_file_path();
+    let _ = std::fs::remove_file(path);
+}
+
+fn remove_last_sync_file() {
+    let path = PathBuf::from(SYNC_LAST_SYNC_FILE);
     let _ = std::fs::remove_file(path);
 }
 
@@ -599,6 +726,8 @@ fn auto_commit_changes(repo_dir: &Path) -> Result<(), Box<dyn std::error::Error>
     let patch_id = repo.commit(&message)?;
     let short_id = &patch_id.to_hex()[..12.min(patch_id.to_hex().len())];
     eprintln!("[{timestamp}] auto-committed {count} file(s) -> {short_id}");
+
+    write_last_sync()?;
 
     Ok(())
 }

@@ -1,50 +1,70 @@
-use suture_core::repository::ResetMode;
-
-/// Undo the last operation(s) by walking the reflog.
-///
-/// Unlike `reset HEAD~N` which only walks commit parents, this reads the
-/// reflog to find the previous HEAD position — so it can undo merges,
-/// checkouts, cherry-picks, and any other HEAD-moving operation.
 pub(crate) async fn cmd_undo(
-    steps: Option<usize>,
+    n: usize,
     hard: bool,
+    force: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    use suture_core::repository::ResetMode;
+
     let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
-    let n = steps.unwrap_or(1);
 
-    // Get the old_head from the Nth most recent reflog entry
-    let target_id = repo
-        .reflog_older_head(n)?
-        .ok_or("no reflog entry to undo (repository may be empty or new)")?;
+    if hard && !force {
+        return Err("use --force to discard working tree changes".into());
+    }
 
+    let (_, head_id) = repo.head()?;
+    let mut current = head_id;
+    let mut commit_count: usize = 0;
+
+    loop {
+        let patch = repo
+            .dag()
+            .get_patch(&current)
+            .ok_or_else(|| "HEAD commit not found in DAG".to_string())?;
+        match patch.parent_ids.first() {
+            Some(parent_id) => {
+                current = *parent_id;
+                commit_count += 1;
+            }
+            None => break,
+        }
+    }
+
+    if n > commit_count {
+        return Err(format!(
+            "cannot undo: only {} commit{} in history",
+            commit_count,
+            if commit_count == 1 { "" } else { "s" }
+        )
+        .into());
+    }
+
+    if repo.has_uncommitted_changes()? && !hard {
+        eprintln!("warning: you have uncommitted changes");
+    }
+
+    let target_ref = format!("HEAD~{}", n);
     let mode = if hard {
         ResetMode::Hard
     } else {
         ResetMode::Soft
     };
 
-    let target_hex = target_id.to_hex();
-    let result_id = repo.reset(&target_hex, mode)?;
+    let result_id = repo.reset(&target_ref, mode)?;
 
-    // Show what was undone
-    let entries = repo.reflog_entries()?;
-    let label = if n == 1 { "operation" } else { "operations" };
-
-    // Show the entries we jumped over
-    if !hard {
-        println!("Undid {} {}: HEAD is now at {}", n, label, &result_id.to_hex()[..8]);
-    } else {
+    if hard {
         println!(
-            "Undid {} {} (hard): HEAD is now at {}",
+            "Undid {} commit{} (hard): HEAD is now at {}",
             n,
-            label,
+            if n == 1 { "" } else { "s" },
             &result_id.to_hex()[..8]
         );
-    }
-
-    // Show what the reflog entry was
-    if let Some(entry) = entries.get(n.saturating_sub(1)) {
-        println!("  ({})", entry.message);
+    } else {
+        println!(
+            "Undid {} commit{} (soft): HEAD is now at {}",
+            n,
+            if n == 1 { "" } else { "s" },
+            &result_id.to_hex()[..8]
+        );
     }
 
     Ok(())

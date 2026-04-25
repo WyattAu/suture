@@ -414,8 +414,72 @@ pub(crate) async fn cmd_merge(
         }
     }
 
-    println!("Merge has {} conflict(s):", remaining.len());
-    for conflict in &remaining {
+    let total_conflicts = remaining.len();
+    println!("Merge has {} conflict(s):", total_conflicts);
+
+    let (binary_conflicts, text_conflicts): (Vec<_>, Vec<_>) = remaining
+        .into_iter()
+        .partition(|c| {
+            is_binary_path(&c.path)
+                || c.our_content_hash
+                    .as_ref()
+                    .and_then(|h| repo.cas().get_blob(h).ok())
+                    .is_some_and(|b| b.contains(&0))
+                || c.their_content_hash
+                    .as_ref()
+                    .and_then(|h| repo.cas().get_blob(h).ok())
+                    .is_some_and(|b| b.contains(&0))
+        });
+
+    if !binary_conflicts.is_empty() {
+        let conflicts_dir = repo.root().join(".suture").join("conflicts");
+        let _ = std::fs::create_dir_all(&conflicts_dir);
+
+        let mut report = String::new();
+        report.push_str("# Merge Conflict Report\n");
+        report.push_str(&format!(
+            "Generated: {}\n",
+            chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ")
+        ));
+        report.push_str(&format!("Branch: {} → {}\n", source, branch));
+        report.push_str("\n## Binary File Conflicts\n");
+
+        for conflict in &binary_conflicts {
+            if let Some(hash) = conflict.their_content_hash {
+                if let Ok(blob) = repo.cas().get_blob(&hash) {
+                    let theirs_path = conflicts_dir.join(format!("{}.theirs", conflict.path));
+                    if let Some(parent) = theirs_path.parent() {
+                        let _ = std::fs::create_dir_all(parent);
+                    }
+                    let _ = std::fs::write(&theirs_path, &blob);
+                }
+            }
+
+            let theirs_rel = format!(".suture/conflicts/{}.theirs", conflict.path);
+            println!("  CONFLICT (binary) in '{}': both modified", conflict.path);
+            println!("    Your version preserved. Their version: {}", theirs_rel);
+
+            report.push_str(&format!("\n### {}\n", conflict.path));
+            report.push_str("- **Status:** Both sides modified\n");
+            report.push_str("- **Your version:** preserved in working tree\n");
+            report.push_str(&format!("- **Their version:** saved to `{}`\n", theirs_rel));
+            report.push_str(
+                "- **Resolution:** Choose which version to keep, or manually merge in an external tool\n",
+            );
+        }
+
+        if !text_conflicts.is_empty() {
+            report.push_str("\n## Text File Conflicts\n\n");
+            for conflict in &text_conflicts {
+                report.push_str(&format!("### {}\n", conflict.path));
+                report.push_str("- **Status:** Both sides modified (conflict markers in file)\n");
+            }
+        }
+
+        let _ = std::fs::write(conflicts_dir.join("report.md"), report);
+    }
+
+    for conflict in &text_conflicts {
         let our_content = conflict
             .our_content_hash
             .and_then(|h| repo.cas().get_blob(&h).ok())
@@ -431,7 +495,7 @@ pub(crate) async fn cmd_merge(
         println!("    theirs:\n{}", indent(&their_content, "      "));
     }
 
-    if remaining.is_empty() {
+    if binary_conflicts.is_empty() && text_conflicts.is_empty() {
         let via = match merge_strategy {
             MergeStrategy::Semantic => "semantic drivers",
             MergeStrategy::Ours => "keeping our version",
@@ -471,11 +535,22 @@ fn indent(s: &str, prefix: &str) -> String {
 }
 
 fn is_ooxml_file(path: &str) -> bool {
+    is_binary_path(path)
+}
+
+fn is_binary_path(path: &str) -> bool {
     std::path::Path::new(path)
         .extension()
         .and_then(|e| e.to_str())
         .map(|e| e.to_lowercase())
-        .is_some_and(|ext| matches!(ext.as_str(), "docx" | "xlsx" | "pptx"))
+        .is_some_and(|ext| {
+            matches!(
+                ext.as_str(),
+                "docx" | "xlsx" | "pptx"
+                    | "pdf"
+                    | "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "svg" | "ico" | "tiff"
+            )
+        })
 }
 
 fn generate_ooxml_conflict_report(

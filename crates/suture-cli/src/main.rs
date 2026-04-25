@@ -784,22 +784,39 @@ EXAMPLES:
         #[command(subcommand)]
         action: ClassificationAction,
     },
-    /// Undo the last operation (commit, merge, checkout, etc.)
+    /// Undo the last N commits (like git reset --soft HEAD~N)
     ///
-    /// Uses the reflog to rewind HEAD to its previous state.
-    /// Unlike `reset HEAD~N`, this can undo merges, checkouts, and cherry-picks.
+    /// Moves the branch pointer back N commits while keeping changes in the
+    /// working tree (soft mode, the default). Use --hard to discard changes.
     #[command(after_long_help = "\
 EXAMPLES:
-    suture undo                # Undo the last operation (soft)
-    suture undo --steps 3      # Undo the last 3 operations
-    suture undo --hard         # Undo and discard working changes")]
+    suture undo                # Undo the last commit (soft)
+    suture undo 3              # Undo the last 3 commits (soft)
+    suture undo --hard --force  # Undo last commit and discard changes")]
     Undo {
-        /// Number of operations to undo (default: 1)
-        #[arg(short, long)]
-        steps: Option<usize>,
-        /// Discard working tree changes (like --hard reset)
+        /// Number of commits to undo (default: 1)
+        #[arg(default_value_t = 1)]
+        n: usize,
+        /// Keep changes staged (default behavior)
+        #[arg(long)]
+        soft: bool,
+        /// Discard working tree changes (requires --force)
         #[arg(long)]
         hard: bool,
+        /// Required with --hard to confirm discarding changes
+        #[arg(long)]
+        force: bool,
+    },
+    /// Create a new commit that reverses the changes introduced by a specified commit
+    ///
+    /// Unlike `undo`, this is safe for published commits — it does not rewrite history.
+    #[command(after_long_help = "\
+EXAMPLES:
+    suture rollback abc123     # Rollback a specific commit
+    suture rollback HEAD~2     # Rollback the commit 2 ancestors back")]
+    Rollback {
+        /// Commit hash, branch name, or relative ref (e.g. HEAD~3)
+        commit: String,
     },
     /// Squash N commits into one
     #[command(after_long_help = "\
@@ -1636,7 +1653,8 @@ async fn main() {
                 cmd::sync::cmd_sync(&remote, no_push, pull_only, message.as_deref()).await
             }
         }
-        Commands::Undo { steps, hard } => cmd::undo::cmd_undo(steps, hard).await,
+        Commands::Undo { n, soft: _, hard, force } => cmd::undo::cmd_undo(n, hard, force).await,
+        Commands::Rollback { commit } => cmd::rollback::cmd_rollback(&commit).await,
         Commands::Verify { commit_ref, verbose } => {
             cmd::verify::cmd_verify(&commit_ref, verbose).await
         }
@@ -2850,7 +2868,7 @@ mod tests {
         drop(repo);
         std::env::set_current_dir(&dir_path).unwrap();
 
-        let result = cmd::undo::cmd_undo(None, false).await;
+        let result = cmd::undo::cmd_undo(1, false, false).await;
         assert!(result.is_ok());
         let _ = cmd::reflog::cmd_reflog(false).await;
         let _ = cmd::doctor::cmd_doctor(false).await;
