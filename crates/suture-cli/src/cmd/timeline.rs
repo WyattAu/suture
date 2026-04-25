@@ -204,8 +204,10 @@ async fn timeline_diff(
     }
 
     for path in &common {
-        let from_hash = from_tree.get(path).unwrap();
-        let to_hash = to_tree.get(path).unwrap();
+        let from_hash = from_tree.get(path)
+            .ok_or_else(|| format!("hash missing for '{}' in source tree", path))?;
+        let to_hash = to_tree.get(path)
+            .ok_or_else(|| format!("hash missing for '{}' in target tree", path))?;
         if from_hash == to_hash {
             continue;
         }

@@ -270,7 +270,15 @@ target/
     let audit_path = root.join(".suture").join("audit").join("chain.log");
     if audit_path.exists() {
         println!("✓ Audit chain exists");
-        let audit = suture_core::audit::AuditLog::open(&audit_path).unwrap();
+        let audit = match suture_core::audit::AuditLog::open(&audit_path) {
+            Ok(a) => a,
+            Err(e) => {
+                println!("✗ Audit chain exists but cannot be read: {}", e);
+                issues += 1;
+                remaining += 1;
+                return Ok(());
+            }
+        };
         match audit.verify_chain() {
             Ok((total, first_invalid)) => match first_invalid {
                 None => println!("✓ Audit chain valid ({} entries)", total),

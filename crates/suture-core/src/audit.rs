@@ -124,7 +124,9 @@ impl AuditLog {
             .create(true)
             .append(true)
             .open(&self.path)?;
-        writeln!(file, "{}", serde_json::to_string(&entry).unwrap())?;
+        let json = serde_json::to_string(&entry)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        writeln!(file, "{}", json)?;
 
         Ok(entry)
     }
