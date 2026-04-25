@@ -305,6 +305,10 @@ impl Repository {
         // Store author config
         meta.set_config("author", author)?;
 
+        // Store snapshot engine version so Repository::open() doesn't
+        // wipe the file_trees cache on first open of a fresh repo.
+        meta.set_config("snapshot_engine_version", "2")?;
+
         // Load ignore patterns
         let ignore_patterns = load_ignore_patterns(path);
 
