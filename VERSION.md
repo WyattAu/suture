@@ -2,11 +2,11 @@
 
 - **Current Version:** 5.0.0
 - **Crates.io:** 33 crates ready to publish (suture-common dry-run passes)
-- **Current Phase:** Phase 44 — Complete
-- **Status:** Production Ready — Validated
+- **Current Phase:** Phase 48 — Production Polish Complete
+- **Status:** Production Ready — Shipping v5.0.0
 - **Last Updated:** 2026-04-25
 - **Rust Edition:** 2024
-- **Tests:** 1,230+ passed, 0 failed, 2 ignored (full workspace regression)
+- **Tests:** 1,429+ passed, 0 failed, 3 ignored (full workspace regression)
 - **Lean 4:** v4.29.1 (23 theorems proved)
 
 ## Strategic Roadmap
@@ -116,6 +116,40 @@
 | **42** | Cross-Platform CI | macOS + Windows test matrix, --test-threads=1 | v5.0 | ✅ Complete |
 | **43** | Documentation | CONTRIBUTING.md + ARCHITECTURE.md | v5.0 | ✅ Complete |
 | **44** | Final Verification | 1,171 tests, 0 failures, 2 ignored | v5.0 | ✅ Complete |
+| **45** | Batch Merge Fix | File-level 3-way merge for conflicting batch patches, raft determinism | v5.0 | ✅ Complete |
+| **46** | Security Hardening | Path traversal fix, unsafe impl Sync removal, token leakage fix, blob limits | v5.0 | ✅ Complete |
+| **47** | OTIO Fix + from_utf8_unchecked | merge_trees nesting fix, merge_raw/diff_raw trait migration | v5.0 | ✅ Complete |
+| **48** | Production Polish | Incremental snapshots, zero clippy, binary conflicts, undo/rollback, LFS, sync status | v5.0 | ✅ Complete |
+
+### Direction 45 — Batch Merge Fix (v5.0) ✅
+
+- Fixed batch patch merge silently losing data: file-level 3-way merge for conflicting batches
+- Fixed `Repository::init()` missing snapshot version (broke push/pull)
+- Fixed raft election test flakiness (HashMap → BTreeMap)
+
+### Direction 46 — Security Hardening (v5.0) ✅
+
+- Fixed 4 CRITICAL panics (unwrap on user data)
+- Fixed path traversal in `RepoPath::new()` (rejects `..`, absolute paths, null bytes)
+- Fixed `unsafe impl Sync` on HubStorage (wrapped Connection in Mutex)
+- Fixed API token leakage in `list_users_handler`
+- Hub unbounded memory fix: max_blob_size (50MB), max_page_size (10K)
+
+### Direction 47 — Binary Driver Safety (v5.0) ✅
+
+- Fixed OTIO driver merge_trees nesting bug
+- Added merge_raw/diff_raw to SutureDriver trait
+- Overridden in all binary drivers (DOCX, XLSX, PPTX, PDF, Image)
+
+### Direction 48 — Production Polish (v5.0) ✅
+
+- Incremental snapshots: apply_patch_mut, in-memory cache across commits
+- Zero clippy warnings workspace-wide
+- Binary conflict reports with .suture/conflicts/report.md
+- suture undo/rollback commands
+- suture sync status subcommand
+- LFS-style large file handling (track/untrack/list/status/push/pull)
+- CI: e2e test job, driver clippy exclusions removed
 
 ### Direction A — Product Polish (v1.3–v1.4) ✅
 
