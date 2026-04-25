@@ -52,7 +52,7 @@ name = "scale_bench"
 harness = false
 
 [build-dependencies]
-tonic-build = "0.13"
+tonic-build = "0.14"
 
 [features]
 default = []
