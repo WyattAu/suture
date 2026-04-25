@@ -754,6 +754,19 @@ EXAMPLES:
         #[arg(long)]
         verify: bool,
     },
+    /// Manage large file storage (LFS)
+    #[command(after_long_help = "\
+EXAMPLES:
+    suture lfs track \"*.mp4\"              # Track all MP4 files
+    suture lfs track \"*.png\" --size-limit 5MB  # Track PNGs larger than 5MB
+    suture lfs track \"assets/*\"             # Track all files in assets directory
+    suture lfs untrack \"*.mp4\"             # Stop tracking MP4 files
+    suture lfs list                          # List tracked patterns
+    suture lfs status                        # Show LFS object summary")]
+    Lfs {
+        #[command(subcommand)]
+        action: LfsAction,
+    },
     /// Interact with Git repositories
     #[command(after_long_help = "\
 EXAMPLES:
@@ -1333,6 +1346,31 @@ pub(crate) enum HookAction {
 }
 
 #[derive(Subcommand, Debug)]
+pub(crate) enum LfsAction {
+    /// Track files matching a pattern with LFS
+    Track {
+        /// Glob pattern (e.g., "*.mp4", "assets/*")
+        pattern: String,
+        /// Size limit in bytes or human-readable (e.g., 5MB, 1GB). Files larger than this are tracked.
+        #[arg(long)]
+        size_limit: Option<String>,
+    },
+    /// Remove a tracking pattern
+    Untrack {
+        /// Pattern to remove
+        pattern: String,
+    },
+    /// List all tracked patterns
+    List,
+    /// Upload local LFS objects to the remote (not yet implemented)
+    Push,
+    /// Download missing LFS objects from the remote (not yet implemented)
+    Pull,
+    /// Show LFS object summary
+    Status,
+}
+
+#[derive(Subcommand, Debug)]
 pub(crate) enum SyncAction {
     /// Start file-watching sync daemon (runs in foreground)
     Start,
@@ -1619,6 +1657,22 @@ async fn main() {
                 HookAction::Edit { name } => cmd::hook::HookAction::Edit { name: name.clone() },
             };
             cmd::hook::cmd_hook(&hook_action).await
+        }
+        Commands::Lfs { action } => {
+            let lfs_action = match action {
+                LfsAction::Track { pattern, size_limit } => cmd::lfs::LfsAction::Track {
+                    pattern: pattern.clone(),
+                    size_limit: size_limit.clone(),
+                },
+                LfsAction::Untrack { pattern } => cmd::lfs::LfsAction::Untrack {
+                    pattern: pattern.clone(),
+                },
+                LfsAction::List => cmd::lfs::LfsAction::List,
+                LfsAction::Push => cmd::lfs::LfsAction::Push,
+                LfsAction::Pull => cmd::lfs::LfsAction::Pull,
+                LfsAction::Status => cmd::lfs::LfsAction::Status,
+            };
+            cmd::lfs::cmd_lfs(&lfs_action).await
         }
         Commands::Classification { action } => cmd::classification::cmd_classification(&action).await,
         Commands::Git { action } => {

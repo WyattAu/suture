@@ -4179,6 +4179,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "sha2",
  "strsim",
  "suture-common",
  "suture-core",

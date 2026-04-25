@@ -27,6 +27,7 @@ pub mod grep;
 pub mod ignore;
 pub mod init;
 pub mod key;
+pub mod lfs;
 pub mod ls_remote;
 pub mod log;
 pub mod merge;

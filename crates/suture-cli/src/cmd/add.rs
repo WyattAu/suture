@@ -1,6 +1,10 @@
 use std::path::Path;
 use tokio::io::AsyncBufReadExt;
 
+use crate::cmd::lfs::{
+    compute_sha256, create_lfs_pointer, should_track_as_lfs, store_lfs_object,
+};
+
 /// Expand paths: if a path is a directory, recursively collect all files in it.
 fn expand_paths(paths: &[String]) -> Vec<String> {
     let mut result = Vec::new();
@@ -44,6 +48,28 @@ fn expand_dir_recursive(dir: &Path, result: &mut Vec<String>) {
     }
 }
 
+fn maybe_convert_to_lfs_pointer(path: &str) -> Result<bool, Box<dyn std::error::Error>> {
+    let full_path = Path::new(path);
+    let metadata = std::fs::metadata(full_path)?;
+    let file_size = metadata.len();
+
+    let repo_root = Path::new(".");
+    if let Some(_limit) = should_track_as_lfs(repo_root, path, file_size) {
+        let data = std::fs::read(full_path)?;
+        let hash = compute_sha256(&data);
+        let file_name = full_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(path)
+            .to_string();
+        store_lfs_object(repo_root, &hash, &data)?;
+        let pointer = create_lfs_pointer(&hash, file_size, &file_name);
+        std::fs::write(full_path, pointer)?;
+        return Ok(true);
+    }
+    Ok(false)
+}
+
 pub(crate) async fn cmd_add(
     paths: &[String],
     all: bool,
@@ -67,8 +93,12 @@ pub(crate) async fn cmd_add(
         cmd_add_patch(&repo, &file_paths).await
     } else {
         for path in &file_paths {
-            repo.add(path)?;
-            println!("Added {}", path);
+            if maybe_convert_to_lfs_pointer(path)? {
+                println!("Added {} (LFS pointer, {} bytes)", path, std::fs::metadata(path)?.len());
+            } else {
+                repo.add(path)?;
+                println!("Added {}", path);
+            }
         }
         Ok(())
     }
