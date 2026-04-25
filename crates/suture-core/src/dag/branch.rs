@@ -34,8 +34,8 @@ impl PatchDag {
     /// - `ahead` is the number of patches on `branch_a` since the LCA
     /// - `behind` is the number of patches on `branch_b` since the LCA
     ///
-    /// Computed by finding the Lowest Common Ancestor (LCA) and counting
-    /// patches on each branch's chain between the LCA and the branch tip.
+    /// DAG-aware: uses ancestor sets rather than first-parent chain,
+    /// correctly counting patches across merge commits.
     pub fn branch_divergence(
         &self,
         branch_a: &BranchName,
@@ -53,22 +53,25 @@ impl PatchDag {
             .lca(&target_a, &target_b)
             .ok_or_else(|| DagError::Custom("no common ancestor found".to_string()))?;
 
-        // Get patch chains from each tip back to root (tip-first order)
-        let chain_a = self.patch_chain(&target_a);
-        let chain_b = self.patch_chain(&target_b);
+        // DAG-aware: unique patches = (ancestors(tip) ∪ {tip}) - (ancestors(lca) ∪ {lca})
+        let lca_ancestors = self.ancestors(&lca_id);
+        let mut lca_set: std::collections::HashSet<PatchId> =
+            lca_ancestors.iter().copied().collect();
+        lca_set.insert(lca_id);
 
-        // Find the LCA position in each chain
-        // ahead = patches on branch_a between tip and LCA (exclusive of LCA)
-        let ahead = match chain_a.iter().position(|id| *id == lca_id) {
-            Some(pos) => pos,
-            None => chain_a.len(),
-        };
+        let ahead = self
+            .ancestors(&target_a)
+            .iter()
+            .chain(std::iter::once(&target_a))
+            .filter(|id| !lca_set.contains(id))
+            .count();
 
-        // behind = patches on branch_b between tip and LCA (exclusive of LCA)
-        let behind = match chain_b.iter().position(|id| *id == lca_id) {
-            Some(pos) => pos,
-            None => chain_b.len(),
-        };
+        let behind = self
+            .ancestors(&target_b)
+            .iter()
+            .chain(std::iter::once(&target_b))
+            .filter(|id| !lca_set.contains(id))
+            .count();
 
         Ok((ahead, behind))
     }

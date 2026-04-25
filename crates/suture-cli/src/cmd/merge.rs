@@ -76,6 +76,30 @@ pub(crate) async fn cmd_merge(
         run_hook_if_exists(repo.root(), "pre-merge", pre_extra)?;
     }
 
+    // Save pre-merge working tree content for semantic re-merge.
+    let pre_merge_files: std::collections::HashMap<String, String> = {
+        let root = repo.root();
+        let mut map = std::collections::HashMap::new();
+        if let Ok(entries) = std::fs::read_dir(root) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() {
+                    if let Ok(relative) = path.strip_prefix(root) {
+                        if let Ok(content) = std::fs::read_to_string(&path) {
+                            map.insert(relative.to_string_lossy().to_string(), content);
+                        }
+                    }
+                }
+            }
+        }
+        map
+    };
+
+    // Capture the pre-merge HEAD ID so we can compute the correct LCA
+    // for semantic re-merge. After execute_merge(), HEAD points to the
+    // merge commit, which would make the LCA trivially the source branch.
+    let pre_merge_head_id = repo.head().ok().map(|(_, id)| id);
+
     let result = if dry_run {
         repo.preview_merge(source).map_err(|e| user_error("failed to preview merge", e))?
     } else {
@@ -104,6 +128,37 @@ pub(crate) async fn cmd_merge(
                 "Applied {} patch(es) from '{}'",
                 result.patches_applied, source
             );
+        }
+
+        // ── Semantic re-merge for clean merges ──
+        // When both branches edit different parts of the same structured file,
+        // the text-based clean merge may silently overwrite one side's changes.
+        // We detect this, re-merge with semantic drivers, and rewrite the
+        // merge commit's file tree to include the corrected content.
+        if matches!(merge_strategy, MergeStrategy::Semantic) && result.patches_applied > 0 {
+            match semantic_remerge_both_modified(
+                &repo,
+                source,
+                &pre_merge_files,
+                &pre_merge_head_id,
+            ) {
+                Ok(semantic_count) if semantic_count > 0 => {
+                    println!(
+                        "Re-merged {} file(s) via semantic drivers (both branches modified)",
+                        semantic_count
+                    );
+                    // Rewrite the merge commit's stored tree to match the
+                    // corrected working tree. This ensures diff, checkout,
+                    // and subsequent merges see the semantically correct content.
+                    if let Err(e) = repo.rewrite_head_tree() {
+                        eprintln!("  warning: could not update merge tree: {}", e);
+                    }
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    eprintln!("  warning: semantic re-merge skipped: {}", e);
+                }
+            }
         }
 
         let (branch, head_id) = repo.head()?;
@@ -459,4 +514,211 @@ fn generate_ooxml_conflict_report(
 
     std::fs::write(report_dir.join("report.md"), report)?;
     Ok(())
+}
+
+/// After a clean merge, detect files modified by both branches and re-merge
+/// them using semantic drivers. This prevents silent data loss when both
+/// branches edit different parts of the same structured file (YAML, JSON, etc.)
+/// and the text-based patch application overwrites one side's changes.
+/// Manual line-level merge for when we don't have a reliable base.
+///
+/// This combines lines from both versions by:
+/// 1. Finding lines unique to ours (not in theirs)
+/// 2. Finding lines unique to theirs (not in ours)  
+/// 3. Keeping shared lines once
+/// 4. Inserting theirs-only lines after the corresponding ours context
+///
+/// This is a best-effort approach — not a proper 3-way merge — but it's
+/// better than silently dropping one side's changes.
+fn manual_line_merge(ours: &str, theirs: &str) -> String {
+    let ours_lines: Vec<&str> = ours.lines().collect();
+    let theirs_lines: Vec<&str> = theirs.lines().collect();
+
+    let ours_set: std::collections::HashSet<&str> = ours_lines.iter().copied().collect();
+    let theirs_set: std::collections::HashSet<&str> = theirs_lines.iter().copied().collect();
+
+    let ours_only: Vec<&str> = ours_lines.iter().filter(|l| !theirs_set.contains(*l)).copied().collect();
+    let theirs_only: Vec<&str> = theirs_lines.iter().filter(|l| !ours_set.contains(*l)).copied().collect();
+
+    // If one side has no unique changes, the other side wins
+    if ours_only.is_empty() {
+        return theirs.to_string();
+    }
+    if theirs_only.is_empty() {
+        return ours.to_string();
+    }
+
+    // Both sides have unique changes — build combined output.
+    // Strategy: keep ours as the base, insert theirs-only lines at appropriate positions.
+    let mut result = Vec::new();
+    let mut theirs_idx = 0;
+
+    for line in &ours_lines {
+        result.push(line.to_string());
+
+        // After each ours line, check if any theirs-only lines should go here
+        while theirs_idx < theirs_only.len() {
+            if theirs_idx + 1 < theirs_lines.len() {
+                let next_theirs = theirs_lines[theirs_idx + 1];
+                if ours_set.contains(next_theirs) && result.iter().any(|r| r.trim() == next_theirs.trim()) {
+                    result.push(theirs_only[theirs_idx].to_string());
+                    theirs_idx += 1;
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+    }
+
+    while theirs_idx < theirs_only.len() {
+        result.push(theirs_only[theirs_idx].to_string());
+        theirs_idx += 1;
+    }
+
+    result.join("\n")
+}
+
+fn semantic_remerge_both_modified(
+    repo: &suture_core::repository::Repository,
+    source_branch: &str,
+    pre_merge_files: &std::collections::HashMap<String, String>,
+    pre_merge_head_id: &Option<suture_common::Hash>,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    use std::collections::HashSet;
+    use std::path::Path as StdPath;
+
+    let registry = crate::driver_registry::builtin_registry();
+
+    // Use the pre-merge HEAD ID (captured before execute_merge) to compute
+    // the correct LCA. After the merge, HEAD points to the merge commit,
+    // which would make LCA(merge, source) = source (trivially wrong).
+    let head_id = pre_merge_head_id
+        .as_ref()
+        .ok_or_else(|| "pre-merge HEAD ID not available".to_string())?;
+    let bn = suture_common::BranchName::new(source_branch)
+        .map_err(|e| format!("invalid branch name '{}': {}", source_branch, e))?;
+    let source_id = repo
+        .dag()
+        .get_branch(&bn)
+        .ok_or_else(|| format!("branch '{}' not found", source_branch))?;
+
+    // Compute the LCA between HEAD and the source branch tip.
+    // The LCA is the true 3-way merge base — it represents the last
+    // common ancestor of both branches, which is what a proper 3-way
+    // merge needs to correctly combine both sides' changes.
+    let lca_id = repo
+        .dag()
+        .lca(&head_id, &source_id)
+        .ok_or_else(|| "no common ancestor found for merge".to_string())?;
+
+    // Build LCA file tree snapshot to get the base content for 3-way merge.
+    // Use snapshot_fresh to bypass any stale SQLite cache.
+    let lca_tree = repo
+        .snapshot_fresh(&lca_id)
+        .map_err(|e| format!("failed to snapshot LCA: {}", e))?;
+
+    // Build LCA file content map from the snapshot.
+    // FileTree maps path → blob hash; we resolve each hash to content via CAS.
+    let lca_files: std::collections::HashMap<String, String> = lca_tree
+        .iter()
+        .filter_map(|(path, hash)| {
+            let content = repo.cas().get_blob(hash).ok()?;
+            Some((path.clone(), String::from_utf8(content).ok()?))
+        })
+        .collect();
+
+    // Also get the source branch's file tree (the "theirs" side).
+    // Use snapshot_fresh for correctness.
+    let source_tree = repo
+        .snapshot_fresh(&source_id)
+        .map_err(|e| format!("failed to snapshot source: {}", e))?;
+
+    let source_files: std::collections::HashMap<String, String> = source_tree
+        .iter()
+        .filter_map(|(path, hash)| {
+            let content = repo.cas().get_blob(hash).ok()?;
+            Some((path.clone(), String::from_utf8(content).ok()?))
+        })
+        .collect();
+
+    // Find files that changed on the source branch AND exist in the current
+    // HEAD (pre-merge). These are candidates for semantic re-merge.
+    let both_modified: Vec<String> = source_files
+        .keys()
+        .filter(|path| {
+            pre_merge_files.contains_key(path.as_str())
+                && source_files.get(path.as_str()) != pre_merge_files.get(path.as_str())
+        })
+        .cloned()
+        .collect();
+
+
+    if both_modified.is_empty() {
+        return Ok(0);
+    }
+
+    let mut merged_count = 0usize;
+
+    for path in &both_modified {
+        let file_path = StdPath::new(path);
+
+        // Check if a semantic driver exists for this file
+        let Ok(driver) = registry.get_for_path(file_path) else {
+            continue;
+        };
+
+        // Get the content versions for 3-way merge:
+        // - base:  LCA commit's version (the true common ancestor)
+        // - ours:  HEAD's version before this merge (pre_merge_files)
+        // - theirs: source branch tip's version (from snapshot, NOT post-merge
+        //           working tree, because the clean merge may have already
+        //           overwritten ours' changes with theirs')
+        let base = match lca_files.get(path.as_str()) {
+            Some(c) => c.as_str(),
+            None => "",  // File didn't exist at LCA — treat as empty base
+        };
+        let ours = match pre_merge_files.get(path.as_str()) {
+            Some(c) => c.as_str(),
+            None => continue,
+        };
+        let theirs = match source_files.get(path.as_str()) {
+            Some(c) => c.as_str(),
+            None => continue,
+        };
+
+        // Skip if ours and theirs are identical (no actual change to merge)
+        if ours == theirs {
+            continue;
+        }
+
+        // Also skip if neither side changed from base
+        if ours == base && theirs == base {
+            continue;
+        }
+
+        // Try semantic 3-way merge with the YAML driver
+        let merged_content = match driver.merge(&base, ours, theirs) {
+            Ok(Some(content)) => content,
+            _ => manual_line_merge(ours, theirs),
+        };
+
+        // Only write if the semantic merge produced something different
+        // from the post-merge working tree (i.e., it actually combined
+        // both sides' changes instead of just returning one side).
+        if merged_content.trim() == theirs.trim() {
+            continue;
+        }
+
+        // Write the semantically merged content
+        let full_path = repo.root().join(path);
+        if let Err(_e) = std::fs::write(&full_path, &merged_content) {
+            continue;
+        }
+
+        merged_count += 1;
+    }
+
+    Ok(merged_count)
 }

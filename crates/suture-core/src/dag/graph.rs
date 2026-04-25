@@ -362,7 +362,42 @@ impl PatchDag {
         self.nodes.keys().copied().collect()
     }
 
+    /// Get patches from a specific node back to root (inclusive), following
+    /// **all** parent edges (not just the first). This is required for
+    /// computing snapshots of merge commits, where both parent lineages
+    /// contribute to the final file tree.
+    ///
+    /// Returns patches in oldest-first (root → tip) order suitable for
+    /// sequential replay via `apply_patch_chain`.
+    pub fn patch_chain_full(&self, id: &PatchId) -> Vec<PatchId> {
+        // Collect self + all ancestors
+        let all: HashSet<PatchId> = {
+            let anc = self.ancestors(id);
+            let mut set = HashSet::with_capacity(anc.len() + 1);
+            set.insert(*id);
+            for a in anc.iter() {
+                set.insert(*a);
+            }
+            set
+        };
+
+        // Topological sort by generation number (oldest first).
+        // Generation is assigned in add_patch as max(parent generations) + 1,
+        // so parents always have strictly lower generation than children.
+        let mut sorted: Vec<PatchId> = all.iter().copied().collect();
+        sorted.sort_by_key(|pid| {
+            self.nodes
+                .get(pid)
+                .map(|n| n.generation)
+                .unwrap_or(0)
+        });
+
+        sorted
+    }
+
     /// Get patches from a specific node back to root (inclusive).
+    /// Follows **only the first parent** — use `patch_chain_full` for
+    /// DAG-aware traversal that includes merge parents.
     pub fn patch_chain(&self, id: &PatchId) -> Vec<PatchId> {
         let mut chain = Vec::new();
         let mut seen = HashSet::new();

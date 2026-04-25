@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use crate::error::RaftError;
@@ -7,7 +7,7 @@ use crate::message::RaftMessage;
 use crate::node::{NodeState, RaftNode};
 
 pub struct Cluster {
-    nodes: HashMap<u64, RaftNode>,
+    nodes: BTreeMap<u64, RaftNode>,
     #[allow(dead_code)]
     election_timeout: u64,
     #[allow(dead_code)]
@@ -22,7 +22,7 @@ pub struct ClusterTickResult {
 
 impl Cluster {
     pub fn new(peers: Vec<u64>, election_timeout: u64, heartbeat_interval: u64) -> Self {
-        let mut nodes = HashMap::new();
+        let mut nodes = BTreeMap::new();
         for &id in &peers {
             let node_peers: Vec<u64> = peers.iter().copied().filter(|&p| p != id).collect();
             let jitter = id;

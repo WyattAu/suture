@@ -1,5 +1,33 @@
 # Changelog
 
+## [5.0.0] - 2026-04-25
+
+### Semantic Merge — Batch Patch File-Level 3-Way Merge
+
+- **File-level 3-way merge for conflicting batch patches** — Previously, when a batch commit (touching multiple files) conflicted with another batch commit, the entire patch was skipped — losing all non-conflicting file changes. Now, `execute_conflicting_merge()` uses tree-diff approach: computes LCA→source diff, applies source-only changes directly, and performs per-file 3-way text merge for files changed on both sides. Clean merges are applied automatically; true conflicts still produce conflict markers for manual resolution.
+- **Validated with 100-file YouTube metadata merge** — Two branches (marketing + analytics) each modifying all 100 JSON files in a single batch commit merge cleanly: trending tags, sponsored markers, analytics data, and revenue figures all preserved.
+
+### Flaky Test Fix — suture-raft
+
+- **`HashMap` → `BTreeMap` in `Cluster`** — The raft cluster test `test_three_node_election` was flaky because `HashMap` iteration order is non-deterministic. Election timeouts are deterministic (base + node ID jitter), but message delivery order depended on HashMap iteration. Switching to `BTreeMap` ensures consistent node processing order. Verified 5/5 deterministic runs.
+
+### Snapshot & Merge Fixes (from earlier sessions)
+
+- **`patch_chain_full()`** — BFS + topological sort following ALL parent edges for correct merge commit snapshots
+- **`snapshot_head()` cache invalidation** — Compares `cached_head_id` against current `head_id`
+- **`resolve_ref()` hex prefix** — 7-character minimum to prevent branch name collisions
+- **DAG-aware `merge_branches()` and `branch_divergence()`** — Uses `(ancestors(tip) ∪ {tip}) - (ancestors(lca) ∪ {lca})`
+- **LCA-based semantic re-merge** — `semantic_remerge_both_modified()` computes correct 3-way merge via LCA
+- **`rewrite_head_tree()`** — Updates merge commit's stored tree from working tree
+- **Snapshot cache versioning** — `snapshot_engine_version = "2"` auto-clears stale caches
+
+### Validation Results
+
+- **NIST 800-53 YAML** — 11/11 checks pass (government security control schema, 3 compliance branches)
+- **YouTube bulk metadata** — 5/5 checks pass (100 JSON files, 2 team branches, batch commits)
+- **OTIO film timeline** — Driver dispatch works; known `merge_trees()` nesting bug (pre-existing)
+- **Stress test** — 10K files, 100 commits, 10MB files, branch+merge all functional
+
 ## [5.0.0] - 2026-04-23
 
 Major release — version unification, release pipeline, defence/compliance features, Google Drive replacement.

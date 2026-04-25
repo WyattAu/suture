@@ -222,20 +222,25 @@ impl Repository {
         {
             return Ok(hash);
         }
-        // Try short hash prefix
-        let all_patch_ids = self.dag.patch_ids();
-        let prefix_matches: Vec<&PatchId> = all_patch_ids
-            .iter()
-            .filter(|id| id.to_hex().starts_with(name))
-            .collect();
-        match prefix_matches.len() {
-            1 => return Ok(*prefix_matches[0]),
-            0 => {}
-            n => {
-                return Err(RepoError::Custom(format!(
-                    "ambiguous ref '{}' matches {} commits",
-                    name, n
-                )));
+        // Try short hash prefix — only if input looks like hex (all hex
+        // chars) and is at least 7 characters long. This prevents branch
+        // names like "a" or "b" from colliding with patch IDs whose hex
+        // happens to start with the same character.
+        if name.len() >= 7 && name.chars().all(|c| c.is_ascii_hexdigit()) {
+            let all_patch_ids = self.dag.patch_ids();
+            let prefix_matches: Vec<&PatchId> = all_patch_ids
+                .iter()
+                .filter(|id| id.to_hex().starts_with(name))
+                .collect();
+            match prefix_matches.len() {
+                1 => return Ok(*prefix_matches[0]),
+                0 => {}
+                n => {
+                    return Err(RepoError::Custom(format!(
+                        "ambiguous ref '{}' matches {} commits",
+                        name, n
+                    )));
+                }
             }
         }
         // Try tag
@@ -339,6 +344,20 @@ impl Repository {
         let mut cas = BlobStore::new(&suture_dir)?;
         cas.set_verify_on_read(false);
         let meta = crate::metadata::MetadataStore::open(&suture_dir.join("metadata.db"))?;
+
+        // Snapshot cache migration: if the engine version has changed, clear
+        // all cached file_trees from SQLite. Stale caches from before the
+        // DAG-aware snapshot fix (patch_chain_full) would return incorrect
+        // trees for merge commits.
+        const SNAPSHOT_ENGINE_VERSION: &str = "2";
+        let stored_version = meta
+            .get_config("snapshot_engine_version")
+            .unwrap_or(None);
+        if stored_version.as_deref() != Some(SNAPSHOT_ENGINE_VERSION) {
+            let _ = meta.conn().execute("DELETE FROM file_trees", []);
+            let _ = meta.conn().execute("DELETE FROM config WHERE key = 'head_tree_hash'", []);
+            let _ = meta.set_config("snapshot_engine_version", SNAPSHOT_ENGINE_VERSION);
+        }
 
         // Reconstruct DAG from metadata — load ALL patches
         let mut dag = PatchDag::new();
@@ -1409,8 +1428,16 @@ impl Repository {
         *self.cached_head_branch.borrow_mut() = Some(branch_name.clone());
         *self.cached_head_id.borrow_mut() = Some(head_id);
 
-        if let Some(ref tree) = *self.cached_head_snapshot.borrow() {
-            return Ok(tree.clone());
+        // Check in-memory cache — only use it if the cached snapshot
+        // corresponds to the current HEAD ID.
+        if let (Some(tree), Some(cached_id)) = (
+            self.cached_head_snapshot.borrow().clone(),
+            self.cached_head_id.borrow().as_ref().copied(),
+        ) {
+            if cached_id == head_id {
+                return Ok(tree.clone());
+            }
+            // HEAD changed — stale cache, fall through
         }
 
         // Try loading from SQLite (O(1) — no patch replay needed)
@@ -1468,10 +1495,13 @@ impl Repository {
     }
 
     /// Build a FileTree snapshot for a specific patch (uncached).
+    ///
+    /// Uses `patch_chain_full` which follows ALL parent edges (not just
+    /// the first parent), so merge commits include changes from both
+    /// parent lineages.
     fn snapshot_uncached(&self, patch_id: &PatchId) -> Result<FileTree, RepoError> {
-        let mut chain = self.dag.patch_chain(patch_id);
-        // patch_chain returns [tip, parent, ..., root] — reverse for oldest-first
-        chain.reverse();
+        let chain = self.dag.patch_chain_full(patch_id);
+        // patch_chain_full returns [root, ..., tip] — already oldest-first
         let patches: Vec<Patch> = chain
             .iter()
             .filter_map(|id| self.dag.get_patch(id).cloned())
@@ -1497,6 +1527,66 @@ impl Repository {
         let tree = self.snapshot_uncached(patch_id)?;
         let _ = self.meta.store_file_tree(patch_id, &tree);
         Ok(tree)
+    }
+
+    /// Build a FileTree snapshot for a specific patch, always replaying
+    /// from scratch (bypasses SQLite cache).
+    ///
+    /// Use this when cached snapshots may be stale (e.g., after fixing
+    /// a bug in snapshot computation).
+    pub fn snapshot_fresh(&self, patch_id: &PatchId) -> Result<FileTree, RepoError> {
+        self.snapshot_uncached(patch_id)
+    }
+
+    /// Rewrite the HEAD commit's file tree from the current working tree.
+    ///
+    /// This updates the stored snapshot for HEAD without creating a new commit.
+    /// Used by the CLI's semantic re-merge to fix the merge commit's tree
+    /// after correcting file contents.
+    pub fn rewrite_head_tree(&mut self) -> Result<(), RepoError> {
+        let (_, head_id) = self.head()?;
+
+        // Build a new tree from the working set (what's actually on disk)
+        let working_set = self.meta.working_set()?;
+        let parent_tree = self.snapshot_fresh(&head_id)?;
+
+        let mut tree = parent_tree;
+        for (path, status) in &working_set {
+            match status {
+                FileStatus::Added | FileStatus::Modified => {
+                    let full_path = self.root.join(path);
+                    if full_path.is_file() {
+                        let data = fs::read(&full_path)?;
+                        let hash = self.cas.put_blob(&data)?;
+                        tree.insert(path.clone(), hash);
+                    }
+                }
+                FileStatus::Deleted => {
+                    tree.remove(path);
+                }
+                _ => {}
+            }
+        }
+
+        let tree_hash = tree.content_hash();
+        let _ = self.meta.set_config("head_tree_hash", &tree_hash.to_hex());
+        let _ = self.meta.store_file_tree(&head_id, &tree);
+
+        // Clear the working set so checkout/status sees the tree as clean
+        let staged_paths: Vec<&str> = working_set
+            .iter()
+            .filter(|(_, s)| {
+                matches!(s, FileStatus::Added | FileStatus::Modified | FileStatus::Deleted)
+            })
+            .map(|(p, _)| p.as_str())
+            .collect();
+        if !staged_paths.is_empty() {
+            self.meta.clear_working_set_batch(&staged_paths)?;
+        }
+
+        self.invalidate_head_cache();
+
+        Ok(())
     }
 
     /// Sync the working tree to match the current HEAD snapshot.
@@ -2414,13 +2504,34 @@ impl Repository {
 
         let mut merged_tree = head_tree.clone();
         let mut patches_applied = 0;
+        let mut unresolved_conflicts = Vec::new();
 
+        // Collect paths of all conflicting batch patches so we can do
+        // file-level 3-way merge instead of skipping them entirely.
+        let conflicting_batch_paths: HashSet<String> = merge_result
+            .conflicts
+            .iter()
+            .filter_map(|c| {
+                // Only consider the source (branch B) patch for file-level merge
+                let patch_b = self.dag.get_patch(&c.patch_b_id)?;
+                if patch_b.is_batch() {
+                    Some(c.conflict_addresses.iter().cloned().collect::<Vec<_>>())
+                } else {
+                    None
+                }
+            })
+            .flatten()
+            .collect();
+
+        // ── Apply non-conflicting patches normally ──
         for entry in &merge_result.patches_b_only {
-            if conflicting_patch_ids.contains(entry) {
-                continue;
-            }
             if let Some(patch) = self.dag.get_patch(entry) {
                 if patch.is_identity() || patch.operation_type == OperationType::Merge {
+                    continue;
+                }
+                // Skip conflicting patches entirely — their files will be
+                // handled by the file-level tree-diff merge below.
+                if conflicting_patch_ids.contains(entry) {
                     continue;
                 }
                 if let Some(path) = &patch.target_path {
@@ -2451,9 +2562,123 @@ impl Repository {
             }
         }
 
-        let mut unresolved_conflicts = Vec::new();
+        // ── File-level 3-way merge for conflicting batch patches ──
+        // When two batch patches touch overlapping files, the patch-level
+        // conflict detection marks the entire patch as conflicting. But
+        // individual files within the batch may merge cleanly via 3-way
+        // text merge. We diff LCA→source and apply each file change:
+        //   - If file only changed on source: apply directly
+        //   - If file changed on both sides: 3-way merge
+        //   - If 3-way merge succeeds: apply merged result
+        //   - If 3-way merge has conflicts: report as unresolved
+        if !conflicting_batch_paths.is_empty() {
+            let source_diffs = diff_trees(&lca_tree, &source_tree);
+            for entry in &source_diffs {
+                if !conflicting_batch_paths.contains(&entry.path) {
+                    continue;
+                }
+                let base_hash: Option<suture_common::Hash> = lca_tree.get(&entry.path).copied();
+                let ours_hash: Option<suture_common::Hash> = head_tree.get(&entry.path).copied();
+                let theirs_hash: Option<suture_common::Hash> = source_tree.get(&entry.path).copied();
 
+                // File only changed on source side (not on ours) — apply directly
+                if base_hash == ours_hash {
+                    if let Some(new_hash) = &entry.new_hash {
+                        if self.cas.has_blob(new_hash) {
+                            let blob = self.cas.get_blob(new_hash)?;
+                            let full_path = self.root.join(&entry.path);
+                            if let Some(parent) = full_path.parent() {
+                                fs::create_dir_all(parent)?;
+                            }
+                            fs::write(&full_path, &blob)?;
+                            merged_tree.insert(entry.path.clone(), *new_hash);
+                        }
+                    } else if matches!(entry.diff_type, DiffType::Deleted) {
+                        let full_path = self.root.join(&entry.path);
+                        if full_path.exists() {
+                            fs::remove_file(&full_path)?;
+                        }
+                        merged_tree.remove(&entry.path);
+                    }
+                    patches_applied += 1;
+                    continue;
+                }
+
+                // File changed on both sides — attempt 3-way text merge
+                let base_content = base_hash
+                    .and_then(|h| self.cas.get_blob(&h).ok())
+                    .map(|b| String::from_utf8_lossy(&b).to_string());
+                let ours_content = ours_hash
+                    .and_then(|h| self.cas.get_blob(&h).ok())
+                    .map(|b| String::from_utf8_lossy(&b).to_string());
+                let theirs_content = theirs_hash
+                    .and_then(|h| self.cas.get_blob(&h).ok())
+                    .map(|b| String::from_utf8_lossy(&b).to_string());
+
+                let merged = three_way_merge(
+                    base_content.as_deref(),
+                    &ours_content.unwrap_or_default(),
+                    &theirs_content.unwrap_or_default(),
+                    head_branch,
+                    source_branch,
+                );
+
+                let full_path = self.root.join(&entry.path);
+                if let Some(parent) = full_path.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+
+                match merged {
+                    Ok(content) => {
+                        // Clean 3-way merge — apply
+                        let hash = self.cas.put_blob(content.as_bytes())?;
+                        fs::write(&full_path, content.as_bytes())?;
+                        merged_tree.insert(entry.path.clone(), hash);
+                        patches_applied += 1;
+                    }
+                    Err(conflict_lines) => {
+                        // Merge has conflicts — write conflict markers
+                        let mut content = String::new();
+                        for line in &conflict_lines {
+                            content.push_str(line);
+                            content.push('\n');
+                        }
+                        let hash = self.cas.put_blob(content.as_bytes())?;
+                        fs::write(&full_path, content.as_bytes())?;
+                        merged_tree.insert(entry.path.clone(), hash);
+
+                        let zero_hash = suture_common::Hash::from_hex(
+                            "0000000000000000000000000000000000000000000000000000000000000000",
+                        )
+                        .unwrap_or_else(|_| suture_common::Hash::from_data(b""));
+                        unresolved_conflicts.push(ConflictInfo {
+                            path: entry.path.clone(),
+                            our_patch_id: merge_result
+                                .conflicts
+                                .first()
+                                .map(|c| c.patch_a_id)
+                                .unwrap_or(zero_hash),
+                            their_patch_id: merge_result
+                                .conflicts
+                                .first()
+                                .map(|c| c.patch_b_id)
+                                .unwrap_or(zero_hash),
+                            our_content_hash: ours_hash,
+                            their_content_hash: theirs_hash,
+                            base_content_hash: base_hash,
+                        });
+                    }
+                }
+            }
+        }
+
+        // ── Handle remaining (non-batch) conflicts ──
         for conflict in &merge_result.conflicts {
+            let patch_b = self.dag.get_patch(&conflict.patch_b_id);
+            if patch_b.is_some_and(|p| p.is_batch()) {
+                // Already handled by file-level merge above
+                continue;
+            }
             let conflict_info =
                 self.build_conflict_info(conflict, &head_tree, &source_tree, &lca_tree);
             if let Some(info) = conflict_info {

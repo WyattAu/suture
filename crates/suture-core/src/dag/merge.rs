@@ -16,6 +16,10 @@ impl PatchDag {
     ///
     /// Returns a `MergeResult` containing the patches to merge and any conflicts.
     /// This does NOT modify the DAG — it only computes the plan.
+    ///
+    /// Uses DAG-aware ancestry: patches unique to each branch are computed
+    /// as `ancestors(tip) - ancestors(lca)`, which correctly handles merge
+    /// commits with multiple parents.
     pub fn merge_branches(
         &self,
         branch_a: &BranchName,
@@ -33,24 +37,30 @@ impl PatchDag {
             .lca(&target_a, &target_b)
             .ok_or_else(|| DagError::Custom("no common ancestor found".to_string()))?;
 
-        // Get patch chains from LCA to each branch tip
-        let chain_a = self.patch_chain(&target_a);
-        let chain_b = self.patch_chain(&target_b);
+        // DAG-aware: compute patches unique to each branch as
+        // (ancestors(tip) ∪ {tip}) - (ancestors(lca) ∪ {lca}).
+        // ancestors() excludes the node itself, so we add the tip/lca
+        // explicitly to get the complete set.
+        let lca_ancestors = self.ancestors(&lca_id);
+        let mut lca_set: std::collections::HashSet<PatchId> =
+            lca_ancestors.iter().copied().collect();
+        lca_set.insert(lca_id);
 
-        // Find the LCA position in each chain
-        let lca_pos_a = chain_a.iter().position(|id| *id == lca_id);
-        let lca_pos_b = chain_b.iter().position(|id| *id == lca_id);
+        let tip_a_ancestors = self.ancestors(&target_a);
+        let branch_a_patches: Vec<PatchId> = tip_a_ancestors
+            .iter()
+            .chain(std::iter::once(&target_a))
+            .filter(|id| !lca_set.contains(id))
+            .copied()
+            .collect();
 
-        // Extract patches unique to each branch (after LCA)
-        let branch_a_patches: Vec<PatchId> = match lca_pos_a {
-            Some(pos) => chain_a[..pos].to_vec(), // Everything before LCA in chain
-            None => chain_a.clone(),
-        };
-
-        let branch_b_patches: Vec<PatchId> = match lca_pos_b {
-            Some(pos) => chain_b[..pos].to_vec(),
-            None => chain_b.clone(),
-        };
+        let tip_b_ancestors = self.ancestors(&target_b);
+        let branch_b_patches: Vec<PatchId> = tip_b_ancestors
+            .iter()
+            .chain(std::iter::once(&target_b))
+            .filter(|id| !lca_set.contains(id))
+            .copied()
+            .collect();
 
         // Build patch lookup
         let all_patches: HashMap<PatchId, _> = self

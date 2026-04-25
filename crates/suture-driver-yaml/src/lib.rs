@@ -638,6 +638,105 @@ mod tests {
     }
 
     #[test]
+    fn test_yaml_merge_deep_nested_both_modify() {
+        // Reproduces: team-a adds labels to web, team-b adds healthcheck to api
+        // After both merges, the file should contain BOTH changes
+        let driver = YamlDriver::new();
+        let base = r#"services:
+  web:
+    image: nginx:latest
+    ports:
+      - "80:80"
+  api:
+    image: myapp:1.0
+    ports:
+      - "3000:3000"
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: myapp
+"#;
+
+        let ours = r#"services:
+  web:
+    image: nginx:latest
+    ports:
+      - "80:80"
+    labels:
+      traefik.enable: 'true'
+    restart: unless-stopped
+  api:
+    image: myapp:1.0
+    ports:
+      - "3000:3000"
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: myapp
+"#;
+
+        let theirs = r#"services:
+  web:
+    image: nginx:latest
+    ports:
+      - "80:80"
+  api:
+    image: myapp:1.0
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: curl -f http://localhost:3000/health
+      interval: 30s
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_PASSWORD: rotated-2024
+      POSTGRES_DB: myapp
+"#;
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some(), "deep nested merge should succeed");
+        let merged: Value = serde_yaml::from_str(&result.unwrap()).unwrap();
+
+        // Team-a's changes must be preserved
+        assert!(
+            merged["services"]["web"].get("labels").is_some(),
+            "web.labels from team-a should be preserved"
+        );
+        assert!(
+            merged["services"]["web"].get("restart").is_some(),
+            "web.restart from team-a should be preserved"
+        );
+
+        // Team-b's changes must be preserved
+        assert!(
+            merged["services"]["api"].get("healthcheck").is_some(),
+            "api.healthcheck from team-b should be preserved"
+        );
+        assert_eq!(
+            merged["services"]["db"]["environment"]["POSTGRES_PASSWORD"],
+            Value::String("rotated-2024".into()),
+            "db password rotation from team-b should be preserved"
+        );
+
+        // All original services must still exist
+        assert!(
+            merged["services"].get("web").is_some(),
+            "web service should exist"
+        );
+        assert!(
+            merged["services"].get("api").is_some(),
+            "api service should exist"
+        );
+        assert!(
+            merged["services"].get("db").is_some(),
+            "db service should exist"
+        );
+    }
+
+    #[test]
     fn test_correctness_base_equals_theirs() {
         let driver = YamlDriver::new();
         let base = "a: 1\nb: 2\n";

@@ -1,6 +1,11 @@
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 use crate::remote_proto::do_pull;
+
+const SYNC_PID_FILE: &str = ".suture/sync.pid";
+const DEBOUNCE_SECS: u64 = 2;
+const POLL_INTERVAL_SECS: u64 = 1;
 
 pub(crate) async fn cmd_sync(
     remote: &str,
@@ -366,4 +371,234 @@ async fn cmd_push_inner(
         let text = resp.text().await?;
         Err(format!("push failed: {text}").into())
     }
+}
+
+// ---------------------------------------------------------------------------
+// File-watching sync daemon (polling-based)
+// ---------------------------------------------------------------------------
+
+pub(crate) async fn cmd_sync_start() -> Result<(), Box<dyn std::error::Error>> {
+    if is_daemon_running() {
+        return Err("sync daemon is already running (use `suture sync stop` first)".into());
+    }
+
+    let repo_dir = std::env::current_dir()?;
+    if !repo_dir.join(".suture").exists() {
+        return Err("not a suture repository (no .suture directory)".into());
+    }
+
+    write_pid_file()?;
+
+    let pid = std::process::id();
+    eprintln!("suture sync daemon started (PID: {pid})");
+    eprintln!("watching: {}", repo_dir.display());
+    eprintln!("debounce: {DEBOUNCE_SECS}s | poll interval: {POLL_INTERVAL_SECS}s");
+    eprintln!("press Ctrl+C to stop\n");
+
+    let result = run_polling_watcher(&repo_dir).await;
+
+    if let Err(e) = result {
+        eprintln!("sync daemon error: {e}");
+    }
+
+    remove_pid_file();
+    eprintln!("\nsync daemon stopped");
+    Ok(())
+}
+
+pub(crate) fn cmd_sync_stop() -> Result<(), Box<dyn std::error::Error>> {
+    let pid = read_pid_file()?;
+
+    match pid {
+        Some(pid) => {
+            #[cfg(unix)]
+            {
+                let ret = unsafe { libc::kill(pid as i32, libc::SIGTERM) };
+                if ret != 0 {
+                    let errno = std::io::Error::last_os_error();
+                    if errno.raw_os_error() == Some(3) {
+                        remove_pid_file();
+                        return Err(format!(
+                            "process {pid} is not running (removed stale PID file)"
+                        )
+                        .into());
+                    }
+                    return Err(format!("failed to stop daemon (PID {pid}): {errno}").into());
+                }
+            }
+            #[cfg(not(unix))]
+            {
+                return Err("stopping the daemon is only supported on Unix".into());
+            }
+
+            println!("sent SIGTERM to sync daemon (PID: {pid})");
+
+            std::thread::sleep(std::time::Duration::from_secs(1));
+
+            if is_process_alive(pid) {
+                println!("warning: daemon may still be running");
+            } else {
+                remove_pid_file();
+                println!("sync daemon stopped");
+            }
+        }
+        None => {
+            return Err("sync daemon is not running".into());
+        }
+    }
+
+    Ok(())
+}
+
+pub(crate) fn cmd_sync_status() -> Result<(), Box<dyn std::error::Error>> {
+    match read_pid_file()? {
+        Some(pid) => {
+            if is_process_alive(pid) {
+                println!("sync daemon is running (PID: {pid})");
+            } else {
+                println!(
+                    "sync daemon is NOT running (stale PID file for PID: {pid})"
+                );
+                println!("run `suture sync stop` to clean up the stale PID file");
+            }
+        }
+        None => {
+            println!("sync daemon is not running");
+        }
+    }
+    Ok(())
+}
+
+fn pid_file_path() -> PathBuf {
+    PathBuf::from(SYNC_PID_FILE)
+}
+
+fn write_pid_file() -> Result<(), Box<dyn std::error::Error>> {
+    let pid = std::process::id();
+    let path = pid_file_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&path, pid.to_string())?;
+    Ok(())
+}
+
+fn read_pid_file() -> Result<Option<u32>, Box<dyn std::error::Error>> {
+    let path = pid_file_path();
+    if !path.exists() {
+        return Ok(None);
+    }
+    let content = std::fs::read_to_string(&path)?;
+    let pid: u32 = content.trim().parse()?;
+    Ok(Some(pid))
+}
+
+fn remove_pid_file() {
+    let path = pid_file_path();
+    let _ = std::fs::remove_file(path);
+}
+
+fn is_daemon_running() -> bool {
+    match read_pid_file() {
+        Ok(Some(pid)) => is_process_alive(pid),
+        _ => false,
+    }
+}
+
+fn is_process_alive(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        let ret = unsafe { libc::kill(pid as i32, 0) };
+        ret == 0
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = pid;
+        false
+    }
+}
+
+fn compute_file_snapshot(
+    repo_dir: &Path,
+) -> Result<HashMap<String, (u64, u64)>, Box<dyn std::error::Error>> {
+    let mut snapshot = HashMap::new();
+    snapshot_dir(repo_dir, repo_dir, &mut snapshot)?;
+    Ok(snapshot)
+}
+
+fn snapshot_dir(
+    root: &Path,
+    current: &Path,
+    snapshot: &mut HashMap<String, (u64, u64)>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let entries = std::fs::read_dir(current)?;
+    for entry in entries.filter_map(|e| e.ok()) {
+        let path = entry.path();
+        let name = entry.file_name();
+
+        if name == ".suture" {
+            continue;
+        }
+
+        let rel = path
+            .strip_prefix(root)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .replace('\\', "/");
+
+        if path.is_dir() {
+            snapshot_dir(root, &path, snapshot)?;
+        } else if path.is_file() {
+            let meta = entry.metadata()?;
+            snapshot.insert(rel, (meta.len(), meta.modified()?.elapsed()?.as_millis() as u64));
+        }
+    }
+    Ok(())
+}
+
+async fn run_polling_watcher(repo_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let mut prev_snapshot = compute_file_snapshot(repo_dir)?;
+
+    loop {
+        tokio::select! {
+            _ = tokio::time::sleep(std::time::Duration::from_secs(POLL_INTERVAL_SECS)) => {
+                let current = compute_file_snapshot(repo_dir)?;
+
+                if current != prev_snapshot {
+                    // debounce: wait for changes to settle
+                    tokio::time::sleep(std::time::Duration::from_secs(DEBOUNCE_SECS)).await;
+
+                    let settled = compute_file_snapshot(repo_dir)?;
+                    if settled != prev_snapshot {
+                        auto_commit_changes(repo_dir)?;
+                        prev_snapshot = settled;
+                    }
+                }
+            }
+            _ = tokio::signal::ctrl_c() => {
+                break;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn auto_commit_changes(repo_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let mut repo = suture_core::repository::Repository::open(repo_dir)?;
+
+    let count = repo.add_all()?;
+    if count == 0 {
+        return Ok(());
+    }
+
+    let now = chrono::Local::now();
+    let timestamp = now.format("%Y-%m-%d %H:%M:%S");
+    let message = format!("auto-sync: {count} file(s) changed at {timestamp}");
+
+    let patch_id = repo.commit(&message)?;
+    let short_id = &patch_id.to_hex()[..12.min(patch_id.to_hex().len())];
+    eprintln!("[{timestamp}] auto-committed {count} file(s) -> {short_id}");
+
+    Ok(())
 }

@@ -43,6 +43,7 @@ pub mod reset;
 pub mod restore;
 pub mod revert;
 pub mod rev_parse;
+pub mod repack;
 pub mod rm;
 pub mod shortlog;
 pub mod show;

@@ -629,6 +629,24 @@ EXAMPLES:
         #[arg(long)]
         aggressive: bool,
     },
+    /// Repack loose objects into pack files for storage efficiency
+    #[command(after_long_help = "\
+EXAMPLES:
+    suture repack                    # Repack if >100 loose objects
+    suture repack --threshold 50     # Repack if >50 loose objects
+    suture repack --dry-run          # Preview without packing
+    suture repack --force             # Repack regardless of threshold")]
+    Repack {
+        /// Minimum number of loose objects before repacking (default: 100)
+        #[arg(long, default_value_t = 100)]
+        threshold: usize,
+        /// Show what would be packed without actually repacking
+        #[arg(long)]
+        dry_run: bool,
+        /// Repack even if below threshold
+        #[arg(long)]
+        force: bool,
+    },
     /// Search for a pattern in tracked files
     #[command(after_long_help = "\
 EXAMPLES:
@@ -801,8 +819,13 @@ EXAMPLES:
     suture sync                     # Auto-commit staged+unstaged, then push/pull
     suture sync --no-push           # Auto-commit but don't push
     suture sync --pull-only         # Only pull from remote
-    suture sync --message 'WIP'     # Custom commit message")]
+    suture sync --message 'WIP'     # Custom commit message
+    suture sync start               # Start file-watching daemon (foreground)
+    suture sync stop                # Stop the sync daemon
+    suture sync status              # Show sync daemon status")]
     Sync {
+        #[command(subcommand)]
+        action: Option<SyncAction>,
         /// Auto-commit but don't push
         #[arg(long)]
         no_push: bool,
@@ -1292,6 +1315,16 @@ pub(crate) enum HookAction {
     },
 }
 
+#[derive(Subcommand, Debug)]
+pub(crate) enum SyncAction {
+    /// Start file-watching sync daemon (runs in foreground)
+    Start,
+    /// Stop the running sync daemon
+    Stop,
+    /// Show sync daemon status
+    Status,
+}
+
 #[tokio::main]
 async fn main() {
     // On Unix, restore default SIGPIPE handling so broken pipes terminate the
@@ -1532,6 +1565,9 @@ async fn main() {
         Commands::Notes { action } => cmd::notes::cmd_notes(&action).await,
         Commands::Worktree { action } => cmd::worktree::cmd_worktree(&action).await,
         Commands::Gc { dry_run, aggressive } => cmd::gc::cmd_gc(dry_run, aggressive).await,
+        Commands::Repack { threshold, dry_run, force } => {
+            cmd::repack::cmd_repack(threshold, dry_run, force).await
+        }
         Commands::Grep {
             pattern,
             paths,
@@ -1587,12 +1623,18 @@ async fn main() {
             cmd::squash::cmd_squash(count, message.as_deref()).await
         }
         Commands::Sync {
+            action,
             remote,
             no_push,
             pull_only,
             message,
-        } => {
-            cmd::sync::cmd_sync(&remote, no_push, pull_only, message.as_deref()).await
+        } => match action {
+            Some(SyncAction::Start) => cmd::sync::cmd_sync_start().await,
+            Some(SyncAction::Stop) => cmd::sync::cmd_sync_stop().map_err(Into::into),
+            Some(SyncAction::Status) => cmd::sync::cmd_sync_status().map_err(Into::into),
+            None => {
+                cmd::sync::cmd_sync(&remote, no_push, pull_only, message.as_deref()).await
+            }
         }
         Commands::Undo { steps, hard } => cmd::undo::cmd_undo(steps, hard).await,
         Commands::Verify { commit_ref, verbose } => {
