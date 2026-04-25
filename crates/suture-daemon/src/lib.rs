@@ -1036,6 +1036,7 @@ fn collect_blobs_from_patch(
             blobs.push(BlobRef {
                 hash: hex_to_hash(&hash_hex),
                 data: b64.encode(&blob_data),
+                truncated: false,
             });
         }
     } else if !patch.payload.is_empty() {
@@ -1051,6 +1052,7 @@ fn collect_blobs_from_patch(
             blobs.push(BlobRef {
                 hash: hex_to_hash(&hash_hex),
                 data: b64.encode(&blob_data),
+                truncated: false,
             });
         }
     }

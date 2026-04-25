@@ -227,6 +227,7 @@ impl SutureHub for SutureHubService {
                 crate::types::BlobRef {
                     hash: crate::types::HashProto { value: b.hash },
                     data: base64::engine::general_purpose::STANDARD.encode(&b.data),
+                    truncated: false,
                 }
             })
             .collect();

@@ -428,11 +428,29 @@ impl SutureDriver for XlsxDriver {
     }
 
     fn merge(&self, base: &str, ours: &str, theirs: &str) -> Result<Option<String>, DriverError> {
-        let base_doc = OoxmlDocument::from_bytes(base.as_bytes())
+        let bytes = self.merge_raw(base.as_bytes(), ours.as_bytes(), theirs.as_bytes())?;
+        match bytes {
+            Some(b) => {
+                // SAFETY: OOXML parts are UTF-8 XML. The bytes round-trip
+                // through ZIP → parse → merge → serialize → ZIP and are
+                // written to disk as raw bytes.
+                Ok(Some(unsafe { String::from_utf8_unchecked(b) }))
+            }
+            None => Ok(None),
+        }
+    }
+
+    fn merge_raw(
+        &self,
+        base: &[u8],
+        ours: &[u8],
+        theirs: &[u8],
+    ) -> Result<Option<Vec<u8>>, DriverError> {
+        let base_doc = OoxmlDocument::from_bytes(base)
             .map_err(|e| DriverError::ParseError(e.to_string()))?;
-        let ours_doc = OoxmlDocument::from_bytes(ours.as_bytes())
+        let ours_doc = OoxmlDocument::from_bytes(ours)
             .map_err(|e| DriverError::ParseError(e.to_string()))?;
-        let theirs_doc = OoxmlDocument::from_bytes(theirs.as_bytes())
+        let theirs_doc = OoxmlDocument::from_bytes(theirs)
             .map_err(|e| DriverError::ParseError(e.to_string()))?;
 
         let base_sheets = Self::parse_sheets(&base_doc)?;
@@ -470,11 +488,7 @@ impl SutureDriver for XlsxDriver {
             }
         }
 
-        // Build merged XLSX by updating sheet XML in the base document.
-        // The merge operates at the semantic (cell value) level. We rebuild
-        // the sheetData section of each worksheet, preserving the rest of
-        // the XML structure.
-        let mut doc = OoxmlDocument::from_bytes(base.as_bytes())
+        let mut doc = OoxmlDocument::from_bytes(base)
             .map_err(|e| DriverError::ParseError(e.to_string()))?;
 
         let mut name_to_path: HashMap<String, String> = HashMap::new();
@@ -494,16 +508,22 @@ impl SutureDriver for XlsxDriver {
             }
         }
 
-        // Update shared strings if ours or theirs added new strings.
-        // For now, we embed inline strings in the rebuilt sheet XML,
-        // which avoids the complexity of merging shared string tables.
-
         let bytes = doc
             .to_bytes()
             .map_err(|e| DriverError::SerializationError(e.to_string()))?;
-        // SAFETY: OOXML parts are UTF-8 XML. The serialization writes stored
-        // string content which is always valid UTF-8.
-        Ok(Some(unsafe { String::from_utf8_unchecked(bytes) }))
+        Ok(Some(bytes))
+    }
+
+    fn diff_raw(
+        &self,
+        base: Option<&[u8]>,
+        new_content: &[u8],
+    ) -> Result<Vec<SemanticChange>, DriverError> {
+        let base_str = base.map(|b| {
+            unsafe { String::from_utf8_unchecked(b.to_vec()) }
+        });
+        let new_str = unsafe { String::from_utf8_unchecked(new_content.to_vec()) };
+        self.diff(base_str.as_deref(), &new_str)
     }
 }
 

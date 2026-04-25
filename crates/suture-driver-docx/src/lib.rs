@@ -450,11 +450,30 @@ impl SutureDriver for DocxDriver {
     }
 
     fn merge(&self, base: &str, ours: &str, theirs: &str) -> Result<Option<String>, DriverError> {
-        let base_doc = OoxmlDocument::from_bytes(base.as_bytes())
+        // Delegate to merge_raw and convert bytes → String.
+        let bytes = self.merge_raw(base.as_bytes(), ours.as_bytes(), theirs.as_bytes())?;
+        match bytes {
+            Some(b) => {
+                // SAFETY: OOXML documents are valid UTF-8 per ECMA-376.
+                // The bytes round-trip through ZIP → XML → merge → XML → ZIP
+                // and are written to disk as raw bytes, never interpreted as text.
+                Ok(Some(unsafe { String::from_utf8_unchecked(b) }))
+            }
+            None => Ok(None),
+        }
+    }
+
+    fn merge_raw(
+        &self,
+        base: &[u8],
+        ours: &[u8],
+        theirs: &[u8],
+    ) -> Result<Option<Vec<u8>>, DriverError> {
+        let base_doc = OoxmlDocument::from_bytes(base)
             .map_err(|e| DriverError::ParseError(e.to_string()))?;
-        let ours_doc = OoxmlDocument::from_bytes(ours.as_bytes())
+        let ours_doc = OoxmlDocument::from_bytes(ours)
             .map_err(|e| DriverError::ParseError(e.to_string()))?;
-        let theirs_doc = OoxmlDocument::from_bytes(theirs.as_bytes())
+        let theirs_doc = OoxmlDocument::from_bytes(theirs)
             .map_err(|e| DriverError::ParseError(e.to_string()))?;
 
         let main_path = base_doc
@@ -474,7 +493,7 @@ impl SutureDriver for DocxDriver {
             Some(merged_blocks) => {
                 let new_doc_xml = rebuild_document_xml(&base_body, &merged_blocks);
 
-                let mut out_doc = OoxmlDocument::from_bytes(base.as_bytes())
+                let mut out_doc = OoxmlDocument::from_bytes(base)
                     .map_err(|e| DriverError::ParseError(e.to_string()))?;
                 if let Some(part) = out_doc.parts.get_mut(&main_path) {
                     part.content = new_doc_xml;
@@ -483,11 +502,23 @@ impl SutureDriver for DocxDriver {
                 let bytes = out_doc
                     .to_bytes()
                     .map_err(|e| DriverError::SerializationError(e.to_string()))?;
-                // SAFETY: OOXML documents are valid UTF-8 per ECMA-376.
-                Ok(Some(unsafe { String::from_utf8_unchecked(bytes) }))
+                Ok(Some(bytes))
             }
             None => Ok(None),
         }
+    }
+
+    fn diff_raw(
+        &self,
+        base: Option<&[u8]>,
+        new_content: &[u8],
+    ) -> Result<Vec<SemanticChange>, DriverError> {
+        let base_str = base.map(|b| {
+            // SAFETY: OOXML documents are valid UTF-8 per ECMA-376.
+            unsafe { String::from_utf8_unchecked(b.to_vec()) }
+        });
+        let new_str = unsafe { String::from_utf8_unchecked(new_content.to_vec()) };
+        self.diff(base_str.as_deref(), &new_str)
     }
 }
 

@@ -552,11 +552,29 @@ impl SutureDriver for PptxDriver {
     }
 
     fn merge(&self, base: &str, ours: &str, theirs: &str) -> Result<Option<String>, DriverError> {
-        let base_doc = OoxmlDocument::from_bytes(base.as_bytes())
+        let bytes = self.merge_raw(base.as_bytes(), ours.as_bytes(), theirs.as_bytes())?;
+        match bytes {
+            Some(b) => {
+                // SAFETY: OOXML parts are UTF-8 XML. The bytes round-trip
+                // through ZIP → parse → merge → serialize → ZIP and are
+                // written to disk as raw bytes.
+                Ok(Some(unsafe { String::from_utf8_unchecked(b) }))
+            }
+            None => Ok(None),
+        }
+    }
+
+    fn merge_raw(
+        &self,
+        base: &[u8],
+        ours: &[u8],
+        theirs: &[u8],
+    ) -> Result<Option<Vec<u8>>, DriverError> {
+        let base_doc = OoxmlDocument::from_bytes(base)
             .map_err(|e| DriverError::ParseError(e.to_string()))?;
-        let ours_doc = OoxmlDocument::from_bytes(ours.as_bytes())
+        let ours_doc = OoxmlDocument::from_bytes(ours)
             .map_err(|e| DriverError::ParseError(e.to_string()))?;
-        let theirs_doc = OoxmlDocument::from_bytes(theirs.as_bytes())
+        let theirs_doc = OoxmlDocument::from_bytes(theirs)
             .map_err(|e| DriverError::ParseError(e.to_string()))?;
 
         let base_slides = Self::extract_slides(&base_doc)?;
@@ -569,7 +587,7 @@ impl SutureDriver for PptxDriver {
         };
 
         // Build the merged document starting from base
-        let mut doc = OoxmlDocument::from_bytes(base.as_bytes())
+        let mut doc = OoxmlDocument::from_bytes(base)
             .map_err(|e| DriverError::ParseError(e.to_string()))?;
 
         // Update presentation.xml with the new slide ID list
@@ -631,9 +649,19 @@ impl SutureDriver for PptxDriver {
         let bytes = doc
             .to_bytes()
             .map_err(|e| DriverError::SerializationError(e.to_string()))?;
-        // SAFETY: OOXML parts are UTF-8 XML. The serialization only writes
-        // the stored string content, so output is always valid UTF-8.
-        Ok(Some(unsafe { String::from_utf8_unchecked(bytes) }))
+        Ok(Some(bytes))
+    }
+
+    fn diff_raw(
+        &self,
+        base: Option<&[u8]>,
+        new_content: &[u8],
+    ) -> Result<Vec<SemanticChange>, DriverError> {
+        let base_str = base.map(|b| {
+            unsafe { String::from_utf8_unchecked(b.to_vec()) }
+        });
+        let new_str = unsafe { String::from_utf8_unchecked(new_content.to_vec()) };
+        self.diff(base_str.as_deref(), &new_str)
     }
 }
 

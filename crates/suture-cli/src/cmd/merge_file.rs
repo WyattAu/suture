@@ -13,7 +13,7 @@ fn read_file_bytes(path: &str) -> Result<String, Box<dyn std::error::Error>> {
     // SAFETY: SutureDriver implementations handle binary content at the format level.
     // DOCX/XLSX/PPTX are ZIP archives — the bytes are round-tripped through
     // ZIP read → XML parse → merge → XML serialize → ZIP write.
-    Ok(unsafe { String::from_utf8_unchecked(bytes) })
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
 pub(crate) async fn cmd_merge_file(

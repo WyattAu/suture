@@ -959,6 +959,7 @@ impl SutureHubServer {
                             blobs.push(BlobRef {
                                 hash: HashProto { value: needed_hash.clone() },
                                 data: base64_encode(&target_data),
+                                truncated: false,
                             });
                             continue;
                         }
@@ -982,12 +983,14 @@ impl SutureHubServer {
                         blobs.push(BlobRef {
                             hash: HashProto { value: needed_hash.clone() },
                             data: base64_encode(&target_data),
+                            truncated: false,
                         });
                     }
                 } else {
                     blobs.push(BlobRef {
                         hash: HashProto { value: needed_hash.clone() },
                         data: base64_encode(&target_data),
+                        truncated: false,
                     });
                 }
             }

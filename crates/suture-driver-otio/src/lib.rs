@@ -372,12 +372,12 @@ fn content_fingerprint(node: &OtioNode) -> String {
 struct FlatNode {
     path: String,
     fingerprint: String,
+    parent_fp: Option<String>,
     node: OtioNode,
-    /// Original raw JSON value — used for exact comparison (no serde round-trip).
     raw_json: serde_json::Value,
 }
 
-fn flatten_tree_with_raw(value: &serde_json::Value, parent_path: &str) -> Vec<FlatNode> {
+fn flatten_tree_with_raw(value: &serde_json::Value, parent_path: &str, parent_fp: Option<&str>) -> Vec<FlatNode> {
     let mut result = Vec::new();
     let node = match parse_otio_node(value) {
         Ok(n) => n,
@@ -385,7 +385,6 @@ fn flatten_tree_with_raw(value: &serde_json::Value, parent_path: &str) -> Vec<Fl
     };
     let fp = content_fingerprint(&node);
 
-    // Build path
     let path = if parent_path.is_empty() {
         format!("/{}", node.schema_type())
     } else {
@@ -394,18 +393,18 @@ fn flatten_tree_with_raw(value: &serde_json::Value, parent_path: &str) -> Vec<Fl
 
     result.push(FlatNode {
         path: path.clone(),
-        fingerprint: fp,
+        fingerprint: fp.clone(),
+        parent_fp: parent_fp.map(|s| s.to_string()),
         raw_json: value.clone(),
         node: node.clone(),
     });
 
-    // Recurse into children arrays
     let child_keys = ["tracks", "children"];
     for key in &child_keys {
         if let Some(arr) = value.get(key).and_then(|v| v.as_array()) {
             for (i, child_val) in arr.iter().enumerate() {
                 let child_path = format!("{}/[{}]", path, i);
-                result.extend(flatten_tree_with_raw(child_val, &child_path));
+                result.extend(flatten_tree_with_raw(child_val, &child_path, Some(&fp)));
             }
         }
     }
@@ -589,12 +588,12 @@ fn merge_trees(
     // Reconstruct the OTIO JSON from the merged flat nodes.
     // Use ours as the structural template, then replace children with merged nodes.
     let ours_json: serde_json::Value = match ours_nodes.first() {
-        Some(node) => node.node.to_json(),
+        Some(node) => node.raw_json.clone(),
         None => serde_json::Value::Null,
     };
 
     let theirs_json: serde_json::Value = match theirs_nodes.first() {
-        Some(node) => node.node.to_json(),
+        Some(node) => node.raw_json.clone(),
         None => serde_json::Value::Null,
     };
 
@@ -604,7 +603,7 @@ fn merge_trees(
     } else if theirs_json.is_object() {
         theirs_json
     } else {
-        return base_nodes.first().map(|n| n.node.to_json());
+        return base_nodes.first().map(|n| n.raw_json.clone());
     };
 
     // Rebuild the tree by matching fingerprints
@@ -624,35 +623,38 @@ fn rebuild_children_with_merged(
     merged_nodes: &[(String, FlatNode)],
     placed_fps: &mut std::collections::HashSet<String>,
 ) {
+    let container_fp = value
+        .get("OTIO_SCHEMA")
+        .and_then(|v| v.as_str())
+        .and_then(|_| parse_otio_node(value).ok())
+        .map(|n| content_fingerprint(&n));
+
     if let Some(obj) = value.as_object_mut() {
         for key in ["tracks", "children"] {
             if let Some(arr) = obj.get_mut(key).and_then(|v| v.as_array_mut()) {
                 let mut new_arr = Vec::new();
 
-                // First pass: replace existing children with their merged versions
                 for item in arr.iter() {
                     if let Some(_schema) = item.get("OTIO_SCHEMA").and_then(|v| v.as_str())
                         && let Ok(node) = parse_otio_node(item) {
                             let fp = content_fingerprint(&node);
-                            placed_fps.insert(fp.clone());
                             if let Some((_, merged_node)) = merged_nodes.iter().find(|(f, _)| *f == fp)
                             {
-                                new_arr.push(merged_node.node.to_json());
+                                placed_fps.insert(fp.clone());
+                                new_arr.push(merged_node.raw_json.clone());
                                 continue;
                             }
+                            continue;
                         }
                     new_arr.push(item.clone());
                 }
 
-                // Second pass: append merged leaf nodes not yet placed anywhere
-                for (fp, merged_node) in merged_nodes {
-                    if !placed_fps.contains(fp.as_str()) {
-                        let is_leaf = matches!(
-                            merged_node.node,
-                            OtioNode::Clip(_) | OtioNode::Transition(_) | OtioNode::Unknown { .. }
-                        );
-                        if is_leaf {
-                            new_arr.push(merged_node.node.to_json());
+                if let Some(ref cp_fp) = container_fp {
+                    for (fp, merged_node) in merged_nodes {
+                        if !placed_fps.contains(fp.as_str())
+                            && merged_node.parent_fp.as_deref() == Some(cp_fp.as_str())
+                        {
+                            new_arr.push(merged_node.raw_json.clone());
                             placed_fps.insert(fp.clone());
                         }
                     }
@@ -662,7 +664,6 @@ fn rebuild_children_with_merged(
             }
         }
 
-        // Recurse into child objects
         if let Some(children) = obj.get_mut("children").and_then(|v| v.as_array_mut()) {
             for child in children.iter_mut() {
                 rebuild_children_with_merged(child, merged_nodes, placed_fps);
@@ -692,7 +693,7 @@ impl OtioDriver {
             .map_err(|e| DriverError::ParseError(e.to_string()))?;
         let _node = parse_otio_node(&value)
             .map_err(|e| DriverError::ParseError(e.to_string()))?;
-        Ok(flatten_tree_with_raw(&value, ""))
+        Ok(flatten_tree_with_raw(&value, "", None))
     }
 }
 
@@ -1542,5 +1543,196 @@ mod tests {
     fn test_parse_missing_schema() {
         let mut driver = LegacyOtioDriver::new();
         assert!(driver.parse_otio(r#"{"name": "NoSchema", "tracks": []}"#).is_err());
+    }
+
+    #[test]
+    fn test_merge_no_nesting_of_documents() {
+        let base = r#"{
+            "OTIO_SCHEMA": "otio.schema.Timeline",
+            "name": "NestingTest",
+            "metadata": {},
+            "tracks": [
+                {
+                    "OTIO_SCHEMA": "otio.schema.Track",
+                    "name": "Video",
+                    "kind": "Video",
+                    "metadata": {},
+                    "children": [
+                        {"OTIO_SCHEMA":"otio.schema.Clip","name":"SharedClip","metadata":{},"source_range":{"start_time":{"value":0.0,"rate":24.0},"duration":{"value":100.0,"rate":24.0}}}
+                    ]
+                },
+                {
+                    "OTIO_SCHEMA": "otio.schema.Track",
+                    "name": "Sound",
+                    "kind": "Audio",
+                    "metadata": {},
+                    "children": []
+                }
+            ]
+        }"#;
+        let ours = r#"{
+            "OTIO_SCHEMA": "otio.schema.Timeline",
+            "name": "NestingTest",
+            "metadata": {},
+            "tracks": [
+                {
+                    "OTIO_SCHEMA": "otio.schema.Track",
+                    "name": "Video",
+                    "kind": "Video",
+                    "metadata": {},
+                    "children": [
+                        {"OTIO_SCHEMA":"otio.schema.Clip","name":"SharedClip","metadata":{},"source_range":{"start_time":{"value":0.0,"rate":24.0},"duration":{"value":100.0,"rate":24.0}}}
+                    ]
+                },
+                {
+                    "OTIO_SCHEMA": "otio.schema.Track",
+                    "name": "Sound",
+                    "kind": "Audio",
+                    "metadata": {},
+                    "children": []
+                },
+                {
+                    "OTIO_SCHEMA": "otio.schema.Track",
+                    "name": "VFX",
+                    "kind": "Video",
+                    "metadata": {},
+                    "children": [
+                        {"OTIO_SCHEMA":"otio.schema.Clip","name":"VfxClip","metadata":{},"source_range":{"start_time":{"value":0.0,"rate":24.0},"duration":{"value":50.0,"rate":24.0}}}
+                    ]
+                }
+            ]
+        }"#;
+        let theirs = r#"{
+            "OTIO_SCHEMA": "otio.schema.Timeline",
+            "name": "NestingTest",
+            "metadata": {},
+            "tracks": [
+                {
+                    "OTIO_SCHEMA": "otio.schema.Track",
+                    "name": "Video",
+                    "kind": "Video",
+                    "metadata": {},
+                    "children": [
+                        {"OTIO_SCHEMA":"otio.schema.Clip","name":"SharedClip","metadata":{},"source_range":{"start_time":{"value":0.0,"rate":24.0},"duration":{"value":100.0,"rate":24.0}}}
+                    ]
+                },
+                {
+                    "OTIO_SCHEMA": "otio.schema.Track",
+                    "name": "Sound",
+                    "kind": "Audio",
+                    "metadata": {},
+                    "children": []
+                },
+                {
+                    "OTIO_SCHEMA": "otio.schema.Track",
+                    "name": "Music",
+                    "kind": "Audio",
+                    "metadata": {},
+                    "children": [
+                        {"OTIO_SCHEMA":"otio.schema.Clip","name":"MusicClip","metadata":{},"source_range":{"start_time":{"value":0.0,"rate":24.0},"duration":{"value":200.0,"rate":24.0}}}
+                    ]
+                }
+            ]
+        }"#;
+        let driver = OtioDriver::new();
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some(), "merge should succeed");
+        let merged: serde_json::Value = serde_json::from_str(&result.unwrap()).unwrap();
+
+        let tracks = merged.get("tracks").unwrap().as_array().unwrap();
+
+        assert_eq!(tracks.len(), 4, "should have 4 tracks: Video, Sound, VFX, Music");
+
+        for track in tracks {
+            let schema = track.get("OTIO_SCHEMA").and_then(|v| v.as_str()).unwrap();
+            assert_eq!(schema, "otio.schema.Track",
+                "every item in tracks must be a Track, got: {}", schema);
+        }
+
+        let track_names: Vec<&str> = tracks.iter()
+            .filter_map(|t| t.get("name").and_then(|n| n.as_str()))
+            .collect();
+        assert!(track_names.contains(&"Video"), "should have Video track");
+        assert!(track_names.contains(&"Sound"), "should have Sound track");
+        assert!(track_names.contains(&"VFX"), "should have VFX track from ours");
+        assert!(track_names.contains(&"Music"), "should have Music track from theirs");
+
+        let vfx_track = tracks.iter().find(|t| t.get("name").and_then(|n| n.as_str()) == Some("VFX")).unwrap();
+        let vfx_children = vfx_track.get("children").unwrap().as_array().unwrap();
+        assert_eq!(vfx_children.len(), 1, "VFX track should have 1 clip");
+        assert_eq!(vfx_children[0].get("name").and_then(|n| n.as_str()), Some("VfxClip"));
+
+        let music_track = tracks.iter().find(|t| t.get("name").and_then(|n| n.as_str()) == Some("Music")).unwrap();
+        let music_children = music_track.get("children").unwrap().as_array().unwrap();
+        assert_eq!(music_children.len(), 1, "Music track should have 1 clip");
+        assert_eq!(music_children[0].get("name").and_then(|n| n.as_str()), Some("MusicClip"));
+    }
+
+    #[test]
+    fn test_merge_clips_in_correct_parent_not_tracks_array() {
+        let base = r#"{
+            "OTIO_SCHEMA": "otio.schema.Timeline",
+            "name": "ClipPlacementTest",
+            "metadata": {},
+            "tracks": [{
+                "OTIO_SCHEMA": "otio.schema.Track",
+                "name": "V1",
+                "kind": "Video",
+                "metadata": {},
+                "children": [
+                    {"OTIO_SCHEMA":"otio.schema.Clip","name":"A","metadata":{},"source_range":{"start_time":{"value":0.0,"rate":24.0},"duration":{"value":100.0,"rate":24.0}}}
+                ]
+            }]
+        }"#;
+        let ours = r#"{
+            "OTIO_SCHEMA": "otio.schema.Timeline",
+            "name": "ClipPlacementTest",
+            "metadata": {},
+            "tracks": [{
+                "OTIO_SCHEMA": "otio.schema.Track",
+                "name": "V1",
+                "kind": "Video",
+                "metadata": {},
+                "children": [
+                    {"OTIO_SCHEMA":"otio.schema.Clip","name":"A","metadata":{},"source_range":{"start_time":{"value":0.0,"rate":24.0},"duration":{"value":100.0,"rate":24.0}}},
+                    {"OTIO_SCHEMA":"otio.schema.Clip","name":"B","metadata":{},"source_range":{"start_time":{"value":100.0,"rate":24.0},"duration":{"value":100.0,"rate":24.0}}}
+                ]
+            }]
+        }"#;
+        let theirs = r#"{
+            "OTIO_SCHEMA": "otio.schema.Timeline",
+            "name": "ClipPlacementTest",
+            "metadata": {},
+            "tracks": [{
+                "OTIO_SCHEMA": "otio.schema.Track",
+                "name": "V1",
+                "kind": "Video",
+                "metadata": {},
+                "children": [
+                    {"OTIO_SCHEMA":"otio.schema.Clip","name":"A","metadata":{},"source_range":{"start_time":{"value":0.0,"rate":24.0},"duration":{"value":100.0,"rate":24.0}}},
+                    {"OTIO_SCHEMA":"otio.schema.Clip","name":"C","metadata":{},"source_range":{"start_time":{"value":200.0,"rate":24.0},"duration":{"value":100.0,"rate":24.0}}}
+                ]
+            }]
+        }"#;
+        let driver = OtioDriver::new();
+        let result = driver.merge(base, ours, theirs).unwrap().unwrap();
+        let merged: serde_json::Value = serde_json::from_str(&result).unwrap();
+
+        let tracks = merged.get("tracks").unwrap().as_array().unwrap();
+        assert_eq!(tracks.len(), 1, "should have 1 track");
+
+        let v1_children = tracks[0].get("children").unwrap().as_array().unwrap();
+        let child_names: Vec<&str> = v1_children.iter()
+            .filter_map(|c| c.get("name").and_then(|n| n.as_str()))
+            .collect();
+        assert!(child_names.contains(&"A"), "should have clip A");
+        assert!(child_names.contains(&"B"), "should have clip B from ours");
+        assert!(child_names.contains(&"C"), "should have clip C from theirs");
+
+        for child in v1_children {
+            let schema = child.get("OTIO_SCHEMA").and_then(|v| v.as_str()).unwrap();
+            assert_eq!(schema, "otio.schema.Clip",
+                "every item in track children must be a Clip, got: {}", schema);
+        }
     }
 }

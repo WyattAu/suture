@@ -14,7 +14,7 @@ fn is_binary_format(path: &str) -> bool {
 }
 
 fn blob_to_string_preserve_bytes(blob: &[u8]) -> String {
-    unsafe { String::from_utf8_unchecked(blob.to_vec()) }
+    String::from_utf8_lossy(blob).into_owned()
 }
 
 fn blob_to_string(blob: &[u8], path: &str) -> String {

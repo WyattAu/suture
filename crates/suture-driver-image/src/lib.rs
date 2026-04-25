@@ -145,18 +145,35 @@ impl SutureDriver for ImageDriver {
     }
 
     fn merge(&self, base: &str, ours: &str, theirs: &str) -> Result<Option<String>, DriverError> {
-        let base_meta = Self::extract_metadata(base.as_bytes())?;
-        let ours_meta = Self::extract_metadata(ours.as_bytes())?;
-        let theirs_meta = Self::extract_metadata(theirs.as_bytes())?;
+        let bytes = self.merge_raw(base.as_bytes(), ours.as_bytes(), theirs.as_bytes())?;
+        match bytes {
+            Some(b) => {
+                // SAFETY: Image bytes round-trip through decode/encode.
+                // Written to disk as raw bytes, never interpreted as text.
+                Ok(Some(unsafe { String::from_utf8_unchecked(b) }))
+            }
+            None => Ok(None),
+        }
+    }
+
+    fn merge_raw(
+        &self,
+        base: &[u8],
+        ours: &[u8],
+        theirs: &[u8],
+    ) -> Result<Option<Vec<u8>>, DriverError> {
+        let base_meta = Self::extract_metadata(base)?;
+        let ours_meta = Self::extract_metadata(ours)?;
+        let theirs_meta = Self::extract_metadata(theirs)?;
 
         if ours_meta == base_meta {
-            return Ok(Some(theirs.to_string()));
+            return Ok(Some(theirs.to_vec()));
         }
         if theirs_meta == base_meta {
-            return Ok(Some(ours.to_string()));
+            return Ok(Some(ours.to_vec()));
         }
         if ours_meta == theirs_meta {
-            return Ok(Some(ours.to_string()));
+            return Ok(Some(ours.to_vec()));
         }
 
         let ours_changed_width = ours_meta.width != base_meta.width;
@@ -172,6 +189,18 @@ impl SutureDriver for ImageDriver {
         }
 
         Ok(None)
+    }
+
+    fn diff_raw(
+        &self,
+        base: Option<&[u8]>,
+        new_content: &[u8],
+    ) -> Result<Vec<SemanticChange>, DriverError> {
+        let base_str = base.map(|b| {
+            unsafe { String::from_utf8_unchecked(b.to_vec()) }
+        });
+        let new_str = unsafe { String::from_utf8_unchecked(new_content.to_vec()) };
+        self.diff(base_str.as_deref(), &new_str)
     }
 }
 

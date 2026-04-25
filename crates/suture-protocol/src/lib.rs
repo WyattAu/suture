@@ -66,6 +66,8 @@ pub struct BranchProto {
 pub struct BlobRef {
     pub hash: HashProto,
     pub data: String,
+    #[serde(default)]
+    pub truncated: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -434,6 +436,7 @@ mod tests {
             blobs: vec![BlobRef {
                 hash: make_hash("deadbeef"),
                 data: "aGVsbG8=".to_string(),
+                truncated: false,
             }],
             signature: Some(vec![1u8; 64]),
             known_branches: Some(vec![make_branch("main", "prev".repeat(32).as_str())]),
@@ -496,8 +499,10 @@ mod tests {
             blobs: vec![BlobRef {
                 hash: make_hash("abc"),
                 data: "dGVzdA==".to_string(),
+                truncated: false,
             }],
         };
+
         let rt: PullResponse = roundtrip(&resp);
         assert!(rt.success);
         assert_eq!(rt.patches.len(), 1);
@@ -523,6 +528,7 @@ mod tests {
         let blob = BlobRef {
             hash: make_hash("cafebabe"),
             data: "SGVsbG8gV29ybGQ=".to_string(),
+            truncated: false,
         };
         let rt: BlobRef = roundtrip(&blob);
         assert_eq!(rt.data, "SGVsbG8gV29ybGQ=");
@@ -1014,6 +1020,7 @@ mod tests {
             blobs: vec![BlobRef {
                 hash: make_hash("abc"),
                 data: "dGVzdA==".to_string(),
+                truncated: false,
             }],
             deltas: vec![BlobDelta {
                 base_hash: make_hash("base"),
@@ -1041,6 +1048,7 @@ mod tests {
             blobs: vec![BlobRef {
                 hash: make_hash("abc"),
                 data: "dGVzdA==".to_string(),
+                truncated: false,
             }],
             deltas: vec![BlobDelta {
                 base_hash: make_hash("old"),

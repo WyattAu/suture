@@ -292,23 +292,52 @@ impl SutureDriver for PdfDriver {
     }
 
     fn merge(&self, base: &str, ours: &str, theirs: &str) -> Result<Option<String>, DriverError> {
-        let base_pages = Self::extract_pages(base.as_bytes())?;
-        let ours_pages = Self::extract_pages(ours.as_bytes())?;
-        let theirs_pages = Self::extract_pages(theirs.as_bytes())?;
+        let bytes = self.merge_raw(base.as_bytes(), ours.as_bytes(), theirs.as_bytes())?;
+        match bytes {
+            Some(b) => {
+                // SAFETY: PDF bytes round-trip through lopdf load/save.
+                // Written to disk as raw bytes, never interpreted as text.
+                Ok(Some(unsafe { String::from_utf8_unchecked(b) }))
+            }
+            None => Ok(None),
+        }
+    }
+
+    fn merge_raw(
+        &self,
+        base: &[u8],
+        ours: &[u8],
+        theirs: &[u8],
+    ) -> Result<Option<Vec<u8>>, DriverError> {
+        let base_pages = Self::extract_pages(base)?;
+        let ours_pages = Self::extract_pages(ours)?;
+        let theirs_pages = Self::extract_pages(theirs)?;
 
         match Self::merge_pages(&base_pages, &ours_pages, &theirs_pages) {
             Some(_merged) => {
-                let mut ours_doc = Self::load_doc(ours.as_bytes())?;
+                let mut ours_doc = Self::load_doc(ours)?;
 
                 let mut buf = Vec::new();
                 ours_doc.save_to(&mut buf).map_err(|e| {
                     DriverError::SerializationError(format!("Failed to serialize PDF: {e}"))
                 })?;
 
-                Ok(Some(unsafe { String::from_utf8_unchecked(buf) }))
+                Ok(Some(buf))
             }
             None => Ok(None),
         }
+    }
+
+    fn diff_raw(
+        &self,
+        base: Option<&[u8]>,
+        new_content: &[u8],
+    ) -> Result<Vec<SemanticChange>, DriverError> {
+        let base_str = base.map(|b| {
+            unsafe { String::from_utf8_unchecked(b.to_vec()) }
+        });
+        let new_str = unsafe { String::from_utf8_unchecked(new_content.to_vec()) };
+        self.diff(base_str.as_deref(), &new_str)
     }
 }
 

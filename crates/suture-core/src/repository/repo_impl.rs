@@ -1437,12 +1437,11 @@ impl Repository {
         if let (Some(tree), Some(cached_id)) = (
             self.cached_head_snapshot.borrow().clone(),
             self.cached_head_id.borrow().as_ref().copied(),
-        ) {
-            if cached_id == head_id {
+        )
+            && cached_id == head_id {
                 return Ok(tree.clone());
             }
             // HEAD changed — stale cache, fall through
-        }
 
         // Try loading from SQLite (O(1) — no patch replay needed)
         if let Some(tree) = self
@@ -2519,7 +2518,7 @@ impl Repository {
                 // Only consider the source (branch B) patch for file-level merge
                 let patch_b = self.dag.get_patch(&c.patch_b_id)?;
                 if patch_b.is_batch() {
-                    Some(c.conflict_addresses.iter().cloned().collect::<Vec<_>>())
+                    Some(c.conflict_addresses.to_vec())
                 } else {
                     None
                 }

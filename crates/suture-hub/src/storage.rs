@@ -26,6 +26,9 @@ pub enum StorageError {
 
     #[error("{0}")]
     Custom(String),
+
+    #[error("blob exceeds maximum allowed size of {0} bytes")]
+    BlobTooLarge(usize),
 }
 
 /// Persistent SQLite storage for the hub.
@@ -37,6 +40,8 @@ pub enum StorageError {
 /// the Rust type system's thread-safety requirements.
 pub struct HubStorage {
     conn: std::sync::Mutex<Connection>,
+    max_blob_size: usize,
+    max_page_size: usize,
 }
 
 /// Mirror row from DB: (repo_name, upstream_url, upstream_repo, last_sync, status)
@@ -48,6 +53,15 @@ type MirrorListRow = (i64, String, String, String, Option<i64>, String);
 impl HubStorage {
     /// Open or create the hub database at the given path.
     pub fn open(path: &Path) -> Result<Self, StorageError> {
+        Self::open_with_limits(path, 50 * 1024 * 1024, 10000)
+    }
+
+    /// Open or create the hub database with custom limits.
+    pub fn open_with_limits(
+        path: &Path,
+        max_blob_size: usize,
+        max_page_size: usize,
+    ) -> Result<Self, StorageError> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -55,6 +69,8 @@ impl HubStorage {
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")?;
         let mut store = Self {
             conn: std::sync::Mutex::new(conn),
+            max_blob_size,
+            max_page_size,
         };
         store.migrate()?;
         Ok(store)
@@ -62,10 +78,20 @@ impl HubStorage {
 
     /// Open an in-memory database (for testing).
     pub fn open_in_memory() -> Result<Self, StorageError> {
+        Self::open_in_memory_with_limits(50 * 1024 * 1024, 10000)
+    }
+
+    /// Open an in-memory database with custom limits.
+    pub fn open_in_memory_with_limits(
+        max_blob_size: usize,
+        max_page_size: usize,
+    ) -> Result<Self, StorageError> {
         let conn = Connection::open_in_memory()?;
         conn.execute_batch("PRAGMA journal_mode=WAL;")?;
         let mut store = Self {
             conn: std::sync::Mutex::new(conn),
+            max_blob_size,
+            max_page_size,
         };
         store.migrate()?;
         Ok(store)
@@ -349,10 +375,10 @@ impl HubStorage {
             .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
         let mut stmt = conn.prepare(
             "SELECT patch_id, operation_type, touch_set, target_path, payload, parent_ids, author, message, timestamp
-             FROM patches WHERE repo_id = ?1",
+             FROM patches WHERE repo_id = ?1 LIMIT ?2",
         )?;
 
-        let rows = stmt.query_map(params![repo_id], |row| {
+        let rows = stmt.query_map(params![repo_id, self.max_page_size as i64], |row| {
             let id_hex: String = row.get(0)?;
             let operation_type: String = row.get(1)?;
             let touch_set_json: String = row.get(2)?;
@@ -460,6 +486,9 @@ impl HubStorage {
         hash_hex: &str,
         data: &[u8],
     ) -> Result<(), StorageError> {
+        if data.len() > self.max_blob_size {
+            return Err(StorageError::BlobTooLarge(self.max_blob_size));
+        }
         let conn = self
             .conn
             .lock()
@@ -502,7 +531,8 @@ impl HubStorage {
         }
     }
 
-    /// Get all blobs for a repo.
+    /// Get all blobs for a repo. Blobs exceeding `max_blob_size` are returned
+    /// with empty data and `truncated: true`.
     pub fn get_all_blobs(&self, repo_id: &str) -> Result<Vec<BlobRef>, StorageError> {
         let conn = self
             .conn
@@ -516,12 +546,19 @@ impl HubStorage {
             Ok((hash_hex, data))
         })?;
 
+        let max_blob_size = self.max_blob_size;
         let mut blobs = Vec::new();
         for row in rows {
             let (hash_hex, data) = row?;
+            let (data_b64, truncated) = if data.len() > max_blob_size {
+                (String::new(), true)
+            } else {
+                (base64_encode(&data), false)
+            };
             blobs.push(BlobRef {
                 hash: HashProto { value: hash_hex },
-                data: base64_encode(&data),
+                data: data_b64,
+                truncated,
             });
         }
         Ok(blobs)
@@ -565,9 +602,15 @@ impl HubStorage {
         let mut blobs = Vec::new();
         for row in rows {
             let (hash_hex, data) = row?;
+            let (data_b64, truncated) = if data.len() > self.max_blob_size {
+                (String::new(), true)
+            } else {
+                (base64_encode(&data), false)
+            };
             blobs.push(BlobRef {
                 hash: HashProto { value: hash_hex },
-                data: base64_encode(&data),
+                data: data_b64,
+                truncated,
             });
         }
         Ok(blobs)

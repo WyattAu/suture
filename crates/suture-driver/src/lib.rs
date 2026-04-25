@@ -64,6 +64,42 @@ pub trait SutureDriver: Send + Sync {
     ) -> Result<Option<String>, DriverError> {
         Ok(None)
     }
+
+    /// Byte-level three-way merge for binary formats.
+    ///
+    /// Like `merge()` but operates on raw bytes instead of `&str`.
+    /// Binary drivers (DOCX, XLSX, PPTX, PDF, images) should override this
+    /// to avoid `unsafe { String::from_utf8_unchecked }`.
+    /// The default implementation converts to/from UTF-8 lossy and delegates
+    /// to `merge()` — text drivers do not need to override this.
+    fn merge_raw(
+        &self,
+        base: &[u8],
+        ours: &[u8],
+        theirs: &[u8],
+    ) -> Result<Option<Vec<u8>>, DriverError> {
+        let base_str = String::from_utf8_lossy(base);
+        let ours_str = String::from_utf8_lossy(ours);
+        let theirs_str = String::from_utf8_lossy(theirs);
+        match self.merge(&base_str, &ours_str, &theirs_str)? {
+            Some(s) => Ok(Some(s.into_bytes())),
+            None => Ok(None),
+        }
+    }
+
+    /// Byte-level semantic diff for binary formats.
+    ///
+    /// Like `diff()` but operates on raw bytes instead of `&str`.
+    /// Binary drivers should override this to avoid `unsafe` conversions.
+    fn diff_raw(
+        &self,
+        base: Option<&[u8]>,
+        new_content: &[u8],
+    ) -> Result<Vec<SemanticChange>, DriverError> {
+        let base_str = base.map(|b| String::from_utf8_lossy(b));
+        let new_str = String::from_utf8_lossy(new_content);
+        self.diff(base_str.as_deref(), &new_str)
+    }
 }
 
 /// A single semantic change detected by a driver.

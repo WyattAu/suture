@@ -344,28 +344,41 @@ pub(crate) async fn cmd_merge(
 
                 let base_content = conflict
                     .base_content_hash
-                    .and_then(|h| repo.cas().get_blob(&h).ok())
-                    .map(|b| String::from_utf8_lossy(&b).to_string());
+                    .and_then(|h| repo.cas().get_blob(&h).ok());
                 let ours_content = conflict
                     .our_content_hash
-                    .and_then(|h| repo.cas().get_blob(&h).ok())
-                    .map(|b| String::from_utf8_lossy(&b).to_string());
+                    .and_then(|h| repo.cas().get_blob(&h).ok());
                 let theirs_content = conflict
                     .their_content_hash
-                    .and_then(|h| repo.cas().get_blob(&h).ok())
-                    .map(|b| String::from_utf8_lossy(&b).to_string());
+                    .and_then(|h| repo.cas().get_blob(&h).ok());
 
-                let base_str = base_content.as_deref().unwrap_or("");
-                let Some(ours_str) = ours_content.as_deref() else {
-                    remaining.push(conflict.clone());
-                    continue;
+                // Prefer merge_raw (byte-level) for binary formats — avoids
+                // unsafe String::from_utf8_unchecked in binary drivers.
+                // Fall back to merge (string-level) for text drivers.
+                let merged = match (
+                    base_content.as_deref(),
+                    ours_content.as_deref(),
+                    theirs_content.as_deref(),
+                ) {
+                    (Some(base_b), Some(ours_b), Some(theirs_b)) => {
+                        // Try merge_raw first, then fall back to text merge.
+                        match driver.merge_raw(base_b, ours_b, theirs_b) {
+                            Ok(result) => Ok(result),
+                            Err(_) => {
+                                let base_s = String::from_utf8_lossy(base_b);
+                                let ours_s = String::from_utf8_lossy(ours_b);
+                                let theirs_s = String::from_utf8_lossy(theirs_b);
+                                driver
+                                    .merge(&base_s, &ours_s, &theirs_s)
+                                    .map(|opt| opt.map(|s| s.into_bytes()))
+                            }
+                        }
+                    }
+                    _ => Err(suture_driver::DriverError::ParseError(
+                        "missing content".into(),
+                    )),
                 };
-                let Some(theirs_str) = theirs_content.as_deref() else {
-                    remaining.push(conflict.clone());
-                    continue;
-                };
-
-                let Ok(merged) = driver.merge(base_str, ours_str, theirs_str) else {
+                let Ok(merged) = merged else {
                     remaining.push(conflict.clone());
                     continue;
                 };
