@@ -186,6 +186,17 @@ pub(crate) fn sign_push_request(
     };
 
     let keys_dir = std::path::Path::new(".suture").join("keys");
+    // Validate key_name to prevent path traversal
+    if !key_name
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err(format!(
+            "invalid signing key name '{}': must contain only alphanumeric characters, hyphens, and underscores",
+            key_name
+        )
+        .into());
+    }
     let key_path = keys_dir.join(format!("{key_name}.ed25519"));
 
     let priv_key_bytes = std::fs::read(&key_path).map_err(|e| {

@@ -111,8 +111,21 @@ impl BranchName {
         if s.is_empty() {
             return Err(CommonError::EmptyBranchName);
         }
-        // Validate: no null bytes
-        if s.contains('\0') {
+        // Validate: no null bytes or control characters
+        if s.contains('\0') || s.chars().any(|c| c.is_control() && c != '\n' && c != '\t') {
+            return Err(CommonError::InvalidBranchName(s));
+        }
+        // Reject names that could be confused with paths or CLI flags
+        if s.starts_with('-') || s.starts_with('.') || s.contains("..") {
+            return Err(CommonError::InvalidBranchName(s));
+        }
+        // Reject names with whitespace or problematic characters
+        // (mirrors git's check_refname_format restrictions)
+        if s.contains(['~', '^', ':', '\\', ' ']) || s.ends_with(".lock") {
+            return Err(CommonError::InvalidBranchName(s));
+        }
+        // Reject consecutive dots
+        if s.contains("...") {
             return Err(CommonError::InvalidBranchName(s));
         }
         Ok(Self(s))

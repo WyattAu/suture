@@ -72,33 +72,39 @@ pub(crate) async fn cmd_commit(message: &str, all: bool) -> Result<(), Box<dyn s
     }
 
     if let Ok(Some(key_name)) = repo.get_config("signing.key") {
-        let key_path = std::path::Path::new(".suture")
-            .join("keys")
-            .join(format!("{key_name}.ed25519"));
-        if let Ok(key_bytes) = std::fs::read(&key_path)
-            && key_bytes.len() == 32
+        // Validate key_name to prevent path traversal
+        if key_name
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
         {
-            let signing_key =
-                ed25519_dalek::SigningKey::from_bytes(key_bytes.as_slice().try_into().unwrap());
-            let patch = repo.dag().get_patch(&patch_id);
-            if let Some(patch) = patch {
-                let canonical = suture_core::signing::canonical_patch_bytes(
-                    &patch.operation_type.to_string(),
-                    &patch.touch_set.addresses(),
-                    &patch.target_path,
-                    &patch.payload,
-                    &patch.parent_ids,
-                    &patch.author,
-                    &patch.message,
-                    patch.timestamp,
-                );
-                let sig = signing_key.sign(&canonical);
-                let _ = repo
-                    .meta()
-                    .store_signature(&patch.id.to_hex(), &sig.to_bytes());
-                let _ = repo
-                    .meta()
-                    .store_public_key(&patch.author, &signing_key.verifying_key().to_bytes());
+            let key_path = std::path::Path::new(".suture")
+                .join("keys")
+                .join(format!("{key_name}.ed25519"));
+            if let Ok(key_bytes) = std::fs::read(&key_path)
+                && key_bytes.len() == 32
+            {
+                let signing_key =
+                    ed25519_dalek::SigningKey::from_bytes(key_bytes.as_slice().try_into().unwrap());
+                let patch = repo.dag().get_patch(&patch_id);
+                if let Some(patch) = patch {
+                    let canonical = suture_core::signing::canonical_patch_bytes(
+                        &patch.operation_type.to_string(),
+                        &patch.touch_set.addresses(),
+                        &patch.target_path,
+                        &patch.payload,
+                        &patch.parent_ids,
+                        &patch.author,
+                        &patch.message,
+                        patch.timestamp,
+                    );
+                    let sig = signing_key.sign(&canonical);
+                    let _ = repo
+                        .meta()
+                        .store_signature(&patch.id.to_hex(), &sig.to_bytes());
+                    let _ = repo
+                        .meta()
+                        .store_public_key(&patch.author, &signing_key.verifying_key().to_bytes());
+                }
             }
         }
     }

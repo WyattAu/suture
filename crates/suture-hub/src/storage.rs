@@ -3,6 +3,8 @@
 //! Stores repositories, patches, branches, blobs, and authorized public keys
 //! in a single SQLite database. This replaces the in-memory HashMap approach.
 
+use sha2::Digest;
+
 use rusqlite::{Connection, params};
 use std::path::Path;
 use thiserror::Error;
@@ -775,18 +777,20 @@ impl HubStorage {
         description: &str,
         expires_at: i64,
     ) -> Result<(), StorageError> {
+        let token_hash = format!("{:x}", sha2::Sha256::digest(token.as_bytes()));
         let conn = self
             .conn
             .lock()
             .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
         conn.execute(
             "INSERT INTO tokens (token, created_at, description, expires_at) VALUES (?1, ?2, ?3, ?4)",
-            params![token, created_at as i64, description, expires_at],
+            params![token_hash, created_at as i64, description, expires_at],
         )?;
         Ok(())
     }
 
     pub fn verify_token(&self, token: &str) -> Result<bool, StorageError> {
+        let token_hash = format!("{:x}", sha2::Sha256::digest(token.as_bytes()));
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -797,7 +801,7 @@ impl HubStorage {
             .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
         let count: i64 = conn.query_row(
             "SELECT COUNT(*) FROM tokens WHERE token = ?1 AND expires_at > ?2",
-            params![token, now],
+            params![token_hash, now],
             |row| row.get(0),
         )?;
         Ok(count > 0)
@@ -934,6 +938,7 @@ impl HubStorage {
         role: &str,
         api_token: &str,
     ) -> Result<(), StorageError> {
+        let token_hash = format!("{:x}", sha2::Sha256::digest(api_token.as_bytes()));
         let created_at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -944,7 +949,7 @@ impl HubStorage {
             .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
         conn.execute(
             "INSERT INTO users (username, display_name, role, api_token, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![username, display_name, role, api_token, created_at],
+            params![username, display_name, role, token_hash, created_at],
         )?;
         Ok(())
     }
@@ -975,13 +980,14 @@ impl HubStorage {
     }
 
     pub fn get_user_by_token(&self, token: &str) -> Result<Option<UserInfo>, StorageError> {
+        let token_hash = format!("{:x}", sha2::Sha256::digest(token.as_bytes()));
         let conn = self
             .conn
             .lock()
             .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
         let result = conn.query_row(
             "SELECT username, display_name, role, api_token, created_at FROM users WHERE api_token = ?1",
-            params![token],
+            params![token_hash],
             |row| {
                 Ok(UserInfo {
                     username: row.get(0)?,

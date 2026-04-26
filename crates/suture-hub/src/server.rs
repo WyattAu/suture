@@ -2488,6 +2488,16 @@ pub async fn lfs_batch_handler(
     State(hub): State<Arc<SutureHubServer>>,
     Json(req): Json<suture_protocol::LfsBatchRequest>,
 ) -> (StatusCode, Json<serde_json::Value>) {
+    // Validate repo_id to prevent path traversal
+    if !req.repo_id.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.') {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "message": "invalid repo_id: must contain only alphanumeric characters, hyphens, underscores, and dots"
+            })),
+        );
+    }
+
     let lfs_dir = match &hub.lfs_data_dir {
         Some(d) => d.clone(),
         None => {
@@ -2558,6 +2568,15 @@ pub async fn lfs_upload_handler(
     Path((repo_id, oid)): Path<(String, String)>,
     body: bytes::Bytes,
 ) -> (StatusCode, Json<serde_json::Value>) {
+    // Validate repo_id and oid to prevent path traversal
+    let is_safe = |s: &str| s.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.');
+    if !is_safe(&repo_id) || !is_safe(&oid) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "message": "invalid repo_id or oid" })),
+        );
+    }
+
     let lfs_dir = match &hub.lfs_data_dir {
         Some(d) => d.clone(),
         None => {
@@ -2622,6 +2641,18 @@ pub async fn lfs_download_handler(
     State(hub): State<Arc<SutureHubServer>>,
     Path((repo_id, oid)): Path<(String, String)>,
 ) -> (StatusCode, axum::response::Response) {
+    // Validate repo_id and oid to prevent path traversal
+    let is_safe = |s: &str| s.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.');
+    if !is_safe(&repo_id) || !is_safe(&oid) {
+        return (
+            StatusCode::BAD_REQUEST,
+            axum::response::Response::builder()
+                .body(axum::body::Body::from("{\"message\":\"invalid repo_id or oid\"}"))
+                .unwrap()
+                .into_response(),
+        );
+    }
+
     let lfs_dir = match &hub.lfs_data_dir {
         Some(d) => d.clone(),
         None => {
