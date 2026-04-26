@@ -72,7 +72,9 @@ echo ""
 
 for crate in "${PUBLISH_ORDER[@]}"; do
   if $REAL; then
-    cmd=(cargo publish -p "$crate" --allow-dirty)
+    # --no-verify skips checking deps on crates.io (avoids index propagation delay)
+    # --allow-dirty allows uncommitted changes (CI checkout may leave dirty state)
+    cmd=(cargo publish -p "$crate" --allow-dirty --no-verify)
   else
     cmd=(cargo publish --dry-run -p "$crate" --allow-dirty)
   fi
@@ -90,6 +92,19 @@ for crate in "${PUBLISH_ORDER[@]}"; do
     elif echo "$output" | grep -q "already exists"; then
       echo "SKIPPED (already published)"
       PASSED+=("$crate")
+    elif echo "$output" | grep -q "already uploaded"; then
+      echo "SKIPPED (already uploaded)"
+      PASSED+=("$crate")
+    elif echo "$output" | grep -q "Too Many Requests"; then
+      echo "RATE-LIMITED (waiting 60s)"
+      sleep 60
+      if output=$("${cmd[@]}" 2>&1); then
+        echo "OK (retry)"
+        PASSED+=("$crate")
+      else
+        echo "FAILED after retry"
+        FAILED+=("$crate")
+      fi
     else
       echo "FAILED (exit code $rc)"
       echo "$output" | tail -5
