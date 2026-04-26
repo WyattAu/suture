@@ -167,6 +167,9 @@ jobs:
         with:
           key: e2e
 
+      - name: Install protoc (for suture-hub gRPC)
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
       - name: Build debug binary
         run: cargo build -p suture-cli
 
