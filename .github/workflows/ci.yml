@@ -36,7 +36,7 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Clippy (stable)
-        run: cargo clippy --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp -- -D warnings -A clippy::collapsible_match
+        run: cargo clippy --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp -- -D warnings
 
   test-workspace:
     runs-on: ${{ matrix.os }}
@@ -63,6 +63,14 @@ jobs:
       - name: Install protoc (for suture-hub gRPC)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Install protoc (macOS)
+        if: runner.os == 'macOS'
+        run: brew install protobuf
+
+      - name: Install protoc (Windows)
+        if: runner.os == 'Windows'
+        run: choco install protoc -y
 
       - name: Run workspace tests
         run: cargo test --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp -- --test-threads=1
@@ -197,4 +205,4 @@ jobs:
         run: cargo test --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp --features "${{ matrix.features }}" -- --test-threads=4
 
       - name: Clippy with features
-        run: cargo clippy --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp --features "${{ matrix.features }}" -- -D warnings -A clippy::collapsible_match
+        run: cargo clippy --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp --features "${{ matrix.features }}" -- -D warnings

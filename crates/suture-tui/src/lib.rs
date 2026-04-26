@@ -1,3 +1,6 @@
+// Allow collapsible_match: Rust 1.94/1.95 lint conflict (see suture-cli/src/main.rs)
+#![allow(clippy::collapsible_match)]
+
 //! Suture TUI — Terminal User Interface for Suture USVCS.
 //!
 //! Provides an interactive terminal UI built on `ratatui` and `crossterm`
