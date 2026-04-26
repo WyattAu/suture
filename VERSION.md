@@ -1,13 +1,25 @@
 # Suture Version
 
-- **Current Version:** 5.0.0
-- **Crates.io:** 33 crates ready to publish (suture-common dry-run passes)
-- **Current Phase:** Phase 48 — Production Polish Complete
-- **Status:** Production Ready — Shipping v5.0.0
-- **Last Updated:** 2026-04-25
+- **Current Version:** 5.0.0-alpha.1
+- **Crates.io:** 37 crates ready to publish (suture-common dry-run passes)
+- **Current Phase:** Alpha — Feature-complete, Tier 2 gaps remain
+- **Status:** Shipping v5.0.0-alpha.1
+- **Last Updated:** 2026-04-26
 - **Rust Edition:** 2024
-- **Tests:** 1,429+ passed, 0 failed, 3 ignored (full workspace regression)
+- **Tests:** 1,430 passed, 0 failed, 3 ignored (1,243 unit + 21 raft + 186 E2E - 1 ignored)
 - **Lean 4:** v4.29.1 (23 theorems proved)
+
+## Known Gaps (Tier 2 — required before beta/GA)
+
+| Gap | Impact | Status |
+|-----|--------|--------|
+| LFS push/pull are stubs | Large files can't be shared between users | Planned |
+| Sync daemon has no network reconciliation | Auto-commits only; no remote push/pull loop | Planned |
+| No merge --continue / --abort | Binary conflicts leave repo in unresolved state | Planned |
+| LFS checkout doesn't resolve pointers from hub | Collaborators get broken files after checkout | Planned |
+| Wasmtime v22 has 16 CVEs | Optional plugin feature, not used in normal operation | Deferred |
+| Hub has no integration tests | HTTP server never tested end-to-end | Deferred |
+| No migration test (v2→v3 snapshot engine) | Risk if users upgrade from old versions | Deferred |
 
 ## Strategic Roadmap
 
