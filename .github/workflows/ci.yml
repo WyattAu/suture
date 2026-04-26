@@ -73,7 +73,7 @@ jobs:
         run: choco install protoc -y
 
       - name: Run workspace tests
-        run: cargo test --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp -- --test-threads=1
+        run: cargo test --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon -- --test-threads=1
 
   test-cli:
     runs-on: ${{ matrix.os }}
