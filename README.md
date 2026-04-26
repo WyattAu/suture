@@ -31,10 +31,14 @@ Suture uses semantic drivers to merge JSON, YAML, TOML, CSV, XML, Markdown, HTML
 
 ```bash
 # Install (builds in ~2 minutes)
-cargo install suture-cli --path crates/suture-cli
+cargo install suture-cli
 
 # Or download a prebuilt binary from GitHub Releases
 # https://github.com/WyattAu/suture/releases
+
+# Git merge driver (install once, works with any repo)
+npm install -g suture-merge-driver    # Node.js
+pip install suture-merge-driver       # Python
 
 suture init
 suture config user.name "Your Name"
@@ -58,10 +62,10 @@ suture merge staging
 
 | Domain | Pain point Suture solves |
 |--------|--------------------------|
-| [Defence & compliance](docs/defence-compliance.md) | Audit trails (`log --audit`), classification detection (`diff --classification`), signed commits |
+| [Defence & compliance](docs/onboarding-defence.md) | Audit trails (`log --audit`), classification detection (`diff --classification`), signed commits |
 | [Video editors](docs/video-editors.md) | Version control for NLE timelines (Premiere, DaVinci Resolve) |
 | [Document authors](docs/document-authors.md) | Merge Word docs, Excel sheets, PowerPoint decks |
-| [Content creators](docs/content-creators.md) | `suture sync` replaces Google Drive — auto-commit, pull, push |
+| [Content creators](README.md#suture-sync) | `suture sync` replaces Google Drive — auto-commit, pull, push |
 | [Data science](docs/data-science.md) | Branch and merge Jupyter notebooks, CSVs, configs |
 | DevOps | Semantic merge for Kubernetes YAML, Docker Compose, CI configs |
 
@@ -166,10 +170,10 @@ git config merge.suture.driver "suture merge-file --driver %s %O %A %B -o %A"
 ## Stats
 
 - **37 crates** in the workspace
-- **20+ semantic drivers** for structured file formats
+- **17 semantic drivers** for structured file formats
 - **1,400+ tests** across the workspace
 - **50+ CLI commands**
-- **v5.0.0** — unified version across all crates
+- **v5.0.1** — unified version across all crates
 
 ## Contributing
 
