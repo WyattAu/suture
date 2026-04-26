@@ -1,4 +1,4 @@
-// Allow collapsible_match: Rust 1.94/1.95 lint conflict
+#![allow(clippy::collapsible_match)]
 //! Suture Common — Shared types, errors, and utilities used across all crates.
 //!
 //! This crate defines the foundational data structures that every other crate

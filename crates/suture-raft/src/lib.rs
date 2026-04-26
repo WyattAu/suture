@@ -1,4 +1,4 @@
-// Allow collapsible_match: Rust 1.94/1.95 lint conflict
+#![allow(clippy::collapsible_match)]
 pub mod cluster;
 pub mod error;
 pub mod log;

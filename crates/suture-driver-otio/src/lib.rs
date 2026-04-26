@@ -1,4 +1,4 @@
-// Allow collapsible_match: Rust 1.94/1.95 lint conflict
+#![allow(clippy::collapsible_match)]
 //! OTIO semantic driver — timeline-level diff and merge for OpenTimelineIO files.
 //!
 //! ## Architecture

@@ -1,4 +1,4 @@
-// Allow collapsible_match: Rust 1.94/1.95 lint conflict
+#![allow(clippy::collapsible_match)]
 //! DOCX semantic driver — paragraph-level diff and merge for Word documents.
 //!
 //! Unlike a naive text extraction approach, this driver operates on the raw XML

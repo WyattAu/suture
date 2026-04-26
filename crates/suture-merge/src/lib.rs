@@ -1,4 +1,3 @@
-// Allow collapsible_match: Rust 1.94/1.95 lint conflict (see suture-cli/src/main.rs)
 #![allow(clippy::collapsible_match)]
 
 //! # suture-merge

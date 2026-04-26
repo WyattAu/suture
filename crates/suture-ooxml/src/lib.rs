@@ -1,4 +1,4 @@
-// Allow collapsible_match: Rust 1.94/1.95 lint conflict
+#![allow(clippy::collapsible_match)]
 //! Shared OOXML infrastructure for Office Open XML format support.
 //!
 //! Office documents (.docx, .xlsx, .pptx) are ZIP archives containing

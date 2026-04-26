@@ -1,4 +1,4 @@
-// Allow collapsible_match: Rust 1.94/1.95 lint conflict
+#![allow(clippy::collapsible_match)]
 //! Suture Protocol — wire format for client-server communication.
 //!
 //! Defines the request/response types used by the Suture Hub for

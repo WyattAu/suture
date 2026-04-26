@@ -1,4 +1,4 @@
-// Allow collapsible_match: Rust 1.94/1.95 lint conflict
+#![allow(clippy::collapsible_match)]
 //! SutureDriver trait and registry for format-specific drivers.
 //!
 //! Drivers translate between file formats and semantic patches,
