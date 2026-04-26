@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:  # Fallback: manually trigger after tag push
 
 permissions:
   contents: write
