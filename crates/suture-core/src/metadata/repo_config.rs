@@ -85,7 +85,7 @@ impl RepoConfig {
     }
 
     /// Get a config value by dotted key (e.g., "user.name", "core.editor").
-    #[allow(clippy::single_match)]
+    #[allow(clippy::single_match, clippy::collapsible_match)]
     pub fn get(&self, key: &str) -> Option<String> {
         let parts: Vec<&str> = key.splitn(2, '.').collect();
         if parts.len() == 2 {

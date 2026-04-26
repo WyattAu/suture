@@ -90,7 +90,7 @@ impl GlobalConfig {
         }
     }
 
-    #[allow(clippy::single_match)]
+    #[allow(clippy::single_match, clippy::collapsible_match)]
     pub fn get(&self, key: &str) -> Option<String> {
         let env_key = format!("SUTURE_{}", key.to_uppercase().replace('.', "_"));
         if let Ok(val) = std::env::var(&env_key) {
@@ -105,7 +105,6 @@ impl GlobalConfig {
                     "email" => return self.user.email.clone(),
                     _ => {}
                 },
-                #[allow(clippy::single_match)]
                 "signing" => {
                     if parts[1] == "key" {
                         return self.signing.key.clone();
@@ -118,13 +117,11 @@ impl GlobalConfig {
                     }
                     _ => {}
                 },
-                #[allow(clippy::single_match)]
                 "push" => {
                     if parts[1] == "auto" {
                         return self.push.auto.map(|v| v.to_string());
                     }
                 }
-                #[allow(clippy::single_match)]
                 "pull" => {
                     if parts[1] == "rebase" {
                         return self.pull.rebase.map(|v| v.to_string());
