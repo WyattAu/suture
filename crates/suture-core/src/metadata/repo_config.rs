@@ -85,6 +85,7 @@ impl RepoConfig {
     }
 
     /// Get a config value by dotted key (e.g., "user.name", "core.editor").
+    #[allow(clippy::single_match)]
     pub fn get(&self, key: &str) -> Option<String> {
         let parts: Vec<&str> = key.splitn(2, '.').collect();
         if parts.len() == 2 {
@@ -94,11 +95,10 @@ impl RepoConfig {
                     "email" => return self.user.email.clone(),
                     _ => {}
                 },
-                "signing" => {
-                    if parts[1] == "key" {
-                        return self.signing.key.clone();
-                    }
-                }
+                "signing" => match parts[1] {
+                    "key" => return self.signing.key.clone(),
+                    _ => {}
+                },
                 "core" => match parts[1] {
                     "compression" => return self.core.compression.map(|v| v.to_string()),
                     "compression_level" => {
@@ -107,16 +107,14 @@ impl RepoConfig {
                     "editor" => return self.core.editor.clone(),
                     _ => {}
                 },
-                "push" => {
-                    if parts[1] == "auto" {
-                        return self.push.auto.map(|v| v.to_string());
-                    }
-                }
-                "pull" => {
-                    if parts[1] == "rebase" {
-                        return self.pull.rebase.map(|v| v.to_string());
-                    }
-                }
+                "push" => match parts[1] {
+                    "auto" => return self.push.auto.map(|v| v.to_string()),
+                    _ => {}
+                },
+                "pull" => match parts[1] {
+                    "rebase" => return self.pull.rebase.map(|v| v.to_string()),
+                    _ => {}
+                },
                 _ => {}
             }
         }

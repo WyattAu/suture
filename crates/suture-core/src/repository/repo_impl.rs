@@ -3998,7 +3998,7 @@ impl Repository {
     /// Returns a page of patches ordered by timestamp (newest first).
     pub fn patches_page(&self, offset: usize, limit: usize) -> Vec<&Patch> {
         let mut patches: Vec<&Patch> = self.all_patches_ref();
-        patches.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        patches.sort_by_key(|p| std::cmp::Reverse(p.timestamp));
         patches.into_iter().skip(offset).take(limit).collect()
     }
 
