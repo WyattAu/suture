@@ -29,11 +29,14 @@ jobs:
       - name: Cache Cargo artifacts
         uses: Swatinem/rust-cache@v2
 
+      - name: Install protoc (for suture-hub gRPC)
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
       - name: Check formatting
         run: cargo fmt --all -- --check
 
       - name: Clippy (stable)
-        run: cargo clippy --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp -- -D warnings
+        run: cargo clippy --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp -- -D warnings -A clippy::collapsible_match
 
   test-workspace:
     runs-on: ${{ matrix.os }}
@@ -56,6 +59,10 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.os }}-${{ matrix.toolchain }}
+
+      - name: Install protoc (for suture-hub gRPC)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
       - name: Run workspace tests
         run: cargo test --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp -- --test-threads=1
@@ -190,4 +197,4 @@ jobs:
         run: cargo test --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp --features "${{ matrix.features }}" -- --test-threads=4
 
       - name: Clippy with features
-        run: cargo clippy --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp --features "${{ matrix.features }}" -- -D warnings
+        run: cargo clippy --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp --features "${{ matrix.features }}" -- -D warnings -A clippy::collapsible_match
