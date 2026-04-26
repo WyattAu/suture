@@ -1,6 +1,6 @@
 use clap::Parser;
-use suture_hub::SutureHubServer;
 use serde::Deserialize;
+use suture_hub::SutureHubServer;
 
 #[derive(Deserialize, Default)]
 struct HubConfig {
@@ -225,11 +225,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Raft consensus setup
     #[cfg(feature = "raft-cluster")]
     if args.raft {
-        use suture_hub::raft_network::RaftTcpTransport;
-        use suture_hub::raft_runtime::RaftRuntime;
-        use suture_hub::raft::RaftConfig;
         use std::collections::HashMap;
         use std::net::SocketAddr;
+        use suture_hub::raft::RaftConfig;
+        use suture_hub::raft_network::RaftTcpTransport;
+        use suture_hub::raft_runtime::RaftRuntime;
 
         let node_id = args
             .raft_node_id
@@ -244,9 +244,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let pair = pair.trim();
                 let parts: Vec<&str> = pair.splitn(2, ':').collect();
                 if parts.len() != 2 {
-                    let msg = format!(
-                        "invalid raft peer format '{pair}', expected ID:ADDR"
-                    );
+                    let msg = format!("invalid raft peer format '{pair}', expected ID:ADDR");
                     return Err(msg.into());
                 }
                 let id_str = parts[0];
@@ -255,9 +253,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let peer_id: u64 = match id_str.parse() {
                     Ok(id) => id,
                     Err(_) => {
-                        let msg = format!(
-                            "invalid raft peer ID '{id_str}', expected integer"
-                        );
+                        let msg = format!("invalid raft peer ID '{id_str}', expected integer");
                         return Err(msg.into());
                     }
                 };
@@ -300,7 +296,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
 
         let (_runtime, _cmd_tx) = RaftRuntime::spawn(config);
-        tracing::info!("raft runtime started (single-node mode; TCP transport ready for multi-node)");
+        tracing::info!(
+            "raft runtime started (single-node mode; TCP transport ready for multi-node)"
+        );
     }
 
     suture_hub::server::run_server(hub, &addr).await?;

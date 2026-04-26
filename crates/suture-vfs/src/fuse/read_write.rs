@@ -1,19 +1,19 @@
 use crate::fuse::inode::{InodeEntry, InodeGenerator, InodeKind};
 use crate::path_translation::PathTranslator;
 use async_stream::try_stream;
+use fuse3::raw::Request;
 use fuse3::raw::prelude::*;
 use fuse3::raw::reply::{
     DirectoryEntry, ReplyAttr, ReplyCreated, ReplyData, ReplyDirectory, ReplyEntry, ReplyInit,
     ReplyOpen, ReplyStatFs, ReplyWrite,
 };
-use fuse3::raw::Request;
 use fuse3::{Errno, FileType, MountOptions, SetAttr, Timestamp};
-use suture_core::repository::Repository;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
+use suture_core::repository::Repository;
 
 const TTL: Duration = Duration::from_secs(3600);
 
@@ -147,12 +147,7 @@ impl RwFilesystem {
         *self.inner.path_translator.lock().unwrap() = path_translator;
     }
 
-    fn commit_file_change(
-        &self,
-        path: &str,
-        content: &[u8],
-        is_new: bool,
-    ) -> anyhow::Result<()> {
+    fn commit_file_change(&self, path: &str, content: &[u8], is_new: bool) -> anyhow::Result<()> {
         let full_path = self.inner.repo_path.join(path);
         if let Some(parent) = full_path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -160,8 +155,7 @@ impl RwFilesystem {
         std::fs::write(&full_path, content)?;
 
         let mut repo = self.inner.repo.lock().unwrap();
-        repo.add(path)
-            .map_err(|e| anyhow::anyhow!("stage: {e}"))?;
+        repo.add(path).map_err(|e| anyhow::anyhow!("stage: {e}"))?;
 
         let msg = if is_new {
             format!("vfs: create {}", path)
@@ -206,8 +200,7 @@ impl RwFilesystem {
             }
         }
 
-        file_contents
-            .retain(|path, _| file_tree.contains(path) || pending_files.contains(path));
+        file_contents.retain(|path, _| file_tree.contains(path) || pending_files.contains(path));
 
         drop(pending_files);
 
@@ -387,9 +380,7 @@ impl Filesystem for RwFilesystem {
         _flags: u32,
     ) -> fuse3::Result<ReplyAttr> {
         let inode_map = self.inner.inode_map.lock().unwrap();
-        let entry = inode_map
-            .get(inode)
-            .ok_or_else(Errno::new_not_exist)?;
+        let entry = inode_map.get(inode).ok_or_else(Errno::new_not_exist)?;
 
         let size = if entry.kind == InodeKind::File {
             let open_files = self.inner.open_files.lock().unwrap();
@@ -422,9 +413,7 @@ impl Filesystem for RwFilesystem {
         _set_attr: SetAttr,
     ) -> fuse3::Result<ReplyAttr> {
         let inode_map = self.inner.inode_map.lock().unwrap();
-        let entry = inode_map
-            .get(inode)
-            .ok_or_else(Errno::new_not_exist)?;
+        let entry = inode_map.get(inode).ok_or_else(Errno::new_not_exist)?;
 
         let size = if entry.kind == InodeKind::File {
             let file_contents = self.inner.file_contents.lock().unwrap();
@@ -449,9 +438,7 @@ impl Filesystem for RwFilesystem {
         size: u32,
     ) -> fuse3::Result<ReplyData> {
         let inode_map = self.inner.inode_map.lock().unwrap();
-        let entry = inode_map
-            .get(inode)
-            .ok_or_else(Errno::new_not_exist)?;
+        let entry = inode_map.get(inode).ok_or_else(Errno::new_not_exist)?;
         if entry.kind != InodeKind::File {
             return Err(Errno::new_is_dir());
         }
@@ -476,7 +463,9 @@ impl Filesystem for RwFilesystem {
         let offset = offset as usize;
         let end = std::cmp::min(offset + size as usize, data.len());
         if offset >= data.len() {
-            return Ok(ReplyData { data: vec![].into() });
+            return Ok(ReplyData {
+                data: vec![].into(),
+            });
         }
 
         Ok(ReplyData {
@@ -545,7 +534,11 @@ impl Filesystem for RwFilesystem {
             file_contents.entry(path.clone()).or_default();
         }
 
-        self.inner.pending_files.lock().unwrap().insert(path.clone());
+        self.inner
+            .pending_files
+            .lock()
+            .unwrap()
+            .insert(path.clone());
         self.rebuild_path_translator();
 
         let fh = self.alloc_fh();
@@ -580,12 +573,7 @@ impl Filesystem for RwFilesystem {
         let name_str = name.to_str().ok_or_else(Errno::new_not_exist)?;
         let path = self.resolve_path(parent, name_str)?;
 
-        let is_pending = self
-            .inner
-            .pending_files
-            .lock()
-            .unwrap()
-            .contains(&path);
+        let is_pending = self.inner.pending_files.lock().unwrap().contains(&path);
 
         {
             let mut open_files = self.inner.open_files.lock().unwrap();
@@ -638,12 +626,7 @@ impl Filesystem for RwFilesystem {
         })
     }
 
-    async fn rmdir(
-        &self,
-        _req: Request,
-        parent: u64,
-        name: &std::ffi::OsStr,
-    ) -> fuse3::Result<()> {
+    async fn rmdir(&self, _req: Request, parent: u64, name: &std::ffi::OsStr) -> fuse3::Result<()> {
         let name_str = name.to_str().ok_or_else(Errno::new_not_exist)?;
         let path = self.resolve_path(parent, name_str)?;
 
@@ -663,7 +646,9 @@ impl Filesystem for RwFilesystem {
         parent: u64,
         _fh: u64,
         offset: i64,
-    ) -> fuse3::Result<ReplyDirectory<impl futures_core::Stream<Item = fuse3::Result<DirectoryEntry>> + Send + 'a>> {
+    ) -> fuse3::Result<
+        ReplyDirectory<impl futures_core::Stream<Item = fuse3::Result<DirectoryEntry>> + Send + 'a>,
+    > {
         let inode_map = self.inner.inode_map.lock().unwrap();
         let parent_path = inode_map
             .get_path(parent)
@@ -690,10 +675,7 @@ impl Filesystem for RwFilesystem {
                     let size = if *is_dir {
                         0u64
                     } else {
-                        file_contents
-                            .get(path)
-                            .map(|d| d.len() as u64)
-                            .unwrap_or(0)
+                        file_contents.get(path).map(|d| d.len() as u64).unwrap_or(0)
                     };
                     let attr = make_file_attr(entry, inode, size);
                     result.push((inode, attr, name.clone().into(), entry_offset));
@@ -718,11 +700,7 @@ impl Filesystem for RwFilesystem {
         })
     }
 
-    async fn statfs(
-        &self,
-        _req: Request,
-        _inode: u64,
-    ) -> fuse3::Result<ReplyStatFs> {
+    async fn statfs(&self, _req: Request, _inode: u64) -> fuse3::Result<ReplyStatFs> {
         Ok(ReplyStatFs {
             blocks: 1,
             bfree: 0,
@@ -735,16 +713,9 @@ impl Filesystem for RwFilesystem {
         })
     }
 
-    async fn open(
-        &self,
-        _req: Request,
-        inode: u64,
-        flags: u32,
-    ) -> fuse3::Result<ReplyOpen> {
+    async fn open(&self, _req: Request, inode: u64, flags: u32) -> fuse3::Result<ReplyOpen> {
         let inode_map = self.inner.inode_map.lock().unwrap();
-        let entry = inode_map
-            .get(inode)
-            .ok_or_else(Errno::new_not_exist)?;
+        let entry = inode_map.get(inode).ok_or_else(Errno::new_not_exist)?;
         if entry.kind != InodeKind::File {
             return Err(Errno::new_is_dir());
         }
@@ -778,12 +749,7 @@ impl Filesystem for RwFilesystem {
         Ok(ReplyOpen { fh, flags: 0 })
     }
 
-    async fn opendir(
-        &self,
-        _req: Request,
-        _inode: u64,
-        _flags: u32,
-    ) -> fuse3::Result<ReplyOpen> {
+    async fn opendir(&self, _req: Request, _inode: u64, _flags: u32) -> fuse3::Result<ReplyOpen> {
         Ok(ReplyOpen { fh: 0, flags: 0 })
     }
 
@@ -794,8 +760,7 @@ impl Filesystem for RwFilesystem {
         fh: u64,
         _lock_owner: u64,
     ) -> fuse3::Result<()> {
-        self.process_close(fh)
-            .map_err(std::io::Error::other)?;
+        self.process_close(fh).map_err(std::io::Error::other)?;
         Ok(())
     }
 
@@ -809,8 +774,7 @@ impl Filesystem for RwFilesystem {
         _flush: bool,
     ) -> fuse3::Result<()> {
         if self.inner.open_files.lock().unwrap().contains_key(&fh) {
-            self.process_close(fh)
-                .map_err(std::io::Error::other)?;
+            self.process_close(fh).map_err(std::io::Error::other)?;
         }
         Ok(())
     }
@@ -866,7 +830,13 @@ mod tests {
 
         let fs = RwFilesystem::new(repo_path, None).await.unwrap();
 
-        let _inode = fs.inner.inode_map.lock().unwrap().lookup("hello.txt").unwrap();
+        let _inode = fs
+            .inner
+            .inode_map
+            .lock()
+            .unwrap()
+            .lookup("hello.txt")
+            .unwrap();
         let fh = fs.alloc_fh();
 
         {
@@ -934,7 +904,10 @@ mod tests {
             repo.log(None).unwrap().len()
         };
 
-        assert_eq!(new_count, original_count, "identical content should not create a patch");
+        assert_eq!(
+            new_count, original_count,
+            "identical content should not create a patch"
+        );
     }
 
     #[tokio::test]
@@ -1006,7 +979,10 @@ mod tests {
         assert!(tree.contains("new_file.txt"));
         assert!(tree.contains("existing.txt"));
 
-        let blob = repo.cas().get_blob(tree.get("new_file.txt").unwrap()).unwrap();
+        let blob = repo
+            .cas()
+            .get_blob(tree.get("new_file.txt").unwrap())
+            .unwrap();
         assert_eq!(blob.as_slice(), b"new content");
     }
 
@@ -1094,8 +1070,7 @@ mod integration_tests {
 
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
-        let new_content =
-            std::fs::read_to_string(mountpoint.join("new_file.txt")).unwrap();
+        let new_content = std::fs::read_to_string(mountpoint.join("new_file.txt")).unwrap();
         assert_eq!(new_content, "created via fuse");
 
         let repo2 = Repository::open(&repo_path).unwrap();

@@ -83,7 +83,12 @@ async fn test_has_blob() {
     store.put_blob(&hash, data).await.expect("put_blob failed");
 
     assert!(store.has_blob(&hash).await.expect("has_blob failed"));
-    assert!(!store.has_blob(&missing_hash).await.expect("has_blob (missing) failed"));
+    assert!(
+        !store
+            .has_blob(&missing_hash)
+            .await
+            .expect("has_blob (missing) failed")
+    );
 }
 
 #[tokio::test]
@@ -99,10 +104,20 @@ async fn test_delete_blob() {
     let hash = Hash::from_data(data);
 
     store.put_blob(&hash, data).await.expect("put_blob failed");
-    assert!(store.has_blob(&hash).await.expect("has_blob before delete failed"));
+    assert!(
+        store
+            .has_blob(&hash)
+            .await
+            .expect("has_blob before delete failed")
+    );
 
     store.delete_blob(&hash).await.expect("delete_blob failed");
-    assert!(!store.has_blob(&hash).await.expect("has_blob after delete failed"));
+    assert!(
+        !store
+            .has_blob(&hash)
+            .await
+            .expect("has_blob after delete failed")
+    );
 }
 
 #[tokio::test]
@@ -147,11 +162,20 @@ async fn test_overwrite_blob() {
     let data_b = b"version two";
     let hash = Hash::from_data(data_a);
 
-    store.put_blob(&hash, data_a).await.expect("put first version failed");
-    store.put_blob(&hash, data_b).await.expect("put second version failed");
+    store
+        .put_blob(&hash, data_a)
+        .await
+        .expect("put first version failed");
+    store
+        .put_blob(&hash, data_b)
+        .await
+        .expect("put second version failed");
 
     let retrieved = store.get_blob(&hash).await.expect("get_blob failed");
-    assert_eq!(retrieved, data_b, "S3 PUT overwrites, so second version should be returned");
+    assert_eq!(
+        retrieved, data_b,
+        "S3 PUT overwrites, so second version should be returned"
+    );
 }
 
 #[tokio::test]

@@ -1,6 +1,6 @@
 use crate::ref_utils::resolve_ref;
-use flate2::write::GzEncoder;
 use flate2::Compression;
+use flate2::write::GzEncoder;
 use std::fs::File;
 use std::path::Path;
 
@@ -37,10 +37,19 @@ pub(crate) async fn cmd_archive(
         "tar" => write_tar(&repo, &tree, output, prefix_str)?,
         "tar.gz" | "targz" | "tgz" => write_tar_gz(&repo, &tree, output, prefix_str)?,
         "zip" => write_zip(&repo, &tree, output, prefix_str)?,
-        other => return Err(format!("unsupported archive format: '{}' (supported: tar, tar.gz, tgz, zip)", other).into()),
+        other => {
+            return Err(format!(
+                "unsupported archive format: '{}' (supported: tar, tar.gz, tgz, zip)",
+                other
+            )
+            .into());
+        }
     }
 
-    let file_count = tree.iter().filter(|(p, _)| !p.starts_with(".suture/")).count();
+    let file_count = tree
+        .iter()
+        .filter(|(p, _)| !p.starts_with(".suture/"))
+        .count();
     println!("Archived {} files to {}", file_count, output);
     Ok(())
 }
@@ -66,9 +75,10 @@ fn collect_entries<'a>(
         if path.starts_with(".suture/") {
             continue;
         }
-        let data = repo.cas().get_blob(hash).map_err(|e| {
-            std::io::Error::other(e.to_string())
-        });
+        let data = repo
+            .cas()
+            .get_blob(hash)
+            .map_err(|e| std::io::Error::other(e.to_string()));
         entries.push((path.clone(), data));
     }
     entries.sort_by(|a, b| a.0.cmp(&b.0));

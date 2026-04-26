@@ -62,7 +62,10 @@ fn get_template(name: &str) -> Result<Vec<TemplateEntry>, String> {
     }
 }
 
-fn apply_template(repo_path: &StdPath, template_name: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn apply_template(
+    repo_path: &StdPath,
+    template_name: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let entries = get_template(template_name)?;
     let mut created_files = Vec::new();
 
@@ -70,15 +73,20 @@ fn apply_template(repo_path: &StdPath, template_name: &str) -> Result<(), Box<dy
         let full_path = repo_path.join(entry.path);
         if let Some(content) = &entry.content {
             if let Some(parent) = full_path.parent() {
-                std::fs::create_dir_all(parent)
-                    .map_err(|e| user_error(&format!("failed to create directory '{}'", parent.display()), e))?;
+                std::fs::create_dir_all(parent).map_err(|e| {
+                    user_error(
+                        &format!("failed to create directory '{}'", parent.display()),
+                        e,
+                    )
+                })?;
             }
             std::fs::write(&full_path, content)
                 .map_err(|e| user_error(&format!("failed to write '{}'", entry.path), e))?;
             created_files.push(entry.path.to_string());
         } else {
-            std::fs::create_dir_all(&full_path)
-                .map_err(|e| user_error(&format!("failed to create directory '{}'", entry.path), e))?;
+            std::fs::create_dir_all(&full_path).map_err(|e| {
+                user_error(&format!("failed to create directory '{}'", entry.path), e)
+            })?;
             created_files.push(format!("{}/", entry.path));
         }
     }
@@ -159,8 +167,7 @@ pub(crate) async fn cmd_init(
 }
 
 fn show_onboarding_if_first_run() {
-    let global_config =
-        suture_core::metadata::global_config::GlobalConfig::config_path();
+    let global_config = suture_core::metadata::global_config::GlobalConfig::config_path();
 
     if global_config.exists() {
         return;

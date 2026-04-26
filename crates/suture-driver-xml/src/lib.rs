@@ -783,8 +783,16 @@ mod tests {
         for i in 0..100 {
             let tag = format!("item{i}");
             let val = format!("value_{i}");
-            let ours_val = if i == 50 { "modified_by_ours".to_string() } else { val.clone() };
-            let theirs_val = if i == 80 { "modified_by_theirs".to_string() } else { val.clone() };
+            let ours_val = if i == 50 {
+                "modified_by_ours".to_string()
+            } else {
+                val.clone()
+            };
+            let theirs_val = if i == 80 {
+                "modified_by_theirs".to_string()
+            } else {
+                val.clone()
+            };
 
             base_children.push_str(&format!("<{tag}>{val}</{tag}>"));
             ours_children.push_str(&format!("<{tag}>{ours_val}</{tag}>"));
@@ -843,7 +851,10 @@ mod tests {
         let theirs = r#"<root><item id="3">text</item></root>"#;
 
         let result = driver.merge(base, ours, theirs).unwrap();
-        assert!(result.is_none(), "conflicting attribute changes should conflict");
+        assert!(
+            result.is_none(),
+            "conflicting attribute changes should conflict"
+        );
     }
 
     #[test]
@@ -869,7 +880,10 @@ mod tests {
         let result = driver.merge(base, ours, theirs).unwrap();
         assert!(result.is_some());
         let merged = result.unwrap();
-        assert!(merged.contains("color=\"red\""), "theirs kept the attribute since ours removed it but theirs didn't");
+        assert!(
+            merged.contains("color=\"red\""),
+            "theirs kept the attribute since ours removed it but theirs didn't"
+        );
     }
 
     #[test]
@@ -919,7 +933,10 @@ mod tests {
         let theirs = r#"<root><existing>keep</existing><new>theirs</new></root>"#;
 
         let result = driver.merge(base, ours, theirs).unwrap();
-        assert!(result.is_some(), "both adding same element at same position with different content should include both");
+        assert!(
+            result.is_some(),
+            "both adding same element at same position with different content should include both"
+        );
         let merged = result.unwrap();
         assert!(merged.contains(">ours<"));
         assert!(merged.contains(">theirs<"));

@@ -190,7 +190,13 @@ pub(crate) async fn cmd_log(
                     let vstatus = verify_status(&repo, patch);
                     if stat {
                         let stat_str = format_stat(patch);
-                        println!("{} {} | {} [{}]", short_hash, patch.message, stat_str.trim(), vstatus);
+                        println!(
+                            "{} {} | {} [{}]",
+                            short_hash,
+                            patch.message,
+                            stat_str.trim(),
+                            vstatus
+                        );
                     } else {
                         println!("{} {} [{}]", short_hash, patch.message, vstatus);
                     }
@@ -202,7 +208,10 @@ pub(crate) async fn cmd_log(
                 }
             }
             if limit > 0 && total > limit {
-                println!("... and {} more commits (use --limit 0 to show all)", total - limit);
+                println!(
+                    "... and {} more commits (use --limit 0 to show all)",
+                    total - limit
+                );
             }
             return Ok(());
         }
@@ -211,7 +220,13 @@ pub(crate) async fn cmd_log(
             let prefix = if i == 0 { "* " } else { "  " };
             if verify {
                 let vstatus = verify_status(&repo, patch);
-                println!("{}{} {} [{}]", prefix, patch.id.to_hex(), patch.message, vstatus);
+                println!(
+                    "{}{} {} [{}]",
+                    prefix,
+                    patch.id.to_hex(),
+                    patch.message,
+                    vstatus
+                );
             } else {
                 println!("{}{} {}", prefix, patch.id.to_hex(), patch.message);
             }
@@ -225,8 +240,14 @@ pub(crate) async fn cmd_log(
                     .map(|h| h.to_hex())
                     .unwrap_or_default();
                 let commit_hex = patch.id.to_hex();
-                let from = if parent_hex.is_empty() { None } else { Some(parent_hex.as_str()) };
-                let entries = repo.diff(from, Some(commit_hex.as_str())).unwrap_or_default();
+                let from = if parent_hex.is_empty() {
+                    None
+                } else {
+                    Some(parent_hex.as_str())
+                };
+                let entries = repo
+                    .diff(from, Some(commit_hex.as_str()))
+                    .unwrap_or_default();
                 if !entries.is_empty() {
                     use suture_core::engine::diff::DiffType;
                     for entry in &entries {
@@ -390,7 +411,8 @@ pub(crate) async fn cmd_log(
             println!("{}", merge_close.iter().collect::<String>());
         }
 
-        if stat && let Some(pid) = patch_ids.first()
+        if stat
+            && let Some(pid) = patch_ids.first()
             && let Some(patch) = repo.dag().get_patch(pid)
         {
             println!("{}", format_stat(patch));
@@ -460,8 +482,7 @@ async fn cmd_audit(
                 .to_rfc3339();
             let files_changed: Vec<String> = patch.touch_set.addresses();
 
-            let (files_added, files_modified, files_deleted) =
-                classify_files_fast(patch);
+            let (files_added, files_modified, files_deleted) = classify_files_fast(patch);
 
             AuditEntry {
                 timestamp: dt,
@@ -512,7 +533,12 @@ async fn cmd_audit(
                 println!("Author:      {}", entry.author);
                 println!("Message:     {}", entry.message);
                 for f in &entry.files_changed {
-                    let op = classify_file_label(f, &entry.files_added, &entry.files_modified, &entry.files_deleted);
+                    let op = classify_file_label(
+                        f,
+                        &entry.files_added,
+                        &entry.files_modified,
+                        &entry.files_deleted,
+                    );
                     println!("Files:       {f} ({op})");
                 }
                 if entry.files_changed.is_empty() {
@@ -569,7 +595,9 @@ fn classify_files(
         Some(parent_hex.as_str())
     };
 
-    let entries = repo.diff(from, Some(commit_hex.as_str())).unwrap_or_default();
+    let entries = repo
+        .diff(from, Some(commit_hex.as_str()))
+        .unwrap_or_default();
 
     use suture_core::engine::diff::DiffType;
     let mut added = Vec::new();

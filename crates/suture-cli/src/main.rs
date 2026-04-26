@@ -1114,7 +1114,9 @@ pub(crate) enum StashAction {
     )]
     Drop { index: usize },
     /// Create and checkout a new branch from a stash entry
-    #[command(after_long_help = "EXAMPLES:\n    suture stash branch feature     # Create branch from latest stash\n    suture stash branch fix 2       # Create branch from stash index 2")]
+    #[command(
+        after_long_help = "EXAMPLES:\n    suture stash branch feature     # Create branch from latest stash\n    suture stash branch fix 2       # Create branch from stash index 2"
+    )]
     Branch {
         /// Branch name to create
         name: String,
@@ -1123,14 +1125,18 @@ pub(crate) enum StashAction {
         index: usize,
     },
     /// Show stash contents
-    #[command(after_long_help = "EXAMPLES:\n    suture stash show           # Show latest stash\n    suture stash show 2         # Show stash at index 2")]
+    #[command(
+        after_long_help = "EXAMPLES:\n    suture stash show           # Show latest stash\n    suture stash show 2         # Show stash at index 2"
+    )]
     Show {
         /// Stash index (default: 0 = latest)
         #[arg(default_value_t = 0)]
         index: usize,
     },
     /// Drop all stash entries
-    #[command(after_long_help = "EXAMPLES:\n    suture stash clear           # Drop all stashes\n    suture stash clear --dry-run  # Preview what would be dropped")]
+    #[command(
+        after_long_help = "EXAMPLES:\n    suture stash clear           # Drop all stashes\n    suture stash clear --dry-run  # Preview what would be dropped"
+    )]
     Clear {
         /// Show how many would be dropped without actually dropping
         #[arg(long)]
@@ -1408,9 +1414,11 @@ async fn main() {
     }
 
     let result = match cli.command {
-        Commands::Init { path, r#type, template } => {
-            cmd::init::cmd_init(&path, r#type.as_deref(), template.as_deref()).await
-        }
+        Commands::Init {
+            path,
+            r#type,
+            template,
+        } => cmd::init::cmd_init(&path, r#type.as_deref(), template.as_deref()).await,
         Commands::Status => cmd::status::cmd_status().await,
         Commands::Ignore { action } => {
             let args = match action {
@@ -1502,12 +1510,27 @@ async fn main() {
             classification,
             summary,
         } => {
-            cmd::diff::cmd_diff(from.as_deref(), to.as_deref(), cached, integrity, name_only, classification, summary).await
+            cmd::diff::cmd_diff(
+                from.as_deref(),
+                to.as_deref(),
+                cached,
+                integrity,
+                name_only,
+                classification,
+                summary,
+            )
+            .await
         }
         Commands::Revert { commit, message } => {
             cmd::revert::cmd_revert(&commit, message.as_deref()).await
         }
-        Commands::Merge { source, dry_run, strategy, r#continue, abort } => {
+        Commands::Merge {
+            source,
+            dry_run,
+            strategy,
+            r#continue,
+            abort,
+        } => {
             if abort {
                 cmd::merge::cmd_merge_abort().await
             } else if r#continue {
@@ -1538,15 +1561,23 @@ async fn main() {
             )
             .await
         }
-        Commands::Apply { patch_file, reverse, stat } => cmd::apply::cmd_apply(&patch_file, reverse, stat).await,
-        Commands::CherryPick { commit, no_commit } => cmd::cherry_pick::cmd_cherry_pick(&commit, no_commit).await,
+        Commands::Apply {
+            patch_file,
+            reverse,
+            stat,
+        } => cmd::apply::cmd_apply(&patch_file, reverse, stat).await,
+        Commands::CherryPick { commit, no_commit } => {
+            cmd::cherry_pick::cmd_cherry_pick(&commit, no_commit).await
+        }
         Commands::Rebase {
             branch,
             interactive,
             resume,
             abort,
         } => cmd::rebase::cmd_rebase(&branch, interactive, resume, abort).await,
-        Commands::Blame { path, at, lines } => cmd::blame::cmd_blame(&path, at.as_deref(), lines.as_deref()).await,
+        Commands::Blame { path, at, lines } => {
+            cmd::blame::cmd_blame(&path, at.as_deref(), lines.as_deref()).await
+        }
         Commands::Tag {
             name,
             target,
@@ -1574,14 +1605,16 @@ async fn main() {
             force,
             branch,
         } => cmd::push::cmd_push(&remote, force, branch.as_deref()).await,
-        Commands::Pull { remote, rebase, autostash } => cmd::pull::cmd_pull(&remote, rebase, autostash).await,
+        Commands::Pull {
+            remote,
+            rebase,
+            autostash,
+        } => cmd::pull::cmd_pull(&remote, rebase, autostash).await,
         Commands::Fetch { remote, depth } => cmd::fetch::cmd_fetch(&remote, depth).await,
         Commands::Clone { url, dir, depth } => {
             cmd::clone::cmd_clone(&url, dir.as_deref(), depth).await
         }
-        Commands::LsRemote { remote_or_url } => {
-            cmd::ls_remote::cmd_ls_remote(&remote_or_url).await
-        }
+        Commands::LsRemote { remote_or_url } => cmd::ls_remote::cmd_ls_remote(&remote_or_url).await,
         Commands::Reset { target, mode } => cmd::reset::cmd_reset(&target, &mode).await,
         Commands::Key { action } => cmd::key::cmd_key(&action).await,
         Commands::Stash { action } => cmd::stash::cmd_stash(&action).await,
@@ -1635,10 +1668,15 @@ async fn main() {
         }
         Commands::Notes { action } => cmd::notes::cmd_notes(&action).await,
         Commands::Worktree { action } => cmd::worktree::cmd_worktree(&action).await,
-        Commands::Gc { dry_run, aggressive } => cmd::gc::cmd_gc(dry_run, aggressive).await,
-        Commands::Repack { threshold, dry_run, force } => {
-            cmd::repack::cmd_repack(threshold, dry_run, force).await
-        }
+        Commands::Gc {
+            dry_run,
+            aggressive,
+        } => cmd::gc::cmd_gc(dry_run, aggressive).await,
+        Commands::Repack {
+            threshold,
+            dry_run,
+            force,
+        } => cmd::repack::cmd_repack(threshold, dry_run, force).await,
         Commands::Grep {
             pattern,
             paths,
@@ -1661,10 +1699,27 @@ async fn main() {
         }
         Commands::Fsck { full } => cmd::fsck::cmd_fsck(full).await,
         Commands::Doctor { fix } => cmd::doctor::cmd_doctor(fix).await,
-        Commands::Audit { verify, show, count, tail } => cmd::audit::cmd_audit(verify, show, count, tail).await,
-        Commands::Clean { dry_run, dirs, paths } => cmd::clean::cmd_clean(dry_run, dirs, &paths).await,
-        Commands::Describe { commit_ref, all, tags } => cmd::describe::cmd_describe(&commit_ref, all, tags).await,
-        Commands::RevParse { refs, short, verify } => cmd::rev_parse::cmd_rev_parse(&refs, short, verify).await,
+        Commands::Audit {
+            verify,
+            show,
+            count,
+            tail,
+        } => cmd::audit::cmd_audit(verify, show, count, tail).await,
+        Commands::Clean {
+            dry_run,
+            dirs,
+            paths,
+        } => cmd::clean::cmd_clean(dry_run, dirs, &paths).await,
+        Commands::Describe {
+            commit_ref,
+            all,
+            tags,
+        } => cmd::describe::cmd_describe(&commit_ref, all, tags).await,
+        Commands::RevParse {
+            refs,
+            short,
+            verify,
+        } => cmd::rev_parse::cmd_rev_parse(&refs, short, verify).await,
         Commands::Bisect { action } => cmd::bisect::cmd_bisect(&action).await,
         Commands::Hook { action } => {
             let hook_action = match action {
@@ -1676,7 +1731,10 @@ async fn main() {
         }
         Commands::Lfs { action } => {
             let lfs_action = match action {
-                LfsAction::Track { pattern, size_limit } => cmd::lfs::LfsAction::Track {
+                LfsAction::Track {
+                    pattern,
+                    size_limit,
+                } => cmd::lfs::LfsAction::Track {
                     pattern: pattern.clone(),
                     size_limit: size_limit.clone(),
                 },
@@ -1690,7 +1748,9 @@ async fn main() {
             };
             cmd::lfs::cmd_lfs(&lfs_action).await
         }
-        Commands::Classification { action } => cmd::classification::cmd_classification(&action).await,
+        Commands::Classification { action } => {
+            cmd::classification::cmd_classification(&action).await
+        }
         Commands::Git { action } => {
             let git_action = match action {
                 GitAction::Import { path } => cmd::git::GitAction::Import { path },
@@ -1719,15 +1779,19 @@ async fn main() {
             Some(SyncAction::Start) => cmd::sync::cmd_sync_start().await,
             Some(SyncAction::Stop) => cmd::sync::cmd_sync_stop(),
             Some(SyncAction::Status) => cmd::sync::cmd_sync_status(),
-            None => {
-                cmd::sync::cmd_sync(&remote, no_push, pull_only, message.as_deref()).await
-            }
-        }
-        Commands::Undo { n, soft: _, hard, force } => cmd::undo::cmd_undo(n, hard, force).await,
+            None => cmd::sync::cmd_sync(&remote, no_push, pull_only, message.as_deref()).await,
+        },
+        Commands::Undo {
+            n,
+            soft: _,
+            hard,
+            force,
+        } => cmd::undo::cmd_undo(n, hard, force).await,
         Commands::Rollback { commit } => cmd::rollback::cmd_rollback(&commit).await,
-        Commands::Verify { commit_ref, verbose } => {
-            cmd::verify::cmd_verify(&commit_ref, verbose).await
-        }
+        Commands::Verify {
+            commit_ref,
+            verbose,
+        } => cmd::verify::cmd_verify(&commit_ref, verbose).await,
         Commands::Version => cmd::version::cmd_version().await,
         Commands::Tui => cmd::tui::cmd_tui().await,
         Commands::Export {
@@ -1738,7 +1802,15 @@ async fn main() {
             include_meta,
             client,
         } => {
-            cmd::export::cmd_export(&output, at.as_deref(), zip, template.as_deref(), include_meta, client.as_deref()).await
+            cmd::export::cmd_export(
+                &output,
+                at.as_deref(),
+                zip,
+                template.as_deref(),
+                include_meta,
+                client.as_deref(),
+            )
+            .await
         }
         Commands::Archive {
             commit,
@@ -1756,41 +1828,36 @@ async fn main() {
         }
         Commands::Report { report_type } => {
             let rt = match report_type {
-                ReportType::Change { from, to, format, output } => {
-                    cmd::report::ReportType::Change {
-                        from: from.clone(),
-                        to: to.clone(),
-                        format: format.clone(),
-                        output: output.clone(),
-                    }
-                }
-                ReportType::Activity { days, format } => {
-                    cmd::report::ReportType::Activity {
-                        days,
-                        format: format.clone(),
-                    }
-                }
-                ReportType::Stats { at } => {
-                    cmd::report::ReportType::Stats {
-                        at: at.clone().unwrap_or_else(|| "HEAD".to_string()),
-                    }
-                }
+                ReportType::Change {
+                    from,
+                    to,
+                    format,
+                    output,
+                } => cmd::report::ReportType::Change {
+                    from: from.clone(),
+                    to: to.clone(),
+                    format: format.clone(),
+                    output: output.clone(),
+                },
+                ReportType::Activity { days, format } => cmd::report::ReportType::Activity {
+                    days,
+                    format: format.clone(),
+                },
+                ReportType::Stats { at } => cmd::report::ReportType::Stats {
+                    at: at.clone().unwrap_or_else(|| "HEAD".to_string()),
+                },
             };
             cmd::report::cmd_report(&rt).await
         }
         Commands::Batch { action } => {
             let ba = match action {
-                BatchAction::Stage { pattern } => {
-                    cmd::batch::BatchAction::Stage {
-                        pattern: pattern.clone(),
-                    }
-                }
-                BatchAction::Commit { pattern, message } => {
-                    cmd::batch::BatchAction::Commit {
-                        pattern: pattern.clone(),
-                        message: message.clone(),
-                    }
-                }
+                BatchAction::Stage { pattern } => cmd::batch::BatchAction::Stage {
+                    pattern: pattern.clone(),
+                },
+                BatchAction::Commit { pattern, message } => cmd::batch::BatchAction::Commit {
+                    pattern: pattern.clone(),
+                    message: message.clone(),
+                },
                 BatchAction::ExportClients { clients, output } => {
                     cmd::batch::BatchAction::ExportClients {
                         clients: clients.clone(),
@@ -1834,7 +1901,8 @@ fn clean_error_message(msg: &str) -> String {
 }
 
 fn strip_rust_type_paths(s: &str) -> String {
-    let re = regex::Regex::new(r"[a-z_][a-z0-9_]*(?:::[a-z_][a-z0-9_]*)+::[A-Z][a-zA-Z0-9]*").unwrap();
+    let re =
+        regex::Regex::new(r"[a-z_][a-z0-9_]*(?:::[a-z_][a-z0-9_]*)+::[A-Z][a-zA-Z0-9]*").unwrap();
     re.replace_all(s, "…").to_string()
 }
 
@@ -1845,13 +1913,27 @@ fn strip_rust_backtrace(s: &str) -> String {
 
 fn error_hint(msg: &str) -> Option<&'static str> {
     let lower = msg.to_lowercase();
-    if lower.contains("no remote") || lower.contains("remote not found") || lower.contains("no remotes configured") {
+    if lower.contains("no remote")
+        || lower.contains("remote not found")
+        || lower.contains("no remotes configured")
+    {
         Some("run `suture remote add <name> <url>` to configure a remote")
-    } else if lower.contains("not a suture repository") || lower.contains("not a repository") || lower.contains(".suture") {
+    } else if lower.contains("not a suture repository")
+        || lower.contains("not a repository")
+        || lower.contains(".suture")
+    {
         Some("run `suture init` to create a new repository")
-    } else if lower.contains("network") || lower.contains("connection refused") || lower.contains("connect error") || lower.contains("could not resolve") || lower.contains("timeout") {
+    } else if lower.contains("network")
+        || lower.contains("connection refused")
+        || lower.contains("connect error")
+        || lower.contains("could not resolve")
+        || lower.contains("timeout")
+    {
         Some("check that the remote URL is correct and the server is reachable")
-    } else if lower.contains("permission") || lower.contains("denied") || lower.contains("unauthorized") {
+    } else if lower.contains("permission")
+        || lower.contains("denied")
+        || lower.contains("unauthorized")
+    {
         Some("run `suture remote login` to authenticate with the remote")
     } else {
         None
@@ -1861,7 +1943,10 @@ fn error_hint(msg: &str) -> Option<&'static str> {
 #[cfg(test)]
 pub(crate) fn cwd_guard() -> std::sync::MutexGuard<'static, ()> {
     static CWD_LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
-    CWD_LOCK.get_or_init(|| std::sync::Mutex::new(())).lock().unwrap()
+    CWD_LOCK
+        .get_or_init(|| std::sync::Mutex::new(()))
+        .lock()
+        .unwrap()
 }
 
 #[cfg(test)]
@@ -1878,7 +1963,11 @@ mod tests {
     fn test_init_default() {
         let cli = parse(&["suture", "init"]);
         match cli.command {
-            Commands::Init { path, r#type, template } => {
+            Commands::Init {
+                path,
+                r#type,
+                template,
+            } => {
                 assert_eq!(path, ".");
                 assert!(r#type.is_none());
                 assert!(template.is_none());
@@ -1891,7 +1980,11 @@ mod tests {
     fn test_init_with_path() {
         let cli = parse(&["suture", "init", "/tmp/myrepo"]);
         match cli.command {
-            Commands::Init { path, r#type, template } => {
+            Commands::Init {
+                path,
+                r#type,
+                template,
+            } => {
                 assert_eq!(path, "/tmp/myrepo");
                 assert!(r#type.is_none());
                 assert!(template.is_none());
@@ -1904,7 +1997,9 @@ mod tests {
     fn test_init_with_type() {
         let cli = parse(&["suture", "init", "--type", "video"]);
         match cli.command {
-            Commands::Init { r#type, template, .. } => {
+            Commands::Init {
+                r#type, template, ..
+            } => {
                 assert_eq!(r#type.as_deref(), Some("video"));
                 assert!(template.is_none());
             }
@@ -1916,7 +2011,11 @@ mod tests {
     fn test_init_with_type_and_path() {
         let cli = parse(&["suture", "init", "my-project", "-t", "document"]);
         match cli.command {
-            Commands::Init { path, r#type, template } => {
+            Commands::Init {
+                path,
+                r#type,
+                template,
+            } => {
                 assert_eq!(path, "my-project");
                 assert_eq!(r#type.as_deref(), Some("document"));
                 assert!(template.is_none());
@@ -1929,7 +2028,9 @@ mod tests {
     fn test_init_with_template() {
         let cli = parse(&["suture", "init", "--template", "report"]);
         match cli.command {
-            Commands::Init { template, r#type, .. } => {
+            Commands::Init {
+                template, r#type, ..
+            } => {
                 assert_eq!(template.as_deref(), Some("report"));
                 assert!(r#type.is_none());
             }
@@ -1941,7 +2042,9 @@ mod tests {
     fn test_init_with_type_and_template() {
         let cli = parse(&["suture", "init", "--type", "data", "--template", "report"]);
         match cli.command {
-            Commands::Init { r#type, template, .. } => {
+            Commands::Init {
+                r#type, template, ..
+            } => {
                 assert_eq!(r#type.as_deref(), Some("data"));
                 assert_eq!(template.as_deref(), Some("report"));
             }
@@ -2078,7 +2181,12 @@ mod tests {
     fn test_tag_annotated() {
         let cli = parse(&["suture", "tag", "-a", "-m", "release", "v1.0"]);
         match cli.command {
-            Commands::Tag { name, annotate, message, .. } => {
+            Commands::Tag {
+                name,
+                annotate,
+                message,
+                ..
+            } => {
                 assert_eq!(name.as_deref(), Some("v1.0"));
                 assert!(annotate);
                 assert_eq!(message.as_deref(), Some("release"));
@@ -2103,7 +2211,13 @@ mod tests {
     fn test_merge_dry_run() {
         let cli = parse(&["suture", "merge", "--dry-run", "feature"]);
         match cli.command {
-            Commands::Merge { source, dry_run, strategy, r#continue, abort } => {
+            Commands::Merge {
+                source,
+                dry_run,
+                strategy,
+                r#continue,
+                abort,
+            } => {
                 assert_eq!(source.as_deref(), Some("feature"));
                 assert!(dry_run);
                 assert_eq!(strategy, "semantic");
@@ -2116,11 +2230,19 @@ mod tests {
 
     #[test]
     fn test_merge_file_with_driver() {
-        let cli = parse(&["suture", "merge-file", "--driver", "json", "base", "ours", "theirs", "-o", "out.json"]);
+        let cli = parse(&[
+            "suture",
+            "merge-file",
+            "--driver",
+            "json",
+            "base",
+            "ours",
+            "theirs",
+            "-o",
+            "out.json",
+        ]);
         match cli.command {
-            Commands::MergeFile {
-                driver, output, ..
-            } => {
+            Commands::MergeFile { driver, output, .. } => {
                 assert_eq!(driver.as_deref(), Some("json"));
                 assert_eq!(output.as_deref(), Some("out.json"));
             }
@@ -2130,10 +2252,21 @@ mod tests {
 
     #[test]
     fn test_merge_file_auto_detect() {
-        let cli = parse(&["suture", "merge-file", "base.json", "ours.json", "theirs.json"]);
+        let cli = parse(&[
+            "suture",
+            "merge-file",
+            "base.json",
+            "ours.json",
+            "theirs.json",
+        ]);
         match cli.command {
             Commands::MergeFile {
-                base, ours, theirs, driver, output, ..
+                base,
+                ours,
+                theirs,
+                driver,
+                output,
+                ..
             } => {
                 assert_eq!(base, "base.json");
                 assert_eq!(ours, "ours.json");
@@ -2190,7 +2323,11 @@ mod tests {
     fn test_push_force() {
         let cli = parse(&["suture", "push", "--force", "origin"]);
         match cli.command {
-            Commands::Push { remote, force, branch } => {
+            Commands::Push {
+                remote,
+                force,
+                branch,
+            } => {
                 assert_eq!(remote, "origin");
                 assert!(force);
                 assert!(branch.is_none());
@@ -2203,7 +2340,11 @@ mod tests {
     fn test_rebase_interactive() {
         let cli = parse(&["suture", "rebase", "-i", "main"]);
         match cli.command {
-            Commands::Rebase { branch, interactive, .. } => {
+            Commands::Rebase {
+                branch,
+                interactive,
+                ..
+            } => {
                 assert_eq!(branch, "main");
                 assert!(interactive);
             }
@@ -2228,7 +2369,11 @@ mod tests {
         let cli = parse(&["suture", "notes", "add", "HEAD", "-m", "review note"]);
         match cli.command {
             Commands::Notes { action } => match action {
-                NotesAction::Add { commit, message, append: _ } => {
+                NotesAction::Add {
+                    commit,
+                    message,
+                    append: _,
+                } => {
                     assert_eq!(commit, "HEAD");
                     assert_eq!(message.as_deref(), Some("review note"));
                 }
@@ -2384,7 +2529,11 @@ mod tests {
     fn test_clean_dry_run() {
         let cli = parse(&["suture", "clean", "-n"]);
         match cli.command {
-            Commands::Clean { dry_run, dirs, paths } => {
+            Commands::Clean {
+                dry_run,
+                dirs,
+                paths,
+            } => {
                 assert!(dry_run);
                 assert!(!dirs);
                 assert!(paths.is_empty());
@@ -2397,7 +2546,11 @@ mod tests {
     fn test_clean_with_dirs() {
         let cli = parse(&["suture", "clean", "-d", "-n", "build/"]);
         match cli.command {
-            Commands::Clean { dry_run, dirs, paths } => {
+            Commands::Clean {
+                dry_run,
+                dirs,
+                paths,
+            } => {
                 assert!(dry_run);
                 assert!(dirs);
                 assert_eq!(paths, vec!["build/"]);
@@ -2433,7 +2586,11 @@ mod tests {
     fn test_describe() {
         let cli = parse(&["suture", "describe"]);
         match cli.command {
-            Commands::Describe { commit_ref, all, tags } => {
+            Commands::Describe {
+                commit_ref,
+                all,
+                tags,
+            } => {
                 assert_eq!(commit_ref, "HEAD");
                 assert!(!all);
                 assert!(!tags);
@@ -2446,7 +2603,9 @@ mod tests {
     fn test_describe_with_ref() {
         let cli = parse(&["suture", "describe", "--all", "HEAD~3"]);
         match cli.command {
-            Commands::Describe { commit_ref, all, .. } => {
+            Commands::Describe {
+                commit_ref, all, ..
+            } => {
                 assert_eq!(commit_ref, "HEAD~3");
                 assert!(all);
             }
@@ -2458,7 +2617,11 @@ mod tests {
     fn test_rev_parse() {
         let cli = parse(&["suture", "rev-parse", "HEAD"]);
         match cli.command {
-            Commands::RevParse { refs, short, verify } => {
+            Commands::RevParse {
+                refs,
+                short,
+                verify,
+            } => {
                 assert_eq!(refs, vec!["HEAD"]);
                 assert!(!short);
                 assert!(!verify);
@@ -2494,7 +2657,10 @@ mod tests {
     fn test_verify_parse() {
         let cli = parse(&["suture", "verify"]);
         match cli.command {
-            Commands::Verify { commit_ref, verbose } => {
+            Commands::Verify {
+                commit_ref,
+                verbose,
+            } => {
                 assert_eq!(commit_ref, "HEAD");
                 assert!(!verbose);
             }
@@ -2506,7 +2672,10 @@ mod tests {
     fn test_verify_with_ref() {
         let cli = parse(&["suture", "verify", "abc123"]);
         match cli.command {
-            Commands::Verify { commit_ref, verbose } => {
+            Commands::Verify {
+                commit_ref,
+                verbose,
+            } => {
                 assert_eq!(commit_ref, "abc123");
                 assert!(!verbose);
             }
@@ -2518,7 +2687,10 @@ mod tests {
     fn test_verify_verbose() {
         let cli = parse(&["suture", "verify", "-v", "HEAD"]);
         match cli.command {
-            Commands::Verify { commit_ref, verbose } => {
+            Commands::Verify {
+                commit_ref,
+                verbose,
+            } => {
                 assert_eq!(commit_ref, "HEAD");
                 assert!(verbose);
             }
@@ -2566,7 +2738,11 @@ mod tests {
         let keypair = suture_core::signing::SigningKeypair::generate();
         let keys_dir = dir_path.join(".suture").join("keys");
         std::fs::create_dir_all(&keys_dir).unwrap();
-        std::fs::write(keys_dir.join("default.ed25519"), keypair.private_key_bytes()).unwrap();
+        std::fs::write(
+            keys_dir.join("default.ed25519"),
+            keypair.private_key_bytes(),
+        )
+        .unwrap();
         repo.set_config("signing.key", "default").unwrap();
 
         let file_path = dir_path.join("hello.txt");
@@ -2576,7 +2752,9 @@ mod tests {
 
         let (_, head_id) = repo.head().unwrap();
         let patch = repo.dag().get_patch(&head_id).unwrap();
-        repo.meta().store_public_key(&patch.author, &keypair.public_key_bytes()).unwrap();
+        repo.meta()
+            .store_public_key(&patch.author, &keypair.public_key_bytes())
+            .unwrap();
 
         let canonical = suture_core::signing::canonical_patch_bytes(
             &patch.operation_type.to_string(),
@@ -2589,7 +2767,9 @@ mod tests {
             patch.timestamp,
         );
         let sig = keypair.sign(&canonical);
-        repo.meta().store_signature(&patch.id.to_hex(), &sig.to_bytes()).unwrap();
+        repo.meta()
+            .store_signature(&patch.id.to_hex(), &sig.to_bytes())
+            .unwrap();
 
         let prev = std::env::current_dir().unwrap();
         std::env::set_current_dir(&dir_path).unwrap();
@@ -2607,7 +2787,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
         let prev = std::env::current_dir().unwrap();
-        let mut repo = suture_core::repository::Repository::init(&dir_path, "Defence Analyst").unwrap();
+        let mut repo =
+            suture_core::repository::Repository::init(&dir_path, "Defence Analyst").unwrap();
 
         for (name, msg) in [
             ("requirements.txt", "Add system requirements v1.0"),
@@ -2628,7 +2809,8 @@ mod tests {
 
         std::fs::write(dir_path.join("radar_v2_spec.txt"), "spec updated").unwrap();
         repo.add("radar_v2_spec.txt").unwrap();
-        repo.commit("Update radar v2 spec with signal params").unwrap();
+        repo.commit("Update radar v2 spec with signal params")
+            .unwrap();
 
         repo.checkout("main").unwrap();
         repo.execute_merge("feature/radar-v2").unwrap();
@@ -2636,7 +2818,11 @@ mod tests {
         let keypair = suture_core::signing::SigningKeypair::generate();
         let keys_dir = dir_path.join(".suture").join("keys");
         std::fs::create_dir_all(&keys_dir).unwrap();
-        std::fs::write(keys_dir.join("default.ed25519"), keypair.private_key_bytes()).unwrap();
+        std::fs::write(
+            keys_dir.join("default.ed25519"),
+            keypair.private_key_bytes(),
+        )
+        .unwrap();
         repo.set_config("signing.key", "default").unwrap();
 
         std::fs::write(dir_path.join("signed_doc.txt"), "classified content").unwrap();
@@ -2645,7 +2831,11 @@ mod tests {
 
         drop(repo);
         std::env::set_current_dir(&dir_path).unwrap();
-        let result = cmd::log::cmd_log(None, false, false, false, None, None, false, None, None, false, false, true, "text", false, None, 0).await;
+        let result = cmd::log::cmd_log(
+            None, false, false, false, None, None, false, None, None, false, false, true, "text",
+            false, None, 0,
+        )
+        .await;
         assert!(result.is_ok());
 
         std::env::set_current_dir(&prev).unwrap();
@@ -2660,20 +2850,30 @@ mod tests {
         let prev = std::env::current_dir().unwrap();
         let mut repo = suture_core::repository::Repository::init(&dir_path, "Analyst").unwrap();
 
-        std::fs::write(dir_path.join("report.txt"), "UNCLASSIFIED\n\nReport body here.").unwrap();
+        std::fs::write(
+            dir_path.join("report.txt"),
+            "UNCLASSIFIED\n\nReport body here.",
+        )
+        .unwrap();
         repo.add("report.txt").unwrap();
         repo.commit("Add unclassified report").unwrap();
 
         let (_, head_id) = repo.head().unwrap();
         let head_hex = head_id.to_hex();
 
-        std::fs::write(dir_path.join("report.txt"), "SECRET\n\nUpdated report body.").unwrap();
+        std::fs::write(
+            dir_path.join("report.txt"),
+            "SECRET\n\nUpdated report body.",
+        )
+        .unwrap();
         repo.add("report.txt").unwrap();
-        repo.commit("Update report classification to SECRET").unwrap();
+        repo.commit("Update report classification to SECRET")
+            .unwrap();
 
         drop(repo);
         std::env::set_current_dir(&dir_path).unwrap();
-        let result = cmd::diff::cmd_diff(Some(&head_hex), None, false, false, false, true, false).await;
+        let result =
+            cmd::diff::cmd_diff(Some(&head_hex), None, false, false, false, true, false).await;
         assert!(result.is_ok());
 
         std::env::set_current_dir(&prev).unwrap();
@@ -2686,19 +2886,26 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
         let prev = std::env::current_dir().unwrap();
-        let mut repo = suture_core::repository::Repository::init(&dir_path, "Defence Officer").unwrap();
+        let mut repo =
+            suture_core::repository::Repository::init(&dir_path, "Defence Officer").unwrap();
 
         let keypair = suture_core::signing::SigningKeypair::generate();
         let keys_dir = dir_path.join(".suture").join("keys");
         std::fs::create_dir_all(&keys_dir).unwrap();
-        std::fs::write(keys_dir.join("default.ed25519"), keypair.private_key_bytes()).unwrap();
+        std::fs::write(
+            keys_dir.join("default.ed25519"),
+            keypair.private_key_bytes(),
+        )
+        .unwrap();
         repo.set_config("signing.key", "default").unwrap();
 
         std::fs::write(dir_path.join("mission_brief.txt"), "Mission brief content").unwrap();
         repo.add("mission_brief.txt").unwrap();
         let patch_id = repo.commit("Add mission brief").unwrap();
         let patch = repo.dag().get_patch(&patch_id).unwrap();
-        repo.meta().store_public_key(&patch.author, &keypair.public_key_bytes()).unwrap();
+        repo.meta()
+            .store_public_key(&patch.author, &keypair.public_key_bytes())
+            .unwrap();
         let canonical = suture_core::signing::canonical_patch_bytes(
             &patch.operation_type.to_string(),
             &patch.touch_set.addresses(),
@@ -2710,7 +2917,9 @@ mod tests {
             patch.timestamp,
         );
         let sig = keypair.sign(&canonical);
-        repo.meta().store_signature(&patch.id.to_hex(), &sig.to_bytes()).unwrap();
+        repo.meta()
+            .store_signature(&patch.id.to_hex(), &sig.to_bytes())
+            .unwrap();
 
         drop(repo);
         std::env::set_current_dir(&dir_path).unwrap();
@@ -2731,7 +2940,11 @@ mod tests {
         let prev = std::env::current_dir().unwrap();
         let mut repo = suture_core::repository::Repository::init(&dir_path, "Director").unwrap();
 
-        std::fs::write(dir_path.join("scene_01.txt"), "Scene 1: Opening shot\nCamera pans across landscape").unwrap();
+        std::fs::write(
+            dir_path.join("scene_01.txt"),
+            "Scene 1: Opening shot\nCamera pans across landscape",
+        )
+        .unwrap();
         repo.add("scene_01.txt").unwrap();
         repo.commit("Add scene 01 initial version").unwrap();
 
@@ -2798,12 +3011,25 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
         let prev = std::env::current_dir().unwrap();
-        let mut repo = suture_core::repository::Repository::init(&dir_path, "ContentCreator").unwrap();
+        let mut repo =
+            suture_core::repository::Repository::init(&dir_path, "ContentCreator").unwrap();
 
         std::fs::create_dir_all(dir_path.join("drafts")).unwrap();
-        std::fs::write(dir_path.join("drafts/thumbnail_ideas.txt"), "Idea 1: bold text\nIdea 2: face closeup").unwrap();
-        std::fs::write(dir_path.join("drafts/script_draft.md"), "# Video Script\n## Intro\nHey everyone!").unwrap();
-        std::fs::write(dir_path.join("drafts/budget.csv"), "item,cost\ncamera,500\nediting,200").unwrap();
+        std::fs::write(
+            dir_path.join("drafts/thumbnail_ideas.txt"),
+            "Idea 1: bold text\nIdea 2: face closeup",
+        )
+        .unwrap();
+        std::fs::write(
+            dir_path.join("drafts/script_draft.md"),
+            "# Video Script\n## Intro\nHey everyone!",
+        )
+        .unwrap();
+        std::fs::write(
+            dir_path.join("drafts/budget.csv"),
+            "item,cost\ncamera,500\nediting,200",
+        )
+        .unwrap();
         repo.add("drafts/thumbnail_ideas.txt").unwrap();
         repo.add("drafts/script_draft.md").unwrap();
         repo.add("drafts/budget.csv").unwrap();
@@ -2812,7 +3038,9 @@ mod tests {
         drop(repo);
         std::env::set_current_dir(&dir_path).unwrap();
         let export_dir = dir.path().join("client_delivery");
-        let result = cmd::export::cmd_export(export_dir.to_str().unwrap(), None, false, None, false, None).await;
+        let result =
+            cmd::export::cmd_export(export_dir.to_str().unwrap(), None, false, None, false, None)
+                .await;
         assert!(result.is_ok());
         assert!(export_dir.join("drafts/thumbnail_ideas.txt").exists());
         assert!(export_dir.join("drafts/script_draft.md").exists());
@@ -2860,7 +3088,11 @@ mod tests {
         let (_, first_id) = repo.head().unwrap();
         let first_hex = first_id.to_hex();
 
-        std::fs::write(dir_path.join("script.txt"), "Updated script content with changes").unwrap();
+        std::fs::write(
+            dir_path.join("script.txt"),
+            "Updated script content with changes",
+        )
+        .unwrap();
         std::fs::write(dir_path.join("notes.txt"), "Production notes v2 updated").unwrap();
         repo.add("script.txt").unwrap();
         repo.add("notes.txt").unwrap();
@@ -2868,7 +3100,16 @@ mod tests {
 
         drop(repo);
         std::env::set_current_dir(&dir_path).unwrap();
-        let result = cmd::diff::cmd_diff(Some(&first_hex), Some("HEAD"), false, false, false, false, true).await;
+        let result = cmd::diff::cmd_diff(
+            Some(&first_hex),
+            Some("HEAD"),
+            false,
+            false,
+            false,
+            false,
+            true,
+        )
+        .await;
         assert!(result.is_ok());
 
         std::env::set_current_dir(&prev).unwrap();
@@ -2883,9 +3124,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
         let prev = std::env::current_dir().unwrap();
-        let mut repo = suture_core::repository::Repository::init(&dir_path, "Collaborator").unwrap();
+        let mut repo =
+            suture_core::repository::Repository::init(&dir_path, "Collaborator").unwrap();
 
-        std::fs::write(dir_path.join("README.md"), "# Project\n\nGetting started guide.").unwrap();
+        std::fs::write(
+            dir_path.join("README.md"),
+            "# Project\n\nGetting started guide.",
+        )
+        .unwrap();
         repo.add("README.md").unwrap();
         repo.commit("Initial commit").unwrap();
 
@@ -2906,13 +3152,26 @@ mod tests {
 
         let _ = cmd::describe::cmd_describe("HEAD", false, false).await;
         let _ = cmd::verify::cmd_verify("HEAD", false).await;
-        let _ = cmd::log::cmd_log(None, false, false, false, None, None, false, None, None, true, false, false, "text", false, None, 0).await;
+        let _ = cmd::log::cmd_log(
+            None, false, false, false, None, None, false, None, None, true, false, false, "text",
+            false, None, 0,
+        )
+        .await;
         let _ = cmd::show::cmd_show("HEAD", true).await;
 
-        std::fs::write(dir_path.join("README.md"), "# Project\n\nUpdated getting started.").unwrap();
-        cmd::add::cmd_add(&["README.md".to_string()], false, false).await.unwrap();
+        std::fs::write(
+            dir_path.join("README.md"),
+            "# Project\n\nUpdated getting started.",
+        )
+        .unwrap();
+        cmd::add::cmd_add(&["README.md".to_string()], false, false)
+            .await
+            .unwrap();
 
-        let _ = cmd::stash::cmd_stash(&StashAction::Push { message: Some("WIP readme update".to_string()) }).await;
+        let _ = cmd::stash::cmd_stash(&StashAction::Push {
+            message: Some("WIP readme update".to_string()),
+        })
+        .await;
         let _ = cmd::stash::cmd_stash(&StashAction::List).await;
         let _ = cmd::stash::cmd_stash(&StashAction::Show { index: 0 }).await;
         let _ = cmd::stash::cmd_stash(&StashAction::Pop).await;
@@ -3068,7 +3327,11 @@ mod tests {
         let cli = parse(&["suture", "classification", "scan", "--format", "json"]);
         match cli.command {
             Commands::Classification { action } => match action {
-                ClassificationAction::Scan { format, since, filter } => {
+                ClassificationAction::Scan {
+                    format,
+                    since,
+                    filter,
+                } => {
                     assert_eq!(format, "json");
                     assert!(since.is_none());
                     assert!(filter.is_none());
@@ -3081,7 +3344,15 @@ mod tests {
 
     #[test]
     fn test_classification_scan_with_since_and_filter() {
-        let cli = parse(&["suture", "classification", "scan", "--since", "main", "--filter", "upgraded"]);
+        let cli = parse(&[
+            "suture",
+            "classification",
+            "scan",
+            "--since",
+            "main",
+            "--filter",
+            "upgraded",
+        ]);
         match cli.command {
             Commands::Classification { action } => match action {
                 ClassificationAction::Scan { since, filter, .. } => {
@@ -3096,7 +3367,13 @@ mod tests {
 
     #[test]
     fn test_classification_report_parse() {
-        let cli = parse(&["suture", "classification", "report", "--output", "report.txt"]);
+        let cli = parse(&[
+            "suture",
+            "classification",
+            "report",
+            "--output",
+            "report.txt",
+        ]);
         match cli.command {
             Commands::Classification { action } => match action {
                 ClassificationAction::Report { output } => {
@@ -3116,32 +3393,46 @@ mod tests {
         let prev = std::env::current_dir().unwrap();
         let mut repo = suture_core::repository::Repository::init(&dir_path, "Analyst").unwrap();
 
-        std::fs::write(dir_path.join("report.txt"), "UNCLASSIFIED\n\nInitial report.").unwrap();
+        std::fs::write(
+            dir_path.join("report.txt"),
+            "UNCLASSIFIED\n\nInitial report.",
+        )
+        .unwrap();
         repo.add("report.txt").unwrap();
         repo.commit("Add unclassified report").unwrap();
 
-        std::fs::write(dir_path.join("report.txt"), "SECRET\n\nUpdated classified content.").unwrap();
+        std::fs::write(
+            dir_path.join("report.txt"),
+            "SECRET\n\nUpdated classified content.",
+        )
+        .unwrap();
         repo.add("report.txt").unwrap();
         repo.commit("Upgrade report to SECRET").unwrap();
 
-        std::fs::write(dir_path.join("report.txt"), "TOP SECRET\n\nHighly classified content.").unwrap();
+        std::fs::write(
+            dir_path.join("report.txt"),
+            "TOP SECRET\n\nHighly classified content.",
+        )
+        .unwrap();
         repo.add("report.txt").unwrap();
         repo.commit("Upgrade report to TOP SECRET").unwrap();
 
-        std::fs::write(dir_path.join("report.txt"), "Some normal text without markings").unwrap();
+        std::fs::write(
+            dir_path.join("report.txt"),
+            "Some normal text without markings",
+        )
+        .unwrap();
         repo.add("report.txt").unwrap();
         repo.commit("Remove classification markings").unwrap();
 
         drop(repo);
         std::env::set_current_dir(&dir_path).unwrap();
 
-        let result = cmd::classification::cmd_classification(
-            &ClassificationAction::Scan {
-                since: None,
-                format: "text".to_string(),
-                filter: None,
-            },
-        )
+        let result = cmd::classification::cmd_classification(&ClassificationAction::Scan {
+            since: None,
+            format: "text".to_string(),
+            filter: None,
+        })
         .await;
         assert!(result.is_ok());
 
@@ -3173,11 +3464,9 @@ mod tests {
         std::env::set_current_dir(&dir_path).unwrap();
 
         let output_path = dir.path().join("compliance_report.txt");
-        let result = cmd::classification::cmd_classification(
-            &ClassificationAction::Report {
-                output: Some(output_path.to_str().unwrap().to_string()),
-            },
-        )
+        let result = cmd::classification::cmd_classification(&ClassificationAction::Report {
+            output: Some(output_path.to_str().unwrap().to_string()),
+        })
         .await;
         assert!(result.is_ok());
         assert!(output_path.exists());
@@ -3205,7 +3494,13 @@ mod tests {
 
     #[test]
     fn test_timeline_import_parse() {
-        let cli = parse(&["suture", "timeline", "import", "my_timeline.otio", "add timeline"]);
+        let cli = parse(&[
+            "suture",
+            "timeline",
+            "import",
+            "my_timeline.otio",
+            "add timeline",
+        ]);
         match cli.command {
             Commands::Timeline { action } => match action {
                 TimelineAction::Import { file, message } => {
@@ -3220,10 +3515,17 @@ mod tests {
 
     #[test]
     fn test_report_parse() {
-        let cli = parse(&["suture", "report", "change", "--from", "main", "--to", "HEAD", "--format", "markdown"]);
+        let cli = parse(&[
+            "suture", "report", "change", "--from", "main", "--to", "HEAD", "--format", "markdown",
+        ]);
         match cli.command {
             Commands::Report { report_type } => match report_type {
-                ReportType::Change { from, to, format, output } => {
+                ReportType::Change {
+                    from,
+                    to,
+                    format,
+                    output,
+                } => {
                     assert_eq!(from.as_deref(), Some("main"));
                     assert_eq!(to.as_deref(), Some("HEAD"));
                     assert_eq!(format, "markdown");
@@ -3237,7 +3539,9 @@ mod tests {
 
     #[test]
     fn test_report_activity_parse() {
-        let cli = parse(&["suture", "report", "activity", "--days", "14", "--format", "text"]);
+        let cli = parse(&[
+            "suture", "report", "activity", "--days", "14", "--format", "text",
+        ]);
         match cli.command {
             Commands::Report { report_type } => match report_type {
                 ReportType::Activity { days, format } => {
@@ -3295,7 +3599,14 @@ mod tests {
 
     #[test]
     fn test_batch_export_clients_parse() {
-        let cli = parse(&["suture", "batch", "export-clients", "./deliveries", "Acme", "Beta"]);
+        let cli = parse(&[
+            "suture",
+            "batch",
+            "export-clients",
+            "./deliveries",
+            "Acme",
+            "Beta",
+        ]);
         match cli.command {
             Commands::Batch { action } => match action {
                 BatchAction::ExportClients { clients, output } => {
@@ -3311,8 +3622,16 @@ mod tests {
     #[test]
     fn test_export_template_parse() {
         let cli = parse(&[
-            "suture", "export", "./out", "--template", "./tpl",
-            "--client", "Acme", "--include-meta", "--at", "v1.0",
+            "suture",
+            "export",
+            "./out",
+            "--template",
+            "./tpl",
+            "--client",
+            "Acme",
+            "--include-meta",
+            "--at",
+            "v1.0",
         ]);
         match cli.command {
             Commands::Export {
@@ -3357,7 +3676,11 @@ mod tests {
 
         let repo = suture_core::repository::Repository::open(Path::new(".")).unwrap();
         let status = repo.status().unwrap();
-        let staged_paths: Vec<&str> = status.staged_files.iter().map(|(p, _)| p.as_str()).collect();
+        let staged_paths: Vec<&str> = status
+            .staged_files
+            .iter()
+            .map(|(p, _)| p.as_str())
+            .collect();
         assert!(staged_paths.contains(&"video_01.mp4"));
         assert!(staged_paths.contains(&"video_02.mp4"));
         assert!(!staged_paths.contains(&"readme.txt"));
@@ -3416,7 +3739,10 @@ mod tests {
 
         drop(repo);
         std::env::set_current_dir(&dir_path).unwrap();
-        let result = cmd::report::cmd_report(&cmd::report::ReportType::Stats { at: "HEAD".to_string() }).await;
+        let result = cmd::report::cmd_report(&cmd::report::ReportType::Stats {
+            at: "HEAD".to_string(),
+        })
+        .await;
         assert!(result.is_ok());
 
         std::env::set_current_dir(&prev).unwrap();
@@ -3432,14 +3758,19 @@ mod tests {
         let repo = suture_core::repository::Repository::init(&dir_path, "user").unwrap();
 
         for i in 0..5 {
-            std::fs::write(dir_path.join(format!("file_{i}.txt")), format!("content {i}")).unwrap();
+            std::fs::write(
+                dir_path.join(format!("file_{i}.txt")),
+                format!("content {i}"),
+            )
+            .unwrap();
         }
 
         drop(repo);
         std::env::set_current_dir(&dir_path).unwrap();
         let result = cmd::batch::cmd_batch(&cmd::batch::BatchAction::Stage {
             pattern: "file_*.txt".to_string(),
-        }).await;
+        })
+        .await;
         assert!(result.is_ok());
 
         std::env::set_current_dir(&prev).unwrap();
@@ -3464,8 +3795,11 @@ mod tests {
         let details = serde_json::json!({
             "patch_id": patch_id.to_hex(),
             "message": "Add classified document",
-        }).to_string();
-        audit.append("Security Officer", "commit", &details).unwrap();
+        })
+        .to_string();
+        audit
+            .append("Security Officer", "commit", &details)
+            .unwrap();
 
         drop(repo);
         std::env::set_current_dir(&dir_path).unwrap();

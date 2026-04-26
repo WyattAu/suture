@@ -36,9 +36,7 @@ impl S3BlobStore {
                 debug!("PUT blob succeeded");
                 Ok(())
             }
-            403 => Err(S3Error::AccessDenied(format!(
-                "PUT {key}: access denied"
-            ))),
+            403 => Err(S3Error::AccessDenied(format!("PUT {key}: access denied"))),
             status => {
                 let body = response.text().await.unwrap_or_default();
                 Err(S3Error::UnexpectedStatus(status, body))
@@ -64,9 +62,7 @@ impl S3BlobStore {
                 Ok(data)
             }
             404 => Err(S3Error::NotFound(key)),
-            403 => Err(S3Error::AccessDenied(format!(
-                "GET {key}: access denied"
-            ))),
+            403 => Err(S3Error::AccessDenied(format!("GET {key}: access denied"))),
             status => {
                 let body = response.text().await.unwrap_or_default();
                 Err(S3Error::UnexpectedStatus(status, body))
@@ -88,9 +84,7 @@ impl S3BlobStore {
         match response.status().as_u16() {
             200 => Ok(true),
             404 => Ok(false),
-            403 => Err(S3Error::AccessDenied(format!(
-                "HEAD {key}: access denied"
-            ))),
+            403 => Err(S3Error::AccessDenied(format!("HEAD {key}: access denied"))),
             status => {
                 let body = response.text().await.unwrap_or_default();
                 Err(S3Error::UnexpectedStatus(status, body))

@@ -92,7 +92,9 @@ pub(crate) async fn cmd_sync(
     };
 
     if has_remote && !no_push {
-        let (branch, _) = repo.head().unwrap_or(("main".to_string(), suture_common::Hash::ZERO));
+        let (branch, _) = repo
+            .head()
+            .unwrap_or(("main".to_string(), suture_common::Hash::ZERO));
         match cmd_push_inner(&mut repo, remote).await {
             Ok(()) => {
                 println!("Pushed to {remote}/{branch}");
@@ -119,10 +121,7 @@ pub(crate) async fn cmd_sync(
     Ok(())
 }
 
-fn has_configured_remote(
-    repo: &suture_core::repository::Repository,
-    name: &str,
-) -> bool {
+fn has_configured_remote(repo: &suture_core::repository::Repository, name: &str) -> bool {
     let remotes = repo.list_remotes().unwrap_or_default();
     remotes.iter().any(|(n, _)| n == name)
 }
@@ -213,25 +212,13 @@ fn generate_sync_message(changed_files: &[String]) -> String {
 
     let mut parts = Vec::new();
     if doc_count > 0 {
-        parts.push(format!(
-            "{} document{}",
-            doc_count,
-            plural(doc_count)
-        ));
+        parts.push(format!("{} document{}", doc_count, plural(doc_count)));
     }
     if xls_count > 0 {
-        parts.push(format!(
-            "{} spreadsheet{}",
-            xls_count,
-            plural(xls_count)
-        ));
+        parts.push(format!("{} spreadsheet{}", xls_count, plural(xls_count)));
     }
     if pptx_count > 0 {
-        parts.push(format!(
-            "{} presentation{}",
-            pptx_count,
-            plural(pptx_count)
-        ));
+        parts.push(format!("{} presentation{}", pptx_count, plural(pptx_count)));
     }
     if other_count > 0 {
         parts.push(format!("{} file{}", other_count, plural(other_count)));
@@ -253,8 +240,8 @@ async fn cmd_push_inner(
     remote: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use crate::remote_proto::{
-        BranchProto, PushRequest, PushResponse, check_handshake, derive_repo_id,
-        hex_to_hash_proto, patch_to_proto, sign_push_request,
+        BranchProto, PushRequest, PushResponse, check_handshake, derive_repo_id, hex_to_hash_proto,
+        patch_to_proto, sign_push_request,
     };
     use base64::Engine;
 
@@ -527,7 +514,9 @@ pub(crate) fn cmd_sync_status() -> Result<(), Box<dyn std::error::Error>> {
 
 fn read_last_sync() -> Option<String> {
     let path = PathBuf::from(SYNC_LAST_SYNC_FILE);
-    std::fs::read_to_string(&path).ok().map(|s| s.trim().to_string())
+    std::fs::read_to_string(&path)
+        .ok()
+        .map(|s| s.trim().to_string())
 }
 
 fn write_last_sync() -> Result<(), Box<dyn std::error::Error>> {
@@ -562,9 +551,7 @@ fn format_ago(iso_ts: &str) -> String {
     }
 }
 
-fn detect_pending_conflicts(
-    repo: &suture_core::repository::Repository,
-) -> Vec<String> {
+fn detect_pending_conflicts(repo: &suture_core::repository::Repository) -> Vec<String> {
     let mut conflicts = Vec::new();
 
     if let Ok(Some(json)) = repo.meta().get_config("pending_merge_parents")
@@ -573,7 +560,10 @@ fn detect_pending_conflicts(
     {
         let parent_ids: Vec<String> = serde_json::from_str(&json).unwrap_or_default();
         if !parent_ids.is_empty() {
-            let msg = format!("{} pending merge parents (merge in progress)", parent_ids.len());
+            let msg = format!(
+                "{} pending merge parents (merge in progress)",
+                parent_ids.len()
+            );
             conflicts.push(msg);
         }
     }
@@ -682,7 +672,10 @@ fn snapshot_dir(
             snapshot_dir(root, &path, snapshot)?;
         } else if path.is_file() {
             let meta = entry.metadata()?;
-            snapshot.insert(rel, (meta.len(), meta.modified()?.elapsed()?.as_millis() as u64));
+            snapshot.insert(
+                rel,
+                (meta.len(), meta.modified()?.elapsed()?.as_millis() as u64),
+            );
         }
     }
     Ok(())

@@ -11,7 +11,9 @@ fn col_to_letter(col: usize) -> String {
     loop {
         result.insert(0, char::from(b'A' + (c % 26) as u8));
         c /= 26;
-        if c == 0 { break; }
+        if c == 0 {
+            break;
+        }
         c -= 1;
     }
     result
@@ -48,7 +50,10 @@ fn make_xlsx(sheets: &[(&str, &[Cell])]) -> String {
                 xml.push_str(&format!("<row r=\"{}\">\n", row_num));
                 for (col, val) in cols {
                     let col_letter = col_to_letter(*col);
-                    xml.push_str(&format!("<c r=\"{}{}\"><v>{}</v></c>\n", col_letter, row_num, val));
+                    xml.push_str(&format!(
+                        "<c r=\"{}{}\"><v>{}</v></c>\n",
+                        col_letter, row_num, val
+                    ));
                 }
                 xml.push_str("</row>\n");
             }

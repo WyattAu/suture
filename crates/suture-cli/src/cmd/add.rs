@@ -1,9 +1,7 @@
 use std::path::Path;
 use tokio::io::AsyncBufReadExt;
 
-use crate::cmd::lfs::{
-    compute_sha256, create_lfs_pointer, should_track_as_lfs, store_lfs_object,
-};
+use crate::cmd::lfs::{compute_sha256, create_lfs_pointer, should_track_as_lfs, store_lfs_object};
 
 /// Expand paths: if a path is a directory, recursively collect all files in it.
 fn expand_paths(paths: &[String]) -> Vec<String> {
@@ -96,7 +94,11 @@ pub(crate) async fn cmd_add(
             if maybe_convert_to_lfs_pointer(path)? {
                 // repo.add() reads the pointer from disk and stores it
                 repo.add(path)?;
-                println!("Added {} (LFS pointer, {} bytes)", path, std::fs::metadata(path)?.len());
+                println!(
+                    "Added {} (LFS pointer, {} bytes)",
+                    path,
+                    std::fs::metadata(path)?.len()
+                );
             } else {
                 repo.add(path)?;
                 println!("Added {}", path);

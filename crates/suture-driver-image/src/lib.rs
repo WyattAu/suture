@@ -196,9 +196,7 @@ impl SutureDriver for ImageDriver {
         base: Option<&[u8]>,
         new_content: &[u8],
     ) -> Result<Vec<SemanticChange>, DriverError> {
-        let base_str = base.map(|b| {
-            unsafe { String::from_utf8_unchecked(b.to_vec()) }
-        });
+        let base_str = base.map(|b| unsafe { String::from_utf8_unchecked(b.to_vec()) });
         let new_str = unsafe { String::from_utf8_unchecked(new_content.to_vec()) };
         self.diff(base_str.as_deref(), &new_str)
     }
@@ -259,9 +257,11 @@ mod tests {
 
         let changes = driver.diff(None, &new_content).unwrap();
         assert_eq!(changes.len(), 3);
-        assert!(changes
-            .iter()
-            .all(|c| matches!(c, SemanticChange::Added { .. })));
+        assert!(
+            changes
+                .iter()
+                .all(|c| matches!(c, SemanticChange::Added { .. }))
+        );
 
         let paths: Vec<&str> = changes
             .iter()

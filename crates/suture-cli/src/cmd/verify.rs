@@ -16,8 +16,14 @@ pub(crate) async fn cmd_verify(
         return Ok(());
     }
 
-    let pub_key_bytes: [u8; 32] = pub_key.unwrap().try_into().map_err(|_| "invalid public key length")?;
-    let sig_bytes: [u8; 64] = sig.unwrap().try_into().map_err(|_| "invalid signature length")?;
+    let pub_key_bytes: [u8; 32] = pub_key
+        .unwrap()
+        .try_into()
+        .map_err(|_| "invalid public key length")?;
+    let sig_bytes: [u8; 64] = sig
+        .unwrap()
+        .try_into()
+        .map_err(|_| "invalid signature length")?;
 
     let canonical = suture_core::signing::canonical_patch_bytes(
         &patch.operation_type.to_string(),

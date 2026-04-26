@@ -1,8 +1,6 @@
 use std::path::Path as StdPath;
 
-pub(crate) async fn cmd_ls_remote(
-    remote_or_url: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) async fn cmd_ls_remote(remote_or_url: &str) -> Result<(), Box<dyn std::error::Error>> {
     let url = if remote_or_url.starts_with("http://") || remote_or_url.starts_with("https://") {
         remote_or_url.to_string()
     } else {

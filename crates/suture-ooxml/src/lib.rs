@@ -199,14 +199,9 @@ impl OoxmlDocument {
 fn path_rels_to_owner(rels_path: &str) -> String {
     // The pattern is: <dir>/_rels/<name>.rels
     // We need to extract: <dir>/<name>
-    let rels_filename = rels_path
-        .rsplit('/')
-        .next()
-        .unwrap_or("");
+    let rels_filename = rels_path.rsplit('/').next().unwrap_or("");
     // Remove ".rels" suffix
-    let name = rels_filename
-        .strip_suffix(".rels")
-        .unwrap_or(rels_filename);
+    let name = rels_filename.strip_suffix(".rels").unwrap_or(rels_filename);
 
     // Find the directory containing "_rels"
     let dir = rels_path
@@ -266,10 +261,7 @@ fn parse_rels(xml: &str) -> Vec<(String, String)> {
 /// e.g. `("ppt/presentation.xml", "slides/slide1.xml")` → `"ppt/slides/slide1.xml"`
 fn resolve_relative_path(base_part: &str, target: &str) -> String {
     // Get the directory of the base part
-    let dir = base_part
-        .rsplit_once('/')
-        .map(|(d, _)| d)
-        .unwrap_or("");
+    let dir = base_part.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
 
     if target.starts_with('/') {
         // Absolute path within the archive (starts with /)
@@ -535,9 +527,6 @@ mod tests {
         );
 
         // Non-existent rId → None
-        assert_eq!(
-            doc.resolve_rel("ppt/presentation.xml", "rId99"),
-            None
-        );
+        assert_eq!(doc.resolve_rel("ppt/presentation.xml", "rId99"), None);
     }
 }

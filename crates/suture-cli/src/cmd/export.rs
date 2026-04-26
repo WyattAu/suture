@@ -43,9 +43,23 @@ pub(crate) async fn cmd_export(
     };
 
     if zip {
-        export_as_zip(&repo, &tree, &effective_output, template, include_meta, &ctx)?;
+        export_as_zip(
+            &repo,
+            &tree,
+            &effective_output,
+            template,
+            include_meta,
+            &ctx,
+        )?;
     } else {
-        export_as_dir(&repo, &tree, &effective_output, template, include_meta, &ctx)?;
+        export_as_dir(
+            &repo,
+            &tree,
+            &effective_output,
+            template,
+            include_meta,
+            &ctx,
+        )?;
     }
 
     Ok(())
@@ -164,9 +178,7 @@ fn copy_template_recursive(
     ctx: &ExportContext,
     count: &mut usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let entries: Vec<_> = std::fs::read_dir(src)?
-        .filter_map(|e| e.ok())
-        .collect();
+    let entries: Vec<_> = std::fs::read_dir(src)?.filter_map(|e| e.ok()).collect();
 
     for entry in &entries {
         let src_path = entry.path();

@@ -254,11 +254,7 @@ fn extract_identifier(s: &str) -> Option<&str> {
     let end = s
         .find(|c: char| c.is_whitespace() || c == '(' || c == ';')
         .unwrap_or(s.len());
-    if end == 0 {
-        None
-    } else {
-        Some(&s[..end])
-    }
+    if end == 0 { None } else { Some(&s[..end]) }
 }
 
 fn parse_column_list(body: &str) -> Vec<ColumnDef> {
@@ -1004,8 +1000,7 @@ mod tests {
     fn test_sql_diff_added_table() {
         let driver = SqlDriver::new();
         let base = "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL);\n";
-        let new =
-            "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL);\n\nCREATE TABLE posts (id INTEGER PRIMARY KEY, title TEXT);\n";
+        let new = "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL);\n\nCREATE TABLE posts (id INTEGER PRIMARY KEY, title TEXT);\n";
 
         let changes = driver.diff(Some(base), new).unwrap();
         assert!(changes.iter().any(|c| matches!(
@@ -1017,8 +1012,7 @@ mod tests {
     #[test]
     fn test_sql_diff_removed_table() {
         let driver = SqlDriver::new();
-        let base =
-            "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL);\n\nCREATE TABLE posts (id INTEGER PRIMARY KEY, title TEXT);\n";
+        let base = "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL);\n\nCREATE TABLE posts (id INTEGER PRIMARY KEY, title TEXT);\n";
         let new = "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL);\n";
 
         let changes = driver.diff(Some(base), new).unwrap();
@@ -1152,8 +1146,7 @@ mod tests {
     fn test_sql_format_diff() {
         let driver = SqlDriver::new();
         let base = "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL);\n";
-        let new =
-            "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL);\n\nCREATE TABLE posts (id INTEGER PRIMARY KEY, title TEXT);\n";
+        let new = "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL);\n\nCREATE TABLE posts (id INTEGER PRIMARY KEY, title TEXT);\n";
 
         let formatted = driver.format_diff(Some(base), new).unwrap();
         assert!(formatted.contains("ADDED"));

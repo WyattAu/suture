@@ -1,19 +1,19 @@
 use crate::fuse::inode::{InodeEntry, InodeGenerator, InodeKind};
 use crate::path_translation::PathTranslator;
 use async_stream::try_stream;
+use fuse3::MountOptions;
+use fuse3::raw::Request;
 use fuse3::raw::prelude::*;
 use fuse3::raw::reply::{
     DirectoryEntry, ReplyAttr, ReplyData, ReplyDirectory, ReplyEntry, ReplyInit, ReplyOpen,
     ReplyStatFs,
 };
-use fuse3::raw::Request;
-use fuse3::MountOptions;
 use fuse3::{Errno, FileType, Timestamp};
-use suture_core::repository::Repository;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
+use suture_core::repository::Repository;
 
 const TTL: Duration = Duration::from_secs(3600);
 
@@ -163,7 +163,11 @@ impl Filesystem for SutureFilesystem {
         _fh: Option<u64>,
         _flags: u32,
     ) -> fuse3::Result<ReplyAttr> {
-        let entry = self.inner.inode_map.get(inode).ok_or_else(Errno::new_not_exist)?;
+        let entry = self
+            .inner
+            .inode_map
+            .get(inode)
+            .ok_or_else(Errno::new_not_exist)?;
 
         let size = if entry.kind == InodeKind::File {
             self.inner
@@ -188,7 +192,11 @@ impl Filesystem for SutureFilesystem {
         offset: u64,
         size: u32,
     ) -> fuse3::Result<ReplyData> {
-        let entry = self.inner.inode_map.get(inode).ok_or_else(Errno::new_not_exist)?;
+        let entry = self
+            .inner
+            .inode_map
+            .get(inode)
+            .ok_or_else(Errno::new_not_exist)?;
 
         if entry.kind != InodeKind::File {
             return Err(Errno::new_is_dir());
@@ -205,7 +213,9 @@ impl Filesystem for SutureFilesystem {
         let end = std::cmp::min(offset + size as usize, data.len());
 
         if offset >= data.len() {
-            return Ok(ReplyData { data: vec![].into() });
+            return Ok(ReplyData {
+                data: vec![].into(),
+            });
         }
 
         Ok(ReplyData {
@@ -219,7 +229,9 @@ impl Filesystem for SutureFilesystem {
         parent: u64,
         _fh: u64,
         offset: i64,
-    ) -> fuse3::Result<ReplyDirectory<impl futures_core::Stream<Item = fuse3::Result<DirectoryEntry>> + Send + 'a>> {
+    ) -> fuse3::Result<
+        ReplyDirectory<impl futures_core::Stream<Item = fuse3::Result<DirectoryEntry>> + Send + 'a>,
+    > {
         let parent_path = self.inner.inode_map.get_path(parent);
         let parent_path = match parent_path {
             Some(p) => p.to_string(),
@@ -264,11 +276,7 @@ impl Filesystem for SutureFilesystem {
         })
     }
 
-    async fn statfs(
-        &self,
-        _req: Request,
-        _inode: u64,
-    ) -> fuse3::Result<ReplyStatFs> {
+    async fn statfs(&self, _req: Request, _inode: u64) -> fuse3::Result<ReplyStatFs> {
         Ok(ReplyStatFs {
             blocks: 1,
             bfree: 0,
@@ -281,28 +289,12 @@ impl Filesystem for SutureFilesystem {
         })
     }
 
-    async fn open(
-        &self,
-        _req: Request,
-        _inode: u64,
-        _flags: u32,
-    ) -> fuse3::Result<ReplyOpen> {
-        Ok(ReplyOpen {
-            fh: 0,
-            flags: 0,
-        })
+    async fn open(&self, _req: Request, _inode: u64, _flags: u32) -> fuse3::Result<ReplyOpen> {
+        Ok(ReplyOpen { fh: 0, flags: 0 })
     }
 
-    async fn opendir(
-        &self,
-        _req: Request,
-        _inode: u64,
-        _flags: u32,
-    ) -> fuse3::Result<ReplyOpen> {
-        Ok(ReplyOpen {
-            fh: 0,
-            flags: 0,
-        })
+    async fn opendir(&self, _req: Request, _inode: u64, _flags: u32) -> fuse3::Result<ReplyOpen> {
+        Ok(ReplyOpen { fh: 0, flags: 0 })
     }
 }
 
@@ -372,13 +364,19 @@ mod tests {
 
         let root = fs.inner.inode_map.root_inode().unwrap();
         assert_eq!(root, 1);
-        assert_eq!(fs.inner.inode_map.get(root).unwrap().kind, InodeKind::Directory);
+        assert_eq!(
+            fs.inner.inode_map.get(root).unwrap().kind,
+            InodeKind::Directory
+        );
 
         let hello = fs.inner.inode_map.lookup("hello.txt").unwrap();
         assert_eq!(fs.inner.inode_map.get(hello).unwrap().kind, InodeKind::File);
 
         let sub = fs.inner.inode_map.lookup("sub").unwrap();
-        assert_eq!(fs.inner.inode_map.get(sub).unwrap().kind, InodeKind::Directory);
+        assert_eq!(
+            fs.inner.inode_map.get(sub).unwrap().kind,
+            InodeKind::Directory
+        );
 
         let nested = fs.inner.inode_map.lookup("sub/nested.rs").unwrap();
         assert_eq!(
@@ -429,13 +427,9 @@ mod integration_tests {
         let mountpoint_for_mount = mountpoint.clone();
         let mountpoint_for_read = mountpoint.clone();
         let handle = tokio::spawn(async move {
-            mount(
-                repo_path.to_str().unwrap(),
-                &mountpoint_for_mount,
-                None,
-            )
-            .await
-            .unwrap();
+            mount(repo_path.to_str().unwrap(), &mountpoint_for_mount, None)
+                .await
+                .unwrap();
         });
 
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;

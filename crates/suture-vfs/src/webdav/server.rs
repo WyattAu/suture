@@ -1,14 +1,14 @@
 use axum::{
+    Router,
     body::Body,
     extract::{Path as AxumPath, State},
-    http::{header, Method, StatusCode},
+    http::{Method, StatusCode, header},
     response::{IntoResponse, Response},
-    Router,
 };
-use suture_core::repository::Repository;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use suture_core::repository::Repository;
 use tokio::net::TcpListener;
 
 struct WebDavState {
@@ -26,7 +26,11 @@ fn escape_xml(s: &str) -> String {
 }
 
 fn build_propfind_collection(path: &str, entries: &[(&str, bool)]) -> String {
-    let display = if path.is_empty() { "/" } else { &format!("/{path}") };
+    let display = if path.is_empty() {
+        "/"
+    } else {
+        &format!("/{path}")
+    };
     let entries_xml = entries
         .iter()
         .map(|(name, is_dir)| {
@@ -53,7 +57,11 @@ fn build_propfind_collection(path: &str, entries: &[(&str, bool)]) -> String {
 }
 
 fn build_propfind_resource(path: &str, size: usize) -> String {
-    let display = if path.is_empty() { "/" } else { &format!("/{path}") };
+    let display = if path.is_empty() {
+        "/"
+    } else {
+        &format!("/{path}")
+    };
     format!(
         "<?xml version=\"1.0\" encoding=\"utf-8\"?>\
          <D:multistatus xmlns:D=\"DAV:\">\
@@ -126,8 +134,10 @@ async fn handle_options() -> impl IntoResponse {
     );
     res.headers_mut()
         .insert(header::CONTENT_LENGTH, "0".parse().unwrap());
-    res.headers_mut()
-        .insert(header::HeaderName::from_static("dav"), "1,2".parse().unwrap());
+    res.headers_mut().insert(
+        header::HeaderName::from_static("dav"),
+        "1,2".parse().unwrap(),
+    );
     res
 }
 
@@ -320,7 +330,10 @@ async fn handle_mkcol(
     State(state): State<Arc<WebDavState>>,
     AxumPath(path): AxumPath<String>,
 ) -> impl IntoResponse {
-    let clean = path.trim_start_matches('/').trim_end_matches('/').to_string();
+    let clean = path
+        .trim_start_matches('/')
+        .trim_end_matches('/')
+        .to_string();
 
     if clean.is_empty() {
         return StatusCode::FORBIDDEN.into_response();
@@ -408,8 +421,16 @@ pub async fn serve_webdav(repo_path: &str, addr: &str) -> Result<(), anyhow::Err
 
     let app = Router::new()
         .route("/", axum::routing::get(handle_get_root))
-        .route("/{*path}", axum::routing::get(handle_get_file).put(handle_put).delete(handle_delete))
-        .route_layer(axum::middleware::from_fn_with_state(state.clone(), webdav_method_middleware))
+        .route(
+            "/{*path}",
+            axum::routing::get(handle_get_file)
+                .put(handle_put)
+                .delete(handle_delete),
+        )
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            webdav_method_middleware,
+        ))
         .fallback(handle_webdav_fallback)
         .with_state(state);
 
@@ -453,7 +474,10 @@ mod tests {
     use axum::http::{Request as HttpRequest, StatusCode};
     use tower::ServiceExt;
 
-    fn make_test_state(file_contents: HashMap<String, Vec<u8>>, dirs: Vec<String>) -> Arc<WebDavState> {
+    fn make_test_state(
+        file_contents: HashMap<String, Vec<u8>>,
+        dirs: Vec<String>,
+    ) -> Arc<WebDavState> {
         let dir = tempfile::tempdir().unwrap();
         let repo_path = dir.path().to_path_buf();
         let _ = Repository::init(&repo_path, "test");
@@ -467,8 +491,16 @@ mod tests {
     fn test_app(state: Arc<WebDavState>) -> Router {
         Router::new()
             .route("/", axum::routing::get(handle_get_root))
-            .route("/{*path}", axum::routing::get(handle_get_file).put(handle_put).delete(handle_delete))
-            .route_layer(axum::middleware::from_fn_with_state(state.clone(), webdav_method_middleware))
+            .route(
+                "/{*path}",
+                axum::routing::get(handle_get_file)
+                    .put(handle_put)
+                    .delete(handle_delete),
+            )
+            .route_layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                webdav_method_middleware,
+            ))
             .with_state(state)
     }
 
@@ -494,7 +526,9 @@ mod tests {
         let content_type = res.headers().get(header::CONTENT_TYPE).unwrap();
         assert_eq!(content_type, "application/xml; charset=utf-8");
 
-        let body = axum::body::to_bytes(res.into_body(), 1024 * 1024).await.unwrap();
+        let body = axum::body::to_bytes(res.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
         let xml = String::from_utf8(body.to_vec()).unwrap();
 
         assert!(xml.contains("<?xml version=\"1.0\""));
@@ -532,7 +566,9 @@ mod tests {
         let res = app.oneshot(req).await.unwrap();
         assert_eq!(res.status(), StatusCode::MULTI_STATUS);
 
-        let body = axum::body::to_bytes(res.into_body(), 1024 * 1024).await.unwrap();
+        let body = axum::body::to_bytes(res.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
         let xml = String::from_utf8(body.to_vec()).unwrap();
 
         assert!(xml.contains("c"));
@@ -583,7 +619,9 @@ mod tests {
         let res = app.oneshot(req).await.unwrap();
         assert_eq!(res.status(), StatusCode::OK);
 
-        let body = axum::body::to_bytes(res.into_body(), 1024 * 1024).await.unwrap();
+        let body = axum::body::to_bytes(res.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
         assert_eq!(body.as_ref(), b"hello world");
     }
 

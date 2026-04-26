@@ -140,9 +140,11 @@ fn image_diff_new_file() {
 
     let changes = driver.diff(None, &new).unwrap();
     assert_eq!(changes.len(), 3);
-    assert!(changes
-        .iter()
-        .all(|c| matches!(c, SemanticChange::Added { .. })));
+    assert!(
+        changes
+            .iter()
+            .all(|c| matches!(c, SemanticChange::Added { .. }))
+    );
 
     let paths: Vec<&str> = changes
         .iter()

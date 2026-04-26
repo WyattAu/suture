@@ -1,6 +1,6 @@
 use std::fs;
 use suture_core::cas::hasher::hash_bytes;
-use suture_core::engine::diff::{diff_trees, DiffType};
+use suture_core::engine::diff::{DiffType, diff_trees};
 use suture_core::engine::tree::FileTree;
 use suture_core::repository::Repository;
 

@@ -181,7 +181,9 @@ impl RepoPath {
             return Err(CommonError::Custom("repo path must not be empty".into()));
         }
         if s.contains('\0') {
-            return Err(CommonError::Custom("repo path must not contain null bytes".into()));
+            return Err(CommonError::Custom(
+                "repo path must not contain null bytes".into(),
+            ));
         }
         let p = std::path::Path::new(&s);
         if p.is_absolute() {
@@ -189,8 +191,7 @@ impl RepoPath {
                 "repo path must be relative, not absolute".into(),
             ));
         }
-        if p
-            .components()
+        if p.components()
             .any(|c| matches!(c, std::path::Component::ParentDir))
         {
             return Err(CommonError::Custom(

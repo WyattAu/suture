@@ -3,8 +3,8 @@
 //! Tests every format, every function, and every edge case.
 //! Run with: cargo test -p suture-merge --features all -- full_validation
 
-use suture_merge::*;
 use std::io::Write;
+use suture_merge::*;
 
 // ============================================================================
 // Helpers
@@ -41,9 +41,15 @@ fn make_minimal_docx(paragraphs: &[&str]) -> String {
         body_content
     );
     let zip_bytes = make_minimal_zip(&[
-        ("[Content_Types].xml", "<?xml version=\"1.0\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/></Types>"),
+        (
+            "[Content_Types].xml",
+            "<?xml version=\"1.0\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/></Types>",
+        ),
         ("word/document.xml", &doc_xml),
-        ("_rels/.rels", "<?xml version=\"1.0\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/></Relationships>"),
+        (
+            "_rels/.rels",
+            "<?xml version=\"1.0\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/></Relationships>",
+        ),
     ]);
     // SAFETY: ZIP bytes are not valid UTF-8, but the DOCX driver uses
     // String::from_utf8_unchecked internally for the same reason — it
@@ -84,9 +90,15 @@ fn make_minimal_xlsx(cells: &[(&str, &str)]) -> String {
         row_xml
     );
     let zip_bytes = make_minimal_zip(&[
-        ("[Content_Types].xml", "<?xml version=\"1.0\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/></Types>"),
+        (
+            "[Content_Types].xml",
+            "<?xml version=\"1.0\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/></Types>",
+        ),
         ("xl/worksheets/sheet1.xml", &sheet_xml),
-        ("_rels/.rels", "<?xml version=\"1.0\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"xl/workbook.xml\"/></Relationships>"),
+        (
+            "_rels/.rels",
+            "<?xml version=\"1.0\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"xl/workbook.xml\"/></Relationships>",
+        ),
     ]);
     // SAFETY: ZIP bytes are not valid UTF-8. See make_minimal_docx.
     unsafe { String::from_utf8_unchecked(zip_bytes) }
@@ -151,33 +163,42 @@ fn make_minimal_pptx(slides: &[&str]) -> String {
         .join("\n");
 
     let mut files: Vec<(&str, String)> = vec![
-        ("[Content_Types].xml", format!(
-            r#"<?xml version="1.0" encoding="UTF-8"?>
+        (
+            "[Content_Types].xml",
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
   <Default Extension="xml" ContentType="application/xml"/>
   <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
 {}
 </Types>"#,
-            ct_overrides
-        )),
-        ("ppt/presentation.xml", format!(
-            r#"<?xml version="1.0"?>
+                ct_overrides
+            ),
+        ),
+        (
+            "ppt/presentation.xml",
+            format!(
+                r#"<?xml version="1.0"?>
 <p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
 <p:sldIdLst>
 {}
 </p:sldIdLst>
 </p:presentation>"#,
-            sld_ids
-        )),
-        ("ppt/_rels/presentation.xml.rels", format!(
-            r#"<?xml version="1.0" encoding="UTF-8"?>
+                sld_ids
+            ),
+        ),
+        (
+            "ppt/_rels/presentation.xml.rels",
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml"/>
 {}
 </Relationships>"#,
-            slide_rels
-        )),
+                slide_rels
+            ),
+        ),
     ];
 
     for (path, content) in &slide_xmls {
@@ -217,7 +238,12 @@ fn consistency_no_changes() {
 #[test]
 fn consistency_all_formats_no_change() {
     // Every format should report no changes for identical content
-    let mut formats: Vec<(&str, &str, &str, fn(&str, &str, &str) -> Result<MergeResult, MergeError>)> = vec![
+    let mut formats: Vec<(
+        &str,
+        &str,
+        &str,
+        fn(&str, &str, &str) -> Result<MergeResult, MergeError>,
+    )> = vec![
         (".json", r#"{"a":1}"#, r#"{"a":1}"#, merge_json),
         ("base", "a: 1\n", "a: 1\n", merge_yaml),
         ("base", "a = 1\n", "a = 1\n", merge_toml),
@@ -254,7 +280,10 @@ mod docx_tests {
         let theirs = make_minimal_docx(&["Hello world", "New paragraph from theirs"]);
 
         let result = merge_docx(&base, &ours, &theirs).unwrap();
-        assert!(matches!(result.status, MergeStatus::Clean | MergeStatus::Conflict));
+        assert!(matches!(
+            result.status,
+            MergeStatus::Clean | MergeStatus::Conflict
+        ));
     }
 
     #[test]

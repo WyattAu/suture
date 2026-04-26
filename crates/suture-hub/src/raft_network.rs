@@ -6,8 +6,8 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
 
-use suture_raft::{RaftError, RaftMessage};
 use serde::{Deserialize, Serialize};
+use suture_raft::{RaftError, RaftMessage};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
@@ -97,11 +97,7 @@ impl RaftTcpTransport {
     }
 
     /// Send a Raft message to a specific peer.
-    pub async fn send_to_peer(
-        &self,
-        target: u64,
-        message: RaftMessage,
-    ) -> Result<(), RaftError> {
+    pub async fn send_to_peer(&self, target: u64, message: RaftMessage) -> Result<(), RaftError> {
         let addr = match self.peers.get(&target) {
             Some(a) => *a,
             None => {
@@ -122,9 +118,9 @@ impl RaftTcpTransport {
     /// Returns the sender's node ID and the message.
     pub async fn receive(&self) -> Result<(u64, RaftMessage), RaftError> {
         let mut rx = self.recv_rx.lock().await;
-        rx.recv().await.ok_or_else(|| {
-            RaftError::Transport("receive channel closed".to_string())
-        })
+        rx.recv()
+            .await
+            .ok_or_else(|| RaftError::Transport("receive channel closed".to_string()))
     }
 
     /// Get this node's ID.
@@ -278,7 +274,11 @@ mod tests {
             let json = serde_json::to_vec(&frame).expect("serialize");
             let decoded: WireFrame = serde_json::from_slice(&json).expect("deserialize");
             assert_eq!(decoded.from, 1);
-            assert_eq!(decoded.message, message, "roundtrip failed for {:?}", message);
+            assert_eq!(
+                decoded.message, message,
+                "roundtrip failed for {:?}",
+                message
+            );
         }
     }
 
@@ -312,10 +312,7 @@ mod tests {
         assert!(result.is_err());
         match result.unwrap_err() {
             RaftError::Transport(msg) => {
-                assert!(
-                    msg.contains("99"),
-                    "error should mention peer ID: {msg}"
-                );
+                assert!(msg.contains("99"), "error should mention peer ID: {msg}");
             }
             other => panic!("expected Transport error, got: {other:?}"),
         }

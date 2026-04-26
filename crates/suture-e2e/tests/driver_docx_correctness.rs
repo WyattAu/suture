@@ -155,9 +155,11 @@ fn docx_diff_new_file() {
         2,
         "diff from None should show all paragraphs as Added"
     );
-    assert!(changes
-        .iter()
-        .all(|c| matches!(c, SemanticChange::Added { .. })));
+    assert!(
+        changes
+            .iter()
+            .all(|c| matches!(c, SemanticChange::Added { .. }))
+    );
 }
 
 #[test]

@@ -12,9 +12,9 @@ use std::io;
 
 use app::App;
 use crossterm::{
+    cursor::Show,
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
-    cursor::Show,
 };
 use event::Event;
 use ratatui::Terminal;
@@ -48,10 +48,7 @@ pub fn run(repo_path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>
 
     // Restore terminal
     disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-    )?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen,)?;
     terminal.show_cursor()?;
 
     result
@@ -75,9 +72,7 @@ fn run_app(
                     }
                 }
                 Event::Resize(w, h) => {
-                    terminal
-                        .resize(ratatui::layout::Rect::new(0, 0, w, h))
-                        .ok();
+                    terminal.resize(ratatui::layout::Rect::new(0, 0, w, h)).ok();
                 }
             }
         }

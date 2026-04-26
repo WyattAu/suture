@@ -124,13 +124,16 @@ impl XlsxDriver {
                     None
                 } else {
                     let remaining = &trimmed[search_from..];
-                    remaining.find("<c ").or_else(|| {
-                        if remaining.contains("<c>") {
-                            Some(remaining.find("<c>").unwrap())
-                        } else {
-                            None
-                        }
-                    }).map(|pos| search_from + pos)
+                    remaining
+                        .find("<c ")
+                        .or_else(|| {
+                            if remaining.contains("<c>") {
+                                Some(remaining.find("<c>").unwrap())
+                            } else {
+                                None
+                            }
+                        })
+                        .map(|pos| search_from + pos)
                 };
 
                 if !in_cell {
@@ -446,10 +449,10 @@ impl SutureDriver for XlsxDriver {
         ours: &[u8],
         theirs: &[u8],
     ) -> Result<Option<Vec<u8>>, DriverError> {
-        let base_doc = OoxmlDocument::from_bytes(base)
-            .map_err(|e| DriverError::ParseError(e.to_string()))?;
-        let ours_doc = OoxmlDocument::from_bytes(ours)
-            .map_err(|e| DriverError::ParseError(e.to_string()))?;
+        let base_doc =
+            OoxmlDocument::from_bytes(base).map_err(|e| DriverError::ParseError(e.to_string()))?;
+        let ours_doc =
+            OoxmlDocument::from_bytes(ours).map_err(|e| DriverError::ParseError(e.to_string()))?;
         let theirs_doc = OoxmlDocument::from_bytes(theirs)
             .map_err(|e| DriverError::ParseError(e.to_string()))?;
 
@@ -488,8 +491,8 @@ impl SutureDriver for XlsxDriver {
             }
         }
 
-        let mut doc = OoxmlDocument::from_bytes(base)
-            .map_err(|e| DriverError::ParseError(e.to_string()))?;
+        let mut doc =
+            OoxmlDocument::from_bytes(base).map_err(|e| DriverError::ParseError(e.to_string()))?;
 
         let mut name_to_path: HashMap<String, String> = HashMap::new();
         for path in doc.parts.keys() {
@@ -519,9 +522,7 @@ impl SutureDriver for XlsxDriver {
         base: Option<&[u8]>,
         new_content: &[u8],
     ) -> Result<Vec<SemanticChange>, DriverError> {
-        let base_str = base.map(|b| {
-            unsafe { String::from_utf8_unchecked(b.to_vec()) }
-        });
+        let base_str = base.map(|b| unsafe { String::from_utf8_unchecked(b.to_vec()) });
         let new_str = unsafe { String::from_utf8_unchecked(new_content.to_vec()) };
         self.diff(base_str.as_deref(), &new_str)
     }
@@ -540,7 +541,7 @@ impl XlsxDriver {
             Some(pos) => {
                 // Find the closing > of the opening tag
                 let after = &original_xml[pos..];
-                
+
                 after.find('>').map(|i| pos + i + 1).unwrap_or(pos)
             }
             None => return original_xml.to_string(),
@@ -559,25 +560,16 @@ impl XlsxDriver {
 
         let mut new_data = String::from("<sheetData>");
         for (row_num, cols) in &rows {
-            new_data.push_str(&format!(
-                "<row r=\"{}\">",
-                row_num
-            ));
+            new_data.push_str(&format!("<row r=\"{}\">", row_num));
             for (col, val) in cols {
                 let col_letter = col_to_letter(*col);
                 let ref_str = format!("{}{}", col_letter, row_num);
                 // Use inlineStr for all string values to avoid shared string table issues
                 if val.parse::<f64>().is_ok() {
-                    new_data.push_str(&format!(
-                        "<c r=\"{}\"><v>{}</v></c>",
-                        ref_str, val
-                    ));
+                    new_data.push_str(&format!("<c r=\"{}\"><v>{}</v></c>", ref_str, val));
                 } else if *val == "TRUE" || *val == "FALSE" {
                     let bval = if *val == "TRUE" { "1" } else { "0" };
-                    new_data.push_str(&format!(
-                        "<c r=\"{}\" t=\"b\"><v>{}</v></c>",
-                        ref_str, bval
-                    ));
+                    new_data.push_str(&format!("<c r=\"{}\" t=\"b\"><v>{}</v></c>", ref_str, bval));
                 } else {
                     new_data.push_str(&format!(
                         "<c r=\"{}\" t=\"inlineStr\"><is><t>{}</t></is></c>",
@@ -722,8 +714,16 @@ mod tests {
             (2, 1, "C".to_string()),
         ];
         let changes = XlsxDriver::diff_cells(&base, &new, "Sheet1");
-        assert!(changes.iter().any(|c| matches!(c, SemanticChange::Modified { .. })));
-        assert!(changes.iter().any(|c| matches!(c, SemanticChange::Added { value, .. } if value == "C")));
+        assert!(
+            changes
+                .iter()
+                .any(|c| matches!(c, SemanticChange::Modified { .. }))
+        );
+        assert!(
+            changes
+                .iter()
+                .any(|c| matches!(c, SemanticChange::Added { value, .. } if value == "C"))
+        );
     }
 
     #[test]
@@ -734,8 +734,18 @@ mod tests {
         let result = XlsxDriver::merge_cells(&base, &ours, &theirs);
         assert!(result.is_some());
         let m = result.unwrap();
-        assert_eq!(m.iter().find(|(r, c, _)| *r == 1 && *c == 1).map(|(_, _, v)| v.as_str()), Some("X"));
-        assert_eq!(m.iter().find(|(r, c, _)| *r == 1 && *c == 2).map(|(_, _, v)| v.as_str()), Some("Y"));
+        assert_eq!(
+            m.iter()
+                .find(|(r, c, _)| *r == 1 && *c == 1)
+                .map(|(_, _, v)| v.as_str()),
+            Some("X")
+        );
+        assert_eq!(
+            m.iter()
+                .find(|(r, c, _)| *r == 1 && *c == 2)
+                .map(|(_, _, v)| v.as_str()),
+            Some("Y")
+        );
     }
 
     #[test]

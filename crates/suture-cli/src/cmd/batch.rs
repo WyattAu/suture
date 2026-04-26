@@ -14,9 +14,7 @@ pub(crate) enum BatchAction {
     },
 }
 
-pub(crate) async fn cmd_batch(
-    action: &BatchAction,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) async fn cmd_batch(action: &BatchAction) -> Result<(), Box<dyn std::error::Error>> {
     match action {
         BatchAction::Stage { pattern } => cmd_batch_stage(pattern).await,
         BatchAction::Commit { pattern, message } => cmd_batch_commit(pattern, message).await,
@@ -136,9 +134,7 @@ fn collect_matching_files(
     pattern: &str,
     result: &mut Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let entries: Vec<_> = std::fs::read_dir(current)?
-        .filter_map(|e| e.ok())
-        .collect();
+    let entries: Vec<_> = std::fs::read_dir(current)?.filter_map(|e| e.ok()).collect();
 
     for entry in &entries {
         let path = entry.path();

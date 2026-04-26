@@ -4,8 +4,8 @@ pub(crate) async fn cmd_audit(
     count: bool,
     tail: Option<usize>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    use suture_core::audit::AuditLog;
     use std::path::Path;
+    use suture_core::audit::AuditLog;
 
     let root = Path::new(".");
     let audit_path = root.join(".suture").join("audit").join("chain.log");
@@ -39,7 +39,10 @@ pub(crate) async fn cmd_audit(
         return Ok(());
     }
 
-    println!("{:<6} {:<30} {:<15} {:<10} DETAILS", "SEQ", "TIMESTAMP", "ACTOR", "ACTION");
+    println!(
+        "{:<6} {:<30} {:<15} {:<10} DETAILS",
+        "SEQ", "TIMESTAMP", "ACTOR", "ACTION"
+    );
     println!("{}", "-".repeat(100));
     for entry in &display {
         println!(

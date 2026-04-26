@@ -309,7 +309,10 @@ fn make_xlsx(sheets: &[(&str, Vec<CellData>)]) -> String {
                 xml.push_str(&format!("<row r=\"{}\">\n", row_num));
                 for (col, val) in cols {
                     let col_letter = col_to_letter(*col);
-                    xml.push_str(&format!("<c r=\"{}{}\"><v>{}</v></c>\n", col_letter, row_num, val));
+                    xml.push_str(&format!(
+                        "<c r=\"{}{}\"><v>{}</v></c>\n",
+                        col_letter, row_num, val
+                    ));
                 }
                 xml.push_str("</row>\n");
             }

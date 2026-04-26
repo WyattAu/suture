@@ -57,9 +57,7 @@ pub(crate) async fn cmd_doctor(fix: bool) -> Result<(), Box<dyn std::error::Erro
                     "✓ Set user config to defaults (name='{}', email='{}')",
                     name, email
                 );
-                println!(
-                    "  Update with: suture config user.name \"Your Name\""
-                );
+                println!("  Update with: suture config user.name \"Your Name\"");
             } else {
                 println!("✓ Set user config (name='{}', email='{}')", name, email);
             }
@@ -79,11 +77,7 @@ pub(crate) async fn cmd_doctor(fix: bool) -> Result<(), Box<dyn std::error::Erro
             if id == suture_common::Hash::ZERO {
                 println!("✓ Empty repository (no commits yet) on branch '{}'", branch);
             } else {
-                println!(
-                    "✓ HEAD: {} at {}",
-                    branch,
-                    &id.to_hex()[..8]
-                );
+                println!("✓ HEAD: {} at {}", branch, &id.to_hex()[..8]);
             }
         }
         Err(e) => {
@@ -106,7 +100,10 @@ pub(crate) async fn cmd_doctor(fix: bool) -> Result<(), Box<dyn std::error::Erro
                         fixed += 1;
                     }
                     Err(e2) => {
-                        println!("✗ HEAD is corrupted (cache invalidation did not help): {}", e2);
+                        println!(
+                            "✗ HEAD is corrupted (cache invalidation did not help): {}",
+                            e2
+                        );
                         issues += 1;
                         remaining += 1;
                     }
@@ -155,7 +152,10 @@ pub(crate) async fn cmd_doctor(fix: bool) -> Result<(), Box<dyn std::error::Erro
     let staged: Vec<_> = working_set
         .iter()
         .filter(|(_, s)| {
-            matches!(s, FileStatus::Added | FileStatus::Modified | FileStatus::Deleted)
+            matches!(
+                s,
+                FileStatus::Added | FileStatus::Modified | FileStatus::Deleted
+            )
         })
         .collect();
     if staged.is_empty() {
@@ -258,7 +258,10 @@ target/
                     }
                 }
             } else {
-                println!("⚠ {} unreachable patch(es) — run 'suture gc' or 'suture doctor --fix'", orphan_count);
+                println!(
+                    "⚠ {} unreachable patch(es) — run 'suture gc' or 'suture doctor --fix'",
+                    orphan_count
+                );
                 warnings += 1;
             }
         }

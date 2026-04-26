@@ -13,9 +13,9 @@ use tokio::sync::RwLock;
 use crate::blob_backend::BlobBackend;
 use crate::middleware::request_id_layer;
 use crate::storage::HubStorage;
-use crate::webhooks::{Webhook, WebhookManager};
-pub use crate::types::*;
 use crate::storage::{ReplicationEntry, ReplicationStatus};
+pub use crate::types::*;
+use crate::webhooks::{Webhook, WebhookManager};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Role {
@@ -84,7 +84,8 @@ pub struct SutureHubServer {
     storage: Arc<RwLock<HubStorage>>,
     blob_backend: Option<Arc<dyn BlobBackend>>,
     no_auth: bool,
-    rate_limits: Arc<std::sync::RwLock<std::collections::HashMap<String, (u32, std::time::Instant)>>>,
+    rate_limits:
+        Arc<std::sync::RwLock<std::collections::HashMap<String, (u32, std::time::Instant)>>>,
     max_pushes_per_hour: u32,
     max_pulls_per_hour: u32,
     max_token_creates_per_minute: u32,
@@ -169,12 +170,7 @@ impl SutureHubServer {
         tracing::info!("shutting down suture-hub");
     }
 
-    pub fn set_rate_limit_config(
-        &mut self,
-        pushes: u32,
-        pulls: u32,
-        window: std::time::Duration,
-    ) {
+    pub fn set_rate_limit_config(&mut self, pushes: u32, pulls: u32, window: std::time::Duration) {
         self.max_pushes_per_hour = pushes;
         self.max_pulls_per_hour = pulls;
         self.rate_limit_window = window;
@@ -208,7 +204,9 @@ impl SutureHubServer {
         if let Some(backend) = &self.blob_backend {
             backend.store_blob(repo_id, hash_hex, data)
         } else {
-            store.store_blob(repo_id, hash_hex, data).map_err(|e| e.to_string())
+            store
+                .store_blob(repo_id, hash_hex, data)
+                .map_err(|e| e.to_string())
         }
     }
 
@@ -344,11 +342,8 @@ impl SutureHubServer {
         let patches = store.get_all_patches(repo_id).unwrap_or_default();
         let limit = limit.min(200) as usize;
         let offset = offset as usize;
-        let mut collected: Vec<PatchProto> = patches
-            .into_iter()
-            .skip(offset)
-            .take(limit + 1)
-            .collect();
+        let mut collected: Vec<PatchProto> =
+            patches.into_iter().skip(offset).take(limit + 1).collect();
         let has_more = collected.len() > limit;
         if has_more {
             collected.truncate(limit);
@@ -532,7 +527,12 @@ impl SutureHubServer {
 
         for branch in &req.branches {
             let target_hex = hash_to_hex(&branch.target_id);
-            let _ = store.log_operation("set", "branches", &format!("{}:{}", req.repo_id, branch.name), Some(&target_hex));
+            let _ = store.log_operation(
+                "set",
+                "branches",
+                &format!("{}:{}", req.repo_id, branch.name),
+                Some(&target_hex),
+            );
         }
 
         let repo_id = req.repo_id.clone();
@@ -878,7 +878,10 @@ impl SutureHubServer {
         }
     }
 
-    pub async fn handle_pull_v2(&self, req: crate::types::PullRequestV2) -> crate::types::PullResponseV2 {
+    pub async fn handle_pull_v2(
+        &self,
+        req: crate::types::PullRequestV2,
+    ) -> crate::types::PullResponseV2 {
         let store = self.storage.read().await;
 
         if !store.repo_exists(&req.repo_id).unwrap_or(false) {
@@ -966,7 +969,9 @@ impl SutureHubServer {
                         Ok(Some(d)) => d,
                         _ => {
                             blobs.push(BlobRef {
-                                hash: HashProto { value: needed_hash.clone() },
+                                hash: HashProto {
+                                    value: needed_hash.clone(),
+                                },
                                 data: base64_encode(&target_data),
                                 truncated: false,
                             });
@@ -983,21 +988,29 @@ impl SutureHubServer {
 
                     if delta_bytes.len() < target_data.len() {
                         deltas.push(BlobDelta {
-                            base_hash: HashProto { value: needed_hash.clone() },
-                            target_hash: HashProto { value: needed_hash.clone() },
+                            base_hash: HashProto {
+                                value: needed_hash.clone(),
+                            },
+                            target_hash: HashProto {
+                                value: needed_hash.clone(),
+                            },
                             encoding: DeltaEncoding::BinaryPatch,
                             delta_data: base64_encode(&delta_bytes),
                         });
                     } else {
                         blobs.push(BlobRef {
-                            hash: HashProto { value: needed_hash.clone() },
+                            hash: HashProto {
+                                value: needed_hash.clone(),
+                            },
                             data: base64_encode(&target_data),
                             truncated: false,
                         });
                     }
                 } else {
                     blobs.push(BlobRef {
-                        hash: HashProto { value: needed_hash.clone() },
+                        hash: HashProto {
+                            value: needed_hash.clone(),
+                        },
                         data: base64_encode(&target_data),
                         truncated: false,
                     });
@@ -1242,7 +1255,12 @@ impl SutureHubServer {
 
         for branch in &req.branches {
             let target_hex = hash_to_hex(&branch.target_id);
-            let _ = store.log_operation("set", "branches", &format!("{}:{}", req.repo_id, branch.name), Some(&target_hex));
+            let _ = store.log_operation(
+                "set",
+                "branches",
+                &format!("{}:{}", req.repo_id, branch.name),
+                Some(&target_hex),
+            );
         }
 
         let repo_id = req.repo_id.clone();
@@ -1431,11 +1449,9 @@ impl SutureHubServer {
             HubCommand::DeleteRepo { repo_id } => {
                 store.delete_repo(&repo_id).map_err(|e| e.to_string())
             }
-            HubCommand::StoreBlob { hash, data } => {
-                store
-                    .store_blob("_raft_default", &hash, &data)
-                    .map_err(|e| e.to_string())
-            }
+            HubCommand::StoreBlob { hash, data } => store
+                .store_blob("_raft_default", &hash, &data)
+                .map_err(|e| e.to_string()),
             HubCommand::DeleteBlob { hash } => {
                 let _ = store.delete_blob("_raft_default", &hash);
                 Ok(())
@@ -1449,16 +1465,12 @@ impl SutureHubServer {
                 repo_id,
                 branch,
                 target,
-            } => {
-                store
-                    .set_branch(&repo_id, &branch, &target)
-                    .map_err(|e| e.to_string())
-            }
-            HubCommand::DeleteBranch { repo_id, branch } => {
-                store
-                    .delete_branch(&repo_id, &branch)
-                    .map_err(|e| e.to_string())
-            }
+            } => store
+                .set_branch(&repo_id, &branch, &target)
+                .map_err(|e| e.to_string()),
+            HubCommand::DeleteBranch { repo_id, branch } => store
+                .delete_branch(&repo_id, &branch)
+                .map_err(|e| e.to_string()),
             HubCommand::StorePatch {
                 repo_id,
                 patch_id,
@@ -1736,7 +1748,9 @@ async fn require_role(
         return Err(StatusCode::UNAUTHORIZED);
     }
 
-    let user = resolve_user(hub, headers).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let user = resolve_user(hub, headers)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
     let user_role = Role::parse(&user.role);
 
     if user_role >= *required_role {
@@ -2030,7 +2044,11 @@ pub async fn create_token_handler(
         let expires_at = (created_at + (30 * 24 * 60 * 60)) as i64;
         let store = hub.storage.write().await;
         let _ = store.store_token(&token, created_at, "cli-generated", expires_at);
-        return (StatusCode::OK, HeaderMap::new(), Json(TokenResponse { token, created_at }));
+        return (
+            StatusCode::OK,
+            HeaderMap::new(),
+            Json(TokenResponse { token, created_at }),
+        );
     }
 
     let store = hub.storage.read().await;
@@ -2048,7 +2066,11 @@ pub async fn create_token_handler(
         let expires_at = (created_at + (30 * 24 * 60 * 60)) as i64;
         let store = hub.storage.write().await;
         let _ = store.store_token(&token, created_at, "cli-generated", expires_at);
-        return (StatusCode::OK, HeaderMap::new(), Json(TokenResponse { token, created_at }));
+        return (
+            StatusCode::OK,
+            HeaderMap::new(),
+            Json(TokenResponse { token, created_at }),
+        );
     }
 
     let user = resolve_user(&hub, &headers).await;
@@ -2112,7 +2134,11 @@ pub async fn create_token_handler(
         );
     }
 
-    (StatusCode::OK, HeaderMap::new(), Json(TokenResponse { token, created_at }))
+    (
+        StatusCode::OK,
+        HeaderMap::new(),
+        Json(TokenResponse { token, created_at }),
+    )
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -2197,10 +2223,12 @@ pub async fn mirror_status_handler(
 pub async fn mirror_status_get_handler(
     State(hub): State<Arc<SutureHubServer>>,
 ) -> (StatusCode, Json<crate::types::MirrorStatusResponse>) {
-    let resp = hub.handle_mirror_status(crate::types::MirrorStatusRequest {
-        mirror_id: None,
-        repo_name: None,
-    }).await;
+    let resp = hub
+        .handle_mirror_status(crate::types::MirrorStatusRequest {
+            mirror_id: None,
+            repo_name: None,
+        })
+        .await;
     (StatusCode::OK, Json(resp))
 }
 
@@ -2236,11 +2264,16 @@ pub async fn repo_patches_handler(
         .and_then(decode_cursor)
         .unwrap_or_else(|| params.offset.unwrap_or(0) as u64);
     let limit = params.limit.unwrap_or(50);
-    let (patches, next_cursor) = hub.handle_repo_patches_cursor(&repo_id, offset, limit).await;
-    (StatusCode::OK, Json(serde_json::json!({
-        "patches": patches,
-        "next_cursor": next_cursor.unwrap_or_default(),
-    })))
+    let (patches, next_cursor) = hub
+        .handle_repo_patches_cursor(&repo_id, offset, limit)
+        .await;
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "patches": patches,
+            "next_cursor": next_cursor.unwrap_or_default(),
+        })),
+    )
 }
 
 pub async fn repo_tree_handler(
@@ -2259,7 +2292,10 @@ pub async fn repo_tree_handler(
                     })
                 })
                 .collect();
-            (StatusCode::OK, Json(serde_json::json!({"success": true, "files": files})))
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({"success": true, "files": files})),
+            )
         }
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -2302,12 +2338,21 @@ pub async fn create_repo_handler(
     Json(req): Json<crate::types::CreateRepoRequest>,
 ) -> (StatusCode, Json<serde_json::Value>) {
     if let Err(status) = check_auth(&hub, &headers).await {
-        return (status, Json(serde_json::json!({"success": false, "error": "unauthorized"})));
+        return (
+            status,
+            Json(serde_json::json!({"success": false, "error": "unauthorized"})),
+        );
     }
     let store = hub.storage.write().await;
     match store.ensure_repo(&req.repo_id) {
-        Ok(_) => (StatusCode::CREATED, Json(serde_json::json!({"success": true, "repo_id": req.repo_id}))),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"success": false, "error": e.to_string()}))),
+        Ok(_) => (
+            StatusCode::CREATED,
+            Json(serde_json::json!({"success": true, "repo_id": req.repo_id})),
+        ),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"success": false, "error": e.to_string()})),
+        ),
     }
 }
 
@@ -2317,12 +2362,18 @@ pub async fn delete_repo_handler(
     Path(repo_id): Path<String>,
 ) -> (StatusCode, Json<serde_json::Value>) {
     if let Err(status) = check_auth(&hub, &headers).await {
-        return (status, Json(serde_json::json!({"success": false, "error": "unauthorized"})));
+        return (
+            status,
+            Json(serde_json::json!({"success": false, "error": "unauthorized"})),
+        );
     }
     let store = hub.storage.write().await;
     match store.delete_repo(&repo_id) {
         Ok(()) => (StatusCode::OK, Json(serde_json::json!({"success": true}))),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"success": false, "error": e.to_string()}))),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"success": false, "error": e.to_string()})),
+        ),
     }
 }
 
@@ -2333,7 +2384,10 @@ pub async fn create_branch_handler(
     Json(req): Json<crate::types::CreateBranchRequest>,
 ) -> (StatusCode, Json<serde_json::Value>) {
     if let Err(status) = check_auth(&hub, &headers).await {
-        return (status, Json(serde_json::json!({"success": false, "error": "unauthorized"})));
+        return (
+            status,
+            Json(serde_json::json!({"success": false, "error": "unauthorized"})),
+        );
     }
     let store = hub.storage.write().await;
     match store.set_branch(&repo_id, &req.name, &req.target) {
@@ -2349,12 +2403,20 @@ pub async fn create_branch_handler(
                     store.list_webhooks(&rid).unwrap_or_default()
                 };
                 if !hooks.is_empty() {
-                    let _ = manager.trigger(&hooks, "branch.create", &rid, branch_data).await;
+                    let _ = manager
+                        .trigger(&hooks, "branch.create", &rid, branch_data)
+                        .await;
                 }
             });
-            (StatusCode::CREATED, Json(serde_json::json!({"success": true})))
+            (
+                StatusCode::CREATED,
+                Json(serde_json::json!({"success": true})),
+            )
         }
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"success": false, "error": e.to_string()}))),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"success": false, "error": e.to_string()})),
+        ),
     }
 }
 
@@ -2364,7 +2426,10 @@ pub async fn delete_branch_handler(
     Path((repo_id, branch_name)): Path<(String, String)>,
 ) -> (StatusCode, Json<serde_json::Value>) {
     if let Err(status) = check_auth(&hub, &headers).await {
-        return (status, Json(serde_json::json!({"success": false, "error": "unauthorized"})));
+        return (
+            status,
+            Json(serde_json::json!({"success": false, "error": "unauthorized"})),
+        );
     }
     let store = hub.storage.write().await;
     match store.delete_branch(&repo_id, &branch_name) {
@@ -2380,12 +2445,17 @@ pub async fn delete_branch_handler(
                     store.list_webhooks(&rid).unwrap_or_default()
                 };
                 if !hooks.is_empty() {
-                    let _ = manager.trigger(&hooks, "branch.delete", &rid, branch_data).await;
+                    let _ = manager
+                        .trigger(&hooks, "branch.delete", &rid, branch_data)
+                        .await;
                 }
             });
             (StatusCode::OK, Json(serde_json::json!({"success": true})))
         }
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"success": false, "error": e.to_string()}))),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"success": false, "error": e.to_string()})),
+        ),
     }
 }
 
@@ -2398,10 +2468,19 @@ pub async fn get_blob_handler(
         Ok(Some(data)) => {
             use base64::Engine;
             let encoded = base64::engine::general_purpose::STANDARD.encode(&data);
-            (StatusCode::OK, Json(serde_json::json!({"success": true, "data": encoded})))
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({"success": true, "data": encoded})),
+            )
         }
-        Ok(None) => (StatusCode::NOT_FOUND, Json(serde_json::json!({"success": false, "error": "blob not found"}))),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"success": false, "error": e.to_string()}))),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"success": false, "error": "blob not found"})),
+        ),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"success": false, "error": e.to_string()})),
+        ),
     }
 }
 
@@ -2411,9 +2490,14 @@ pub async fn lfs_batch_handler(
 ) -> (StatusCode, Json<serde_json::Value>) {
     let lfs_dir = match &hub.lfs_data_dir {
         Some(d) => d.clone(),
-        None => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
-            "message": "LFS storage not configured on this hub"
-        }))),
+        None => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({
+                    "message": "LFS storage not configured on this hub"
+                })),
+            );
+        }
     };
 
     let repo_dir = lfs_dir.join(&req.repo_id);
@@ -2452,15 +2536,21 @@ pub async fn lfs_batch_handler(
     }
 
     for action in &mut actions {
-        if matches!(action.action, suture_protocol::LfsAction::Upload | suture_protocol::LfsAction::Download) {
+        if matches!(
+            action.action,
+            suture_protocol::LfsAction::Upload | suture_protocol::LfsAction::Download
+        ) {
             action.href = Some(format!("/lfs/objects/{}/{}", req.repo_id, action.oid));
         }
     }
 
-    (StatusCode::OK, Json(serde_json::json!({
-        "objects": actions,
-        "transfer": "basic",
-    })))
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "objects": actions,
+            "transfer": "basic",
+        })),
+    )
 }
 
 pub async fn lfs_upload_handler(
@@ -2470,40 +2560,61 @@ pub async fn lfs_upload_handler(
 ) -> (StatusCode, Json<serde_json::Value>) {
     let lfs_dir = match &hub.lfs_data_dir {
         Some(d) => d.clone(),
-        None => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
-            "message": "LFS storage not configured"
-        }))),
+        None => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({
+                    "message": "LFS storage not configured"
+                })),
+            );
+        }
     };
 
     if body.is_empty() {
-        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
-            "message": "empty body"
-        })));
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "message": "empty body"
+            })),
+        );
     }
 
-    use sha2::{Sha256, Digest};
+    use sha2::{Digest, Sha256};
     let hash = Sha256::digest(&body);
     let hash_hex = hex::encode(hash);
     if hash_hex != oid {
-        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
-            "message": format!("hash mismatch: expected {}, got {}", oid, hash_hex)
-        })));
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "message": format!("hash mismatch: expected {}, got {}", oid, hash_hex)
+            })),
+        );
     }
 
     let prefix = &oid[..2.min(oid.len())];
-    let obj_path = lfs_dir.join(&repo_id).join("objects").join(prefix).join(&oid);
+    let obj_path = lfs_dir
+        .join(&repo_id)
+        .join("objects")
+        .join(prefix)
+        .join(&oid);
     if let Some(parent) = obj_path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
     match std::fs::write(&obj_path, &body) {
-        Ok(()) => (StatusCode::OK, Json(serde_json::json!({
-            "message": "uploaded",
-            "oid": oid,
-            "size": body.len(),
-        }))),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
-            "message": e.to_string()
-        }))),
+        Ok(()) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "message": "uploaded",
+                "oid": oid,
+                "size": body.len(),
+            })),
+        ),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "message": e.to_string()
+            })),
+        ),
     }
 }
 
@@ -2513,13 +2624,22 @@ pub async fn lfs_download_handler(
 ) -> (StatusCode, axum::response::Response) {
     let lfs_dir = match &hub.lfs_data_dir {
         Some(d) => d.clone(),
-        None => return (StatusCode::SERVICE_UNAVAILABLE, axum::response::Response::new(
-            axum::body::Body::from(serde_json::json!({"message": "LFS storage not configured"}).to_string())
-        )),
+        None => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                axum::response::Response::new(axum::body::Body::from(
+                    serde_json::json!({"message": "LFS storage not configured"}).to_string(),
+                )),
+            );
+        }
     };
 
     let prefix = &oid[..2.min(oid.len())];
-    let obj_path = lfs_dir.join(&repo_id).join("objects").join(prefix).join(&oid);
+    let obj_path = lfs_dir
+        .join(&repo_id)
+        .join("objects")
+        .join(prefix)
+        .join(&oid);
 
     match std::fs::read(&obj_path) {
         Ok(data) => {
@@ -2531,11 +2651,12 @@ pub async fn lfs_download_handler(
                 .unwrap();
             (StatusCode::OK, response)
         }
-        Err(_) => {
-            (StatusCode::NOT_FOUND, axum::response::Response::new(
-                axum::body::Body::from(serde_json::json!({"message": "object not found"}).to_string())
-            ))
-        }
+        Err(_) => (
+            StatusCode::NOT_FOUND,
+            axum::response::Response::new(axum::body::Body::from(
+                serde_json::json!({"message": "object not found"}).to_string(),
+            )),
+        ),
     }
 }
 
@@ -2546,12 +2667,21 @@ pub async fn login_handler(
     let store = hub.storage.read().await;
     let valid = store.verify_token(&req.token).unwrap_or(false);
     if !valid {
-        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"success": false, "error": "invalid token"})));
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({"success": false, "error": "invalid token"})),
+        );
     }
     let user = store.get_user_by_token(&req.token).ok().flatten();
     match user {
-        Some(u) => (StatusCode::OK, Json(serde_json::json!({"success": true, "user": u, "token": req.token}))),
-        None => (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"success": false, "error": "user not found"}))),
+        Some(u) => (
+            StatusCode::OK,
+            Json(serde_json::json!({"success": true, "user": u, "token": req.token})),
+        ),
+        None => (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({"success": false, "error": "user not found"})),
+        ),
     }
 }
 
@@ -2567,7 +2697,10 @@ pub async fn search_handler(
             patches.extend(p);
         }
     }
-    (StatusCode::OK, Json(serde_json::json!({"repos": repos, "patches": patches})))
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({"repos": repos, "patches": patches})),
+    )
 }
 
 #[derive(serde::Deserialize)]
@@ -2602,10 +2735,13 @@ pub async fn activity_handler(
     } else {
         None
     };
-    (StatusCode::OK, Json(serde_json::json!({
-        "entries": collected,
-        "next_cursor": next_cursor.unwrap_or_default(),
-    })))
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "entries": collected,
+            "next_cursor": next_cursor.unwrap_or_default(),
+        })),
+    )
 }
 
 pub async fn delete_mirror_handler(
@@ -2614,12 +2750,18 @@ pub async fn delete_mirror_handler(
     Path(mirror_id): Path<i64>,
 ) -> (StatusCode, Json<serde_json::Value>) {
     if let Err(status) = check_auth(&hub, &headers).await {
-        return (status, Json(serde_json::json!({"success": false, "error": "unauthorized"})));
+        return (
+            status,
+            Json(serde_json::json!({"success": false, "error": "unauthorized"})),
+        );
     }
     let store = hub.storage.write().await;
     match store.delete_mirror(mirror_id) {
         Ok(()) => (StatusCode::OK, Json(serde_json::json!({"success": true}))),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"success": false, "error": e.to_string()}))),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"success": false, "error": e.to_string()})),
+        ),
     }
 }
 
@@ -2935,7 +3077,10 @@ pub async fn handshake_v2_handler(
             supports_delta: true,
             supports_compression: true,
             max_blob_size: 50 * 1024 * 1024,
-            protocol_versions: vec![crate::types::PROTOCOL_VERSION, crate::types::PROTOCOL_VERSION_V2],
+            protocol_versions: vec![
+                crate::types::PROTOCOL_VERSION,
+                crate::types::PROTOCOL_VERSION_V2,
+            ],
         },
     })
 }
@@ -3066,7 +3211,11 @@ pub async fn add_peer_handler(
         );
     }
     let resp = hub.handle_add_peer(req).await;
-    let status = if resp.success { StatusCode::OK } else { StatusCode::BAD_REQUEST };
+    let status = if resp.success {
+        StatusCode::OK
+    } else {
+        StatusCode::BAD_REQUEST
+    };
     (status, Json(resp))
 }
 
@@ -3085,7 +3234,11 @@ pub async fn remove_peer_handler(
         );
     }
     let resp = hub.handle_remove_peer(id).await;
-    let status = if resp.success { StatusCode::OK } else { StatusCode::BAD_REQUEST };
+    let status = if resp.success {
+        StatusCode::OK
+    } else {
+        StatusCode::BAD_REQUEST
+    };
     (status, Json(resp))
 }
 
@@ -3119,7 +3272,11 @@ pub async fn replication_sync_handler(
         );
     }
     let resp = hub.handle_replication_sync(entries).await;
-    let status = if resp.success { StatusCode::OK } else { StatusCode::INTERNAL_SERVER_ERROR };
+    let status = if resp.success {
+        StatusCode::OK
+    } else {
+        StatusCode::INTERNAL_SERVER_ERROR
+    };
     (status, Json(resp))
 }
 
@@ -3214,7 +3371,10 @@ async fn replication_background_task(hub: Arc<SutureHubServer>) {
             {
                 Ok(c) => c,
                 Err(e) => {
-                    tracing::warn!("replication: failed to build client for peer {}: {e}", peer.id);
+                    tracing::warn!(
+                        "replication: failed to build client for peer {}: {e}",
+                        peer.id
+                    );
                     continue;
                 }
             };
@@ -3222,13 +3382,22 @@ async fn replication_background_task(hub: Arc<SutureHubServer>) {
             let sync_url = format!("{}/replication/sync", peer.peer_url.trim_end_matches('/'));
             match client.post(&sync_url).json(&entries).send().await {
                 Ok(resp) if resp.status().is_success() => {
-                    tracing::info!("replication: synced {} entries to peer {} (seq {}-{})",
-                        entries.len(), peer.id, peer.last_sync_seq, last_seq);
+                    tracing::info!(
+                        "replication: synced {} entries to peer {} (seq {}-{})",
+                        entries.len(),
+                        peer.id,
+                        peer.last_sync_seq,
+                        last_seq
+                    );
                     let store = hub.storage.write().await;
                     let _ = store.update_peer_sync_seq(peer.id, last_seq);
                 }
                 Ok(resp) => {
-                    tracing::warn!("replication: sync to peer {} returned {}", peer.id, resp.status());
+                    tracing::warn!(
+                        "replication: sync to peer {} returned {}",
+                        peer.id,
+                        resp.status()
+                    );
                 }
                 Err(e) => {
                     tracing::warn!("replication: failed to sync to peer {}: {e}", peer.id);
@@ -3252,10 +3421,16 @@ pub async fn create_webhook_handler(
     Json(req): Json<CreateWebhookRequest>,
 ) -> (StatusCode, Json<serde_json::Value>) {
     if let Err(status) = check_auth(&hub, &headers).await {
-        return (status, Json(serde_json::json!({"success": false, "error": "unauthorized"})));
+        return (
+            status,
+            Json(serde_json::json!({"success": false, "error": "unauthorized"})),
+        );
     }
     if req.events.is_empty() {
-        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"success": false, "error": "events must not be empty"})));
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"success": false, "error": "events must not be empty"})),
+        );
     }
     let random_bytes: [u8; 16] = rand::random();
     let id = format!("wh_{}", hex::encode(random_bytes));
@@ -3274,8 +3449,14 @@ pub async fn create_webhook_handler(
     };
     let store = hub.storage.write().await;
     match store.create_webhook(&webhook) {
-        Ok(()) => (StatusCode::CREATED, Json(serde_json::json!({"success": true, "id": id}))),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"success": false, "error": e.to_string()}))),
+        Ok(()) => (
+            StatusCode::CREATED,
+            Json(serde_json::json!({"success": true, "id": id})),
+        ),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"success": false, "error": e.to_string()})),
+        ),
     }
 }
 
@@ -3285,12 +3466,21 @@ pub async fn list_webhooks_handler(
     Path(repo_id): Path<String>,
 ) -> (StatusCode, Json<serde_json::Value>) {
     if let Err(status) = check_auth(&hub, &headers).await {
-        return (status, Json(serde_json::json!({"success": false, "error": "unauthorized"})));
+        return (
+            status,
+            Json(serde_json::json!({"success": false, "error": "unauthorized"})),
+        );
     }
     let store = hub.storage.read().await;
     match store.list_webhooks(&repo_id) {
-        Ok(hooks) => (StatusCode::OK, Json(serde_json::json!({"success": true, "webhooks": hooks}))),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"success": false, "error": e.to_string()}))),
+        Ok(hooks) => (
+            StatusCode::OK,
+            Json(serde_json::json!({"success": true, "webhooks": hooks})),
+        ),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"success": false, "error": e.to_string()})),
+        ),
     }
 }
 
@@ -3300,12 +3490,18 @@ pub async fn delete_webhook_handler(
     Path((_repo_id, id)): Path<(String, String)>,
 ) -> (StatusCode, Json<serde_json::Value>) {
     if let Err(status) = check_auth(&hub, &headers).await {
-        return (status, Json(serde_json::json!({"success": false, "error": "unauthorized"})));
+        return (
+            status,
+            Json(serde_json::json!({"success": false, "error": "unauthorized"})),
+        );
     }
     let store = hub.storage.write().await;
     match store.delete_webhook(&id) {
         Ok(()) => (StatusCode::OK, Json(serde_json::json!({"success": true}))),
-        Err(e) => (StatusCode::NOT_FOUND, Json(serde_json::json!({"success": false, "error": e.to_string()}))),
+        Err(e) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"success": false, "error": e.to_string()})),
+        ),
     }
 }
 
@@ -3331,9 +3527,15 @@ pub async fn run_server(
         .route("/healthz", get(health_check))
         .route("/", axum::routing::get(serve_index))
         .route("/push", axum::routing::post(push_handler))
-        .route("/push/compressed", axum::routing::post(push_compressed_handler))
+        .route(
+            "/push/compressed",
+            axum::routing::post(push_compressed_handler),
+        )
         .route("/pull", axum::routing::post(pull_handler))
-        .route("/pull/compressed", axum::routing::post(pull_compressed_handler))
+        .route(
+            "/pull/compressed",
+            axum::routing::post(pull_compressed_handler),
+        )
         .route("/repos", axum::routing::get(list_repos_handler))
         .route("/repo/{repo_id}", axum::routing::get(repo_info_handler))
         .route(
@@ -3354,7 +3556,10 @@ pub async fn run_server(
         .route("/auth/verify", axum::routing::post(verify_token_handler))
         .route("/mirror/setup", axum::routing::post(mirror_setup_handler))
         .route("/mirror/sync", axum::routing::post(mirror_sync_handler))
-        .route("/mirror/status", axum::routing::get(mirror_status_get_handler))
+        .route(
+            "/mirror/status",
+            axum::routing::get(mirror_status_get_handler),
+        )
         .route("/mirror/status", axum::routing::post(mirror_status_handler))
         .route(
             "/repos/{repo_id}/protect/{branch}",
@@ -3378,26 +3583,71 @@ pub async fn run_server(
         .route("/static/{*path}", axum::routing::get(serve_static_file))
         .route("/replication/peers", axum::routing::post(add_peer_handler))
         .route("/replication/peers", axum::routing::get(list_peers_handler))
-        .route("/replication/peers/{id}", axum::routing::delete(remove_peer_handler))
-        .route("/replication/status", axum::routing::get(replication_status_handler))
-        .route("/replication/sync", axum::routing::post(replication_sync_handler))
+        .route(
+            "/replication/peers/{id}",
+            axum::routing::delete(remove_peer_handler),
+        )
+        .route(
+            "/replication/status",
+            axum::routing::get(replication_status_handler),
+        )
+        .route(
+            "/replication/sync",
+            axum::routing::post(replication_sync_handler),
+        )
         .route("/repos", axum::routing::post(create_repo_handler))
-        .route("/repos/{repo_id}", axum::routing::delete(delete_repo_handler))
-        .route("/repos/{repo_id}/branches", axum::routing::post(create_branch_handler))
-        .route("/repos/{repo_id}/branches/{branch}", axum::routing::delete(delete_branch_handler))
-        .route("/repos/{repo_id}/blobs/{hash}", axum::routing::get(get_blob_handler))
-        .route("/repos/{repo_id}/tree/{branch}", axum::routing::get(repo_tree_handler))
+        .route(
+            "/repos/{repo_id}",
+            axum::routing::delete(delete_repo_handler),
+        )
+        .route(
+            "/repos/{repo_id}/branches",
+            axum::routing::post(create_branch_handler),
+        )
+        .route(
+            "/repos/{repo_id}/branches/{branch}",
+            axum::routing::delete(delete_branch_handler),
+        )
+        .route(
+            "/repos/{repo_id}/blobs/{hash}",
+            axum::routing::get(get_blob_handler),
+        )
+        .route(
+            "/repos/{repo_id}/tree/{branch}",
+            axum::routing::get(repo_tree_handler),
+        )
         .route("/auth/login", axum::routing::post(login_handler))
         .route("/search", axum::routing::get(search_handler))
         .route("/activity", axum::routing::get(activity_handler))
-        .route("/mirrors/{id}", axum::routing::delete(delete_mirror_handler))
-        .route("/webhooks/{repo_id}", axum::routing::post(create_webhook_handler))
-        .route("/webhooks/{repo_id}", axum::routing::get(list_webhooks_handler))
-        .route("/webhooks/{repo_id}/{id}", axum::routing::delete(delete_webhook_handler))
-        .route("/repos/{repo_id}/patches/batch", axum::routing::post(batch_push_handler))
+        .route(
+            "/mirrors/{id}",
+            axum::routing::delete(delete_mirror_handler),
+        )
+        .route(
+            "/webhooks/{repo_id}",
+            axum::routing::post(create_webhook_handler),
+        )
+        .route(
+            "/webhooks/{repo_id}",
+            axum::routing::get(list_webhooks_handler),
+        )
+        .route(
+            "/webhooks/{repo_id}/{id}",
+            axum::routing::delete(delete_webhook_handler),
+        )
+        .route(
+            "/repos/{repo_id}/patches/batch",
+            axum::routing::post(batch_push_handler),
+        )
         .route("/lfs/batch", axum::routing::post(lfs_batch_handler))
-        .route("/lfs/objects/{repo_id}/{oid}", axum::routing::put(lfs_upload_handler))
-        .route("/lfs/objects/{repo_id}/{oid}", axum::routing::get(lfs_download_handler))
+        .route(
+            "/lfs/objects/{repo_id}/{oid}",
+            axum::routing::put(lfs_upload_handler),
+        )
+        .route(
+            "/lfs/objects/{repo_id}/{oid}",
+            axum::routing::get(lfs_download_handler),
+        )
         .with_state(Arc::clone(&hub))
         .layer(set_request_id)
         .layer(propagate_request_id);
@@ -3432,10 +3682,17 @@ pub async fn run_server(
 mod tests {
     use super::*;
     use sha2::Digest;
-    async fn create_test_user_hub(hub: &SutureHubServer, username: &str, display_name: &str, role: &str) -> String {
+    async fn create_test_user_hub(
+        hub: &SutureHubServer,
+        username: &str,
+        display_name: &str,
+        role: &str,
+    ) -> String {
         let api_token = generate_api_token();
         let store = hub.storage.write().await;
-        store.create_user(username, display_name, role, &api_token).unwrap();
+        store
+            .create_user(username, display_name, role, &api_token)
+            .unwrap();
         api_token
     }
 
@@ -3444,7 +3701,9 @@ mod tests {
     }
 
     fn make_hash_proto(hex: &str) -> HashProto {
-        HashProto { value: hex.to_string() }
+        HashProto {
+            value: hex.to_string(),
+        }
     }
 
     fn make_patch(hex: &str, op: &str, parents: &[String], author: &str) -> PatchProto {
@@ -3462,7 +3721,10 @@ mod tests {
     }
 
     fn make_branch(name: &str, target: &str) -> BranchProto {
-        BranchProto { name: name.to_string(), target_id: make_hash_proto(target) }
+        BranchProto {
+            name: name.to_string(),
+            target_id: make_hash_proto(target),
+        }
     }
 
     async fn start_test_hub() -> (Arc<SutureHubServer>, u16, String) {
@@ -3475,13 +3737,25 @@ mod tests {
         let app = axum::Router::new()
             .route("/", axum::routing::get(serve_index))
             .route("/push", axum::routing::post(push_handler))
-            .route("/push/compressed", axum::routing::post(push_compressed_handler))
+            .route(
+                "/push/compressed",
+                axum::routing::post(push_compressed_handler),
+            )
             .route("/pull", axum::routing::post(pull_handler))
-            .route("/pull/compressed", axum::routing::post(pull_compressed_handler))
+            .route(
+                "/pull/compressed",
+                axum::routing::post(pull_compressed_handler),
+            )
             .route("/repos", axum::routing::get(list_repos_handler))
             .route("/repo/{repo_id}", axum::routing::get(repo_info_handler))
-            .route("/repos/{repo_id}/branches", axum::routing::get(repo_branches_handler))
-            .route("/repos/{repo_id}/patches", axum::routing::get(repo_patches_handler))
+            .route(
+                "/repos/{repo_id}/branches",
+                axum::routing::get(repo_branches_handler),
+            )
+            .route(
+                "/repos/{repo_id}/patches",
+                axum::routing::get(repo_patches_handler),
+            )
             .route("/handshake", axum::routing::get(handshake_get_handler))
             .route("/handshake", axum::routing::post(handshake_handler))
             .route("/v2/handshake", axum::routing::get(handshake_v2_handler))
@@ -3492,41 +3766,98 @@ mod tests {
             .route("/auth/verify", axum::routing::post(verify_token_handler))
             .route("/mirror/setup", axum::routing::post(mirror_setup_handler))
             .route("/mirror/sync", axum::routing::post(mirror_sync_handler))
-            .route("/mirror/status", axum::routing::get(mirror_status_get_handler))
+            .route(
+                "/mirror/status",
+                axum::routing::get(mirror_status_get_handler),
+            )
             .route("/mirror/status", axum::routing::post(mirror_status_handler))
-            .route("/repos/{repo_id}/protect/{branch}", axum::routing::post(protect_branch_handler))
-            .route("/repos/{repo_id}/unprotect/{branch}", axum::routing::post(unprotect_branch_handler))
+            .route(
+                "/repos/{repo_id}/protect/{branch}",
+                axum::routing::post(protect_branch_handler),
+            )
+            .route(
+                "/repos/{repo_id}/unprotect/{branch}",
+                axum::routing::post(unprotect_branch_handler),
+            )
             .route("/auth/register", axum::routing::post(register_handler))
             .route("/users", axum::routing::get(list_users_handler))
             .route("/users/{username}", axum::routing::get(get_user_handler))
-            .route("/users/{username}/role", axum::routing::patch(update_role_handler))
-            .route("/users/{username}", axum::routing::delete(delete_user_handler))
+            .route(
+                "/users/{username}/role",
+                axum::routing::patch(update_role_handler),
+            )
+            .route(
+                "/users/{username}",
+                axum::routing::delete(delete_user_handler),
+            )
             .route("/static/{*path}", axum::routing::get(serve_static_file))
             .route("/replication/peers", axum::routing::post(add_peer_handler))
             .route("/replication/peers", axum::routing::get(list_peers_handler))
-            .route("/replication/peers/{id}", axum::routing::delete(remove_peer_handler))
-            .route("/replication/status", axum::routing::get(replication_status_handler))
-            .route("/replication/sync", axum::routing::post(replication_sync_handler))
+            .route(
+                "/replication/peers/{id}",
+                axum::routing::delete(remove_peer_handler),
+            )
+            .route(
+                "/replication/status",
+                axum::routing::get(replication_status_handler),
+            )
+            .route(
+                "/replication/sync",
+                axum::routing::post(replication_sync_handler),
+            )
             .route("/repos", axum::routing::post(create_repo_handler))
-            .route("/repos/{repo_id}", axum::routing::delete(delete_repo_handler))
-            .route("/repos/{repo_id}/branches", axum::routing::post(create_branch_handler))
-            .route("/repos/{repo_id}/branches/{branch}", axum::routing::delete(delete_branch_handler))
-            .route("/repos/{repo_id}/blobs/{hash}", axum::routing::get(get_blob_handler))
-            .route("/repos/{repo_id}/tree/{branch}", axum::routing::get(repo_tree_handler))
+            .route(
+                "/repos/{repo_id}",
+                axum::routing::delete(delete_repo_handler),
+            )
+            .route(
+                "/repos/{repo_id}/branches",
+                axum::routing::post(create_branch_handler),
+            )
+            .route(
+                "/repos/{repo_id}/branches/{branch}",
+                axum::routing::delete(delete_branch_handler),
+            )
+            .route(
+                "/repos/{repo_id}/blobs/{hash}",
+                axum::routing::get(get_blob_handler),
+            )
+            .route(
+                "/repos/{repo_id}/tree/{branch}",
+                axum::routing::get(repo_tree_handler),
+            )
             .route("/auth/login", axum::routing::post(login_handler))
             .route("/search", axum::routing::get(search_handler))
             .route("/activity", axum::routing::get(activity_handler))
-            .route("/mirrors/{id}", axum::routing::delete(delete_mirror_handler))
-            .route("/webhooks/{repo_id}", axum::routing::post(create_webhook_handler))
-            .route("/webhooks/{repo_id}", axum::routing::get(list_webhooks_handler))
-            .route("/webhooks/{repo_id}/{id}", axum::routing::delete(delete_webhook_handler))
-            .route("/repos/{repo_id}/patches/batch", axum::routing::post(batch_push_handler))
+            .route(
+                "/mirrors/{id}",
+                axum::routing::delete(delete_mirror_handler),
+            )
+            .route(
+                "/webhooks/{repo_id}",
+                axum::routing::post(create_webhook_handler),
+            )
+            .route(
+                "/webhooks/{repo_id}",
+                axum::routing::get(list_webhooks_handler),
+            )
+            .route(
+                "/webhooks/{repo_id}/{id}",
+                axum::routing::delete(delete_webhook_handler),
+            )
+            .route(
+                "/repos/{repo_id}/patches/batch",
+                axum::routing::post(batch_push_handler),
+            )
             .with_state(Arc::clone(&hub));
 
         tokio::spawn(async move {
-            axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>())
-                .await
-                .unwrap();
+            axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+            )
+            .await
+            .unwrap();
         });
 
         for _ in 0..50 {
@@ -3543,7 +3874,9 @@ mod tests {
         panic!("test server did not start in time");
     }
 
-    async fn start_test_hub_with_lfs(hub: Arc<SutureHubServer>) -> (Arc<SutureHubServer>, u16, String) {
+    async fn start_test_hub_with_lfs(
+        hub: Arc<SutureHubServer>,
+    ) -> (Arc<SutureHubServer>, u16, String) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let base = format!("http://127.0.0.1:{}", port);
@@ -3551,13 +3884,25 @@ mod tests {
         let app = axum::Router::new()
             .route("/", axum::routing::get(serve_index))
             .route("/push", axum::routing::post(push_handler))
-            .route("/push/compressed", axum::routing::post(push_compressed_handler))
+            .route(
+                "/push/compressed",
+                axum::routing::post(push_compressed_handler),
+            )
             .route("/pull", axum::routing::post(pull_handler))
-            .route("/pull/compressed", axum::routing::post(pull_compressed_handler))
+            .route(
+                "/pull/compressed",
+                axum::routing::post(pull_compressed_handler),
+            )
             .route("/repos", axum::routing::get(list_repos_handler))
             .route("/repo/{repo_id}", axum::routing::get(repo_info_handler))
-            .route("/repos/{repo_id}/branches", axum::routing::get(repo_branches_handler))
-            .route("/repos/{repo_id}/patches", axum::routing::get(repo_patches_handler))
+            .route(
+                "/repos/{repo_id}/branches",
+                axum::routing::get(repo_branches_handler),
+            )
+            .route(
+                "/repos/{repo_id}/patches",
+                axum::routing::get(repo_patches_handler),
+            )
             .route("/handshake", axum::routing::get(handshake_get_handler))
             .route("/handshake", axum::routing::post(handshake_handler))
             .route("/v2/handshake", axum::routing::get(handshake_v2_handler))
@@ -3568,44 +3913,107 @@ mod tests {
             .route("/auth/verify", axum::routing::post(verify_token_handler))
             .route("/mirror/setup", axum::routing::post(mirror_setup_handler))
             .route("/mirror/sync", axum::routing::post(mirror_sync_handler))
-            .route("/mirror/status", axum::routing::get(mirror_status_get_handler))
+            .route(
+                "/mirror/status",
+                axum::routing::get(mirror_status_get_handler),
+            )
             .route("/mirror/status", axum::routing::post(mirror_status_handler))
-            .route("/repos/{repo_id}/protect/{branch}", axum::routing::post(protect_branch_handler))
-            .route("/repos/{repo_id}/unprotect/{branch}", axum::routing::post(unprotect_branch_handler))
+            .route(
+                "/repos/{repo_id}/protect/{branch}",
+                axum::routing::post(protect_branch_handler),
+            )
+            .route(
+                "/repos/{repo_id}/unprotect/{branch}",
+                axum::routing::post(unprotect_branch_handler),
+            )
             .route("/auth/register", axum::routing::post(register_handler))
             .route("/users", axum::routing::get(list_users_handler))
             .route("/users/{username}", axum::routing::get(get_user_handler))
-            .route("/users/{username}/role", axum::routing::patch(update_role_handler))
-            .route("/users/{username}", axum::routing::delete(delete_user_handler))
+            .route(
+                "/users/{username}/role",
+                axum::routing::patch(update_role_handler),
+            )
+            .route(
+                "/users/{username}",
+                axum::routing::delete(delete_user_handler),
+            )
             .route("/static/{*path}", axum::routing::get(serve_static_file))
             .route("/replication/peers", axum::routing::post(add_peer_handler))
             .route("/replication/peers", axum::routing::get(list_peers_handler))
-            .route("/replication/peers/{id}", axum::routing::delete(remove_peer_handler))
-            .route("/replication/status", axum::routing::get(replication_status_handler))
-            .route("/replication/sync", axum::routing::post(replication_sync_handler))
+            .route(
+                "/replication/peers/{id}",
+                axum::routing::delete(remove_peer_handler),
+            )
+            .route(
+                "/replication/status",
+                axum::routing::get(replication_status_handler),
+            )
+            .route(
+                "/replication/sync",
+                axum::routing::post(replication_sync_handler),
+            )
             .route("/repos", axum::routing::post(create_repo_handler))
-            .route("/repos/{repo_id}", axum::routing::delete(delete_repo_handler))
-            .route("/repos/{repo_id}/branches", axum::routing::post(create_branch_handler))
-            .route("/repos/{repo_id}/branches/{branch}", axum::routing::delete(delete_branch_handler))
-            .route("/repos/{repo_id}/blobs/{hash}", axum::routing::get(get_blob_handler))
-            .route("/repos/{repo_id}/tree/{branch}", axum::routing::get(repo_tree_handler))
+            .route(
+                "/repos/{repo_id}",
+                axum::routing::delete(delete_repo_handler),
+            )
+            .route(
+                "/repos/{repo_id}/branches",
+                axum::routing::post(create_branch_handler),
+            )
+            .route(
+                "/repos/{repo_id}/branches/{branch}",
+                axum::routing::delete(delete_branch_handler),
+            )
+            .route(
+                "/repos/{repo_id}/blobs/{hash}",
+                axum::routing::get(get_blob_handler),
+            )
+            .route(
+                "/repos/{repo_id}/tree/{branch}",
+                axum::routing::get(repo_tree_handler),
+            )
             .route("/auth/login", axum::routing::post(login_handler))
             .route("/search", axum::routing::get(search_handler))
             .route("/activity", axum::routing::get(activity_handler))
-            .route("/mirrors/{id}", axum::routing::delete(delete_mirror_handler))
-            .route("/webhooks/{repo_id}", axum::routing::post(create_webhook_handler))
-            .route("/webhooks/{repo_id}", axum::routing::get(list_webhooks_handler))
-            .route("/webhooks/{repo_id}/{id}", axum::routing::delete(delete_webhook_handler))
-            .route("/repos/{repo_id}/patches/batch", axum::routing::post(batch_push_handler))
+            .route(
+                "/mirrors/{id}",
+                axum::routing::delete(delete_mirror_handler),
+            )
+            .route(
+                "/webhooks/{repo_id}",
+                axum::routing::post(create_webhook_handler),
+            )
+            .route(
+                "/webhooks/{repo_id}",
+                axum::routing::get(list_webhooks_handler),
+            )
+            .route(
+                "/webhooks/{repo_id}/{id}",
+                axum::routing::delete(delete_webhook_handler),
+            )
+            .route(
+                "/repos/{repo_id}/patches/batch",
+                axum::routing::post(batch_push_handler),
+            )
             .route("/lfs/batch", axum::routing::post(lfs_batch_handler))
-            .route("/lfs/objects/{repo_id}/{oid}", axum::routing::put(lfs_upload_handler))
-            .route("/lfs/objects/{repo_id}/{oid}", axum::routing::get(lfs_download_handler))
+            .route(
+                "/lfs/objects/{repo_id}/{oid}",
+                axum::routing::put(lfs_upload_handler),
+            )
+            .route(
+                "/lfs/objects/{repo_id}/{oid}",
+                axum::routing::get(lfs_download_handler),
+            )
             .with_state(Arc::clone(&hub));
 
         tokio::spawn(async move {
-            axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>())
-                .await
-                .unwrap();
+            axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+            )
+            .await
+            .unwrap();
         });
 
         for _ in 0..50 {
@@ -3629,12 +4037,26 @@ mod tests {
         (hub, port, base)
     }
 
-    fn post_json(client: &reqwest::Client, url: &str, body: &serde_json::Value) -> reqwest::RequestBuilder {
-        client.post(url).header("Content-Type", "application/json").body(body.to_string())
+    fn post_json(
+        client: &reqwest::Client,
+        url: &str,
+        body: &serde_json::Value,
+    ) -> reqwest::RequestBuilder {
+        client
+            .post(url)
+            .header("Content-Type", "application/json")
+            .body(body.to_string())
     }
 
-    fn patch_json(client: &reqwest::Client, url: &str, body: &serde_json::Value) -> reqwest::RequestBuilder {
-        client.patch(url).header("Content-Type", "application/json").body(body.to_string())
+    fn patch_json(
+        client: &reqwest::Client,
+        url: &str,
+        body: &serde_json::Value,
+    ) -> reqwest::RequestBuilder {
+        client
+            .patch(url)
+            .header("Content-Type", "application/json")
+            .body(body.to_string())
     }
 
     #[tokio::test]
@@ -3710,7 +4132,11 @@ mod tests {
         let (hub, _port, base) = start_test_hub().await;
         let client = reqwest::Client::new();
 
-        let resp = client.get(format!("{}/repo/nonexistent", &base)).send().await.unwrap();
+        let resp = client
+            .get(format!("{}/repo/nonexistent", &base))
+            .send()
+            .await
+            .unwrap();
         assert_eq!(resp.status(), 404);
 
         let a_hex = "a".repeat(64);
@@ -3722,9 +4148,15 @@ mod tests {
             signature: None,
             known_branches: None,
             force: false,
-        }).await.unwrap();
+        })
+        .await
+        .unwrap();
 
-        let resp2 = client.get(format!("{}/repo/info-repo", &base)).send().await.unwrap();
+        let resp2 = client
+            .get(format!("{}/repo/info-repo", &base))
+            .send()
+            .await
+            .unwrap();
         assert_eq!(resp2.status(), 200);
         let data: serde_json::Value = resp2.json().await.unwrap();
         assert_eq!(data["patch_count"], 1);
@@ -3745,7 +4177,9 @@ mod tests {
             signature: None,
             known_branches: None,
             force: false,
-        }).await.unwrap();
+        })
+        .await
+        .unwrap();
 
         let resp = client
             .get(format!("{}/repos/branch-repo/branches", &base))
@@ -3787,11 +4221,16 @@ mod tests {
                 signature: None,
                 known_branches: None,
                 force: false,
-            }).await.unwrap();
+            })
+            .await
+            .unwrap();
         }
 
         let resp = client
-            .get(format!("{}/repos/patch-repo/patches?offset=1&limit=1", &base))
+            .get(format!(
+                "{}/repos/patch-repo/patches?offset=1&limit=1",
+                &base
+            ))
             .send()
             .await
             .unwrap();
@@ -3814,10 +4253,7 @@ mod tests {
         assert_eq!(data2["patches"].as_array().unwrap().len(), 1);
 
         let resp3 = client
-            .get(format!(
-                "{}/repos/patch-repo/patches?limit=50",
-                &base,
-            ))
+            .get(format!("{}/repos/patch-repo/patches?limit=50", &base,))
             .send()
             .await
             .unwrap();
@@ -3986,7 +4422,12 @@ mod tests {
             .send()
             .await
             .unwrap();
-        assert_eq!(push_resp.status(), 200, "V2 push failed: {}", push_resp.status());
+        assert_eq!(
+            push_resp.status(),
+            200,
+            "V2 push failed: {}",
+            push_resp.status()
+        );
 
         let pull_body = serde_json::json!({
             "repo_id": "v2-repo",
@@ -4072,14 +4513,19 @@ mod tests {
         let client = reqwest::Client::new();
         let admin_token = create_test_user_hub(&hub, "http-admin", "HTTP Admin", "admin").await;
 
-        let resp = post_json(&client, &format!("{}/auth/register", &base), &serde_json::json!({
-            "username": "new-http-user",
-            "display_name": "New HTTP User",
-            "role": "member"
-        })).header("Authorization", make_auth_header_val(&admin_token))
-            .send()
-            .await
-            .unwrap();
+        let resp = post_json(
+            &client,
+            &format!("{}/auth/register", &base),
+            &serde_json::json!({
+                "username": "new-http-user",
+                "display_name": "New HTTP User",
+                "role": "member"
+            }),
+        )
+        .header("Authorization", make_auth_header_val(&admin_token))
+        .send()
+        .await
+        .unwrap();
         assert_eq!(resp.status(), 201);
         let data: serde_json::Value = resp.json().await.unwrap();
         assert_eq!(data["success"], true);
@@ -4123,11 +4569,15 @@ mod tests {
         assert_eq!(get_data["user"]["username"], "crud-target");
         assert_eq!(get_data["user"]["role"], "reader");
 
-        let patch_resp = patch_json(&client, &format!("{}/users/crud-target/role", &base), &serde_json::json!({"role": "admin"}))
-            .header("Authorization", &auth)
-            .send()
-            .await
-            .unwrap();
+        let patch_resp = patch_json(
+            &client,
+            &format!("{}/users/crud-target/role", &base),
+            &serde_json::json!({"role": "admin"}),
+        )
+        .header("Authorization", &auth)
+        .send()
+        .await
+        .unwrap();
         assert_eq!(patch_resp.status(), 200);
         let patch_data: serde_json::Value = patch_resp.json().await.unwrap();
         assert_eq!(patch_data["success"], true);
@@ -4148,19 +4598,30 @@ mod tests {
         let (_hub, _port, base) = start_test_hub().await;
         let client = reqwest::Client::new();
 
-        let setup_resp = post_json(&client, &format!("{}/mirror/setup", &base), &serde_json::json!({
-            "repo_name": "mirrored",
-            "upstream_url": "http://example.com",
-            "upstream_repo": "upstream/repo"
-        })).send().await.unwrap();
+        let setup_resp = post_json(
+            &client,
+            &format!("{}/mirror/setup", &base),
+            &serde_json::json!({
+                "repo_name": "mirrored",
+                "upstream_url": "http://example.com",
+                "upstream_repo": "upstream/repo"
+            }),
+        )
+        .send()
+        .await
+        .unwrap();
         assert_eq!(setup_resp.status(), 200);
         let setup_data: serde_json::Value = setup_resp.json().await.unwrap();
         assert_eq!(setup_data["success"], true);
 
-        let status_resp = post_json(&client, &format!("{}/mirror/status", &base), &serde_json::json!({}))
-            .send()
-            .await
-            .unwrap();
+        let status_resp = post_json(
+            &client,
+            &format!("{}/mirror/status", &base),
+            &serde_json::json!({}),
+        )
+        .send()
+        .await
+        .unwrap();
         assert_eq!(status_resp.status(), 200);
         let status_data: serde_json::Value = status_resp.json().await.unwrap();
         assert_eq!(status_data["mirrors"].as_array().unwrap().len(), 1);
@@ -4252,13 +4713,19 @@ mod tests {
         // Store a token in the tokens table to activate auth enforcement
         {
             let store = hub.storage.write().await;
-            store.store_token(&admin_token, 1000, "test token", i64::MAX).unwrap();
+            store
+                .store_token(&admin_token, 1000, "test token", i64::MAX)
+                .unwrap();
         }
 
         // Create a repo via POST (authenticated)
-        let resp = post_json(&client, &format!("{}/repos", &base), &serde_json::json!({
-            "repo_id": "new-repo"
-        }))
+        let resp = post_json(
+            &client,
+            &format!("{}/repos", &base),
+            &serde_json::json!({
+                "repo_id": "new-repo"
+            }),
+        )
         .header("Authorization", make_auth_header_val(&admin_token))
         .send()
         .await
@@ -4271,12 +4738,21 @@ mod tests {
         // Verify it shows up in list
         let list_resp = client.get(format!("{}/repos", &base)).send().await.unwrap();
         let list_data: serde_json::Value = list_resp.json().await.unwrap();
-        assert!(list_data["repo_ids"].as_array().unwrap().contains(&serde_json::json!("new-repo")));
+        assert!(
+            list_data["repo_ids"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("new-repo"))
+        );
 
         // Creating duplicate should still succeed (idempotent)
-        let resp2 = post_json(&client, &format!("{}/repos", &base), &serde_json::json!({
-            "repo_id": "new-repo"
-        }))
+        let resp2 = post_json(
+            &client,
+            &format!("{}/repos", &base),
+            &serde_json::json!({
+                "repo_id": "new-repo"
+            }),
+        )
         .header("Authorization", make_auth_header_val(&admin_token))
         .send()
         .await
@@ -4284,9 +4760,13 @@ mod tests {
         assert_eq!(resp2.status(), 201);
 
         // Unauthenticated should fail (now that tokens table is populated)
-        let resp3 = post_json(&client, &format!("{}/repos", &base), &serde_json::json!({
-            "repo_id": "noauth-repo"
-        }))
+        let resp3 = post_json(
+            &client,
+            &format!("{}/repos", &base),
+            &serde_json::json!({
+                "repo_id": "noauth-repo"
+            }),
+        )
         .send()
         .await
         .unwrap();
@@ -4309,12 +4789,19 @@ mod tests {
             signature: None,
             known_branches: None,
             force: false,
-        }).await.unwrap();
+        })
+        .await
+        .unwrap();
 
         // Verify it exists
         let list_resp = client.get(format!("{}/repos", &base)).send().await.unwrap();
         let list_data: serde_json::Value = list_resp.json().await.unwrap();
-        assert!(list_data["repo_ids"].as_array().unwrap().contains(&serde_json::json!("delete-me")));
+        assert!(
+            list_data["repo_ids"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("delete-me"))
+        );
 
         // Delete it
         let del_resp = client
@@ -4330,7 +4817,12 @@ mod tests {
         // Verify it's gone
         let list_resp2 = client.get(format!("{}/repos", &base)).send().await.unwrap();
         let list_data2: serde_json::Value = list_resp2.json().await.unwrap();
-        assert!(!list_data2["repo_ids"].as_array().unwrap().contains(&serde_json::json!("delete-me")));
+        assert!(
+            !list_data2["repo_ids"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("delete-me"))
+        );
     }
 
     #[tokio::test]
@@ -4349,13 +4841,19 @@ mod tests {
             signature: None,
             known_branches: None,
             force: false,
-        }).await.unwrap();
+        })
+        .await
+        .unwrap();
 
         // Create a new branch
-        let resp = post_json(&client, &format!("{}/repos/branch-repo-2/branches", &base), &serde_json::json!({
-            "name": "feature",
-            "target": &a_hex
-        }))
+        let resp = post_json(
+            &client,
+            &format!("{}/repos/branch-repo-2/branches", &base),
+            &serde_json::json!({
+                "name": "feature",
+                "target": &a_hex
+            }),
+        )
         .header("Authorization", make_auth_header_val(&admin_token))
         .send()
         .await
@@ -4365,7 +4863,11 @@ mod tests {
         assert_eq!(data["success"], true);
 
         // Verify both branches exist
-        let br_resp = client.get(format!("{}/repos/branch-repo-2/branches", &base)).send().await.unwrap();
+        let br_resp = client
+            .get(format!("{}/repos/branch-repo-2/branches", &base))
+            .send()
+            .await
+            .unwrap();
         let br_data: serde_json::Value = br_resp.json().await.unwrap();
         assert_eq!(br_data.as_array().unwrap().len(), 2);
     }
@@ -4386,7 +4888,9 @@ mod tests {
             signature: None,
             known_branches: None,
             force: false,
-        }).await.unwrap();
+        })
+        .await
+        .unwrap();
 
         // Delete dev branch
         let resp = client
@@ -4400,7 +4904,11 @@ mod tests {
         assert_eq!(data["success"], true);
 
         // Verify only main remains
-        let br_resp = client.get(format!("{}/repos/delbr-repo/branches", &base)).send().await.unwrap();
+        let br_resp = client
+            .get(format!("{}/repos/delbr-repo/branches", &base))
+            .send()
+            .await
+            .unwrap();
         let br_data: serde_json::Value = br_resp.json().await.unwrap();
         assert_eq!(br_data.as_array().unwrap().len(), 1);
         assert_eq!(br_data[0]["name"], "main");
@@ -4454,7 +4962,11 @@ mod tests {
 
         // Nonexistent blob
         let miss_resp = client
-            .get(format!("{}/repos/blob-repo/blobs/{}", &base, "0".repeat(64)))
+            .get(format!(
+                "{}/repos/blob-repo/blobs/{}",
+                &base,
+                "0".repeat(64)
+            ))
             .send()
             .await
             .unwrap();
@@ -4470,14 +4982,20 @@ mod tests {
         let token = create_test_user_hub(&hub, "login-user", "Login User", "member").await;
         {
             let store = hub.storage.write().await;
-            store.store_token(&token, 1000, "login test token", i64::MAX).unwrap();
+            store
+                .store_token(&token, 1000, "login test token", i64::MAX)
+                .unwrap();
         }
 
         // Login with the token
-        let resp = post_json(&client, &format!("{}/auth/login", &base), &serde_json::json!({
-            "username": "login-user",
-            "token": &token
-        }))
+        let resp = post_json(
+            &client,
+            &format!("{}/auth/login", &base),
+            &serde_json::json!({
+                "username": "login-user",
+                "token": &token
+            }),
+        )
         .send()
         .await
         .unwrap();
@@ -4487,10 +5005,14 @@ mod tests {
         assert_eq!(data["user"]["username"], "login-user");
 
         // Login with invalid token
-        let bad_resp = post_json(&client, &format!("{}/auth/login", &base), &serde_json::json!({
-            "username": "login-user",
-            "token": "invalid-token"
-        }))
+        let bad_resp = post_json(
+            &client,
+            &format!("{}/auth/login", &base),
+            &serde_json::json!({
+                "username": "login-user",
+                "token": "invalid-token"
+            }),
+        )
         .send()
         .await
         .unwrap();
@@ -4585,11 +5107,15 @@ mod tests {
         let admin_token = create_test_user_hub(&hub, "mirror-admin", "Mirror Admin", "admin").await;
 
         // Setup a mirror
-        let setup_resp = post_json(&client, &format!("{}/mirror/setup", &base), &serde_json::json!({
-            "repo_name": "mirrored-del",
-            "upstream_url": "http://example.com/del",
-            "upstream_repo": "upstream/del"
-        }))
+        let setup_resp = post_json(
+            &client,
+            &format!("{}/mirror/setup", &base),
+            &serde_json::json!({
+                "repo_name": "mirrored-del",
+                "upstream_url": "http://example.com/del",
+                "upstream_repo": "upstream/del"
+            }),
+        )
         .send()
         .await
         .unwrap();
@@ -4609,10 +5135,14 @@ mod tests {
         assert_eq!(del_data["success"], true);
 
         // Verify mirror is gone
-        let status_resp = post_json(&client, &format!("{}/mirror/status", &base), &serde_json::json!({}))
-            .send()
-            .await
-            .unwrap();
+        let status_resp = post_json(
+            &client,
+            &format!("{}/mirror/status", &base),
+            &serde_json::json!({}),
+        )
+        .send()
+        .await
+        .unwrap();
         let status_data: serde_json::Value = status_resp.json().await.unwrap();
         assert_eq!(status_data["mirrors"].as_array().unwrap().len(), 0);
     }
@@ -4695,7 +5225,9 @@ mod tests {
             signature: None,
             known_branches: None,
             force: false,
-        }).await.unwrap();
+        })
+        .await
+        .unwrap();
 
         let resp = client
             .get(format!("{}/repos/tree-repo/tree/main", &base))
@@ -4734,7 +5266,12 @@ mod tests {
         let repo_id = "test-repo";
         let oid = "aabbccdd";
         let prefix = &oid[..2];
-        let obj_path = tmp.path().join(repo_id).join("objects").join(prefix).join(oid);
+        let obj_path = tmp
+            .path()
+            .join(repo_id)
+            .join("objects")
+            .join(prefix)
+            .join(oid);
         std::fs::create_dir_all(obj_path.parent().unwrap()).unwrap();
         std::fs::write(&obj_path, b"existing data").unwrap();
 
@@ -4742,12 +5279,18 @@ mod tests {
         let (_hub, _port, base) = start_test_hub_with_lfs(Arc::new(hub)).await;
         let client = reqwest::Client::new();
 
-        let resp = post_json(&client, &format!("{}/lfs/batch", &base), &serde_json::json!({
-            "repo_id": repo_id,
-            "operation": "upload",
-            "objects": [{"oid": oid, "size": 12}],
-        }))
-        .send().await.unwrap();
+        let resp = post_json(
+            &client,
+            &format!("{}/lfs/batch", &base),
+            &serde_json::json!({
+                "repo_id": repo_id,
+                "operation": "upload",
+                "objects": [{"oid": oid, "size": 12}],
+            }),
+        )
+        .send()
+        .await
+        .unwrap();
 
         assert_eq!(resp.status(), 200);
         let data: serde_json::Value = resp.json().await.unwrap();
@@ -4767,12 +5310,18 @@ mod tests {
         let hash = sha2::Sha256::digest(&payload);
         let oid = hex::encode(hash);
 
-        let resp = post_json(&client, &format!("{}/lfs/batch", &base), &serde_json::json!({
-            "repo_id": repo_id,
-            "operation": "upload",
-            "objects": [{"oid": &oid, "size": payload.len()}],
-        }))
-        .send().await.unwrap();
+        let resp = post_json(
+            &client,
+            &format!("{}/lfs/batch", &base),
+            &serde_json::json!({
+                "repo_id": repo_id,
+                "operation": "upload",
+                "objects": [{"oid": &oid, "size": payload.len()}],
+            }),
+        )
+        .send()
+        .await
+        .unwrap();
         assert_eq!(resp.status(), 200);
         let data: serde_json::Value = resp.json().await.unwrap();
         assert_eq!(data["objects"][0]["action"], "upload");
@@ -4785,12 +5334,18 @@ mod tests {
             .unwrap();
         assert_eq!(resp.status(), 200);
 
-        let resp = post_json(&client, &format!("{}/lfs/batch", &base), &serde_json::json!({
-            "repo_id": repo_id,
-            "operation": "download",
-            "objects": [{"oid": &oid, "size": payload.len()}],
-        }))
-        .send().await.unwrap();
+        let resp = post_json(
+            &client,
+            &format!("{}/lfs/batch", &base),
+            &serde_json::json!({
+                "repo_id": repo_id,
+                "operation": "download",
+                "objects": [{"oid": &oid, "size": payload.len()}],
+            }),
+        )
+        .send()
+        .await
+        .unwrap();
         assert_eq!(resp.status(), 200);
         let data: serde_json::Value = resp.json().await.unwrap();
         assert_eq!(data["objects"][0]["action"], "download");
@@ -4805,7 +5360,10 @@ mod tests {
         assert_eq!(downloaded.as_ref(), payload.as_slice());
 
         let resp = client
-            .put(format!("{}/lfs/objects/{}/{}", &base, repo_id, "badbadbadbadbadbadbadbadbadbadbadbadbadbadbad"))
+            .put(format!(
+                "{}/lfs/objects/{}/{}",
+                &base, repo_id, "badbadbadbadbadbadbadbadbadbadbadbadbadbadbad"
+            ))
             .body(payload.clone())
             .send()
             .await
@@ -4875,12 +5433,19 @@ mod tests {
         }
 
         impl BlobBackend for MockBackend {
-            fn store_blob(&self, _repo_id: &str, _hash_hex: &str, _data: &[u8]) -> Result<(), String> {
-                self.store_called.store(true, std::sync::atomic::Ordering::Relaxed);
+            fn store_blob(
+                &self,
+                _repo_id: &str,
+                _hash_hex: &str,
+                _data: &[u8],
+            ) -> Result<(), String> {
+                self.store_called
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
                 Ok(())
             }
             fn get_blob(&self, _repo_id: &str, _hash_hex: &str) -> Result<Option<Vec<u8>>, String> {
-                self.get_called.store(true, std::sync::atomic::Ordering::Relaxed);
+                self.get_called
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
                 Ok(None)
             }
             fn has_blob(&self, _repo_id: &str, _hash_hex: &str) -> Result<bool, String> {
@@ -4901,7 +5466,8 @@ mod tests {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
             let store = hub.storage.read().await;
-            hub.blob_store(&store, "test-repo", &"a".repeat(64), b"data").unwrap();
+            hub.blob_store(&store, "test-repo", &"a".repeat(64), b"data")
+                .unwrap();
             assert!(mock.store_called.load(std::sync::atomic::Ordering::Relaxed));
 
             hub.blob_get(&store, "test-repo", &"a".repeat(64)).unwrap();
@@ -4983,5 +5549,4 @@ mod tests {
         let branches = store.get_branches("br-repo").unwrap_or_default();
         assert!(branches.is_empty());
     }
-
 }

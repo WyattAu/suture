@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use suture_common::Hash;
 use suture_hub::HubStorage;
 use suture_protocol::{HashProto, PatchProto};

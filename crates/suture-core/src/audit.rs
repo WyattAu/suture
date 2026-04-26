@@ -91,7 +91,9 @@ impl AuditLog {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        Ok(Self { path: path.to_path_buf() })
+        Ok(Self {
+            path: path.to_path_buf(),
+        })
     }
 
     /// Append a new entry to the audit log, computing hashes automatically.
@@ -118,7 +120,10 @@ impl AuditLog {
         };
 
         let content_hash = entry.compute_content_hash();
-        let entry = AuditEntry { content_hash, ..entry };
+        let entry = AuditEntry {
+            content_hash,
+            ..entry
+        };
 
         let mut file = std::fs::OpenOptions::new()
             .create(true)
@@ -159,9 +164,10 @@ impl AuditLog {
         let mut entries = Vec::new();
         for line in reader.lines() {
             if let Ok(line) = line
-                && let Ok(entry) = serde_json::from_str::<AuditEntry>(&line) {
-                    entries.push(entry);
-                }
+                && let Ok(entry) = serde_json::from_str::<AuditEntry>(&line)
+            {
+                entries.push(entry);
+            }
         }
         Ok(entries)
     }

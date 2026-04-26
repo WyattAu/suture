@@ -132,7 +132,11 @@ pub(crate) fn create_lfs_pointer(hash: &str, size: u64, name: &str) -> String {
     )
 }
 
-pub(crate) fn store_lfs_object(_repo_root: &Path, hash: &str, data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) fn store_lfs_object(
+    _repo_root: &Path,
+    hash: &str,
+    data: &[u8],
+) -> Result<(), Box<dyn std::error::Error>> {
     let path = lfs_object_path(hash);
     if !path.exists() {
         if let Some(parent) = path.parent() {
@@ -143,7 +147,10 @@ pub(crate) fn store_lfs_object(_repo_root: &Path, hash: &str, data: &[u8]) -> Re
     Ok(())
 }
 
-pub(crate) fn read_lfs_object(_repo_root: &Path, hash: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+pub(crate) fn read_lfs_object(
+    _repo_root: &Path,
+    hash: &str,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let path = lfs_object_path(hash);
     if !path.exists() {
         return Err(format!("LFS object not found: {}", hash).into());
@@ -185,10 +192,7 @@ pub(crate) fn pattern_matches(pattern: &str, rel_path: &str) -> bool {
     }
 }
 
-pub(crate) fn matches_lfs_pattern(
-    rel_path: &str,
-    rules: &[LfsTrackRule],
-) -> Option<u64> {
+pub(crate) fn matches_lfs_pattern(rel_path: &str, rules: &[LfsTrackRule]) -> Option<u64> {
     for rule in rules {
         if pattern_matches(&rule.pattern, rel_path) {
             if let Some(ref limit_str) = rule.size_limit
@@ -202,18 +206,18 @@ pub(crate) fn matches_lfs_pattern(
     None
 }
 
-pub(crate) fn should_track_as_lfs(
-    repo_root: &Path,
-    rel_path: &str,
-    file_size: u64,
-) -> Option<u64> {
+pub(crate) fn should_track_as_lfs(repo_root: &Path, rel_path: &str, file_size: u64) -> Option<u64> {
     let config = load_lfs_config();
     if config.rules.is_empty() {
         return None;
     }
     let threshold = get_threshold(repo_root);
     let effective_limit = matches_lfs_pattern(rel_path, &config.rules)?;
-    let limit = if effective_limit == 0 { threshold } else { effective_limit };
+    let limit = if effective_limit == 0 {
+        threshold
+    } else {
+        effective_limit
+    };
     if file_size > limit {
         return Some(limit);
     }
@@ -271,7 +275,8 @@ fn list_lfs_pointers_in_tree() -> Vec<(String, LfsPointer)> {
     pointers
 }
 
-pub(crate) fn resolve_lfs_pointers_in_workdir() -> Result<(usize, usize), Box<dyn std::error::Error>> {
+pub(crate) fn resolve_lfs_pointers_in_workdir() -> Result<(usize, usize), Box<dyn std::error::Error>>
+{
     let mut resolved = 0usize;
     let mut missing = 0usize;
 
@@ -307,7 +312,10 @@ pub(crate) fn resolve_lfs_pointers_in_workdir() -> Result<(usize, usize), Box<dy
             }
             Err(_) => {
                 missing += 1;
-                eprintln!("warning: LFS object not found: {} (run `suture lfs pull`)", path.display());
+                eprintln!(
+                    "warning: LFS object not found: {} (run `suture lfs pull`)",
+                    path.display()
+                );
             }
         }
     }
@@ -331,7 +339,10 @@ pub(crate) enum LfsAction {
 
 pub(crate) async fn cmd_lfs(action: &LfsAction) -> Result<(), Box<dyn std::error::Error>> {
     match action {
-        LfsAction::Track { pattern, size_limit } => cmd_lfs_track(pattern, size_limit),
+        LfsAction::Track {
+            pattern,
+            size_limit,
+        } => cmd_lfs_track(pattern, size_limit),
         LfsAction::Untrack { pattern } => cmd_lfs_untrack(pattern),
         LfsAction::List => cmd_lfs_list(),
         LfsAction::Push => cmd_lfs_push().await,
@@ -340,7 +351,10 @@ pub(crate) async fn cmd_lfs(action: &LfsAction) -> Result<(), Box<dyn std::error
     }
 }
 
-fn cmd_lfs_track(pattern: &str, size_limit: &Option<String>) -> Result<(), Box<dyn std::error::Error>> {
+fn cmd_lfs_track(
+    pattern: &str,
+    size_limit: &Option<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let _repo = suture_core::repository::Repository::open(Path::new("."))
         .map_err(|e| format!("not a suture repository: {e}"))?;
 
@@ -365,7 +379,11 @@ fn cmd_lfs_track(pattern: &str, size_limit: &Option<String>) -> Result<(), Box<d
     println!("Tracking {}{}", pattern, limit_info);
 
     let threshold = get_threshold(Path::new("."));
-    println!("LFS threshold: {} bytes ({:.1} MB)", threshold, threshold as f64 / (1024.0 * 1024.0));
+    println!(
+        "LFS threshold: {} bytes ({:.1} MB)",
+        threshold,
+        threshold as f64 / (1024.0 * 1024.0)
+    );
 
     Ok(())
 }
@@ -431,7 +449,8 @@ async fn cmd_lfs_push() -> Result<(), Box<dyn std::error::Error>> {
         return Err("no remotes configured. Use `suture remote add origin <url>` first.".into());
     }
     let remote_name = "origin";
-    let url = repo.get_remote_url(remote_name)
+    let url = repo
+        .get_remote_url(remote_name)
         .map_err(|e| format!("remote '{}' not found: {e}", remote_name))?;
 
     let pointers = list_lfs_pointers_in_tree();
@@ -446,7 +465,11 @@ async fn cmd_lfs_push() -> Result<(), Box<dyn std::error::Error>> {
         if obj_path.exists() {
             to_upload.push((path.clone(), ptr.clone()));
         } else {
-            eprintln!("warning: LFS object missing locally: {} ({})", path, &ptr.oid[..16]);
+            eprintln!(
+                "warning: LFS object missing locally: {} ({})",
+                path,
+                &ptr.oid[..16]
+            );
         }
     }
 
@@ -458,9 +481,10 @@ async fn cmd_lfs_push() -> Result<(), Box<dyn std::error::Error>> {
     println!("Pushing {} LFS object(s) to {}...", to_upload.len(), url);
 
     let client = reqwest::Client::new();
-    let objects: Vec<serde_json::Value> = to_upload.iter().map(|(_, ptr)| {
-        serde_json::json!({"oid": ptr.oid, "size": ptr.size})
-    }).collect();
+    let objects: Vec<serde_json::Value> = to_upload
+        .iter()
+        .map(|(_, ptr)| serde_json::json!({"oid": ptr.oid, "size": ptr.size}))
+        .collect();
 
     let batch_body = serde_json::json!({
         "repo_id": crate::remote_proto::derive_repo_id(&url, remote_name),
@@ -476,7 +500,9 @@ async fn cmd_lfs_push() -> Result<(), Box<dyn std::error::Error>> {
         .json()
         .await?;
 
-    let actions = batch_resp.get("objects").and_then(|o| o.as_array())
+    let actions = batch_resp
+        .get("objects")
+        .and_then(|o| o.as_array())
         .ok_or("invalid batch response: missing 'objects'")?;
 
     let mut uploaded = 0usize;
@@ -485,7 +511,10 @@ async fn cmd_lfs_push() -> Result<(), Box<dyn std::error::Error>> {
 
     for action_val in actions {
         let oid = action_val.get("oid").and_then(|v| v.as_str()).unwrap_or("");
-        let action = action_val.get("action").and_then(|v| v.as_str()).unwrap_or("none");
+        let action = action_val
+            .get("action")
+            .and_then(|v| v.as_str())
+            .unwrap_or("none");
 
         match action {
             "none" => {
@@ -502,7 +531,9 @@ async fn cmd_lfs_push() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 };
 
-                let href = action_val.get("href").and_then(|v| v.as_str())
+                let href = action_val
+                    .get("href")
+                    .and_then(|v| v.as_str())
                     .ok_or("upload action missing href")?;
                 let upload_url = if href.starts_with('/') {
                     format!("{}{}", url, href)
@@ -519,15 +550,25 @@ async fn cmd_lfs_push() -> Result<(), Box<dyn std::error::Error>> {
 
                 if upload_resp.status().is_success() {
                     uploaded += 1;
-                    println!("  uploaded: {} ({} bytes)", &oid[..16],
-                        action_val.get("size").and_then(|v| v.as_u64()).unwrap_or(0));
+                    println!(
+                        "  uploaded: {} ({} bytes)",
+                        &oid[..16],
+                        action_val.get("size").and_then(|v| v.as_u64()).unwrap_or(0)
+                    );
                 } else {
-                    eprintln!("  error: upload failed for {}: {}", &oid[..16], upload_resp.status());
+                    eprintln!(
+                        "  error: upload failed for {}: {}",
+                        &oid[..16],
+                        upload_resp.status()
+                    );
                     failed += 1;
                 }
             }
             "error" => {
-                let msg = action_val.get("error").and_then(|v| v.as_str()).unwrap_or("unknown error");
+                let msg = action_val
+                    .get("error")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown error");
                 eprintln!("  error: server rejected {}: {}", &oid[..16], msg);
                 failed += 1;
             }
@@ -538,7 +579,10 @@ async fn cmd_lfs_push() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!();
-    println!("LFS push complete: {} uploaded, {} skipped, {} failed", uploaded, skipped, failed);
+    println!(
+        "LFS push complete: {} uploaded, {} skipped, {} failed",
+        uploaded, skipped, failed
+    );
     if failed > 0 {
         return Err(format!("{} LFS object(s) failed to upload", failed).into());
     }
@@ -554,7 +598,8 @@ async fn cmd_lfs_pull() -> Result<(), Box<dyn std::error::Error>> {
         return Err("no remotes configured. Use `suture remote add origin <url>` first.".into());
     }
     let remote_name = "origin";
-    let url = repo.get_remote_url(remote_name)
+    let url = repo
+        .get_remote_url(remote_name)
         .map_err(|e| format!("remote '{}' not found: {e}", remote_name))?;
 
     let pointers = list_lfs_pointers_in_tree();
@@ -572,12 +617,17 @@ async fn cmd_lfs_pull() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    println!("Downloading {} LFS object(s) from {}...", missing.len(), url);
+    println!(
+        "Downloading {} LFS object(s) from {}...",
+        missing.len(),
+        url
+    );
 
     let client = reqwest::Client::new();
-    let objects: Vec<serde_json::Value> = missing.iter().map(|(_, ptr)| {
-        serde_json::json!({"oid": ptr.oid, "size": ptr.size})
-    }).collect();
+    let objects: Vec<serde_json::Value> = missing
+        .iter()
+        .map(|(_, ptr)| serde_json::json!({"oid": ptr.oid, "size": ptr.size}))
+        .collect();
 
     let batch_body = serde_json::json!({
         "repo_id": crate::remote_proto::derive_repo_id(&url, remote_name),
@@ -593,7 +643,9 @@ async fn cmd_lfs_pull() -> Result<(), Box<dyn std::error::Error>> {
         .json()
         .await?;
 
-    let actions = batch_resp.get("objects").and_then(|o| o.as_array())
+    let actions = batch_resp
+        .get("objects")
+        .and_then(|o| o.as_array())
         .ok_or("invalid batch response: missing 'objects'")?;
 
     let mut downloaded = 0usize;
@@ -602,7 +654,10 @@ async fn cmd_lfs_pull() -> Result<(), Box<dyn std::error::Error>> {
 
     for action_val in actions {
         let oid = action_val.get("oid").and_then(|v| v.as_str()).unwrap_or("");
-        let action = action_val.get("action").and_then(|v| v.as_str()).unwrap_or("none");
+        let action = action_val
+            .get("action")
+            .and_then(|v| v.as_str())
+            .unwrap_or("none");
 
         match action {
             "none" => {
@@ -610,7 +665,9 @@ async fn cmd_lfs_pull() -> Result<(), Box<dyn std::error::Error>> {
                 skipped += 1;
             }
             "download" => {
-                let href = action_val.get("href").and_then(|v| v.as_str())
+                let href = action_val
+                    .get("href")
+                    .and_then(|v| v.as_str())
                     .ok_or("download action missing href")?;
                 let download_url = if href.starts_with('/') {
                     format!("{}{}", url, href)
@@ -634,12 +691,19 @@ async fn cmd_lfs_pull() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                 } else {
-                    eprintln!("  error: download failed for {}: {}", &oid[..16], download_resp.status());
+                    eprintln!(
+                        "  error: download failed for {}: {}",
+                        &oid[..16],
+                        download_resp.status()
+                    );
                     failed += 1;
                 }
             }
             "error" => {
-                let msg = action_val.get("error").and_then(|v| v.as_str()).unwrap_or("unknown error");
+                let msg = action_val
+                    .get("error")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown error");
                 eprintln!("  error: server rejected {}: {}", &oid[..16], msg);
                 failed += 1;
             }
@@ -650,7 +714,10 @@ async fn cmd_lfs_pull() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!();
-    println!("LFS pull complete: {} downloaded, {} skipped, {} failed", downloaded, skipped, failed);
+    println!(
+        "LFS pull complete: {} downloaded, {} skipped, {} failed",
+        downloaded, skipped, failed
+    );
     if failed > 0 {
         return Err(format!("{} LFS object(s) failed to download", failed).into());
     }
@@ -702,7 +769,8 @@ mod tests {
 
     #[test]
     fn test_is_lfs_pointer() {
-        let pointer = "version https://suture.dev/lfs/1\noid sha256:abc123\nsize 100\nname test.mp4\n";
+        let pointer =
+            "version https://suture.dev/lfs/1\noid sha256:abc123\nsize 100\nname test.mp4\n";
         assert!(is_lfs_pointer(pointer.as_bytes()));
         assert!(!is_lfs_pointer(b"not a pointer"));
         assert!(!is_lfs_pointer(b""));
@@ -743,13 +811,19 @@ mod tests {
         assert_eq!(parse_human_size("1GB"), Some(1024 * 1024 * 1024));
         assert_eq!(parse_human_size("1024"), Some(1024));
         assert_eq!(parse_human_size("5B"), Some(5));
-        assert_eq!(parse_human_size("1.5MB"), Some((1.5 * 1024.0 * 1024.0) as u64));
+        assert_eq!(
+            parse_human_size("1.5MB"),
+            Some((1.5 * 1024.0 * 1024.0) as u64)
+        );
     }
 
     #[test]
     fn test_lfs_object_path() {
         let path = lfs_object_path("abcdef1234567890");
-        assert!(path.to_str().unwrap().contains(".suture/lfs/objects/ab/abcdef1234567890"));
+        let path_str = path.to_str().unwrap();
+        // Use forward-slash replacement for cross-platform comparison (Windows uses \)
+        let normalized = path_str.replace('\\', "/");
+        assert!(normalized.contains(".suture/lfs/objects/ab/abcdef1234567890"));
     }
 
     #[test]
@@ -813,7 +887,8 @@ mod tests {
         let content = toml::to_string_pretty(&config).unwrap();
         std::fs::write(&config_path, &content).unwrap();
 
-        let loaded: LfsConfig = toml::from_str(&std::fs::read_to_string(&config_path).unwrap()).unwrap();
+        let loaded: LfsConfig =
+            toml::from_str(&std::fs::read_to_string(&config_path).unwrap()).unwrap();
         assert_eq!(loaded.rules.len(), 2);
         assert_eq!(loaded.rules[0].pattern, "*.mp4");
         assert_eq!(loaded.rules[0].size_limit, None);
@@ -824,7 +899,12 @@ mod tests {
     #[test]
     fn test_store_and_read_lfs_object() {
         let dir = tempfile::tempdir().unwrap();
-        let suture_dir = dir.path().join(".suture").join("lfs").join("objects").join("ab");
+        let suture_dir = dir
+            .path()
+            .join(".suture")
+            .join("lfs")
+            .join("objects")
+            .join("ab");
         std::fs::create_dir_all(&suture_dir).unwrap();
 
         let hash = "abcdef1234567890";
@@ -842,6 +922,9 @@ mod tests {
     fn test_compute_sha256() {
         let hash = compute_sha256(b"test data");
         assert_eq!(hash.len(), 64);
-        assert_eq!(hash, "916f0027a575074ce72a331777c3478d6513f786a591bd892da1a577bf2335f9");
+        assert_eq!(
+            hash,
+            "916f0027a575074ce72a331777c3478d6513f786a591bd892da1a577bf2335f9"
+        );
     }
 }

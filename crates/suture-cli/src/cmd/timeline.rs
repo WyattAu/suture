@@ -13,11 +13,9 @@ pub(crate) async fn cmd_timeline(
             timeline_export(output, at.as_deref()).await
         }
         crate::TimelineAction::Summary { at } => timeline_summary(at).await,
-        crate::TimelineAction::Diff {
-            from,
-            to,
-            detailed,
-        } => timeline_diff(from, to, *detailed).await,
+        crate::TimelineAction::Diff { from, to, detailed } => {
+            timeline_diff(from, to, *detailed).await
+        }
         crate::TimelineAction::List { otio_only } => timeline_list(*otio_only).await,
     }
 }
@@ -31,13 +29,11 @@ async fn timeline_import(
         return Err(format!("file not found: {file}").into());
     }
 
-    let content = std::fs::read_to_string(src_path)
-        .map_err(|e| format!("cannot read {file}: {e}"))?;
+    let content =
+        std::fs::read_to_string(src_path).map_err(|e| format!("cannot read {file}: {e}"))?;
 
     let parsed = parse_otio_minimal(&content);
-    let filename = src_path
-        .file_name()
-        .ok_or("cannot determine filename")?;
+    let filename = src_path.file_name().ok_or("cannot determine filename")?;
     let mut repo = suture_core::repository::Repository::open(StdPath::new("."))?;
 
     let dest = StdPath::new(filename);
@@ -75,10 +71,7 @@ async fn timeline_import(
     Ok(())
 }
 
-async fn timeline_export(
-    output: &str,
-    at: Option<&str>,
-) -> Result<(), Box<dyn std::error::Error>> {
+async fn timeline_export(output: &str, at: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
     let repo = suture_core::repository::Repository::open(StdPath::new("."))?;
     let ref_str = at.unwrap_or("HEAD");
     let patches = repo.all_patches();
@@ -204,9 +197,11 @@ async fn timeline_diff(
     }
 
     for path in &common {
-        let from_hash = from_tree.get(path)
+        let from_hash = from_tree
+            .get(path)
             .ok_or_else(|| format!("hash missing for '{}' in source tree", path))?;
-        let to_hash = to_tree.get(path)
+        let to_hash = to_tree
+            .get(path)
             .ok_or_else(|| format!("hash missing for '{}' in target tree", path))?;
         if from_hash == to_hash {
             continue;
@@ -223,15 +218,7 @@ async fn timeline_diff(
         let from_lines: Vec<&str> = from_str.lines().collect();
         let to_lines: Vec<&str> = to_str.lines().collect();
 
-        let diffs = difflib::unified_diff(
-            &from_lines,
-            &to_lines,
-            path,
-            path,
-            "",
-            "",
-            3,
-        );
+        let diffs = difflib::unified_diff(&from_lines, &to_lines, path, path, "", "", 3);
         for diff_line in diffs {
             print!("{diff_line}");
         }
@@ -323,10 +310,7 @@ fn parse_otio_minimal(content: &str) -> OtioInfo {
     if let Some(tracks) = value.get("tracks").and_then(|v| v.as_array()) {
         track_count = tracks.len();
         for track in tracks {
-            let kind = track
-                .get("kind")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let kind = track.get("kind").and_then(|v| v.as_str()).unwrap_or("");
             match kind {
                 "Video" | "Sequence" => video_tracks += 1,
                 "Audio" => audio_tracks += 1,

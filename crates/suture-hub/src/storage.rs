@@ -3,7 +3,7 @@
 //! Stores repositories, patches, branches, blobs, and authorized public keys
 //! in a single SQLite database. This replaces the in-memory HashMap approach.
 
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use std::path::Path;
 use thiserror::Error;
 
@@ -808,8 +808,7 @@ impl HubStorage {
             .conn
             .lock()
             .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
-        let count: i64 =
-            conn.query_row("SELECT COUNT(*) FROM tokens", [], |row| row.get(0))?;
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM tokens", [], |row| row.get(0))?;
         Ok(count > 0)
     }
 
@@ -818,8 +817,7 @@ impl HubStorage {
             .conn
             .lock()
             .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
-        let count: i64 =
-            conn.query_row("SELECT COUNT(*) FROM users", [], |row| row.get(0))?;
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM users", [], |row| row.get(0))?;
         Ok(count > 0)
     }
 
@@ -1249,10 +1247,7 @@ impl HubStorage {
             .conn
             .lock()
             .map_err(|e| StorageError::Custom(format!("lock poisoned: {e}")))?;
-        conn.execute(
-            "DELETE FROM replication_peers WHERE id = ?1",
-            params![id],
-        )?;
+        conn.execute("DELETE FROM replication_peers WHERE id = ?1", params![id])?;
         Ok(())
     }
 

@@ -79,7 +79,10 @@ fn find_git_dir(path: &Path) -> Result<PathBuf, Box<dyn std::error::Error>> {
     }
 }
 
-fn read_git_object(git_dir: &Path, sha: &str) -> Result<(String, Vec<u8>), Box<dyn std::error::Error>> {
+fn read_git_object(
+    git_dir: &Path,
+    sha: &str,
+) -> Result<(String, Vec<u8>), Box<dyn std::error::Error>> {
     if sha.len() < 4 {
         return Err("SHA too short".into());
     }
@@ -211,7 +214,9 @@ fn read_head_sha(git_dir: &Path) -> Result<String, Box<dyn std::error::Error>> {
                 if line.starts_with('#') || line.starts_with('^') {
                     continue;
                 }
-                if let Some((sha, r)) = line.split_once(' ') && r == ref_path {
+                if let Some((sha, r)) = line.split_once(' ')
+                    && r == ref_path
+                {
                     return Ok(sha.to_string());
                 }
             }
@@ -506,7 +511,10 @@ fn cmd_driver_list() -> Result<(), Box<dyn std::error::Error>> {
         if patterns.is_empty() {
             println!("  .gitattributes:    no suture patterns found");
         } else {
-            println!("  .gitattributes:    {} patterns configured", patterns.len());
+            println!(
+                "  .gitattributes:    {} patterns configured",
+                patterns.len()
+            );
             for p in &patterns {
                 println!("    {}", p.trim());
             }
@@ -544,15 +552,25 @@ fn cmd_driver_list() -> Result<(), Box<dyn std::error::Error>> {
 
     let script_path = std::path::Path::new(SUTURE_DRIVER_SCRIPT_PATH);
     if script_path.exists() {
-        println!("  driver script:     {} (exists)", SUTURE_DRIVER_SCRIPT_PATH);
+        println!(
+            "  driver script:     {} (exists)",
+            SUTURE_DRIVER_SCRIPT_PATH
+        );
     } else {
-        println!("  driver script:     {} (missing)", SUTURE_DRIVER_SCRIPT_PATH);
+        println!(
+            "  driver script:     {} (missing)",
+            SUTURE_DRIVER_SCRIPT_PATH
+        );
     }
 
     Ok(())
 }
 
-fn write_blob_to_disk(git_dir: &Path, path: &str, blob_sha: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn write_blob_to_disk(
+    git_dir: &Path,
+    path: &str,
+    blob_sha: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let (_, data) = read_git_object(git_dir, blob_sha)?;
     let full = std::path::Path::new(path);
     if let Some(parent) = full.parent() {
@@ -581,10 +599,7 @@ fn git_import(path: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
         && let Some(patch) = repo.dag().get_patch(&head_id)
         && patch.message == *latest_git_msg
     {
-        println!(
-            "Already up to date (latest commit: \"{}\")",
-            latest_git_msg
-        );
+        println!("Already up to date (latest commit: \"{}\")", latest_git_msg);
         return Ok(());
     }
 
@@ -716,8 +731,7 @@ fn git_log(path: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let mut prev_tree: HashMap<String, String> = HashMap::new();
-    let mut commit_infos: Vec<(String, String, usize, usize, usize)> =
-        Vec::new();
+    let mut commit_infos: Vec<(String, String, usize, usize, usize)> = Vec::new();
 
     for (sha, _reflog_msg) in &reflog_entries {
         let commit = match read_commit(&git_dir, sha) {
@@ -752,19 +766,20 @@ fn git_log(path: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        commit_infos.push((sha.clone(), commit.message.clone(), added, modified, deleted));
+        commit_infos.push((
+            sha.clone(),
+            commit.message.clone(),
+            added,
+            modified,
+            deleted,
+        ));
         prev_tree = tree;
     }
 
     let total = commit_infos.len();
-    for (pos, (sha, message, added, modified, deleted)) in
-        commit_infos.iter().enumerate().rev()
-    {
+    for (pos, (sha, message, added, modified, deleted)) in commit_infos.iter().enumerate().rev() {
         let short = &sha[..8];
-        let branch = sha_to_branch
-            .get(sha)
-            .map(|s| s.as_str())
-            .unwrap_or("-");
+        let branch = sha_to_branch.get(sha).map(|s| s.as_str()).unwrap_or("-");
         let is_head = pos == total - 1;
         let marker = if is_head { " * " } else { "   " };
 
@@ -827,9 +842,7 @@ fn git_status(path: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
                 if s.patch_count <= 1 {
                     println!("  Suture repo: empty (will import onto main)");
                 } else {
-                    println!(
-                        "  Suture repo: has history (will import to git-import/main)"
-                    );
+                    println!("  Suture repo: has history (will import to git-import/main)");
                 }
             }
             Err(_) => {
@@ -850,10 +863,7 @@ mod tests {
         let line = "0000000000000000000000000000000000000000 abc123def4567890123456789012345678901234 John Doe <john@example.com> 1700000000 +0000\tInitial commit";
         let entries = parse_reflog_line(line);
         assert_eq!(entries.len(), 1);
-        assert_eq!(
-            entries[0].0,
-            "abc123def4567890123456789012345678901234"
-        );
+        assert_eq!(entries[0].0, "abc123def4567890123456789012345678901234");
         assert_eq!(entries[0].1, "Initial commit");
     }
 
@@ -875,17 +885,17 @@ mod tests {
     fn test_parse_commit_object() {
         let data = b"tree abc123def4567890123456789012345678901234\nparent def4567890123456789012345678901234567890\nauthor Alice <alice@example.com> 1700000000 +0000\ncommitter Alice <alice@example.com> 1700000000 +0000\n\nAdd feature X\n\nDetailed description here.";
         let commit = parse_commit(data).unwrap();
-        assert_eq!(
-            commit.tree,
-            "abc123def4567890123456789012345678901234"
-        );
+        assert_eq!(commit.tree, "abc123def4567890123456789012345678901234");
         assert_eq!(commit.parents.len(), 1);
         assert_eq!(
             commit.parents[0],
             "def4567890123456789012345678901234567890"
         );
         assert!(commit.author.contains("Alice"));
-        assert_eq!(commit.message, "Add feature X\n\nDetailed description here.");
+        assert_eq!(
+            commit.message,
+            "Add feature X\n\nDetailed description here."
+        );
     }
 
     #[test]
@@ -947,10 +957,8 @@ mod tests {
         let original = b"blob 5\0hello";
         let mut compressed = Vec::new();
         {
-            let mut encoder = flate2::write::ZlibEncoder::new(
-                &mut compressed,
-                flate2::Compression::default(),
-            );
+            let mut encoder =
+                flate2::write::ZlibEncoder::new(&mut compressed, flate2::Compression::default());
             std::io::Write::write_all(&mut encoder, original).unwrap();
             encoder.finish().unwrap();
         }
@@ -965,10 +973,8 @@ mod tests {
         let original = b"";
         let mut compressed = Vec::new();
         {
-            let mut encoder = flate2::write::ZlibEncoder::new(
-                &mut compressed,
-                flate2::Compression::default(),
-            );
+            let mut encoder =
+                flate2::write::ZlibEncoder::new(&mut compressed, flate2::Compression::default());
             std::io::Write::write_all(&mut encoder, original).unwrap();
             encoder.finish().unwrap();
         }

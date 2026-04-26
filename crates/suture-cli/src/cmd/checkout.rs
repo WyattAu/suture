@@ -11,7 +11,10 @@ pub(crate) async fn cmd_checkout(
 
         let existing: Vec<String> = repo.list_branches().into_iter().map(|(n, _)| n).collect();
         if existing.iter().any(|b| b == name) {
-            return Err(format!("branch '{name}' already exists (use 'suture checkout {name}' to switch to it)").into());
+            return Err(format!(
+                "branch '{name}' already exists (use 'suture checkout {name}' to switch to it)"
+            )
+            .into());
         }
 
         repo.create_branch(name, source)
@@ -29,7 +32,10 @@ pub(crate) async fn cmd_checkout(
             } else {
                 String::new()
             };
-            return Err(format!("branch '{target}' not found{hint} (use 'suture branch' to create it)").into());
+            return Err(format!(
+                "branch '{target}' not found{hint} (use 'suture branch' to create it)"
+            )
+            .into());
         }
 
         if let Err(e) = repo.checkout(target) {
@@ -39,8 +45,12 @@ pub(crate) async fn cmd_checkout(
             if let Ok(Some(id)) = repo.get_detached_head() {
                 let short = &id.to_hex()[..12];
                 println!("Note: checking out '{}'.", short);
-                println!("You are in 'detached HEAD' state. You can look around, make experimental");
-                println!("changes and commit them, and you can discard any commits you make in this");
+                println!(
+                    "You are in 'detached HEAD' state. You can look around, make experimental"
+                );
+                println!(
+                    "changes and commit them, and you can discard any commits you make in this"
+                );
                 println!("state without impacting any branches by switching back to a branch.");
             }
         } else {
@@ -54,7 +64,10 @@ pub(crate) async fn cmd_checkout(
                 println!("Resolved {} LFS object(s)", resolved);
             }
             if missing > 0 {
-                eprintln!("{} LFS object(s) not found locally (run `suture lfs pull`)", missing);
+                eprintln!(
+                    "{} LFS object(s) not found locally (run `suture lfs pull`)",
+                    missing
+                );
             }
         }
         Err(e) => {

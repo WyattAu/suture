@@ -4,14 +4,14 @@ mod shm;
 use std::collections::HashMap;
 use std::error::Error;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 use std::time::Duration;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
 use clap::Subcommand;
 use notify::{Event, EventKind, RecursiveMode, Watcher, recommended_watcher};
 use suture_core::patch::types::{OperationType, Patch, TouchSet};
-use suture_core::repository::{Repository, RepoError};
+use suture_core::repository::{RepoError, Repository};
 use suture_protocol::{
     BlobRef, BranchProto, PatchProto, PullRequest, PullResponse, PushRequest, PushResponse,
     hex_to_hash,
@@ -205,7 +205,10 @@ impl AutoCommit {
         }
     }
 
-    pub async fn handle_changes(&self, changes: &[FileChangeEvent]) -> Result<Option<String>, RepoError> {
+    pub async fn handle_changes(
+        &self,
+        changes: &[FileChangeEvent],
+    ) -> Result<Option<String>, RepoError> {
         let mut repo = Repository::open(&self.repo_path)?;
 
         let mut added = 0;
@@ -227,9 +230,7 @@ impl AutoCommit {
             return Ok(None);
         }
 
-        let message = self
-            .commit_template
-            .replace("{count}", &added.to_string());
+        let message = self.commit_template.replace("{count}", &added.to_string());
 
         match repo.commit(&message) {
             Ok(patch_id) => {
@@ -288,8 +289,8 @@ impl AutoSync {
         let remote_url = {
             let rp = repo_path.clone();
             tokio::task::spawn_blocking(move || {
-                let repo = Repository::open(&rp)
-                    .map_err(|e| format!("failed to open repo: {e}"))?;
+                let repo =
+                    Repository::open(&rp).map_err(|e| format!("failed to open repo: {e}"))?;
                 match repo.get_remote_url("origin") {
                     Ok(url) => Ok(Some(url)),
                     Err(_) => {
@@ -327,8 +328,8 @@ impl AutoSync {
         let known_branches: Vec<(String, String)> = {
             let rp = repo_path.to_path_buf();
             tokio::task::spawn_blocking(move || {
-                let repo = Repository::open(&rp)
-                    .map_err(|e| format!("failed to open repo: {e}"))?;
+                let repo =
+                    Repository::open(&rp).map_err(|e| format!("failed to open repo: {e}"))?;
                 Ok(repo
                     .list_branches()
                     .into_iter()
@@ -464,14 +465,15 @@ impl AutoSync {
                     Repository::open(&rp).map_err(|e| format!("failed to open repo: {e}"))?;
 
                 let push_state_key = "remote.origin.last_pushed";
-                let patches: Vec<Patch> =
-                    if let Some(last_pushed_hex) = repo.get_config(push_state_key).map_err(|e| e.to_string())? {
-                        let last_pushed = suture_common::Hash::from_hex(&last_pushed_hex)
-                            .map_err(|e| format!("invalid last_pushed hash: {e}"))?;
-                        repo.patches_since(&last_pushed)
-                    } else {
-                        repo.all_patches()
-                    };
+                let patches: Vec<Patch> = if let Some(last_pushed_hex) =
+                    repo.get_config(push_state_key).map_err(|e| e.to_string())?
+                {
+                    let last_pushed = suture_common::Hash::from_hex(&last_pushed_hex)
+                        .map_err(|e| format!("invalid last_pushed hash: {e}"))?;
+                    repo.patches_since(&last_pushed)
+                } else {
+                    repo.all_patches()
+                };
 
                 if patches.is_empty() {
                     return Ok(PushData {
@@ -483,9 +485,9 @@ impl AutoSync {
                 }
 
                 let branches = repo.list_branches();
-                let (_, head_id) = repo.head().unwrap_or_else(|_| {
-                    ("main".to_string(), suture_common::Hash::ZERO)
-                });
+                let (_, head_id) = repo
+                    .head()
+                    .unwrap_or_else(|_| ("main".to_string(), suture_common::Hash::ZERO));
 
                 let b64 = base64::engine::general_purpose::STANDARD;
                 let mut blobs = Vec::new();
@@ -631,10 +633,7 @@ impl Daemon {
         let (shutdown_tx, _) = broadcast::channel::<()>(2);
         let (change_tx, mut change_rx) = mpsc::channel::<Vec<FileChangeEvent>>(64);
 
-        let watcher = FileWatcher::new(
-            self.config.repo_path.clone(),
-            DEBOUNCE_WINDOW,
-        );
+        let watcher = FileWatcher::new(self.config.repo_path.clone(), DEBOUNCE_WINDOW);
         let watch_shutdown = shutdown_tx.subscribe();
         watcher.run(watch_shutdown, change_tx.clone());
 
@@ -711,10 +710,7 @@ impl Daemon {
         let (shutdown_tx, _) = broadcast::channel::<()>(2);
         let (change_tx, mut change_rx) = mpsc::channel::<Vec<FileChangeEvent>>(64);
 
-        let watcher = FileWatcher::new(
-            self.config.repo_path.clone(),
-            DEBOUNCE_WINDOW,
-        );
+        let watcher = FileWatcher::new(self.config.repo_path.clone(), DEBOUNCE_WINDOW);
         let watch_shutdown = shutdown_tx.subscribe();
         watcher.run(watch_shutdown, change_tx.clone());
 
@@ -869,14 +865,13 @@ pub async fn execute_command(cmd: DaemonCommand) -> Result<(), Box<dyn Error + S
             let mut manager = mount::MountManager::new(repo_path);
             match mount_type.as_str() {
                 "fuse" => {
-                    let mount_path = path
-                        .ok_or_else(|| "missing --path for FUSE mount".to_string())?;
+                    let mount_path =
+                        path.ok_or_else(|| "missing --path for FUSE mount".to_string())?;
                     let id = manager.mount_fuse(&mount_path)?;
                     println!("FUSE mounted: {id}");
                 }
                 "webdav" => {
-                    let port = port
-                        .ok_or_else(|| "missing --port for WebDAV mount".to_string())?;
+                    let port = port.ok_or_else(|| "missing --port for WebDAV mount".to_string())?;
                     let id = manager.mount_webdav(port)?;
                     println!("WebDAV mounted: {id}");
                 }
@@ -971,8 +966,7 @@ fn derive_repo_id(url: &str, remote_name: &str) -> String {
 fn proto_to_patch(proto: &PatchProto) -> Result<Patch, String> {
     use suture_common::Hash;
 
-    let id = Hash::from_hex(&proto.id.value)
-        .map_err(|e| format!("invalid patch id: {e}"))?;
+    let id = Hash::from_hex(&proto.id.value).map_err(|e| format!("invalid patch id: {e}"))?;
     let parent_ids: Vec<suture_common::Hash> = proto
         .parent_ids
         .iter()
@@ -1064,7 +1058,7 @@ fn collect_blobs_from_patch(
 mod tests {
     use super::*;
     use std::fs;
-    use tokio::time::{timeout, Duration};
+    use tokio::time::{Duration, timeout};
 
     fn init_tracing() {
         let _ = tracing_subscriber::fmt()
@@ -1133,7 +1127,10 @@ mod tests {
         });
 
         drop(shutdown_tx);
-        assert!(result.unwrap_or(false), "file watcher should detect new file creation");
+        assert!(
+            result.unwrap_or(false),
+            "file watcher should detect new file creation"
+        );
     }
 
     #[test]
@@ -1152,7 +1149,11 @@ mod tests {
         std::thread::sleep(Duration::from_millis(200));
 
         for i in 0..10 {
-            fs::write(repo_path.join(format!("rapid_{i}.txt")), format!("content {i}")).unwrap();
+            fs::write(
+                repo_path.join(format!("rapid_{i}.txt")),
+                format!("content {i}"),
+            )
+            .unwrap();
         }
 
         let rt = tokio::runtime::Builder::new_current_thread()
@@ -1177,7 +1178,10 @@ mod tests {
         });
 
         let (batches, changes) = result.unwrap();
-        assert!(changes >= 10, "should detect at least 10 changes, got {changes}");
+        assert!(
+            changes >= 10,
+            "should detect at least 10 changes, got {changes}"
+        );
         assert!(
             batches <= 5,
             "rapid changes should be debounced into few batches, got {batches}"
@@ -1270,7 +1274,11 @@ mod tests {
         );
 
         let result = auto_sync.sync_once().await;
-        assert!(result.is_ok(), "sync_once should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "sync_once should succeed: {:?}",
+            result.err()
+        );
 
         repo = Repository::open(&repo_path).unwrap();
         let last_pushed = repo
@@ -1281,7 +1289,8 @@ mod tests {
 
         let (_, head_id) = repo.head().unwrap();
         assert_eq!(
-            head_id.to_hex(), last_pushed,
+            head_id.to_hex(),
+            last_pushed,
             "last_pushed should match HEAD"
         );
 
@@ -1310,7 +1319,10 @@ mod tests {
 
         let auto_sync = AutoSync::new(repo_path.clone(), None, Duration::from_secs(60));
         let result = auto_sync.sync_once().await;
-        assert!(result.is_ok(), "sync_once with no remote should succeed gracefully");
+        assert!(
+            result.is_ok(),
+            "sync_once with no remote should succeed gracefully"
+        );
     }
 
     #[tokio::test]
@@ -1323,11 +1335,7 @@ mod tests {
         repo.add_remote("origin", &bad_url).unwrap();
         drop(repo);
 
-        let auto_sync = AutoSync::new(
-            repo_path.clone(),
-            Some(bad_url),
-            Duration::from_secs(60),
-        );
+        let auto_sync = AutoSync::new(repo_path.clone(), Some(bad_url), Duration::from_secs(60));
 
         let result = auto_sync.sync_once().await;
         assert!(
@@ -1413,7 +1421,11 @@ mod tests {
         );
 
         let result1 = auto_sync.sync_once().await;
-        assert!(result1.is_ok(), "first sync should succeed: {:?}", result1.err());
+        assert!(
+            result1.is_ok(),
+            "first sync should succeed: {:?}",
+            result1.err()
+        );
 
         let repo = Repository::open(&repo_path).unwrap();
         let _log1 = repo.log(None).unwrap();
@@ -1422,7 +1434,11 @@ mod tests {
         fs::write(repo_path.join("file2.txt"), "second").unwrap();
         repo.add("file2.txt").unwrap();
         let commit_result = repo.commit("second commit");
-        assert!(commit_result.is_ok(), "second commit should succeed: {:?}", commit_result.err());
+        assert!(
+            commit_result.is_ok(),
+            "second commit should succeed: {:?}",
+            commit_result.err()
+        );
 
         let repo = Repository::open(&repo_path).unwrap();
         let log_before_sync = repo.log(None).unwrap();
@@ -1435,7 +1451,11 @@ mod tests {
             Duration::from_secs(60),
         );
         let result2 = auto_sync2.sync_once().await;
-        assert!(result2.is_ok(), "second sync should succeed: {:?}", result2.err());
+        assert!(
+            result2.is_ok(),
+            "second sync should succeed: {:?}",
+            result2.err()
+        );
 
         server_handle.abort();
     }
@@ -1484,10 +1504,11 @@ mod tests {
         );
 
         let repo = Repository::open(&repo_path).unwrap();
-        let last_pushed = repo
-            .get_config("remote.origin.last_pushed")
-            .unwrap();
-        assert!(last_pushed.is_some(), "last_pushed should be set after push");
+        let last_pushed = repo.get_config("remote.origin.last_pushed").unwrap();
+        assert!(
+            last_pushed.is_some(),
+            "last_pushed should be set after push"
+        );
 
         server_handle.abort();
     }
@@ -1528,7 +1549,10 @@ mod tests {
         });
 
         drop(shutdown_tx);
-        assert!(result.unwrap_or(false), "watcher should detect new file creation");
+        assert!(
+            result.unwrap_or(false),
+            "watcher should detect new file creation"
+        );
     }
 
     #[test]
@@ -1556,8 +1580,7 @@ mod tests {
             timeout(Duration::from_secs(5), async {
                 while let Some(changes) = change_rx.recv().await {
                     for c in &changes {
-                        if c.path.to_string_lossy() == "hello.txt"
-                            && c.kind == ChangeKind::Modified
+                        if c.path.to_string_lossy() == "hello.txt" && c.kind == ChangeKind::Modified
                         {
                             return true;
                         }
@@ -1569,7 +1592,10 @@ mod tests {
         });
 
         drop(shutdown_tx);
-        assert!(result.unwrap_or(false), "watcher should detect file modification");
+        assert!(
+            result.unwrap_or(false),
+            "watcher should detect file modification"
+        );
     }
 
     #[test]
@@ -1613,7 +1639,10 @@ mod tests {
         });
 
         drop(shutdown_tx);
-        assert!(result.unwrap_or(false), "watcher should detect file deletion");
+        assert!(
+            result.unwrap_or(false),
+            "watcher should detect file deletion"
+        );
     }
 
     #[test]
@@ -1801,16 +1830,10 @@ mod tests {
         }];
 
         let result1 = auto_commit.handle_changes(&changes).await;
-        assert!(
-            result1.is_ok(),
-            "first auto-commit should not error"
-        );
+        assert!(result1.is_ok(), "first auto-commit should not error");
 
         let result2 = auto_commit.handle_changes(&changes).await;
-        assert!(
-            result2.is_ok(),
-            "second auto-commit should not error"
-        );
+        assert!(result2.is_ok(), "second auto-commit should not error");
 
         let repo = Repository::open(&repo_path).unwrap();
         let log = repo.log(None).unwrap();
@@ -1826,11 +1849,7 @@ mod tests {
         init_tracing();
         let (_tmp, repo_path) = create_test_repo();
 
-        let daemon = Daemon::new(
-            repo_path,
-            None,
-            Duration::from_secs(3600),
-        );
+        let daemon = Daemon::new(repo_path, None, Duration::from_secs(3600));
 
         let handle = tokio::spawn(async move {
             match timeout(Duration::from_secs(2), daemon.run()).await {
@@ -1886,7 +1905,11 @@ mod tests {
         );
 
         let sync_result = auto_sync.sync_once().await;
-        assert!(sync_result.is_ok(), "sync should succeed: {:?}", sync_result.err());
+        assert!(
+            sync_result.is_ok(),
+            "sync should succeed: {:?}",
+            sync_result.err()
+        );
 
         let repo = Repository::open(&repo_path).unwrap();
         let status = repo.status().unwrap();
@@ -1894,10 +1917,11 @@ mod tests {
         assert!(status.head_patch.is_some(), "HEAD should be set");
         assert!(status.patch_count > 0, "should have patches after sync");
 
-        let last_pushed = repo
-            .get_config("remote.origin.last_pushed")
-            .unwrap();
-        assert!(last_pushed.is_some(), "last_pushed config should exist after sync");
+        let last_pushed = repo.get_config("remote.origin.last_pushed").unwrap();
+        assert!(
+            last_pushed.is_some(),
+            "last_pushed config should exist after sync"
+        );
 
         let (_, head_id) = repo.head().unwrap();
         assert_eq!(

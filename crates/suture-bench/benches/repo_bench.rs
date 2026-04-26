@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use suture_core::repository::Repository;
 use tempfile::TempDir;
 
@@ -143,36 +143,30 @@ fn bench_repo_diff(c: &mut Criterion) {
     let mut group = c.benchmark_group("repo_bench_diff");
 
     for n in [10usize, 100, 1000] {
-        group.bench_with_input(
-            BenchmarkId::new("diff_n_files_changed", n),
-            &n,
-            |b, &n| {
-                b.iter_with_setup(
-                    || {
-                        let dir = TempDir::new().unwrap();
-                        let mut repo = Repository::init(dir.path(), "bench").unwrap();
-                        for i in 0..n {
-                            let path = format!("file_{}.txt", i);
-                            std::fs::write(dir.path().join(&path), format!("original {}", i))
-                                .unwrap();
-                            repo.add(&path).unwrap();
-                        }
-                        repo.commit("initial").unwrap();
-                        for i in 0..n {
-                            let path = format!("file_{}.txt", i);
-                            std::fs::write(dir.path().join(&path), format!("modified {}", i))
-                                .unwrap();
-                            repo.add(&path).unwrap();
-                        }
-                        repo.commit("changes").unwrap();
-                        (dir, repo)
-                    },
-                    |(_dir, repo)| {
-                        let _ = black_box(repo.diff(Some("HEAD~1"), Some("HEAD")).unwrap());
-                    },
-                );
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("diff_n_files_changed", n), &n, |b, &n| {
+            b.iter_with_setup(
+                || {
+                    let dir = TempDir::new().unwrap();
+                    let mut repo = Repository::init(dir.path(), "bench").unwrap();
+                    for i in 0..n {
+                        let path = format!("file_{}.txt", i);
+                        std::fs::write(dir.path().join(&path), format!("original {}", i)).unwrap();
+                        repo.add(&path).unwrap();
+                    }
+                    repo.commit("initial").unwrap();
+                    for i in 0..n {
+                        let path = format!("file_{}.txt", i);
+                        std::fs::write(dir.path().join(&path), format!("modified {}", i)).unwrap();
+                        repo.add(&path).unwrap();
+                    }
+                    repo.commit("changes").unwrap();
+                    (dir, repo)
+                },
+                |(_dir, repo)| {
+                    let _ = black_box(repo.diff(Some("HEAD~1"), Some("HEAD")).unwrap());
+                },
+            );
+        });
     }
 
     group.finish();

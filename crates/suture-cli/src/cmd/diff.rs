@@ -2,10 +2,8 @@ use crate::display::format_line_diff;
 use crate::style::{ANSI_BOLD_CYAN, ANSI_RESET};
 
 const BINARY_EXTENSIONS: &[&str] = &[
-    ".docx", ".xlsx", ".pptx",
-    ".pdf",
-    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff", ".tif", ".ico", ".avif",
-    ".svg",
+    ".docx", ".xlsx", ".pptx", ".pdf", ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff",
+    ".tif", ".ico", ".avif", ".svg",
 ];
 
 fn is_binary_format(path: &str) -> bool {
@@ -87,8 +85,7 @@ fn find_latest_patch_for_file(
         let Some(patch) = repo.dag().get_patch(id) else {
             continue;
         };
-        if patch.touch_set.contains(file_path)
-            && latest.is_none_or(|(_, ts)| patch.timestamp > ts)
+        if patch.touch_set.contains(file_path) && latest.is_none_or(|(_, ts)| patch.timestamp > ts)
         {
             latest = Some((&patch.author, patch.timestamp));
         }
@@ -108,7 +105,11 @@ fn build_summary_report(
     use suture_core::engine::diff::DiffType;
 
     println!("=== Change Summary ===");
-    println!("{} file{} changed\n", entries.len(), if entries.len() == 1 { "" } else { "s" });
+    println!(
+        "{} file{} changed\n",
+        entries.len(),
+        if entries.len() == 1 { "" } else { "s" }
+    );
 
     for entry in entries {
         let icon = file_type_icon(&entry.path);
@@ -194,7 +195,11 @@ fn parse_item_count_from_semantic(semantic: &str, path: &str) -> Option<String> 
         "slide"
     } else if lower.ends_with(".docx") {
         "paragraph"
-    } else if lower.ends_with(".json") || lower.ends_with(".yaml") || lower.ends_with(".yml") || lower.ends_with(".toml") {
+    } else if lower.ends_with(".json")
+        || lower.ends_with(".yaml")
+        || lower.ends_with(".yml")
+        || lower.ends_with(".toml")
+    {
         "field"
     } else {
         "item"
@@ -220,7 +225,10 @@ fn parse_item_count_from_semantic(semantic: &str, path: &str) -> Option<String> 
         return None;
     }
 
-    Some(format!("{total} {item_label}{} changed", if total == 1 { "" } else { "s" }))
+    Some(format!(
+        "{total} {item_label}{} changed",
+        if total == 1 { "" } else { "s" }
+    ))
 }
 
 pub(crate) async fn cmd_diff(
@@ -309,10 +317,7 @@ pub(crate) async fn cmd_diff(
                         .ok()
                         .or_else(|| std::fs::read(repo.root().join(&entry.path)).ok());
                     let Some(new_blob) = new_blob else {
-                        println!(
-                            "{ANSI_BOLD_CYAN}added {} (binary){ANSI_RESET}",
-                            entry.path
-                        );
+                        println!("{ANSI_BOLD_CYAN}added {} (binary){ANSI_RESET}", entry.path);
                         continue;
                     };
                     let new_str = blob_to_string(&new_blob, &entry.path);
@@ -378,8 +383,7 @@ pub(crate) async fn cmd_diff(
                             let new_str = blob_to_string(&new_blob, &entry.path);
 
                             if let Ok(driver) = registry.get_for_path(StdPath::new(&entry.path))
-                                && let Ok(semantic) =
-                                    driver.format_diff(Some(&old_str), &new_str)
+                                && let Ok(semantic) = driver.format_diff(Some(&old_str), &new_str)
                                 && !semantic.is_empty()
                                 && semantic != "no changes"
                             {
@@ -435,7 +439,7 @@ fn build_integrity_report(
 ) -> Result<suture_core::integrity::DiffIntegrityReport, Box<dyn std::error::Error>> {
     use std::collections::HashMap;
     use suture_core::engine::diff::DiffType;
-    use suture_core::integrity::{analyze_file, FileIntegrityReport};
+    use suture_core::integrity::{FileIntegrityReport, analyze_file};
 
     let mut files = Vec::new();
     let mut old_files: HashMap<String, FileIntegrityReport> = HashMap::new();
@@ -454,14 +458,12 @@ fn build_integrity_report(
             }
             DiffType::Modified => {
                 // Analyze old version
-                let old_content =
-                    get_file_content(repo, &entry.path, entry.old_hash.as_ref());
+                let old_content = get_file_content(repo, &entry.path, entry.old_hash.as_ref());
                 let old_report = analyze_file(&entry.path, &old_content);
                 old_files.insert(entry.path.clone(), old_report);
 
                 // Analyze new version
-                let new_content =
-                    get_file_content(repo, &entry.path, entry.new_hash.as_ref());
+                let new_content = get_file_content(repo, &entry.path, entry.new_hash.as_ref());
                 let mut new_report = analyze_file(&entry.path, &new_content);
 
                 // Check for sudden entropy increase
@@ -477,13 +479,11 @@ fn build_integrity_report(
             }
             DiffType::Renamed { old_path, .. } => {
                 // Treat as deleted + added for integrity purposes
-                let old_content =
-                    get_file_content(repo, old_path, entry.old_hash.as_ref());
+                let old_content = get_file_content(repo, old_path, entry.old_hash.as_ref());
                 let old_report = analyze_file(old_path, &old_content);
                 old_files.insert(entry.path.clone(), old_report);
 
-                let new_content =
-                    get_file_content(repo, &entry.path, entry.new_hash.as_ref());
+                let new_content = get_file_content(repo, &entry.path, entry.new_hash.as_ref());
                 let new_report = analyze_file(&entry.path, &new_content);
                 files.push(new_report);
             }
@@ -515,9 +515,9 @@ fn build_integrity_report(
     if has_lockfile && !has_manifest {
         // Flag on the lockfile entry
         for f in &mut files {
-            if f.risk_indicators.contains(
-                &suture_core::integrity::RiskIndicator::LockfileModifiedWithoutSource,
-            ) && !has_manifest
+            if f.risk_indicators
+                .contains(&suture_core::integrity::RiskIndicator::LockfileModifiedWithoutSource)
+                && !has_manifest
             {
                 // Already flagged, that's sufficient
             }
@@ -571,10 +571,7 @@ fn build_integrity_report(
         .iter()
         .filter(|f| f.risk_score >= suture_core::integrity::RiskScore::Critical)
         .count();
-    let new_binary_files = files
-        .iter()
-        .filter(|f| f.is_binary)
-        .count();
+    let new_binary_files = files.iter().filter(|f| f.is_binary).count();
     let build_system_changes = files
         .iter()
         .filter(|f| {

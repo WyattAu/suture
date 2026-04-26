@@ -113,9 +113,7 @@ impl OtioNode {
             OtioNode::Stack(st) => serde_json::to_value(st).unwrap_or_default(),
             OtioNode::Clip(cl) => serde_json::to_value(cl).unwrap_or_default(),
             OtioNode::Transition(tr) => serde_json::to_value(tr).unwrap_or_default(),
-            OtioNode::SerializableCollection(sc) => {
-                serde_json::to_value(sc).unwrap_or_default()
-            }
+            OtioNode::SerializableCollection(sc) => serde_json::to_value(sc).unwrap_or_default(),
             OtioNode::Unknown { value, .. } => value.clone(),
         }
     }
@@ -124,7 +122,10 @@ impl OtioNode {
 // --- Serde-friendly struct types (children stored as raw JSON) ---
 
 fn parse_children(json_children: &[serde_json::Value]) -> Vec<OtioNode> {
-    json_children.iter().filter_map(|v| parse_otio_node(v).ok()).collect()
+    json_children
+        .iter()
+        .filter_map(|v| parse_otio_node(v).ok())
+        .collect()
 }
 
 #[allow(dead_code)]
@@ -295,7 +296,12 @@ fn parse_otio_node(value: &serde_json::Value) -> Result<OtioNode> {
 fn parse_otio_json(input: &str) -> Result<serde_json::Value> {
     let value: serde_json::Value = serde_json::from_str(input)?;
     // Validate it has OTIO_SCHEMA
-    if !value.is_object() || !value.as_object().map(|o| o.contains_key("OTIO_SCHEMA")).unwrap_or(false) {
+    if !value.is_object()
+        || !value
+            .as_object()
+            .map(|o| o.contains_key("OTIO_SCHEMA"))
+            .unwrap_or(false)
+    {
         return Err(OtioError::InvalidStructure(
             "root is not an OTIO object (missing OTIO_SCHEMA)".into(),
         ));
@@ -327,9 +333,10 @@ fn content_fingerprint(node: &OtioNode) -> String {
             }
             // Extract target_url from media_reference
             if let Some(mr) = &cl.media_reference
-                && let Some(url) = mr.get("target_url").and_then(|v| v.as_str()) {
-                    url.hash(&mut hasher);
-                }
+                && let Some(url) = mr.get("target_url").and_then(|v| v.as_str())
+            {
+                url.hash(&mut hasher);
+            }
         }
         OtioNode::Track(tr) => {
             "track".hash(&mut hasher);
@@ -377,7 +384,11 @@ struct FlatNode {
     raw_json: serde_json::Value,
 }
 
-fn flatten_tree_with_raw(value: &serde_json::Value, parent_path: &str, parent_fp: Option<&str>) -> Vec<FlatNode> {
+fn flatten_tree_with_raw(
+    value: &serde_json::Value,
+    parent_path: &str,
+    parent_fp: Option<&str>,
+) -> Vec<FlatNode> {
     let mut result = Vec::new();
     let node = match parse_otio_node(value) {
         Ok(n) => n,
@@ -413,10 +424,14 @@ fn flatten_tree_with_raw(value: &serde_json::Value, parent_path: &str, parent_fp
 }
 
 fn diff_trees(base_nodes: &[FlatNode], new_nodes: &[FlatNode]) -> Vec<SemanticChange> {
-    let new_by_fp: HashMap<&str, &FlatNode> =
-        new_nodes.iter().map(|n| (n.fingerprint.as_str(), n)).collect();
-    let base_by_fp: HashMap<&str, &FlatNode> =
-        base_nodes.iter().map(|n| (n.fingerprint.as_str(), n)).collect();
+    let new_by_fp: HashMap<&str, &FlatNode> = new_nodes
+        .iter()
+        .map(|n| (n.fingerprint.as_str(), n))
+        .collect();
+    let base_by_fp: HashMap<&str, &FlatNode> = base_nodes
+        .iter()
+        .map(|n| (n.fingerprint.as_str(), n))
+        .collect();
 
     let mut changes = Vec::new();
 
@@ -461,8 +476,16 @@ fn diff_trees(base_nodes: &[FlatNode], new_nodes: &[FlatNode]) -> Vec<SemanticCh
             if is_leaf && base_node.raw_json != new_node.raw_json {
                 changes.push(SemanticChange::Modified {
                     path: new_node.path.clone(),
-                    old_value: format!("{} ({})", base_node.node.name().unwrap_or("?"), base_node.node.schema_type()),
-                    new_value: format!("{} ({})", new_node.node.name().unwrap_or("?"), new_node.node.schema_type()),
+                    old_value: format!(
+                        "{} ({})",
+                        base_node.node.name().unwrap_or("?"),
+                        base_node.node.schema_type()
+                    ),
+                    new_value: format!(
+                        "{} ({})",
+                        new_node.node.name().unwrap_or("?"),
+                        new_node.node.schema_type()
+                    ),
                 });
             }
         }
@@ -487,12 +510,18 @@ fn merge_trees(
     ours_nodes: &[FlatNode],
     theirs_nodes: &[FlatNode],
 ) -> Option<serde_json::Value> {
-    let base_by_fp: HashMap<&str, &FlatNode> =
-        base_nodes.iter().map(|n| (n.fingerprint.as_str(), n)).collect();
-    let ours_by_fp: HashMap<&str, &FlatNode> =
-        ours_nodes.iter().map(|n| (n.fingerprint.as_str(), n)).collect();
-    let theirs_by_fp: HashMap<&str, &FlatNode> =
-        theirs_nodes.iter().map(|n| (n.fingerprint.as_str(), n)).collect();
+    let base_by_fp: HashMap<&str, &FlatNode> = base_nodes
+        .iter()
+        .map(|n| (n.fingerprint.as_str(), n))
+        .collect();
+    let ours_by_fp: HashMap<&str, &FlatNode> = ours_nodes
+        .iter()
+        .map(|n| (n.fingerprint.as_str(), n))
+        .collect();
+    let theirs_by_fp: HashMap<&str, &FlatNode> = theirs_nodes
+        .iter()
+        .map(|n| (n.fingerprint.as_str(), n))
+        .collect();
 
     let all_fps: std::collections::HashSet<&str> = base_by_fp
         .keys()
@@ -636,16 +665,17 @@ fn rebuild_children_with_merged(
 
                 for item in arr.iter() {
                     if let Some(_schema) = item.get("OTIO_SCHEMA").and_then(|v| v.as_str())
-                        && let Ok(node) = parse_otio_node(item) {
-                            let fp = content_fingerprint(&node);
-                            if let Some((_, merged_node)) = merged_nodes.iter().find(|(f, _)| *f == fp)
-                            {
-                                placed_fps.insert(fp.clone());
-                                new_arr.push(merged_node.raw_json.clone());
-                                continue;
-                            }
+                        && let Ok(node) = parse_otio_node(item)
+                    {
+                        let fp = content_fingerprint(&node);
+                        if let Some((_, merged_node)) = merged_nodes.iter().find(|(f, _)| *f == fp)
+                        {
+                            placed_fps.insert(fp.clone());
+                            new_arr.push(merged_node.raw_json.clone());
                             continue;
                         }
+                        continue;
+                    }
                     new_arr.push(item.clone());
                 }
 
@@ -689,10 +719,8 @@ impl OtioDriver {
     }
 
     fn parse_and_flatten(input: &str) -> std::result::Result<Vec<FlatNode>, DriverError> {
-        let value = parse_otio_json(input)
-            .map_err(|e| DriverError::ParseError(e.to_string()))?;
-        let _node = parse_otio_node(&value)
-            .map_err(|e| DriverError::ParseError(e.to_string()))?;
+        let value = parse_otio_json(input).map_err(|e| DriverError::ParseError(e.to_string()))?;
+        let _node = parse_otio_node(&value).map_err(|e| DriverError::ParseError(e.to_string()))?;
         Ok(flatten_tree_with_raw(&value, "", None))
     }
 }
@@ -757,7 +785,12 @@ impl SutureDriver for OtioDriver {
         Ok(lines.join("\n"))
     }
 
-    fn merge(&self, base: &str, ours: &str, theirs: &str) -> std::result::Result<Option<String>, DriverError> {
+    fn merge(
+        &self,
+        base: &str,
+        ours: &str,
+        theirs: &str,
+    ) -> std::result::Result<Option<String>, DriverError> {
         let base_nodes = Self::parse_and_flatten(base)?;
         let ours_nodes = Self::parse_and_flatten(ours)?;
         let theirs_nodes = Self::parse_and_flatten(theirs)?;
@@ -781,10 +814,26 @@ impl SutureDriver for OtioDriver {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum TimelineElement {
-    Timeline { id: String, name: String },
-    Track { id: String, name: String, kind: String, parent_id: Option<String> },
-    Clip { id: String, name: String, parent_id: Option<String> },
-    Transition { id: String, name: String, parent_id: Option<String> },
+    Timeline {
+        id: String,
+        name: String,
+    },
+    Track {
+        id: String,
+        name: String,
+        kind: String,
+        parent_id: Option<String>,
+    },
+    Clip {
+        id: String,
+        name: String,
+        parent_id: Option<String>,
+    },
+    Transition {
+        id: String,
+        name: String,
+        parent_id: Option<String>,
+    },
 }
 
 impl TimelineElement {
@@ -954,9 +1003,18 @@ impl LegacyOtioDriver {
             {
                 for other in &self.elements {
                     match other {
-                        TimelineElement::Track { parent_id: Some(pid), .. }
-                        | TimelineElement::Clip { parent_id: Some(pid), .. }
-                        | TimelineElement::Transition { parent_id: Some(pid), .. } => {
+                        TimelineElement::Track {
+                            parent_id: Some(pid),
+                            ..
+                        }
+                        | TimelineElement::Clip {
+                            parent_id: Some(pid),
+                            ..
+                        }
+                        | TimelineElement::Transition {
+                            parent_id: Some(pid),
+                            ..
+                        } => {
                             if pid == elem.id() && seen.insert(other.id().to_owned()) {
                                 affected.push(other.id().to_string());
                             }
@@ -1146,7 +1204,8 @@ mod tests {
 
     #[test]
     fn test_serialize_diff_identical() {
-        let json = r#"{"OTIO_SCHEMA":"otio.schema.Timeline","name":"Test","metadata":{},"tracks":[]}"#;
+        let json =
+            r#"{"OTIO_SCHEMA":"otio.schema.Timeline","name":"Test","metadata":{},"tracks":[]}"#;
         let driver = LegacyOtioDriver::new();
         let diff = driver.serialize_diff(json, json).unwrap();
         assert_eq!(diff, "(no differences)");
@@ -1313,7 +1372,9 @@ mod tests {
     #[test]
     fn test_diff_no_change() {
         let driver = OtioDriver::new();
-        let changes = driver.diff(Some(minimal_timeline_otio()), minimal_timeline_otio()).unwrap();
+        let changes = driver
+            .diff(Some(minimal_timeline_otio()), minimal_timeline_otio())
+            .unwrap();
         assert!(changes.is_empty());
     }
 
@@ -1322,7 +1383,11 @@ mod tests {
         let driver = OtioDriver::new();
         let changes = driver.diff(None, minimal_timeline_otio()).unwrap();
         assert!(!changes.is_empty());
-        assert!(changes.iter().all(|c| matches!(c, SemanticChange::Added { .. })));
+        assert!(
+            changes
+                .iter()
+                .all(|c| matches!(c, SemanticChange::Added { .. }))
+        );
     }
 
     #[test]
@@ -1330,7 +1395,9 @@ mod tests {
         let driver = OtioDriver::new();
         let fmt = driver.format_diff(None, minimal_timeline_otio()).unwrap();
         assert!(fmt.contains("ADDED"));
-        let fmt = driver.format_diff(Some(minimal_timeline_otio()), minimal_timeline_otio()).unwrap();
+        let fmt = driver
+            .format_diff(Some(minimal_timeline_otio()), minimal_timeline_otio())
+            .unwrap();
         assert_eq!(fmt, "no changes");
     }
 
@@ -1382,10 +1449,19 @@ mod tests {
         }"#;
         let driver = OtioDriver::new();
         let result = driver.merge(base, ours, theirs).unwrap();
-        assert!(result.is_some(), "merge should succeed (non-conflicting adds)");
+        assert!(
+            result.is_some(),
+            "merge should succeed (non-conflicting adds)"
+        );
         let merged = result.unwrap();
-        assert!(merged.contains("\"B\""), "merged should contain clip B from ours");
-        assert!(merged.contains("\"C\""), "merged should contain clip C from theirs");
+        assert!(
+            merged.contains("\"B\""),
+            "merged should contain clip B from ours"
+        );
+        assert!(
+            merged.contains("\"C\""),
+            "merged should contain clip C from theirs"
+        );
     }
 
     #[test]
@@ -1472,7 +1548,10 @@ mod tests {
         let result = driver.merge(base, ours, theirs).unwrap();
         assert!(result.is_some());
         let merged = result.unwrap();
-        assert!(merged.contains("200.0"), "merged should have ours' duration");
+        assert!(
+            merged.contains("200.0"),
+            "merged should have ours' duration"
+        );
     }
 
     #[test]
@@ -1512,10 +1591,22 @@ mod tests {
         let driver = OtioDriver::new();
         let changes = driver.diff(Some(base), reordered).unwrap();
         // Reordering should NOT produce adds/removes for clips with same source
-        let clip_adds: Vec<_> = changes.iter().filter(|c| matches!(c, SemanticChange::Added { .. })).collect();
-        let clip_removes: Vec<_> = changes.iter().filter(|c| matches!(c, SemanticChange::Removed { .. })).collect();
-        assert!(clip_adds.is_empty(), "reordering should not produce adds for same-source clips");
-        assert!(clip_removes.is_empty(), "reordering should not produce removes for same-source clips");
+        let clip_adds: Vec<_> = changes
+            .iter()
+            .filter(|c| matches!(c, SemanticChange::Added { .. }))
+            .collect();
+        let clip_removes: Vec<_> = changes
+            .iter()
+            .filter(|c| matches!(c, SemanticChange::Removed { .. }))
+            .collect();
+        assert!(
+            clip_adds.is_empty(),
+            "reordering should not produce adds for same-source clips"
+        );
+        assert!(
+            clip_removes.is_empty(),
+            "reordering should not produce removes for same-source clips"
+        );
     }
 
     #[test]
@@ -1527,7 +1618,10 @@ mod tests {
             "source_range": {"start_time": {"value": 10.0, "rate": 24.0}, "duration": {"value": 5.0, "rate": 24.0}}
         }"#;
         let result = OtioDriver::parse_and_flatten(json);
-        assert!(result.is_ok(), "should handle unknown OTIO types gracefully");
+        assert!(
+            result.is_ok(),
+            "should handle unknown OTIO types gracefully"
+        );
         let nodes = result.unwrap();
         // The Gap should be in the flat list
         assert!(!nodes.is_empty());
@@ -1542,7 +1636,11 @@ mod tests {
     #[test]
     fn test_parse_missing_schema() {
         let mut driver = LegacyOtioDriver::new();
-        assert!(driver.parse_otio(r#"{"name": "NoSchema", "tracks": []}"#).is_err());
+        assert!(
+            driver
+                .parse_otio(r#"{"name": "NoSchema", "tracks": []}"#)
+                .is_err()
+        );
     }
 
     #[test]
@@ -1641,31 +1739,57 @@ mod tests {
 
         let tracks = merged.get("tracks").unwrap().as_array().unwrap();
 
-        assert_eq!(tracks.len(), 4, "should have 4 tracks: Video, Sound, VFX, Music");
+        assert_eq!(
+            tracks.len(),
+            4,
+            "should have 4 tracks: Video, Sound, VFX, Music"
+        );
 
         for track in tracks {
             let schema = track.get("OTIO_SCHEMA").and_then(|v| v.as_str()).unwrap();
-            assert_eq!(schema, "otio.schema.Track",
-                "every item in tracks must be a Track, got: {}", schema);
+            assert_eq!(
+                schema, "otio.schema.Track",
+                "every item in tracks must be a Track, got: {}",
+                schema
+            );
         }
 
-        let track_names: Vec<&str> = tracks.iter()
+        let track_names: Vec<&str> = tracks
+            .iter()
             .filter_map(|t| t.get("name").and_then(|n| n.as_str()))
             .collect();
         assert!(track_names.contains(&"Video"), "should have Video track");
         assert!(track_names.contains(&"Sound"), "should have Sound track");
-        assert!(track_names.contains(&"VFX"), "should have VFX track from ours");
-        assert!(track_names.contains(&"Music"), "should have Music track from theirs");
+        assert!(
+            track_names.contains(&"VFX"),
+            "should have VFX track from ours"
+        );
+        assert!(
+            track_names.contains(&"Music"),
+            "should have Music track from theirs"
+        );
 
-        let vfx_track = tracks.iter().find(|t| t.get("name").and_then(|n| n.as_str()) == Some("VFX")).unwrap();
+        let vfx_track = tracks
+            .iter()
+            .find(|t| t.get("name").and_then(|n| n.as_str()) == Some("VFX"))
+            .unwrap();
         let vfx_children = vfx_track.get("children").unwrap().as_array().unwrap();
         assert_eq!(vfx_children.len(), 1, "VFX track should have 1 clip");
-        assert_eq!(vfx_children[0].get("name").and_then(|n| n.as_str()), Some("VfxClip"));
+        assert_eq!(
+            vfx_children[0].get("name").and_then(|n| n.as_str()),
+            Some("VfxClip")
+        );
 
-        let music_track = tracks.iter().find(|t| t.get("name").and_then(|n| n.as_str()) == Some("Music")).unwrap();
+        let music_track = tracks
+            .iter()
+            .find(|t| t.get("name").and_then(|n| n.as_str()) == Some("Music"))
+            .unwrap();
         let music_children = music_track.get("children").unwrap().as_array().unwrap();
         assert_eq!(music_children.len(), 1, "Music track should have 1 clip");
-        assert_eq!(music_children[0].get("name").and_then(|n| n.as_str()), Some("MusicClip"));
+        assert_eq!(
+            music_children[0].get("name").and_then(|n| n.as_str()),
+            Some("MusicClip")
+        );
     }
 
     #[test]
@@ -1722,7 +1846,8 @@ mod tests {
         assert_eq!(tracks.len(), 1, "should have 1 track");
 
         let v1_children = tracks[0].get("children").unwrap().as_array().unwrap();
-        let child_names: Vec<&str> = v1_children.iter()
+        let child_names: Vec<&str> = v1_children
+            .iter()
             .filter_map(|c| c.get("name").and_then(|n| n.as_str()))
             .collect();
         assert!(child_names.contains(&"A"), "should have clip A");
@@ -1731,8 +1856,11 @@ mod tests {
 
         for child in v1_children {
             let schema = child.get("OTIO_SCHEMA").and_then(|v| v.as_str()).unwrap();
-            assert_eq!(schema, "otio.schema.Clip",
-                "every item in track children must be a Clip, got: {}", schema);
+            assert_eq!(
+                schema, "otio.schema.Clip",
+                "every item in track children must be a Clip, got: {}",
+                schema
+            );
         }
     }
 }

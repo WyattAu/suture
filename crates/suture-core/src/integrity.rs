@@ -127,11 +127,7 @@ impl RiskScore {
 
     #[allow(dead_code)]
     fn max(a: Self, b: Self) -> Self {
-        if a > b {
-            a
-        } else {
-            b
-        }
+        if a > b { a } else { b }
     }
 }
 
@@ -1069,11 +1065,7 @@ mod tests {
         let data: Vec<u8> = (0..2_000_000)
             .map(|i| {
                 let v = (i % 256) as u8;
-                if v >= 0x20 && v <= 0x7e {
-                    0x01
-                } else {
-                    v
-                }
+                if v >= 0x20 && v <= 0x7e { 0x01 } else { v }
             })
             .collect();
         let report = analyze_file("blob.bin", &data);

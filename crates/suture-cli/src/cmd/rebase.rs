@@ -17,10 +17,15 @@ pub(crate) async fn cmd_rebase(
         } else {
             String::new()
         };
-        return Err(format!("branch '{branch}' not found{hint} (use 'suture branch' to create it)").into());
+        return Err(format!(
+            "branch '{branch}' not found{hint} (use 'suture branch' to create it)"
+        )
+        .into());
     }
 
-    let status = repo.status().map_err(|e| user_error("failed to check repository status", e))?;
+    let status = repo
+        .status()
+        .map_err(|e| user_error("failed to check repository status", e))?;
     if !status.staged_files.is_empty() {
         return Err("cannot rebase with staged changes (commit or stash them first)".into());
     }
@@ -60,7 +65,8 @@ pub(crate) async fn cmd_rebase(
     pre_extra.insert("SUTURE_REBASE_ONTO".to_string(), branch.to_string());
     run_hook_if_exists(repo.root(), "pre-rebase", pre_extra)?;
 
-    let result = repo.rebase(branch)
+    let result = repo
+        .rebase(branch)
         .map_err(|e| user_error(&format!("rebase onto '{branch}' failed"), e))?;
     if result.patches_replayed > 0 {
         println!(
@@ -102,7 +108,8 @@ async fn cmd_rebase_interactive(
     })?;
 
     // Generate TODO file
-    let todo_content = repo.generate_rebase_todo(&base_id)
+    let todo_content = repo
+        .generate_rebase_todo(&base_id)
         .map_err(|e| user_error("failed to generate rebase plan", e))?;
     if todo_content
         .lines()
@@ -147,7 +154,8 @@ async fn cmd_rebase_interactive(
     }
 
     // Parse TODO into plan
-    let plan = repo.parse_rebase_todo(&edited, &base_id)
+    let plan = repo
+        .parse_rebase_todo(&edited, &base_id)
         .map_err(|e| user_error("failed to parse rebase plan", e))?;
 
     // Show plan summary
@@ -188,7 +196,8 @@ async fn cmd_rebase_interactive(
     run_hook_if_exists(repo.root(), "pre-rebase", pre_extra)?;
 
     // Execute the plan
-    let new_tip = repo.rebase_interactive(&plan, &base_id)
+    let new_tip = repo
+        .rebase_interactive(&plan, &base_id)
         .map_err(|e| user_error("interactive rebase failed", e))?;
 
     let (branch_after, head_after) = repo.head()?;

@@ -290,7 +290,9 @@ mod tests {
         let a1 = l1.local_addr().unwrap();
         let a2 = l2.local_addr().unwrap();
         let a3 = l3.local_addr().unwrap();
-        drop(l1); drop(l2); drop(l3); // free ports for transport listeners
+        drop(l1);
+        drop(l2);
+        drop(l3); // free ports for transport listeners
 
         let p1: HashMap<u64, SocketAddr> = [(2, a2), (3, a3)].into_iter().collect();
         let p2: HashMap<u64, SocketAddr> = [(1, a1), (3, a3)].into_iter().collect();
@@ -317,27 +319,37 @@ mod tests {
         // Wait for leader election
         tokio::time::sleep(Duration::from_secs(3)).await;
 
-        let leader = if rt1.is_leader() { &rt1 as &RaftRuntime }
-            else if rt2.is_leader() { &rt2 as &RaftRuntime }
-            else if rt3.is_leader() { &rt3 as &RaftRuntime }
-            else {
-                panic!(
-                    "no leader: n1={:?} n2={:?} n3={:?}",
-                    rt1.state(), rt2.state(), rt3.state()
-                );
-            };
+        let leader = if rt1.is_leader() {
+            &rt1 as &RaftRuntime
+        } else if rt2.is_leader() {
+            &rt2 as &RaftRuntime
+        } else if rt3.is_leader() {
+            &rt3 as &RaftRuntime
+        } else {
+            panic!(
+                "no leader: n1={:?} n2={:?} n3={:?}",
+                rt1.state(),
+                rt2.state(),
+                rt3.state()
+            );
+        };
 
-        leader.propose(HubCommand::CreateRepo {
-            repo_id: "cluster-test".to_string(),
-        }).expect("propose on leader");
+        leader
+            .propose(HubCommand::CreateRepo {
+                repo_id: "cluster-test".to_string(),
+            })
+            .expect("propose on leader");
 
         tokio::time::sleep(Duration::from_secs(2)).await;
 
         let applied = leader.try_apply_committed();
         assert!(!applied.is_empty(), "leader should have committed commands");
-        assert_eq!(applied[0], HubCommand::CreateRepo {
-            repo_id: "cluster-test".to_string(),
-        });
+        assert_eq!(
+            applied[0],
+            HubCommand::CreateRepo {
+                repo_id: "cluster-test".to_string(),
+            }
+        );
 
         rt1.shutdown();
         rt2.shutdown();

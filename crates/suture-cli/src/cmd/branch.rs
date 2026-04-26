@@ -85,11 +85,9 @@ pub(crate) async fn cmd_branch(
         let branches: Vec<String> = repo.list_branches().into_iter().map(|(n, _)| n).collect();
         if !branches.iter().any(|b| b == name) {
             if let Some(suggestion) = crate::fuzzy::suggest(name, &branches) {
-                return Err(format!(
-                    "branch '{name}' not found (did you mean '{}'?)",
-                    suggestion
-                )
-                .into());
+                return Err(
+                    format!("branch '{name}' not found (did you mean '{}'?)", suggestion).into(),
+                );
             } else {
                 return Err(format!("branch '{name}' not found (use 'suture branch --list' to see available branches)").into());
             }
@@ -100,7 +98,10 @@ pub(crate) async fn cmd_branch(
     } else {
         let existing: Vec<String> = repo.list_branches().into_iter().map(|(n, _)| n).collect();
         if existing.iter().any(|b| b == name) {
-            return Err(format!("branch '{name}' already exists (use 'suture checkout {name}' to switch to it)").into());
+            return Err(format!(
+                "branch '{name}' already exists (use 'suture checkout {name}' to switch to it)"
+            )
+            .into());
         }
         repo.create_branch(name, target)
             .map_err(|e| user_error(&format!("failed to create branch '{name}'"), e))?;

@@ -92,7 +92,12 @@ pub fn merge_pptx(base: &str, ours: &str, theirs: &str) -> Result<MergeResult, M
     perform_merge(&suture_driver_pptx::PptxDriver, base, ours, theirs)
 }
 
-pub fn merge_auto(base: &str, ours: &str, theirs: &str, extension: Option<&str>) -> Result<MergeResult, MergeError> {
+pub fn merge_auto(
+    base: &str,
+    ours: &str,
+    theirs: &str,
+    extension: Option<&str>,
+) -> Result<MergeResult, MergeError> {
     let ext = extension
         .ok_or_else(|| MergeError::UnsupportedFormat("no extension provided".to_string()))?;
     let registry = build_registry();
@@ -100,7 +105,11 @@ pub fn merge_auto(base: &str, ours: &str, theirs: &str, extension: Option<&str>)
     perform_merge(driver, base, ours, theirs)
 }
 
-pub fn diff(base: &str, modified: &str, extension: Option<&str>) -> Result<Vec<SemanticChange>, MergeError> {
+pub fn diff(
+    base: &str,
+    modified: &str,
+    extension: Option<&str>,
+) -> Result<Vec<SemanticChange>, MergeError> {
     let ext = extension
         .ok_or_else(|| MergeError::UnsupportedFormat("no extension provided".to_string()))?;
     let registry = build_registry();
@@ -108,7 +117,11 @@ pub fn diff(base: &str, modified: &str, extension: Option<&str>) -> Result<Vec<S
     Ok(driver.diff(Some(base), modified)?)
 }
 
-pub fn format_diff(base: &str, modified: &str, extension: Option<&str>) -> Result<String, MergeError> {
+pub fn format_diff(
+    base: &str,
+    modified: &str,
+    extension: Option<&str>,
+) -> Result<String, MergeError> {
     let ext = extension
         .ok_or_else(|| MergeError::UnsupportedFormat("no extension provided".to_string()))?;
     let registry = build_registry();
@@ -267,9 +280,11 @@ mod tests {
 
         let changes = diff(base, modified, Some(".json")).unwrap();
         assert!(!changes.is_empty());
-        assert!(changes
-            .iter()
-            .any(|c| matches!(c, SemanticChange::Modified { path, .. } if path == "/name")));
+        assert!(
+            changes
+                .iter()
+                .any(|c| matches!(c, SemanticChange::Modified { path, .. } if path == "/name"))
+        );
     }
 
     #[test]

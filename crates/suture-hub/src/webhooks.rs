@@ -42,7 +42,8 @@ impl WebhookManager {
         use sha2::Sha256;
 
         type HmacSha256 = Hmac<Sha256>;
-        let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC can take key of any size");
+        let mut mac =
+            HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC can take key of any size");
         mac.update(payload.as_bytes());
         let result = mac.finalize();
         hex::encode(result.into_bytes())
@@ -69,7 +70,13 @@ impl WebhookManager {
 
         let payload_json = match serde_json::to_string(&payload) {
             Ok(j) => j,
-            Err(_) => return WebhookResult { triggered: 0, succeeded: 0, failed: 0 },
+            Err(_) => {
+                return WebhookResult {
+                    triggered: 0,
+                    succeeded: 0,
+                    failed: 0,
+                };
+            }
         };
 
         let matching: Vec<&Webhook> = webhooks
@@ -101,7 +108,11 @@ impl WebhookManager {
             }
         }
 
-        WebhookResult { triggered, succeeded, failed }
+        WebhookResult {
+            triggered,
+            succeeded,
+            failed,
+        }
     }
 }
 
@@ -192,28 +203,29 @@ mod tests {
             },
         ];
 
-        let result = manager.trigger(
-            &webhooks,
-            "push",
-            "repo",
-            serde_json::json!({"test": true}),
-        ).await;
+        let result = manager
+            .trigger(&webhooks, "push", "repo", serde_json::json!({"test": true}))
+            .await;
         assert_eq!(result.triggered, 1);
 
-        let result2 = manager.trigger(
-            &webhooks,
-            "branch.create",
-            "repo",
-            serde_json::json!({"test": true}),
-        ).await;
+        let result2 = manager
+            .trigger(
+                &webhooks,
+                "branch.create",
+                "repo",
+                serde_json::json!({"test": true}),
+            )
+            .await;
         assert_eq!(result2.triggered, 1);
 
-        let result3 = manager.trigger(
-            &webhooks,
-            "branch.delete",
-            "repo",
-            serde_json::json!({"test": true}),
-        ).await;
+        let result3 = manager
+            .trigger(
+                &webhooks,
+                "branch.delete",
+                "repo",
+                serde_json::json!({"test": true}),
+            )
+            .await;
         assert_eq!(result3.triggered, 0);
     }
 
@@ -241,12 +253,9 @@ mod tests {
             },
         ];
 
-        let result = manager.trigger(
-            &webhooks,
-            "push",
-            "repo",
-            serde_json::json!({}),
-        ).await;
+        let result = manager
+            .trigger(&webhooks, "push", "repo", serde_json::json!({}))
+            .await;
         assert_eq!(result.triggered, 1);
     }
 }

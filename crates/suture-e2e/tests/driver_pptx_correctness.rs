@@ -19,8 +19,11 @@ fn make_pptx(slide_names: &[&str]) -> String {
             .collect::<Vec<_>>()
             .join("\n");
 
-        zip.start_file("[Content_Types].xml", zip::write::SimpleFileOptions::default())
-            .unwrap();
+        zip.start_file(
+            "[Content_Types].xml",
+            zip::write::SimpleFileOptions::default(),
+        )
+        .unwrap();
         zip.write_all(
             format!(
                 r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -69,13 +72,7 @@ fn make_pptx(slide_names: &[&str]) -> String {
         let sld_ids: String = slide_names
             .iter()
             .enumerate()
-            .map(|(i, _)| {
-                format!(
-                    r#"<p:sldId id="{}" r:id="rId{}"/>"#,
-                    256 + i as u32,
-                    i + 2
-                )
-            })
+            .map(|(i, _)| format!(r#"<p:sldId id="{}" r:id="rId{}"/>"#, 256 + i as u32, i + 2))
             .collect::<Vec<_>>()
             .join("");
 
@@ -212,9 +209,11 @@ fn pptx_diff_new_file() {
 
     let changes = driver.diff(None, &new).unwrap();
     assert_eq!(changes.len(), 2);
-    assert!(changes
-        .iter()
-        .all(|c| matches!(c, SemanticChange::Added { .. })));
+    assert!(
+        changes
+            .iter()
+            .all(|c| matches!(c, SemanticChange::Added { .. }))
+    );
 }
 
 #[test]

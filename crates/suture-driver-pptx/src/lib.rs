@@ -130,15 +130,10 @@ impl PptxDriver {
     ) -> Result<Vec<SlideRef>, DriverError> {
         let mut refs = Vec::new();
         for &(slide_id, ref rel_id) in slide_ids {
-            let part_path = doc
-                .resolve_rel(presentation_path, rel_id)
-                .ok_or_else(|| {
-                    let msg = format!(
-                        "cannot resolve rId {} in {}",
-                        rel_id, presentation_path
-                    );
-                    DriverError::ParseError(msg)
-                })?;
+            let part_path = doc.resolve_rel(presentation_path, rel_id).ok_or_else(|| {
+                let msg = format!("cannot resolve rId {} in {}", rel_id, presentation_path);
+                DriverError::ParseError(msg)
+            })?;
 
             let (content_hash, name) = match doc.get_part(&part_path) {
                 Some(part) => (
@@ -179,10 +174,8 @@ impl PptxDriver {
     fn diff_slides(base: &[SlideRef], new: &[SlideRef]) -> Vec<SemanticChange> {
         let mut changes = Vec::new();
 
-        let base_by_id: HashMap<u32, &SlideRef> =
-            base.iter().map(|s| (s.slide_id, s)).collect();
-        let new_by_id: HashMap<u32, &SlideRef> =
-            new.iter().map(|s| (s.slide_id, s)).collect();
+        let base_by_id: HashMap<u32, &SlideRef> = base.iter().map(|s| (s.slide_id, s)).collect();
+        let new_by_id: HashMap<u32, &SlideRef> = new.iter().map(|s| (s.slide_id, s)).collect();
 
         for slide in new {
             if !base_by_id.contains_key(&slide.slide_id) {
@@ -217,8 +210,14 @@ impl PptxDriver {
             {
                 changes.push(SemanticChange::Modified {
                     path: format!("/slides/{}", slide.part_path),
-                    old_value: format!("slide_id={}, hash={:016x}", slide.slide_id, base_slide.content_hash),
-                    new_value: format!("slide_id={}, hash={:016x}", slide.slide_id, slide.content_hash),
+                    old_value: format!(
+                        "slide_id={}, hash={:016x}",
+                        slide.slide_id, base_slide.content_hash
+                    ),
+                    new_value: format!(
+                        "slide_id={}, hash={:016x}",
+                        slide.slide_id, slide.content_hash
+                    ),
                 });
             }
         }
@@ -253,10 +252,8 @@ impl PptxDriver {
         ours: &[SlideRef],
         theirs: &[SlideRef],
     ) -> Option<Vec<SlideRef>> {
-        let base_by_id: HashMap<u32, &SlideRef> =
-            base.iter().map(|s| (s.slide_id, s)).collect();
-        let ours_by_id: HashMap<u32, &SlideRef> =
-            ours.iter().map(|s| (s.slide_id, s)).collect();
+        let base_by_id: HashMap<u32, &SlideRef> = base.iter().map(|s| (s.slide_id, s)).collect();
+        let ours_by_id: HashMap<u32, &SlideRef> = ours.iter().map(|s| (s.slide_id, s)).collect();
         let theirs_by_id: HashMap<u32, &SlideRef> =
             theirs.iter().map(|s| (s.slide_id, s)).collect();
 
@@ -299,12 +296,9 @@ impl PptxDriver {
                         }
                         (true, true) => {
                             // Both modified — check if same change
-                            if ours_by_id[&id].content_hash
-                                == theirs_by_id[&id].content_hash
-                            {
+                            if ours_by_id[&id].content_hash == theirs_by_id[&id].content_hash {
                                 // Same modification — take either
-                                new_slide_sources
-                                    .insert(id, (true, ours_by_id[&id].clone()));
+                                new_slide_sources.insert(id, (true, ours_by_id[&id].clone()));
                             } else {
                                 // Genuine conflict
                                 return None;
@@ -375,10 +369,10 @@ impl PptxDriver {
             let in_theirs = theirs_by_id.contains_key(&slide.slide_id);
 
             let deleted = match (in_ours, in_theirs) {
-                (true, true) => false,      // Both kept
-                (true, false) => false,     // Ours kept (theirs deleted — non-conflicting)
-                (false, true) => false,     // Theirs kept (ours deleted — non-conflicting)
-                (false, false) => true,     // Both deleted
+                (true, true) => false,  // Both kept
+                (true, false) => false, // Ours kept (theirs deleted — non-conflicting)
+                (false, true) => false, // Theirs kept (ours deleted — non-conflicting)
+                (false, false) => true, // Both deleted
             };
 
             if !deleted {
@@ -422,16 +416,10 @@ impl PptxDriver {
 
     /// Copy slide parts from source document to destination, including their
     /// rels files and any referenced media.
-    fn copy_slide_parts(
-        slide: &SlideRef,
-        src_doc: &OoxmlDocument,
-        dst_doc: &mut OoxmlDocument,
-    ) {
+    fn copy_slide_parts(slide: &SlideRef, src_doc: &OoxmlDocument, dst_doc: &mut OoxmlDocument) {
         // Copy the slide XML itself
         if let Some(part) = src_doc.get_part(&slide.part_path) {
-            dst_doc
-                .parts
-                .insert(part.path.clone(), part.clone());
+            dst_doc.parts.insert(part.path.clone(), part.clone());
         }
 
         // Copy the slide's rels file (e.g., ppt/slides/_rels/slide1.xml.rels)
@@ -447,9 +435,7 @@ impl PptxDriver {
                 if !dst_doc.parts.contains_key(&resolved)
                     && let Some(part) = src_doc.get_part(&resolved)
                 {
-                    dst_doc
-                        .parts
-                        .insert(part.path.clone(), part.clone());
+                    dst_doc.parts.insert(part.path.clone(), part.clone());
                 }
             }
         }
@@ -472,10 +458,7 @@ fn part_path_to_rels_path(part_path: &str) -> String {
 
 /// Resolve a relative target path against a base part path.
 fn resolve_relative_path(base_part: &str, target: &str) -> String {
-    let dir = base_part
-        .rsplit_once('/')
-        .map(|(d, _)| d)
-        .unwrap_or("");
+    let dir = base_part.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
     if let Some(stripped) = target.strip_prefix('/') {
         stripped.to_string()
     } else if dir.is_empty() {
@@ -570,10 +553,10 @@ impl SutureDriver for PptxDriver {
         ours: &[u8],
         theirs: &[u8],
     ) -> Result<Option<Vec<u8>>, DriverError> {
-        let base_doc = OoxmlDocument::from_bytes(base)
-            .map_err(|e| DriverError::ParseError(e.to_string()))?;
-        let ours_doc = OoxmlDocument::from_bytes(ours)
-            .map_err(|e| DriverError::ParseError(e.to_string()))?;
+        let base_doc =
+            OoxmlDocument::from_bytes(base).map_err(|e| DriverError::ParseError(e.to_string()))?;
+        let ours_doc =
+            OoxmlDocument::from_bytes(ours).map_err(|e| DriverError::ParseError(e.to_string()))?;
         let theirs_doc = OoxmlDocument::from_bytes(theirs)
             .map_err(|e| DriverError::ParseError(e.to_string()))?;
 
@@ -587,8 +570,8 @@ impl SutureDriver for PptxDriver {
         };
 
         // Build the merged document starting from base
-        let mut doc = OoxmlDocument::from_bytes(base)
-            .map_err(|e| DriverError::ParseError(e.to_string()))?;
+        let mut doc =
+            OoxmlDocument::from_bytes(base).map_err(|e| DriverError::ParseError(e.to_string()))?;
 
         // Update presentation.xml with the new slide ID list
         let pres_path = doc
@@ -657,9 +640,7 @@ impl SutureDriver for PptxDriver {
         base: Option<&[u8]>,
         new_content: &[u8],
     ) -> Result<Vec<SemanticChange>, DriverError> {
-        let base_str = base.map(|b| {
-            unsafe { String::from_utf8_unchecked(b.to_vec()) }
-        });
+        let base_str = base.map(|b| unsafe { String::from_utf8_unchecked(b.to_vec()) });
         let new_str = unsafe { String::from_utf8_unchecked(new_content.to_vec()) };
         self.diff(base_str.as_deref(), &new_str)
     }
@@ -686,11 +667,7 @@ impl PptxDriver {
     }
 
     /// Update or create the presentation.xml.rels to include all slides.
-    fn update_presentation_rels(
-        doc: &mut OoxmlDocument,
-        pres_path: &str,
-        slides: &[SlideRef],
-    ) {
+    fn update_presentation_rels(doc: &mut OoxmlDocument, pres_path: &str, slides: &[SlideRef]) {
         let rels_path = part_path_to_rels_path(pres_path);
 
         let slide_rel_type =
@@ -908,7 +885,9 @@ mod tests {
         ];
         let changes = PptxDriver::diff_slides(&base, &new);
         assert_eq!(changes.len(), 1);
-        assert!(matches!(&changes[0], SemanticChange::Added { value, .. } if value.contains("257")));
+        assert!(
+            matches!(&changes[0], SemanticChange::Added { value, .. } if value.contains("257"))
+        );
     }
 
     #[test]
@@ -938,7 +917,9 @@ mod tests {
         }];
         let changes = PptxDriver::diff_slides(&base, &new);
         assert_eq!(changes.len(), 1);
-        assert!(matches!(&changes[0], SemanticChange::Removed { old_value, .. } if old_value.contains("257")));
+        assert!(
+            matches!(&changes[0], SemanticChange::Removed { old_value, .. } if old_value.contains("257"))
+        );
     }
 
     #[test]
@@ -1334,7 +1315,10 @@ mod tests {
         let theirs_str = unsafe { String::from_utf8_unchecked(theirs_bytes) };
 
         let result = driver.merge(&base_str, &ours_str, &theirs_str).unwrap();
-        assert!(result.is_some(), "merge should succeed (non-conflicting adds)");
+        assert!(
+            result.is_some(),
+            "merge should succeed (non-conflicting adds)"
+        );
 
         // Verify the merged result has 3 slides
         let merged_str = result.unwrap();
@@ -1380,8 +1364,10 @@ mod tests {
 
         // Check the actual slide XML content
         let slide_part = merged_doc.get_part(&merged_slides[0].part_path).unwrap();
-        assert!(slide_part.content.contains("Modified"),
+        assert!(
+            slide_part.content.contains("Modified"),
             "merged slide should contain 'Modified', got: {}",
-            &slide_part.content[..slide_part.content.len().min(200)]);
+            &slide_part.content[..slide_part.content.len().min(200)]
+        );
     }
 }

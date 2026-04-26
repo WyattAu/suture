@@ -17,9 +17,7 @@ pub(crate) enum ReportType {
     },
 }
 
-pub(crate) async fn cmd_report(
-    report_type: &ReportType,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) async fn cmd_report(report_type: &ReportType) -> Result<(), Box<dyn std::error::Error>> {
     match report_type {
         ReportType::Change {
             from,
@@ -68,9 +66,7 @@ async fn cmd_report_change(
 
     let patches: Vec<_> = all_patches
         .iter()
-        .filter(|p| {
-            p.timestamp > from_patch.timestamp && p.timestamp <= to_patch.timestamp
-        })
+        .filter(|p| p.timestamp > from_patch.timestamp && p.timestamp <= to_patch.timestamp)
         .cloned()
         .collect();
 
@@ -160,7 +156,10 @@ fn generate_change_markdown(
     file_count: usize,
 ) -> String {
     let mut out = String::new();
-    out.push_str(&format!("# Change Report: {} ({} → {})\n\n", repo_name, from_ref, to_ref));
+    out.push_str(&format!(
+        "# Change Report: {} ({} → {})\n\n",
+        repo_name, from_ref, to_ref
+    ));
     out.push_str(&format!(
         "## Summary\n\n- **Commits:** {}\n- **Files changed:** {}\n- **Authors:** {}\n\n",
         entries.len(),
@@ -211,7 +210,9 @@ fn generate_change_html(
     let mut out = String::new();
     out.push_str("<!DOCTYPE html>\n<html><head><meta charset=\"utf-8\">");
     out.push_str("<style>");
-    out.push_str("body{font-family:system-ui,sans-serif;max-width:900px;margin:2em auto;padding:0 1em}");
+    out.push_str(
+        "body{font-family:system-ui,sans-serif;max-width:900px;margin:2em auto;padding:0 1em}",
+    );
     out.push_str("h1{color:#333}h2{color:#555;border-bottom:1px solid #eee;padding-bottom:.3em}");
     out.push_str("h3{color:#666}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ddd;padding:6px 10px;text-align:left}");
     out.push_str("th{background:#f5f5f5}tr:nth-child(even){background:#fafafa}.added{color:#22863a}.modified{color:#b08800}.deleted{color:#cb2431}");
@@ -246,13 +247,22 @@ fn generate_change_html(
             if !entry.added.is_empty() || !entry.modified.is_empty() || !entry.deleted.is_empty() {
                 out.push_str("<table><tr><th>Status</th><th>File</th></tr>\n");
                 for f in &entry.added {
-                    out.push_str(&format!("<tr><td class=\"added\">A</td><td>{}</td></tr>\n", f));
+                    out.push_str(&format!(
+                        "<tr><td class=\"added\">A</td><td>{}</td></tr>\n",
+                        f
+                    ));
                 }
                 for f in &entry.modified {
-                    out.push_str(&format!("<tr><td class=\"modified\">M</td><td>{}</td></tr>\n", f));
+                    out.push_str(&format!(
+                        "<tr><td class=\"modified\">M</td><td>{}</td></tr>\n",
+                        f
+                    ));
                 }
                 for f in &entry.deleted {
-                    out.push_str(&format!("<tr><td class=\"deleted\">D</td><td>{}</td></tr>\n", f));
+                    out.push_str(&format!(
+                        "<tr><td class=\"deleted\">D</td><td>{}</td></tr>\n",
+                        f
+                    ));
                 }
                 out.push_str("</table>\n");
             }
@@ -277,7 +287,8 @@ async fn cmd_report_activity(days: u64, format: &str) -> Result<(), Box<dyn std:
         .filter(|p| p.timestamp >= cutoff)
         .collect();
 
-    let mut author_stats: std::collections::HashMap<String, AuthorStats> = std::collections::HashMap::new();
+    let mut author_stats: std::collections::HashMap<String, AuthorStats> =
+        std::collections::HashMap::new();
 
     for patch in &recent {
         let entry = author_stats
@@ -300,16 +311,17 @@ async fn cmd_report_activity(days: u64, format: &str) -> Result<(), Box<dyn std:
     match format {
         "markdown" => {
             println!("# Activity Report (last {} days)\n", days);
-            println!(
-                "| Author | Commits | Files Changed | Most Recent |"
-            );
+            println!("| Author | Commits | Files Changed | Most Recent |");
             println!("|--------|---------|---------------|-------------|");
             for (author, stats) in &sorted_authors {
                 let dt = chrono::DateTime::from_timestamp(stats.most_recent as i64, 0)
                     .unwrap_or_default()
                     .format("%Y-%m-%d %H:%M")
                     .to_string();
-                println!("| {} | {} | {} | {} |", author, stats.commits, stats.files_changed, dt);
+                println!(
+                    "| {} | {} | {} | {} |",
+                    author, stats.commits, stats.files_changed, dt
+                );
             }
             println!("\n**Total commits:** {}", recent.len());
         }
@@ -327,7 +339,11 @@ async fn cmd_report_activity(days: u64, format: &str) -> Result<(), Box<dyn std:
                 );
             }
             println!("{}", "─".repeat(60));
-            println!("Total: {} commits by {} authors", recent.len(), sorted_authors.len());
+            println!(
+                "Total: {} commits by {} authors",
+                recent.len(),
+                sorted_authors.len()
+            );
         }
     }
 
@@ -346,7 +362,8 @@ async fn cmd_report_stats(at: &str) -> Result<(), Box<dyn std::error::Error>> {
     let patch = resolve_ref(&repo, at, &all_patches)?;
     let tree = repo.snapshot(&patch.id)?;
 
-    let mut type_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut type_counts: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
     let mut file_sizes: Vec<(String, usize)> = Vec::new();
     let mut total_size: usize = 0;
 
@@ -380,10 +397,7 @@ async fn cmd_report_stats(at: &str) -> Result<(), Box<dyn std::error::Error>> {
 
     let total_files: usize = categories.iter().map(|(_, c)| *c).sum();
     println!("\nTotal files: {}", total_files);
-    println!(
-        "Total size:  {}",
-        format_size(total_size)
-    );
+    println!("Total size:  {}", format_size(total_size));
 
     println!("\nLargest files:");
     for (path, size) in file_sizes.iter().take(10) {
@@ -446,7 +460,9 @@ fn classify_files(
         Some(parent_hex.as_str())
     };
 
-    let entries = repo.diff(from, Some(commit_hex.as_str())).unwrap_or_default();
+    let entries = repo
+        .diff(from, Some(commit_hex.as_str()))
+        .unwrap_or_default();
 
     use suture_core::engine::diff::DiffType;
     let mut added = Vec::new();

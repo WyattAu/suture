@@ -11,11 +11,11 @@ mod remote;
 mod staging;
 mod status;
 
+use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Tabs};
-use ratatui::Frame;
 
 use crate::app::{App, DiffLineType, Tab};
 

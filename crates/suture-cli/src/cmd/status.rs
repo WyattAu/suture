@@ -21,10 +21,7 @@ pub(crate) async fn cmd_status() -> Result<(), Box<dyn std::error::Error>> {
                 let (ahead, behind) = compute_ahead_behind(&repo, &id, &remote_ref.tip);
                 match (ahead, behind) {
                     (0, 0) => {
-                        println!(
-                            "Your branch is up to date with '{}'.",
-                            remote_ref.label
-                        );
+                        println!("Your branch is up to date with '{}'.", remote_ref.label);
                     }
                     (a, 0) => {
                         println!(
@@ -154,7 +151,9 @@ fn find_remote_ref(
     let remotes = repo.list_remotes().unwrap_or_default();
     for (remote_name, _url) in &remotes {
         let ref_key = format!("remote.{}.ref.{}", remote_name, branch_name);
-        if let Ok(Some(hex)) = repo.get_config(&ref_key) && let Ok(tip) = suture_common::Hash::from_hex(&hex) {
+        if let Ok(Some(hex)) = repo.get_config(&ref_key)
+            && let Ok(tip) = suture_common::Hash::from_hex(&hex)
+        {
             return Ok(Some(RemoteRef {
                 label: format!("{}/{}", remote_name, branch_name),
                 tip,

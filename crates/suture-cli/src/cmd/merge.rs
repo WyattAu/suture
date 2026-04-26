@@ -42,18 +42,27 @@ pub(crate) async fn cmd_merge_abort() -> Result<(), Box<dyn std::error::Error>> 
         .map_err(|e| format!("failed to parse pending_merge_parents: {}", e))?;
 
     if parents.len() != 2 {
-        return Err(format!("invalid pending_merge_parents (expected 2 entries, got {})", parents.len()).into());
+        return Err(format!(
+            "invalid pending_merge_parents (expected 2 entries, got {})",
+            parents.len()
+        )
+        .into());
     }
 
     let original_head = parents[0];
 
-    let (branch, _) = repo.head().map_err(|e| user_error("failed to get HEAD", e))?;
+    let (branch, _) = repo
+        .head()
+        .map_err(|e| user_error("failed to get HEAD", e))?;
 
-    let old_tree = repo.snapshot_head().unwrap_or_else(|_| suture_core::engine::FileTree::empty());
+    let old_tree = repo
+        .snapshot_head()
+        .unwrap_or_else(|_| suture_core::engine::FileTree::empty());
 
     let bn = suture_common::BranchName::new(&branch)
         .map_err(|e| format!("invalid branch name '{}': {}", branch, e))?;
-    repo.dag_mut().update_branch(&bn, original_head)
+    repo.dag_mut()
+        .update_branch(&bn, original_head)
         .map_err(|e| user_error("failed to update branch", e))?;
     repo.invalidate_head_cache();
 
@@ -61,8 +70,14 @@ pub(crate) async fn cmd_merge_abort() -> Result<(), Box<dyn std::error::Error>> 
         .map_err(|e| user_error("failed to sync working tree", e))?;
 
     repo.set_config("pending_merge_parents", "")?;
-    let _ = repo.meta().conn().execute("DELETE FROM config WHERE key = 'pending_merge_parents'", []);
-    let _ = repo.meta().conn().execute("DELETE FROM config WHERE key = 'pending_merge_branch'", []);
+    let _ = repo
+        .meta()
+        .conn()
+        .execute("DELETE FROM config WHERE key = 'pending_merge_parents'", []);
+    let _ = repo
+        .meta()
+        .conn()
+        .execute("DELETE FROM config WHERE key = 'pending_merge_branch'", []);
 
     let conflicts_dir = repo.root().join(".suture").join("conflicts");
     if conflicts_dir.exists() {
@@ -89,25 +104,40 @@ pub(crate) async fn cmd_merge_continue() -> Result<(), Box<dyn std::error::Error
         }
     }
 
-    let report_path = repo.root().join(".suture").join("conflicts").join("report.md");
+    let report_path = repo
+        .root()
+        .join(".suture")
+        .join("conflicts")
+        .join("report.md");
     if report_path.exists() {
         println!("there are still unresolved conflicts");
         println!("resolve conflicts in the affected files, then run `suture merge --continue`");
         return Ok(());
     }
 
-    let count = repo.add_all().map_err(|e| user_error("failed to stage changes", e))?;
+    let count = repo
+        .add_all()
+        .map_err(|e| user_error("failed to stage changes", e))?;
     if count == 0 {
         return Err("no changes to commit".into());
     }
 
-    let branch_name = repo.get_config("pending_merge_branch").ok().flatten().unwrap_or_else(|| "unknown".to_string());
+    let branch_name = repo
+        .get_config("pending_merge_branch")
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| "unknown".to_string());
     let message = format!("Merge branch '{}' (conflicts resolved)", branch_name);
 
-    let patch_id = repo.commit(&message).map_err(|e| user_error("failed to commit", e))?;
+    let patch_id = repo
+        .commit(&message)
+        .map_err(|e| user_error("failed to commit", e))?;
     println!("Merge complete: {}", patch_id);
 
-    let _ = repo.meta().conn().execute("DELETE FROM config WHERE key = 'pending_merge_branch'", []);
+    let _ = repo
+        .meta()
+        .conn()
+        .execute("DELETE FROM config WHERE key = 'pending_merge_branch'", []);
 
     let conflicts_dir = repo.root().join(".suture").join("conflicts");
     if conflicts_dir.exists() {
@@ -139,7 +169,9 @@ pub(crate) async fn cmd_merge(
     let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))
         .map_err(|e| user_error("failed to open repository", e))?;
 
-    let status = repo.status().map_err(|e| user_error("failed to check repository status", e))?;
+    let status = repo
+        .status()
+        .map_err(|e| user_error("failed to check repository status", e))?;
     if !status.staged_files.is_empty() {
         return Err("cannot merge with staged changes (commit or stash them first)".into());
     }
@@ -151,7 +183,11 @@ pub(crate) async fn cmd_merge(
         } else {
             String::new()
         };
-        return Err(format!("branch '{}' not found{hint} (use 'suture branch' to create it)", source).into());
+        return Err(format!(
+            "branch '{}' not found{hint} (use 'suture branch' to create it)",
+            source
+        )
+        .into());
     }
 
     let (branch, head_id) = repo
@@ -180,9 +216,10 @@ pub(crate) async fn cmd_merge(
                 let path = entry.path();
                 if path.is_file()
                     && let Ok(relative) = path.strip_prefix(root)
-                        && let Ok(content) = std::fs::read_to_string(&path) {
-                            map.insert(relative.to_string_lossy().to_string(), content);
-                        }
+                    && let Ok(content) = std::fs::read_to_string(&path)
+                {
+                    map.insert(relative.to_string_lossy().to_string(), content);
+                }
             }
         }
         map
@@ -194,9 +231,11 @@ pub(crate) async fn cmd_merge(
     let pre_merge_head_id = repo.head().ok().map(|(_, id)| id);
 
     let result = if dry_run {
-        repo.preview_merge(source).map_err(|e| user_error("failed to preview merge", e))?
+        repo.preview_merge(source)
+            .map_err(|e| user_error("failed to preview merge", e))?
     } else {
-        repo.execute_merge(source).map_err(|e| user_error("merge failed", e))?
+        repo.execute_merge(source)
+            .map_err(|e| user_error("merge failed", e))?
     };
 
     if !result.is_clean && !dry_run {
@@ -310,9 +349,8 @@ pub(crate) async fn cmd_merge(
         // Theirs strategy writes correct binary blobs — include OOXML in normal flow
         conflicts
     } else {
-        let (ooxml, text): (Vec<_>, Vec<_>) = conflicts
-            .into_iter()
-            .partition(|c| is_ooxml_file(&c.path));
+        let (ooxml, text): (Vec<_>, Vec<_>) =
+            conflicts.into_iter().partition(|c| is_ooxml_file(&c.path));
 
         if !ooxml.is_empty() {
             for conflict in &ooxml {
@@ -516,9 +554,8 @@ pub(crate) async fn cmd_merge(
     let total_conflicts = remaining.len();
     println!("Merge has {} conflict(s):", total_conflicts);
 
-    let (binary_conflicts, text_conflicts): (Vec<_>, Vec<_>) = remaining
-        .into_iter()
-        .partition(|c| {
+    let (binary_conflicts, text_conflicts): (Vec<_>, Vec<_>) =
+        remaining.into_iter().partition(|c| {
             is_binary_path(&c.path)
                 || c.our_content_hash
                     .as_ref()
@@ -604,7 +641,9 @@ pub(crate) async fn cmd_merge(
         if ooxml_resolved > 0 && resolved_count > ooxml_resolved {
             println!(
                 "All conflicts resolved. {} via {}, {} OOXML preserved.",
-                resolved_count - ooxml_resolved, via, ooxml_resolved
+                resolved_count - ooxml_resolved,
+                via,
+                ooxml_resolved
             );
         } else if ooxml_resolved > 0 {
             println!(
@@ -612,10 +651,7 @@ pub(crate) async fn cmd_merge(
                 resolved_count, ooxml_resolved
             );
         } else {
-            println!(
-                "All conflicts resolved. {} via {}.",
-                resolved_count, via
-            );
+            println!("All conflicts resolved. {} via {}.", resolved_count, via);
         }
         println!("Run `suture commit` to finalize the merge.");
     } else {
@@ -645,9 +681,19 @@ fn is_binary_path(path: &str) -> bool {
         .is_some_and(|ext| {
             matches!(
                 ext.as_str(),
-                "docx" | "xlsx" | "pptx"
+                "docx"
+                    | "xlsx"
+                    | "pptx"
                     | "pdf"
-                    | "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "svg" | "ico" | "tiff"
+                    | "png"
+                    | "jpg"
+                    | "jpeg"
+                    | "gif"
+                    | "bmp"
+                    | "webp"
+                    | "svg"
+                    | "ico"
+                    | "tiff"
             )
         })
 }
@@ -669,9 +715,7 @@ fn generate_ooxml_conflict_report(
             .unwrap_or_else(|| "UNKNOWN".to_string());
 
         report.push_str(&format!("{} ({})\n", conflict.path, ext));
-        report.push_str(
-            "  Could not automatically merge. Your version has been preserved.\n\n",
-        );
+        report.push_str("  Could not automatically merge. Your version has been preserved.\n\n");
 
         if conflict.our_content_hash.is_some() {
             let our_size = std::fs::metadata(&conflict.path)
@@ -722,8 +766,16 @@ fn manual_line_merge(ours: &str, theirs: &str) -> String {
     let ours_set: std::collections::HashSet<&str> = ours_lines.iter().copied().collect();
     let theirs_set: std::collections::HashSet<&str> = theirs_lines.iter().copied().collect();
 
-    let ours_only: Vec<&str> = ours_lines.iter().filter(|l| !theirs_set.contains(*l)).copied().collect();
-    let theirs_only: Vec<&str> = theirs_lines.iter().filter(|l| !ours_set.contains(*l)).copied().collect();
+    let ours_only: Vec<&str> = ours_lines
+        .iter()
+        .filter(|l| !theirs_set.contains(*l))
+        .copied()
+        .collect();
+    let theirs_only: Vec<&str> = theirs_lines
+        .iter()
+        .filter(|l| !ours_set.contains(*l))
+        .copied()
+        .collect();
 
     // If one side has no unique changes, the other side wins
     if ours_only.is_empty() {
@@ -745,7 +797,9 @@ fn manual_line_merge(ours: &str, theirs: &str) -> String {
         while theirs_idx < theirs_only.len() {
             if theirs_idx + 1 < theirs_lines.len() {
                 let next_theirs = theirs_lines[theirs_idx + 1];
-                if ours_set.contains(next_theirs) && result.iter().any(|r| r.trim() == next_theirs.trim()) {
+                if ours_set.contains(next_theirs)
+                    && result.iter().any(|r| r.trim() == next_theirs.trim())
+                {
                     result.push(theirs_only[theirs_idx].to_string());
                     theirs_idx += 1;
                 } else {
@@ -771,7 +825,6 @@ fn semantic_remerge_both_modified(
     pre_merge_files: &std::collections::HashMap<String, String>,
     pre_merge_head_id: &Option<suture_common::Hash>,
 ) -> Result<usize, Box<dyn std::error::Error>> {
-    
     use std::path::Path as StdPath;
 
     let registry = crate::driver_registry::builtin_registry();
@@ -839,7 +892,6 @@ fn semantic_remerge_both_modified(
         .cloned()
         .collect();
 
-
     if both_modified.is_empty() {
         return Ok(0);
     }
@@ -862,7 +914,7 @@ fn semantic_remerge_both_modified(
         //           overwritten ours' changes with theirs')
         let base = match lca_files.get(path.as_str()) {
             Some(c) => c.as_str(),
-            None => "",  // File didn't exist at LCA — treat as empty base
+            None => "", // File didn't exist at LCA — treat as empty base
         };
         let ours = match pre_merge_files.get(path.as_str()) {
             Some(c) => c.as_str(),

@@ -271,11 +271,7 @@ fn rebuild_document_xml(body: &BodyParse, merged_blocks: &[Block]) -> String {
 }
 
 /// Three-way merge of block lists by index.
-fn merge_blocks(
-    base: &[Block],
-    ours: &[Block],
-    theirs: &[Block],
-) -> Option<Vec<Block>> {
+fn merge_blocks(base: &[Block], ours: &[Block], theirs: &[Block]) -> Option<Vec<Block>> {
     let max_len = base.len().max(ours.len()).max(theirs.len());
     let mut merged = Vec::with_capacity(max_len);
 
@@ -387,7 +383,13 @@ impl SutureDriver for DocxDriver {
         for i in 0..max_len {
             let block_type = new_blocks
                 .get(i)
-                .map(|b| if b.kind == BlockKind::Table { "table" } else { "paragraph" })
+                .map(|b| {
+                    if b.kind == BlockKind::Table {
+                        "table"
+                    } else {
+                        "paragraph"
+                    }
+                })
                 .unwrap_or("paragraph");
             let path = format!("/{}/{}", block_type, i);
             match (base_blocks.get(i), new_blocks.get(i)) {
@@ -469,10 +471,10 @@ impl SutureDriver for DocxDriver {
         ours: &[u8],
         theirs: &[u8],
     ) -> Result<Option<Vec<u8>>, DriverError> {
-        let base_doc = OoxmlDocument::from_bytes(base)
-            .map_err(|e| DriverError::ParseError(e.to_string()))?;
-        let ours_doc = OoxmlDocument::from_bytes(ours)
-            .map_err(|e| DriverError::ParseError(e.to_string()))?;
+        let base_doc =
+            OoxmlDocument::from_bytes(base).map_err(|e| DriverError::ParseError(e.to_string()))?;
+        let ours_doc =
+            OoxmlDocument::from_bytes(ours).map_err(|e| DriverError::ParseError(e.to_string()))?;
         let theirs_doc = OoxmlDocument::from_bytes(theirs)
             .map_err(|e| DriverError::ParseError(e.to_string()))?;
 
@@ -552,8 +554,7 @@ mod tests {
                     .replace('&', "&amp;")
                     .replace('<', "&lt;")
                     .replace('>', "&gt;");
-                doc_xml
-                    .push_str(&format!("<w:p><w:r><w:t>{escaped}</w:t></w:r></w:p>"));
+                doc_xml.push_str(&format!("<w:p><w:r><w:t>{escaped}</w:t></w:r></w:p>"));
             } else {
                 // Table
                 doc_xml.push_str(
@@ -685,21 +686,30 @@ mod tests {
         // Base: paragraph, table, paragraph
         let base = make_docx_raw(&[
             ("Intro", vec![]),
-            ("", vec![vec!["Name", "Age"], vec!["Alice", "30"], vec!["Bob", "25"]]),
+            (
+                "",
+                vec![vec!["Name", "Age"], vec!["Alice", "30"], vec!["Bob", "25"]],
+            ),
             ("Outro", vec![]),
         ]);
 
         // Ours: change intro text
         let ours = make_docx_raw(&[
             ("CHANGED Intro", vec![]),
-            ("", vec![vec!["Name", "Age"], vec!["Alice", "30"], vec!["Bob", "25"]]),
+            (
+                "",
+                vec![vec!["Name", "Age"], vec!["Alice", "30"], vec!["Bob", "25"]],
+            ),
             ("Outro", vec![]),
         ]);
 
         // Theirs: change outro text
         let theirs = make_docx_raw(&[
             ("Intro", vec![]),
-            ("", vec![vec!["Name", "Age"], vec!["Alice", "30"], vec!["Bob", "25"]]),
+            (
+                "",
+                vec![vec!["Name", "Age"], vec!["Alice", "30"], vec!["Bob", "25"]],
+            ),
             ("CHANGED Outro", vec![]),
         ]);
 
@@ -711,10 +721,22 @@ mod tests {
         // Verify table survived
         let merged_str = merged.unwrap();
         assert!(merged_str.contains("<w:tbl>"), "table should be preserved");
-        assert!(merged_str.contains("<w:tblGrid>"), "table grid should be preserved");
-        assert!(merged_str.contains("<w:tr>"), "table rows should be preserved");
-        assert!(merged_str.contains("<w:tc>"), "table cells should be preserved");
-        assert!(merged_str.contains("Alice"), "table data should be preserved");
+        assert!(
+            merged_str.contains("<w:tblGrid>"),
+            "table grid should be preserved"
+        );
+        assert!(
+            merged_str.contains("<w:tr>"),
+            "table rows should be preserved"
+        );
+        assert!(
+            merged_str.contains("<w:tc>"),
+            "table cells should be preserved"
+        );
+        assert!(
+            merged_str.contains("Alice"),
+            "table data should be preserved"
+        );
         assert!(merged_str.contains("Bob"), "table data should be preserved");
     }
 
@@ -746,7 +768,10 @@ mod tests {
         let result = d
             .merge(&docx_str(&base), &docx_str(&ours), &docx_str(&theirs))
             .unwrap();
-        assert!(result.is_none(), "conflicting edits to paragraph before table should conflict");
+        assert!(
+            result.is_none(),
+            "conflicting edits to paragraph before table should conflict"
+        );
     }
 
     #[test]
@@ -776,7 +801,11 @@ mod tests {
         assert_eq!(body.blocks.len(), 4);
 
         // First block should have the Title style
-        assert!(body.blocks[0].raw_xml.contains(r#"<w:pStyle w:val="Title"/>"#));
+        assert!(
+            body.blocks[0]
+                .raw_xml
+                .contains(r#"<w:pStyle w:val="Title"/>"#)
+        );
         assert!(body.blocks[0].raw_xml.contains("<w:b/>"));
         assert_eq!(body.blocks[0].text, "BIG TITLE");
 
@@ -786,7 +815,11 @@ mod tests {
         assert!(body.blocks[1].raw_xml.contains("<w:i/>"));
 
         // Third block has Heading1 style
-        assert!(body.blocks[2].raw_xml.contains(r#"<w:pStyle w:val="Heading1"/>"#));
+        assert!(
+            body.blocks[2]
+                .raw_xml
+                .contains(r#"<w:pStyle w:val="Heading1"/>"#)
+        );
 
         // Fourth block preserves xml:space and rsidR attribute
         assert!(body.blocks[3].raw_xml.contains(r#"xml:space="preserve""#));
@@ -822,9 +855,7 @@ mod tests {
 </w:document>"#;
         let modified2_str = docx_bytes(&make_docx_from_xml(modified2_doc_xml));
 
-        let merged = d
-            .merge(&styled_str, &modified_str, &modified2_str)
-            .unwrap();
+        let merged = d.merge(&styled_str, &modified_str, &modified2_str).unwrap();
         assert!(merged.is_some(), "non-overlapping edits should merge");
 
         let merged_doc = OoxmlDocument::from_bytes(merged.unwrap().as_bytes()).unwrap();
@@ -838,7 +869,11 @@ mod tests {
         assert_eq!(merged_body.blocks[0].text, "BIG TITLE");
         assert_eq!(merged_body.blocks[1].text, "CHANGED PARAGRAPH");
         assert_eq!(merged_body.blocks[2].text, "CHANGED HEADING");
-        assert!(merged_body.blocks[3].raw_xml.contains(r#"w:rsidR="00112233""#));
+        assert!(
+            merged_body.blocks[3]
+                .raw_xml
+                .contains(r#"w:rsidR="00112233""#)
+        );
     }
 
     #[test]
@@ -885,11 +920,17 @@ mod tests {
         let mut buf = Vec::new();
         {
             let mut zip = zip::ZipWriter::new(Cursor::new(&mut buf));
-            zip.start_file("[Content_Types].xml", zip::write::SimpleFileOptions::default())
-                .unwrap();
+            zip.start_file(
+                "[Content_Types].xml",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
             zip.write_all(content_types.as_bytes()).unwrap();
-            zip.start_file("word/document.xml", zip::write::SimpleFileOptions::default())
-                .unwrap();
+            zip.start_file(
+                "word/document.xml",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
             zip.write_all(doc_xml.as_bytes()).unwrap();
             zip.finish().unwrap();
         }
@@ -933,11 +974,17 @@ mod tests {
         let mut buf = Vec::new();
         {
             let mut zip = zip::ZipWriter::new(Cursor::new(&mut buf));
-            zip.start_file("[Content_Types].xml", zip::write::SimpleFileOptions::default())
-                .unwrap();
+            zip.start_file(
+                "[Content_Types].xml",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
             zip.write_all(content_types.as_bytes()).unwrap();
-            zip.start_file("word/document.xml", zip::write::SimpleFileOptions::default())
-                .unwrap();
+            zip.start_file(
+                "word/document.xml",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
             zip.write_all(doc_xml.as_bytes()).unwrap();
             zip.finish().unwrap();
         }
@@ -954,11 +1001,17 @@ mod tests {
         let mut buf = Vec::new();
         {
             let mut zip = zip::ZipWriter::new(Cursor::new(&mut buf));
-            zip.start_file("[Content_Types].xml", zip::write::SimpleFileOptions::default())
-                .unwrap();
+            zip.start_file(
+                "[Content_Types].xml",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
             zip.write_all(content_types.as_bytes()).unwrap();
-            zip.start_file("word/document.xml", zip::write::SimpleFileOptions::default())
-                .unwrap();
+            zip.start_file(
+                "word/document.xml",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
             zip.write_all(doc_xml.as_bytes()).unwrap();
             zip.finish().unwrap();
         }

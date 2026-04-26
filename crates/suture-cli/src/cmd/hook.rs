@@ -39,7 +39,11 @@ fn cmd_hook_list(hooks_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
             let meta = hook_path.metadata()?;
             let size = meta.len();
             let executable = is_executable(&hook_path);
-            let status = if executable { "active" } else { "inactive (not executable)" };
+            let status = if executable {
+                "active"
+            } else {
+                "inactive (not executable)"
+            };
 
             let size_str = if size < 1024 {
                 format!("{} B", size)
@@ -82,10 +86,7 @@ fn cmd_hook_list(hooks_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn cmd_hook_run(
-    repo_root: &Path,
-    name: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_hook_run(repo_root: &Path, name: &str) -> Result<(), Box<dyn std::error::Error>> {
     let env = suture_core::hooks::build_env(
         repo_root,
         name,
@@ -142,7 +143,8 @@ fn cmd_hook_edit(hooks_dir: &Path, name: &str) -> Result<(), Box<dyn std::error:
         let default_content = format!(
             "#!/bin/sh\n# Suture {} hook\n# Runs automatically before {}\n\nexit 0\n",
             name,
-            name.strip_prefix("pre-").unwrap_or(name.strip_prefix("post-").unwrap_or(name))
+            name.strip_prefix("pre-")
+                .unwrap_or(name.strip_prefix("post-").unwrap_or(name))
         );
         std::fs::write(&hook_path, default_content)?;
         make_executable(&hook_path);
@@ -174,7 +176,11 @@ fn is_executable(path: &Path) -> bool {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        return is_file && path.metadata().map(|m| (m.permissions().mode() & 0o111) != 0).unwrap_or(false);
+        return is_file
+            && path
+                .metadata()
+                .map(|m| (m.permissions().mode() & 0o111) != 0)
+                .unwrap_or(false);
     }
     #[cfg(not(unix))]
     {

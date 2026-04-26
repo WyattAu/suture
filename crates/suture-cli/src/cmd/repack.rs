@@ -17,11 +17,7 @@ pub(crate) async fn cmd_repack(
         .map(|entries| {
             entries
                 .filter_map(|e| e.ok())
-                .filter(|e| {
-                    e.file_name()
-                        .to_str()
-                        .is_some_and(|n| n.ends_with(".pack"))
-                })
+                .filter(|e| e.file_name().to_str().is_some_and(|n| n.ends_with(".pack")))
                 .count()
         })
         .unwrap_or(0);
@@ -34,7 +30,10 @@ pub(crate) async fn cmd_repack(
     println!("  Threshold:       {} loose objects", threshold);
 
     if loose_count <= threshold as u64 && !force {
-        println!("\nNothing to pack ({} loose objects <= threshold of {}).", loose_count, threshold);
+        println!(
+            "\nNothing to pack ({} loose objects <= threshold of {}).",
+            loose_count, threshold
+        );
         println!("Use --force to pack regardless of threshold.");
         return Ok(());
     }
@@ -55,11 +54,7 @@ pub(crate) async fn cmd_repack(
         .map(|entries| {
             entries
                 .filter_map(|e| e.ok())
-                .filter(|e| {
-                    e.file_name()
-                        .to_str()
-                        .is_some_and(|n| n.ends_with(".pack"))
-                })
+                .filter(|e| e.file_name().to_str().is_some_and(|n| n.ends_with(".pack")))
                 .count()
         })
         .unwrap_or(0);
@@ -74,7 +69,11 @@ pub(crate) async fn cmd_repack(
         0
     };
 
-    println!("\nPacked {} objects into {} pack file(s).", packed, new_pack_count - existing_packs);
+    println!(
+        "\nPacked {} objects into {} pack file(s).",
+        packed,
+        new_pack_count - existing_packs
+    );
     println!("  Loose objects remaining:  {}", new_loose_count);
     println!("  Total packed objects:     {}", new_packed_hashes.len());
     println!("  Estimated space freed:    {} bytes", space_saved);

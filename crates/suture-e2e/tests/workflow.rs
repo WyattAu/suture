@@ -266,7 +266,11 @@ async fn start_test_hub() -> String {
     let url = format!("http://127.0.0.1:{}", port);
 
     tokio::spawn(async move {
-        let _ = axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>()).await;
+        let _ = axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .await;
     });
 
     let client = reqwest::Client::new();
@@ -684,11 +688,28 @@ fn test_merge_file_json() {
     fs::write(dir.join("ours.json"), r#"{"a": 10, "b": 2}"#).unwrap();
     fs::write(dir.join("theirs.json"), r#"{"a": 1, "b": 20}"#).unwrap();
 
-    let out = suture_success(dir, &["merge-file", "--driver", "json",
-        "base.json", "ours.json", "theirs.json"]);
+    let out = suture_success(
+        dir,
+        &[
+            "merge-file",
+            "--driver",
+            "json",
+            "base.json",
+            "ours.json",
+            "theirs.json",
+        ],
+    );
 
-    assert!(out.contains("\"a\": 10"), "should have our change to a: {}", out);
-    assert!(out.contains("\"b\": 20"), "should have their change to b: {}", out);
+    assert!(
+        out.contains("\"a\": 10"),
+        "should have our change to a: {}",
+        out
+    );
+    assert!(
+        out.contains("\"b\": 20"),
+        "should have their change to b: {}",
+        out
+    );
 }
 
 #[test]
@@ -700,13 +721,29 @@ fn test_merge_file_conflict_fallback() {
     fs::write(dir.join("ours.json"), r#"{"key": "ours"}"#).unwrap();
     fs::write(dir.join("theirs.json"), r#"{"key": "theirs"}"#).unwrap();
 
-    let output = suture(dir, &["merge-file", "--driver", "json",
-        "base.json", "ours.json", "theirs.json", "-o", "merged.json"]);
+    let output = suture(
+        dir,
+        &[
+            "merge-file",
+            "--driver",
+            "json",
+            "base.json",
+            "ours.json",
+            "theirs.json",
+            "-o",
+            "merged.json",
+        ],
+    );
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     let combined = format!("{}{}", stdout, stderr);
-    assert!(combined.contains("falling back") || combined.contains("conflict") || combined.contains("Conflict"),
-        "merge-file should fall back to line-based on conflicts: {}", combined);
+    assert!(
+        combined.contains("falling back")
+            || combined.contains("conflict")
+            || combined.contains("Conflict"),
+        "merge-file should fall back to line-based on conflicts: {}",
+        combined
+    );
 }
 
 #[test]
@@ -718,8 +755,10 @@ fn test_merge_file_auto_detect() {
     fs::write(dir.join("ours.yaml"), "a: 10\nb: 2\n").unwrap();
     fs::write(dir.join("theirs.yaml"), "a: 1\nb: 20\n").unwrap();
 
-    let out = suture_success(dir, &["merge-file",
-        "base.yaml", "ours.yaml", "theirs.yaml"]);
+    let out = suture_success(
+        dir,
+        &["merge-file", "base.yaml", "ours.yaml", "theirs.yaml"],
+    );
 
     assert!(out.contains("a: 10"), "should have our change: {}", out);
     assert!(out.contains("b: 20"), "should have their change: {}", out);
@@ -734,12 +773,24 @@ fn test_merge_file_invalid_driver() {
     fs::write(dir.join("ours.txt"), "hello world\n").unwrap();
     fs::write(dir.join("theirs.txt"), "hello there\n").unwrap();
 
-    let output = suture(dir, &["merge-file", "--driver", "nonexistent",
-        "base.txt", "ours.txt", "theirs.txt"]);
+    let output = suture(
+        dir,
+        &[
+            "merge-file",
+            "--driver",
+            "nonexistent",
+            "base.txt",
+            "ours.txt",
+            "theirs.txt",
+        ],
+    );
     assert!(!output.status.success(), "invalid driver should error");
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("nonexistent") || stderr.contains("driver"),
-        "error should mention driver: {}", stderr);
+    assert!(
+        stderr.contains("nonexistent") || stderr.contains("driver"),
+        "error should mention driver: {}",
+        stderr
+    );
 }
 
 // =========================================================================
@@ -762,7 +813,8 @@ fn test_cherry_pick() {
 
     let log = suture_success(&repo, &["log", "--oneline"]);
     let lines: Vec<&str> = log.lines().filter(|l| !l.is_empty()).collect();
-    let feat_hash = lines.iter()
+    let feat_hash = lines
+        .iter()
         .find(|l| l.contains("feature commit"))
         .unwrap()
         .split_whitespace()
@@ -774,12 +826,23 @@ fn test_cherry_pick() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     if output.status.success() {
-        assert!(stdout.contains("Cherry-pick") || stdout.contains("applied") || stdout.contains("success"),
-            "cherry-pick output: {}", stdout);
-        assert!(repo.join("feat.txt").exists(), "feat.txt should exist after cherry-pick");
+        assert!(
+            stdout.contains("Cherry-pick")
+                || stdout.contains("applied")
+                || stdout.contains("success"),
+            "cherry-pick output: {}",
+            stdout
+        );
+        assert!(
+            repo.join("feat.txt").exists(),
+            "feat.txt should exist after cherry-pick"
+        );
     } else {
-        assert!(stderr.contains("already exists") || stderr.contains("reachable"),
-            "cherry-pick should either succeed or report patch exists: {}", stderr);
+        assert!(
+            stderr.contains("already exists") || stderr.contains("reachable"),
+            "cherry-pick should either succeed or report patch exists: {}",
+            stderr
+        );
     }
 }
 
@@ -801,7 +864,8 @@ fn test_revert() {
 
     let log = suture_success(&repo, &["log", "--oneline"]);
     let lines: Vec<&str> = log.lines().filter(|l| !l.is_empty()).collect();
-    let mod_hash = lines.iter()
+    let mod_hash = lines
+        .iter()
         .find(|l| l.contains("modification"))
         .unwrap()
         .split_whitespace()
@@ -809,10 +873,18 @@ fn test_revert() {
         .unwrap();
 
     let out = suture_success(&repo, &["revert", mod_hash]);
-    assert!(out.contains("Revert") || out.contains("success"), "revert output: {}", out);
+    assert!(
+        out.contains("Revert") || out.contains("success"),
+        "revert output: {}",
+        out
+    );
 
     let log = suture_success(&repo, &["log", "--oneline"]);
-    assert!(log.contains("Revert"), "log should contain a Revert commit: {}", log);
+    assert!(
+        log.contains("Revert"),
+        "log should contain a Revert commit: {}",
+        log
+    );
 }
 
 // =========================================================================
@@ -828,22 +900,44 @@ fn test_notes() {
     suture_success(&repo, &["commit", "initial"]);
 
     let log = suture_success(&repo, &["log", "--oneline"]);
-    let hash = log.lines().next().unwrap().split_whitespace().next().unwrap();
+    let hash = log
+        .lines()
+        .next()
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
 
     let out = suture_success(&repo, &["notes", "add", hash, "-m", "This is a test note"]);
-    assert!(out.contains("Note added") || out.contains("success"), "notes add: {}", out);
+    assert!(
+        out.contains("Note added") || out.contains("success"),
+        "notes add: {}",
+        out
+    );
 
     let out = suture_success(&repo, &["notes", "list", hash]);
-    assert!(out.contains("test note"), "notes list should contain note: {}", out);
+    assert!(
+        out.contains("test note"),
+        "notes list should contain note: {}",
+        out
+    );
 
     let out = suture_success(&repo, &["notes", "show", hash]);
     assert!(out.contains("test note"), "notes show: {}", out);
 
     let out = suture_success(&repo, &["notes", "remove", hash, "0"]);
-    assert!(out.contains("Removed") || out.contains("removed") || out.contains("success"), "notes remove: {}", out);
+    assert!(
+        out.contains("Removed") || out.contains("removed") || out.contains("success"),
+        "notes remove: {}",
+        out
+    );
 
     let out = suture_success(&repo, &["notes", "list", hash]);
-    assert!(!out.contains("test note"), "note should be removed: {}", out);
+    assert!(
+        !out.contains("test note"),
+        "note should be removed: {}",
+        out
+    );
 }
 
 // =========================================================================
@@ -860,18 +954,33 @@ fn test_worktree() {
     suture_success(&repo, &["commit", "main commit"]);
 
     let wt_path = repo.join("../worktree-test-wt");
-    let output = suture(&repo, &["worktree", "add",
-        wt_path.to_str().unwrap(), "-b", "wt-branch"]);
+    let output = suture(
+        &repo,
+        &[
+            "worktree",
+            "add",
+            wt_path.to_str().unwrap(),
+            "-b",
+            "wt-branch",
+        ],
+    );
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     let combined = format!("{}{}", stdout, stderr);
-    assert!(output.status.success() || combined.contains("worktree") || combined.contains("CAS"),
-        "worktree add should succeed or report known issue: {}", combined);
+    assert!(
+        output.status.success() || combined.contains("worktree") || combined.contains("CAS"),
+        "worktree add should succeed or report known issue: {}",
+        combined
+    );
 
     assert!(wt_path.exists(), "worktree directory should exist");
 
     let out = suture_success(&repo, &["worktree", "list"]);
-    assert!(out.contains("wt-branch") || out.contains("worktree"), "worktree list: {}", out);
+    assert!(
+        out.contains("wt-branch") || out.contains("worktree"),
+        "worktree list: {}",
+        out
+    );
 
     let _ = suture(&repo, &["worktree", "remove", wt_path.to_str().unwrap()]);
 }
@@ -903,6 +1012,11 @@ fn test_merge_conflict_detection() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     let combined = format!("{}{}", stdout, stderr);
-    assert!(combined.contains("conflict") || combined.contains("CONFLICT") || combined.contains("Conflict"),
-        "merge should detect conflict: {}", combined);
+    assert!(
+        combined.contains("conflict")
+            || combined.contains("CONFLICT")
+            || combined.contains("Conflict"),
+        "merge should detect conflict: {}",
+        combined
+    );
 }

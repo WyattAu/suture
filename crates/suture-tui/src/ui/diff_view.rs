@@ -1,10 +1,10 @@
 //! Diff viewer — displays file diffs with syntax highlighting.
 
+use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
-use ratatui::Frame;
 
 use crate::app::{App, DiffLineType};
 

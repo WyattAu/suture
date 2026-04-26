@@ -490,10 +490,7 @@ impl App {
 
         // Global [r] → Remote tab (except in Status/Branches where [r] has other uses)
         if key_matches(key, KeyCode::Char('r'), KeyModifiers::NONE)
-            && !matches!(
-                self.current_tab,
-                Tab::Status | Tab::Branches
-            )
+            && !matches!(self.current_tab, Tab::Status | Tab::Branches)
         {
             self.current_tab = Tab::Remote;
             self.status_message = "Switched to Remote".to_string();
@@ -907,8 +904,7 @@ impl App {
                     let root = self.repo.root().to_path_buf();
                     let full_path = root.join(&conflict.path);
                     let editor = std::env::var("EDITOR").unwrap_or_else(|_| "nvim".to_string());
-                    self.status_message =
-                        format!("Opening {} in {} ...", conflict.path, editor);
+                    self.status_message = format!("Opening {} in {} ...", conflict.path, editor);
 
                     // Drop the terminal, run editor, restore terminal
                     self.should_quit = true; // Temporarily — we'll re-enter after editor
@@ -922,7 +918,9 @@ impl App {
                         editor,
                         full_path.display()
                     );
-                    eprintln!("  After resolving conflicts, run `suture add .` then `suture tui`\n");
+                    eprintln!(
+                        "  After resolving conflicts, run `suture add .` then `suture tui`\n"
+                    );
                 }
             }
             KeyCode::Char('r') => {
@@ -933,10 +931,8 @@ impl App {
                     self.status_message =
                         "All conflicts resolved! Run `suture commit` to finalize.".to_string();
                 } else {
-                    self.status_message = format!(
-                        "{} conflict file(s) remaining",
-                        self.conflict_files.len()
-                    );
+                    self.status_message =
+                        format!("{} conflict file(s) remaining", self.conflict_files.len());
                 }
                 // Clamp cursor
                 if self.conflict_cursor >= self.conflict_files.len() {
@@ -965,11 +961,15 @@ impl App {
                 self.branch_input_mode = true;
                 self.branch_input.clear();
                 self.branch_input_action = BranchAction::Create;
-                self.status_message = "Enter new branch name (Enter to confirm, Esc to cancel)".to_string();
+                self.status_message =
+                    "Enter new branch name (Enter to confirm, Esc to cancel)".to_string();
             }
             KeyCode::Char('x') => {
                 // Checkout selected branch (with confirmation)
-                let branch_name = self.branch_list.get(self.branch_cursor).map(|(n, _)| n.clone());
+                let branch_name = self
+                    .branch_list
+                    .get(self.branch_cursor)
+                    .map(|(n, _)| n.clone());
                 if let Some(name) = branch_name {
                     if self.head_branch.as_deref() == Some(name.as_str()) {
                         self.error_message = Some("Already on this branch".to_string());
@@ -986,8 +986,7 @@ impl App {
                     self.checkout_confirm_mode = true;
                     self.checkout_target = Some(name);
                     self.checkout_changed_files = changed_files;
-                    self.status_message =
-                        "Confirm checkout? [y] Yes  [n] No".to_string();
+                    self.status_message = "Confirm checkout? [y] Yes  [n] No".to_string();
                 }
             }
             KeyCode::Char('d') => {
@@ -1017,7 +1016,8 @@ impl App {
                     self.branch_input_mode = true;
                     self.branch_input = name.clone();
                     self.branch_input_action = BranchAction::Rename;
-                    self.status_message = "Enter new branch name (Enter to confirm, Esc to cancel)".to_string();
+                    self.status_message =
+                        "Enter new branch name (Enter to confirm, Esc to cancel)".to_string();
                 }
             }
             KeyCode::Char('g') => {
@@ -1043,7 +1043,8 @@ impl App {
                 }
                 // Validate branch name
                 if suture_common::BranchName::new(&name).is_err() {
-                    self.error_message = Some("Invalid branch name (must be non-empty, no null bytes)".to_string());
+                    self.error_message =
+                        Some("Invalid branch name (must be non-empty, no null bytes)".to_string());
                     return false;
                 }
                 match self.branch_input_action {
@@ -1068,8 +1069,7 @@ impl App {
                         } else if let Err(e) = self.repo.create_branch(&name, None) {
                             self.error_message = Some(format!("Rename failed (create): {e}"));
                         } else {
-                            self.status_message =
-                                format!("Renamed: {old_name} → {name}");
+                            self.status_message = format!("Renamed: {old_name} → {name}");
                             if let Err(e) = self.refresh() {
                                 self.error_message = Some(format!("Refresh failed: {e}"));
                             }
@@ -1475,11 +1475,7 @@ fn parse_conflict_markers(content: &str) -> Option<Vec<Hunk>> {
         search_from = after_theirs;
     }
 
-    if hunks.is_empty() {
-        None
-    } else {
-        Some(hunks)
-    }
+    if hunks.is_empty() { None } else { Some(hunks) }
 }
 
 /// Convert days since Unix epoch to (year, month, day).

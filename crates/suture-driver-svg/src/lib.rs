@@ -181,7 +181,10 @@ impl SvgDriver {
 
         for (id, new_idx) in &new_id_map {
             if let Some(&old_idx) = old_id_map.get(id) {
-                changes.extend(Self::diff_nodes(old_children[old_idx], new_children[*new_idx]));
+                changes.extend(Self::diff_nodes(
+                    old_children[old_idx],
+                    new_children[*new_idx],
+                ));
                 new_matched.insert(*new_idx);
                 old_matched.insert(old_idx);
             }
@@ -334,9 +337,12 @@ impl SvgDriver {
                 (Some(oi), Some(ti)) => {
                     ours_used.insert(oi);
                     theirs_used.insert(ti);
-                    if let Some(merged) =
-                        Self::merge_elements(base_children[base_idx], ours_children[oi], theirs_children[ti], indent + 1)?
-                    {
+                    if let Some(merged) = Self::merge_elements(
+                        base_children[base_idx],
+                        ours_children[oi],
+                        theirs_children[ti],
+                        indent + 1,
+                    )? {
                         merged_children.push(merged);
                     } else {
                         return Ok(None);
@@ -367,10 +373,8 @@ impl SvgDriver {
                 {
                     merged_children.push(Self::element_to_string(ours_children[oi], indent + 1));
                 } else {
-                    merged_children
-                        .push(Self::element_to_string(ours_children[oi], indent + 1));
-                    merged_children
-                        .push(Self::element_to_string(theirs_children[ti], indent + 1));
+                    merged_children.push(Self::element_to_string(ours_children[oi], indent + 1));
+                    merged_children.push(Self::element_to_string(theirs_children[ti], indent + 1));
                 }
             } else {
                 merged_children.push(Self::element_to_string(ours_children[oi], indent + 1));
@@ -484,7 +488,10 @@ impl SutureDriver for SvgDriver {
             Some(base) => {
                 let old_doc = roxmltree::Document::parse(base)
                     .map_err(|e| DriverError::ParseError(e.to_string()))?;
-                Ok(Self::diff_nodes(old_doc.root_element(), new_doc.root_element()))
+                Ok(Self::diff_nodes(
+                    old_doc.root_element(),
+                    new_doc.root_element(),
+                ))
             }
         }
     }
@@ -514,9 +521,12 @@ impl SutureDriver for SvgDriver {
 
         let mut result = String::new();
         result.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
-        if let Some(merged) =
-            Self::merge_elements(base_doc.root_element(), ours_doc.root_element(), theirs_doc.root_element(), 0)?
-        {
+        if let Some(merged) = Self::merge_elements(
+            base_doc.root_element(),
+            ours_doc.root_element(),
+            theirs_doc.root_element(),
+            0,
+        )? {
             result.push_str(&merged);
             result.push('\n');
             Ok(Some(result))

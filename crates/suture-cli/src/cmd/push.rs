@@ -42,7 +42,10 @@ pub(crate) async fn cmd_push(
 
     if branches_to_push.is_empty() {
         if let Some(branch_name) = branch {
-            return Err(format!("branch '{branch_name}' not found locally (use 'suture branch' to list branches)").into());
+            return Err(format!(
+                "branch '{branch_name}' not found locally (use 'suture branch' to list branches)"
+            )
+            .into());
         }
         return Err("no branches to push".into());
     }
@@ -158,10 +161,13 @@ pub(crate) async fn cmd_push(
         .map_err(|e| user_error(&format!("network error pushing to '{remote}'"), e))?;
 
     if resp.status().is_success() {
-        let result: PushResponse = resp.json().await
+        let result: PushResponse = resp
+            .json()
+            .await
             .map_err(|e| user_error("failed to parse push response", e))?;
         if result.success {
-            let (_, head_id) = repo.head()
+            let (_, head_id) = repo
+                .head()
                 .map_err(|e| user_error("failed to get HEAD after push", e))?;
             repo.set_config(&push_state_key, &head_id.to_hex())
                 .map_err(|e| user_error("failed to save push state", e))?;

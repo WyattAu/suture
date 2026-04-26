@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use suture_core::cas::store::BlobStore;
 use suture_core::patch::types::{OperationType, Patch, TouchSet};
 use tempfile::TempDir;

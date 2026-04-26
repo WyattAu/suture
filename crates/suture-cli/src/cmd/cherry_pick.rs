@@ -1,7 +1,10 @@
 use crate::ref_utils::resolve_ref;
 use crate::style::run_hook_if_exists;
 
-pub(crate) async fn cmd_cherry_pick(commit: &str, no_commit: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) async fn cmd_cherry_pick(
+    commit: &str,
+    no_commit: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
     let patches = repo.all_patches();
     let target = resolve_ref(&repo, commit, &patches)?;
@@ -22,8 +25,13 @@ pub(crate) async fn cmd_cherry_pick(commit: &str, no_commit: bool) -> Result<(),
             .get_patch(&patch_id)
             .ok_or_else(|| format!("patch not found: {}", patch_id))?;
 
-        let old_head = repo.head().map(|(_, id)| id).unwrap_or(suture_common::Hash::ZERO);
-        let old_tree = repo.snapshot(&old_head).unwrap_or_else(|_| suture_core::engine::tree::FileTree::empty());
+        let old_head = repo
+            .head()
+            .map(|(_, id)| id)
+            .unwrap_or(suture_common::Hash::ZERO);
+        let old_tree = repo
+            .snapshot(&old_head)
+            .unwrap_or_else(|_| suture_core::engine::tree::FileTree::empty());
 
         let (_, _) = repo.head()?;
         let touch_files = patch.touch_set.addresses();
@@ -34,7 +42,10 @@ pub(crate) async fn cmd_cherry_pick(commit: &str, no_commit: bool) -> Result<(),
         }
 
         let _ = old_tree;
-        println!("Cherry-picked changes from {} staged (no commit created)", commit);
+        println!(
+            "Cherry-picked changes from {} staged (no commit created)",
+            commit
+        );
         Ok(())
     } else {
         let new_id = repo.cherry_pick(&patch_id)?;

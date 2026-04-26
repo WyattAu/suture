@@ -29,10 +29,7 @@ impl SutureLsp {
         }
     }
 
-    async fn get_repo_and_relative(
-        &self,
-        uri: &Url,
-    ) -> Option<(Repository, String, PathBuf)> {
+    async fn get_repo_and_relative(&self, uri: &Url) -> Option<(Repository, String, PathBuf)> {
         let root = self.root_path.read().await.clone()?;
         let repo = Repository::open(&root).ok()?;
         let file_path = uri.to_file_path().ok()?;
@@ -158,9 +155,7 @@ impl LanguageServer for SutureLsp {
 
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
         let Some((repo, relative_str, _)) = self
-            .get_repo_and_relative(
-                &params.text_document_position_params.text_document.uri,
-            )
+            .get_repo_and_relative(&params.text_document_position_params.text_document.uri)
             .await
         else {
             return Ok(None);
@@ -223,13 +218,28 @@ mod tests {
         let caps = result.capabilities;
 
         assert!(
-            matches!(caps.hover_provider, Some(HoverProviderCapability::Simple(true))),
+            matches!(
+                caps.hover_provider,
+                Some(HoverProviderCapability::Simple(true))
+            ),
             "hover should be enabled"
         );
-        assert!(caps.definition_provider.is_none(), "definition_provider should not be declared");
-        assert!(caps.completion_provider.is_none(), "completion_provider should not be declared");
-        assert!(caps.semantic_tokens_provider.is_none(), "semantic_tokens_provider should not be declared");
-        assert!(caps.references_provider.is_none(), "references_provider should not be declared");
+        assert!(
+            caps.definition_provider.is_none(),
+            "definition_provider should not be declared"
+        );
+        assert!(
+            caps.completion_provider.is_none(),
+            "completion_provider should not be declared"
+        );
+        assert!(
+            caps.semantic_tokens_provider.is_none(),
+            "semantic_tokens_provider should not be declared"
+        );
+        assert!(
+            caps.references_provider.is_none(),
+            "references_provider should not be declared"
+        );
         assert_eq!(result.server_info.as_ref().unwrap().name, "suture-lsp");
     }
 
@@ -311,11 +321,17 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(result.is_some(), "hover should return blame info for committed file");
+        assert!(
+            result.is_some(),
+            "hover should return blame info for committed file"
+        );
         let hover = result.unwrap();
         if let HoverContents::Markup(MarkupContent { value, .. }) = hover.contents {
             assert!(value.contains("Test Author"), "should contain author");
-            assert!(value.contains("test commit"), "should contain commit message");
+            assert!(
+                value.contains("test commit"),
+                "should contain commit message"
+            );
             assert!(value.contains("**Patch**:"), "should contain patch header");
         } else {
             panic!("expected Markdown hover content");
@@ -349,7 +365,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(result.is_none(), "hover should return None when no repo exists");
+        assert!(
+            result.is_none(),
+            "hover should return None when no repo exists"
+        );
     }
 
     #[tokio::test]

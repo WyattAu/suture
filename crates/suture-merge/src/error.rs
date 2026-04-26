@@ -43,7 +43,12 @@ impl From<DriverError> for MergeError {
     }
 }
 
-pub(crate) fn perform_merge(driver: &dyn SutureDriver, base: &str, ours: &str, theirs: &str) -> Result<MergeResult, MergeError> {
+pub(crate) fn perform_merge(
+    driver: &dyn SutureDriver,
+    base: &str,
+    ours: &str,
+    theirs: &str,
+) -> Result<MergeResult, MergeError> {
     match driver.merge(base, ours, theirs)? {
         Some(merged) => Ok(MergeResult {
             merged,

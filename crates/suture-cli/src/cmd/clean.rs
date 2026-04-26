@@ -37,9 +37,7 @@ pub(crate) async fn cmd_clean(
     }
 
     if !paths.is_empty() {
-        untracked.retain(|f| {
-            paths.iter().any(|p| f.starts_with(p) || f == p)
-        });
+        untracked.retain(|f| paths.iter().any(|p| f.starts_with(p) || f == p));
     }
 
     if untracked.is_empty() {
@@ -56,7 +54,11 @@ pub(crate) async fn cmd_clean(
         for path in &untracked {
             println!("  {}", path);
         }
-        println!("\nWould remove {} file{}", untracked.len(), if untracked.len() == 1 { "" } else { "s" });
+        println!(
+            "\nWould remove {} file{}",
+            untracked.len(),
+            if untracked.len() == 1 { "" } else { "s" }
+        );
         return Ok(());
     }
 
@@ -74,20 +76,24 @@ pub(crate) async fn cmd_clean(
         if dirs_removed > 0 {
             println!("Removed {} files, {} directories", removed, dirs_removed);
         } else {
-            println!("Removed {} file{}", removed, if removed == 1 { "" } else { "s" });
+            println!(
+                "Removed {} file{}",
+                removed,
+                if removed == 1 { "" } else { "s" }
+            );
         }
     } else {
-        println!("Removed {} file{}", removed, if removed == 1 { "" } else { "s" });
+        println!(
+            "Removed {} file{}",
+            removed,
+            if removed == 1 { "" } else { "s" }
+        );
     }
 
     Ok(())
 }
 
-fn remove_empty_dirs(
-    root: &StdPath,
-    current: &StdPath,
-    removed: &mut usize,
-) {
+fn remove_empty_dirs(root: &StdPath, current: &StdPath, removed: &mut usize) {
     let Ok(entries) = std::fs::read_dir(current) else {
         return;
     };
@@ -100,7 +106,9 @@ fn remove_empty_dirs(
         }
     }
 
-    entries.retain(|e| e.path().is_dir() && e.path().file_name().map(|n| n != ".suture").unwrap_or(true));
+    entries.retain(|e| {
+        e.path().is_dir() && e.path().file_name().map(|n| n != ".suture").unwrap_or(true)
+    });
     let is_empty = entries.iter().all(|e| {
         let Ok(inner) = std::fs::read_dir(e.path()) else {
             return true;

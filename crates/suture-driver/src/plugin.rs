@@ -238,9 +238,8 @@ impl WasmDriverPlugin {
             });
         }
 
-        let name =
-            Self::call_string_export(&mut store, &instance, "plugin_name")
-                .unwrap_or_else(|| "unknown".to_string());
+        let name = Self::call_string_export(&mut store, &instance, "plugin_name")
+            .unwrap_or_else(|| "unknown".to_string());
         let extensions_storage = Self::call_extensions_export(&mut store, &instance);
 
         let extensions: Vec<&str> = extensions_storage
@@ -286,8 +285,7 @@ impl WasmDriverPlugin {
             return None;
         };
 
-        let memory = instance
-            .get_memory(&mut *store, "memory")?;
+        let memory = instance.get_memory(&mut *store, "memory")?;
 
         let mut buf = Vec::new();
         let mut offset = ptr as usize;
@@ -494,16 +492,39 @@ description = "A custom driver"
     #[test]
     fn test_wasm_plugin_abi_documentation() {
         let abi_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/wasm_abi.md");
-        let content = std::fs::read_to_string(&abi_path)
-            .expect("wasm_abi.md should exist");
-        assert!(content.contains("plugin_name"), "ABI doc should define plugin_name export");
-        assert!(content.contains("plugin_extensions"), "ABI doc should define plugin_extensions export");
-        assert!(content.contains("plugin_version"), "ABI doc should define plugin_version export");
-        assert!(content.contains("merge"), "ABI doc should define merge function");
-        assert!(content.contains("diff"), "ABI doc should define diff function");
-        assert!(content.contains("ABI Version"), "ABI doc should specify version");
-        assert!(content.contains("Memory Layout"), "ABI doc should specify memory layout");
-        assert!(content.contains("Error Handling"), "ABI doc should specify error handling");
+        let content = std::fs::read_to_string(&abi_path).expect("wasm_abi.md should exist");
+        assert!(
+            content.contains("plugin_name"),
+            "ABI doc should define plugin_name export"
+        );
+        assert!(
+            content.contains("plugin_extensions"),
+            "ABI doc should define plugin_extensions export"
+        );
+        assert!(
+            content.contains("plugin_version"),
+            "ABI doc should define plugin_version export"
+        );
+        assert!(
+            content.contains("merge"),
+            "ABI doc should define merge function"
+        );
+        assert!(
+            content.contains("diff"),
+            "ABI doc should define diff function"
+        );
+        assert!(
+            content.contains("ABI Version"),
+            "ABI doc should specify version"
+        );
+        assert!(
+            content.contains("Memory Layout"),
+            "ABI doc should specify memory layout"
+        );
+        assert!(
+            content.contains("Error Handling"),
+            "ABI doc should specify error handling"
+        );
     }
 
     #[cfg(feature = "wasm-plugins")]

@@ -560,8 +560,10 @@ mod tests {
     #[test]
     fn test_link_href_change() {
         let driver = HtmlDriver::new();
-        let base = r#"<?xml version="1.0"?><html><body><a href="http://old.com">link</a></body></html>"#;
-        let new = r#"<?xml version="1.0"?><html><body><a href="http://new.com">link</a></body></html>"#;
+        let base =
+            r#"<?xml version="1.0"?><html><body><a href="http://old.com">link</a></body></html>"#;
+        let new =
+            r#"<?xml version="1.0"?><html><body><a href="http://new.com">link</a></body></html>"#;
 
         let changes = driver.diff(Some(base), new).unwrap();
         assert!(changes.contains(&SemanticChange::Modified {
@@ -574,8 +576,10 @@ mod tests {
     #[test]
     fn test_image_src_change() {
         let driver = HtmlDriver::new();
-        let base = r#"<?xml version="1.0"?><html><body><img src="old.png" alt="pic"/></body></html>"#;
-        let new = r#"<?xml version="1.0"?><html><body><img src="new.png" alt="pic"/></body></html>"#;
+        let base =
+            r#"<?xml version="1.0"?><html><body><img src="old.png" alt="pic"/></body></html>"#;
+        let new =
+            r#"<?xml version="1.0"?><html><body><img src="new.png" alt="pic"/></body></html>"#;
 
         let changes = driver.diff(Some(base), new).unwrap();
         assert!(changes.contains(&SemanticChange::Modified {
@@ -589,7 +593,8 @@ mod tests {
     fn test_paragraph_addition() {
         let driver = HtmlDriver::new();
         let base = r#"<?xml version="1.0"?><html><body><h1>Title</h1></body></html>"#;
-        let new = r#"<?xml version="1.0"?><html><body><h1>Title</h1><p>New paragraph</p></body></html>"#;
+        let new =
+            r#"<?xml version="1.0"?><html><body><h1>Title</h1><p>New paragraph</p></body></html>"#;
 
         let changes = driver.diff(Some(base), new).unwrap();
         assert!(changes.iter().any(|c| matches!(
@@ -601,7 +606,8 @@ mod tests {
     #[test]
     fn test_div_removal() {
         let driver = HtmlDriver::new();
-        let base = r#"<?xml version="1.0"?><html><body><div id="content"><p>text</p></div></body></html>"#;
+        let base =
+            r#"<?xml version="1.0"?><html><body><div id="content"><p>text</p></div></body></html>"#;
         let new = r#"<?xml version="1.0"?><html><body></body></html>"#;
 
         let changes = driver.diff(Some(base), new).unwrap();
@@ -614,8 +620,10 @@ mod tests {
     #[test]
     fn test_class_attribute_modification() {
         let driver = HtmlDriver::new();
-        let base = r#"<?xml version="1.0"?><html><body><div class="old-class">text</div></body></html>"#;
-        let new = r#"<?xml version="1.0"?><html><body><div class="new-class">text</div></body></html>"#;
+        let base =
+            r#"<?xml version="1.0"?><html><body><div class="old-class">text</div></body></html>"#;
+        let new =
+            r#"<?xml version="1.0"?><html><body><div class="new-class">text</div></body></html>"#;
 
         let changes = driver.diff(Some(base), new).unwrap();
         assert!(changes.contains(&SemanticChange::Modified {
@@ -629,8 +637,10 @@ mod tests {
     fn test_clean_merge_different_sections() {
         let driver = HtmlDriver::new();
         let base = r#"<?xml version="1.0"?><html><body><h1>Title</h1><p>Body</p></body></html>"#;
-        let ours = r#"<?xml version="1.0"?><html><body><h1>Our Title</h1><p>Body</p></body></html>"#;
-        let theirs = r#"<?xml version="1.0"?><html><body><h1>Title</h1><p>Our Body</p></body></html>"#;
+        let ours =
+            r#"<?xml version="1.0"?><html><body><h1>Our Title</h1><p>Body</p></body></html>"#;
+        let theirs =
+            r#"<?xml version="1.0"?><html><body><h1>Title</h1><p>Our Body</p></body></html>"#;
 
         let result = driver.merge(base, ours, theirs).unwrap();
         assert!(result.is_some());

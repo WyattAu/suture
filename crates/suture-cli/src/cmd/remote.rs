@@ -1,5 +1,5 @@
-use crate::cmd::user_error;
 use crate::RemoteAction;
+use crate::cmd::user_error;
 
 pub(crate) async fn cmd_remote(
     action: &crate::RemoteAction,
@@ -10,14 +10,18 @@ pub(crate) async fn cmd_remote(
         RemoteAction::Add { name, url } => {
             let remotes = repo.list_remotes().unwrap_or_default();
             if remotes.iter().any(|(n, _)| n == name) {
-                return Err(format!("remote '{name}' already exists (use 'suture remote rename' to rename it)").into());
+                return Err(format!(
+                    "remote '{name}' already exists (use 'suture remote rename' to rename it)"
+                )
+                .into());
             }
             repo.add_remote(name, url)
                 .map_err(|e| user_error(&format!("failed to add remote '{name}'"), e))?;
             println!("Remote '{}' added -> {}", name, url);
         }
         RemoteAction::List => {
-            let remotes = repo.list_remotes()
+            let remotes = repo
+                .list_remotes()
                 .map_err(|e| user_error("failed to list remotes", e))?;
             if remotes.is_empty() {
                 println!("No remotes configured.");
@@ -30,7 +34,10 @@ pub(crate) async fn cmd_remote(
         RemoteAction::Remove { name } => {
             let remotes = repo.list_remotes().unwrap_or_default();
             if !remotes.iter().any(|(n, _)| n == name) {
-                return Err(format!("remote '{name}' not found (use 'suture remote list' to see available remotes)").into());
+                return Err(format!(
+                    "remote '{name}' not found (use 'suture remote list' to see available remotes)"
+                )
+                .into());
             }
             repo.remove_remote(name)
                 .map_err(|e| user_error(&format!("failed to remove remote '{name}'"), e))?;
@@ -42,7 +49,10 @@ pub(crate) async fn cmd_remote(
                 return Err(format!("remote '{old_name}' not found (use 'suture remote list' to see available remotes)").into());
             }
             if remotes.iter().any(|(n, _)| n == new_name) {
-                return Err(format!("remote '{new_name}' already exists (choose a different name)").into());
+                return Err(format!(
+                    "remote '{new_name}' already exists (choose a different name)"
+                )
+                .into());
             }
             repo.rename_remote(old_name, new_name)
                 .map_err(|e| user_error(&format!("failed to rename remote '{old_name}'"), e))?;
@@ -51,7 +61,10 @@ pub(crate) async fn cmd_remote(
         RemoteAction::Login { name } => {
             let remotes = repo.list_remotes().unwrap_or_default();
             if !remotes.iter().any(|(n, _)| n == name) {
-                return Err(format!("remote '{name}' not found (use 'suture remote list' to see available remotes)").into());
+                return Err(format!(
+                    "remote '{name}' not found (use 'suture remote list' to see available remotes)"
+                )
+                .into());
             }
             let remote_url = repo
                 .get_remote_url(name)

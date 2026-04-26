@@ -12,7 +12,9 @@ pub(crate) async fn cmd_clone(
         return Err("repository URL is required (e.g., http://localhost:50051/my-repo)".into());
     }
     if !url.starts_with("http://") && !url.starts_with("https://") {
-        return Err(format!("invalid URL '{url}' (URLs must start with http:// or https://)").into());
+        return Err(
+            format!("invalid URL '{url}' (URLs must start with http:// or https://)").into(),
+        );
     }
 
     let repo_name = dir.unwrap_or_else(|| {
@@ -24,7 +26,10 @@ pub(crate) async fn cmd_clone(
 
     let repo_path = PathBuf::from(repo_name);
     if repo_path.exists() {
-        return Err(format!("directory '{repo_name}' already exists (remove it or specify a different directory)").into());
+        return Err(format!(
+            "directory '{repo_name}' already exists (remove it or specify a different directory)"
+        )
+        .into());
     }
 
     std::fs::create_dir_all(&repo_path)
@@ -35,7 +40,8 @@ pub(crate) async fn cmd_clone(
         .map_err(|e| user_error("failed to configure remote 'origin'", e))?;
 
     eprintln!("Cloning into '{}'...", repo_name);
-    let new_patches = do_pull_with_depth(&mut repo, "origin", depth).await
+    let new_patches = do_pull_with_depth(&mut repo, "origin", depth)
+        .await
         .map_err(|e| user_error(&format!("failed to clone from '{url}'"), e))?;
 
     println!("Cloned into '{}'", repo_name);

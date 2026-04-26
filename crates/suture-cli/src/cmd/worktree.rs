@@ -51,7 +51,8 @@ pub(crate) async fn cmd_worktree(
                 }
                 let wt_path = std::path::Path::new(&wt.path);
                 if !wt_path.exists() {
-                    let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+                    let mut repo =
+                        suture_core::repository::Repository::open(std::path::Path::new("."))?;
                     repo.remove_worktree(&wt.name)?;
                     pruned += 1;
                 }

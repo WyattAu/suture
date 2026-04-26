@@ -1,5 +1,5 @@
-use std::path::Path as StdPath;
 use regex::Regex;
+use std::path::Path as StdPath;
 
 pub(crate) async fn cmd_grep(
     pattern: &str,
@@ -36,7 +36,11 @@ pub(crate) async fn cmd_grep(
     } else {
         tracked_paths
             .into_iter()
-            .filter(|p| paths.iter().any(|search| p.starts_with(search) || p == search))
+            .filter(|p| {
+                paths
+                    .iter()
+                    .any(|search| p.starts_with(search) || p == search)
+            })
             .collect()
     };
 
@@ -79,7 +83,9 @@ pub(crate) async fn cmd_grep(
             for &idx in &match_indices {
                 let start = idx.saturating_sub(ctx);
                 let end = (idx + ctx).min(lines.len().saturating_sub(1));
-                if let Some(last) = printed_ranges.last_mut() && *last.end() + 1 >= start {
+                if let Some(last) = printed_ranges.last_mut()
+                    && *last.end() + 1 >= start
+                {
                     *last = *last.start()..=end;
                     continue;
                 }

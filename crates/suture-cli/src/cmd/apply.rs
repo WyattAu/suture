@@ -29,7 +29,9 @@ struct Hunk {
 }
 
 fn strip_path_prefix(p: &str) -> &str {
-    p.strip_prefix("a/").or_else(|| p.strip_prefix("b/")).unwrap_or(p)
+    p.strip_prefix("a/")
+        .or_else(|| p.strip_prefix("b/"))
+        .unwrap_or(p)
 }
 
 fn parse_unified_diff(text: &str) -> Result<Vec<FileDiff>, Box<dyn std::error::Error>> {
@@ -41,7 +43,9 @@ fn parse_unified_diff(text: &str) -> Result<Vec<FileDiff>, Box<dyn std::error::E
     let mut hunk_header: Option<(usize, usize, usize, usize)> = None;
     let mut current_hunks: Vec<Hunk> = Vec::new();
 
-    let flush_hunk = |hunks: &mut Vec<Hunk>, lines: &mut Vec<HunkLine>, header: &mut Option<(usize, usize, usize, usize)>| {
+    let flush_hunk = |hunks: &mut Vec<Hunk>,
+                      lines: &mut Vec<HunkLine>,
+                      header: &mut Option<(usize, usize, usize, usize)>| {
         if let Some((os, oc, ns, nc)) = header.take() {
             hunks.push(Hunk {
                 old_start: os,
@@ -120,10 +124,18 @@ fn parse_unified_diff(text: &str) -> Result<Vec<FileDiff>, Box<dyn std::error::E
     Ok(diffs)
 }
 
-fn apply_hunk(file_lines: &mut Vec<String>, hunk: &Hunk, reverse: bool) -> Result<(), Box<dyn std::error::Error>> {
+fn apply_hunk(
+    file_lines: &mut Vec<String>,
+    hunk: &Hunk,
+    reverse: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let pos = hunk.old_start.saturating_sub(1);
     if pos > file_lines.len() {
-        let msg = format!("hunk at line {} is out of range (file has {} lines)", hunk.old_start, file_lines.len());
+        let msg = format!(
+            "hunk at line {} is out of range (file has {} lines)",
+            hunk.old_start,
+            file_lines.len()
+        );
         return Err(msg.into());
     }
 
@@ -146,9 +158,21 @@ fn apply_hunk(file_lines: &mut Vec<String>, hunk: &Hunk, reverse: bool) -> Resul
         }
     }
 
-    let old_lines_count = hunk.lines.iter().filter(|l| l.kind != HunkLineKind::Add).count();
-    let effective_old_count = if reverse { hunk.new_count } else { hunk.old_count };
-    let remove_count = if old_lines_count > 0 { old_lines_count } else { effective_old_count };
+    let old_lines_count = hunk
+        .lines
+        .iter()
+        .filter(|l| l.kind != HunkLineKind::Add)
+        .count();
+    let effective_old_count = if reverse {
+        hunk.new_count
+    } else {
+        hunk.old_count
+    };
+    let remove_count = if old_lines_count > 0 {
+        old_lines_count
+    } else {
+        effective_old_count
+    };
 
     let end = std::cmp::min(pos + remove_count, file_lines.len());
     file_lines.drain(pos..end);
@@ -162,9 +186,22 @@ fn apply_hunk(file_lines: &mut Vec<String>, hunk: &Hunk, reverse: bool) -> Resul
 fn stat_for_diffs(diffs: &[FileDiff]) -> String {
     let mut output = String::new();
     for diff in diffs {
-        let total_add: usize = diff.hunks.iter().flat_map(|h| h.lines.iter()).filter(|l| l.kind == HunkLineKind::Add).count();
-        let total_remove: usize = diff.hunks.iter().flat_map(|h| h.lines.iter()).filter(|l| l.kind == HunkLineKind::Remove).count();
-        output.push_str(&format!(" {} | {} insertion(s), {} deletion(s)\n", diff.new_path, total_add, total_remove));
+        let total_add: usize = diff
+            .hunks
+            .iter()
+            .flat_map(|h| h.lines.iter())
+            .filter(|l| l.kind == HunkLineKind::Add)
+            .count();
+        let total_remove: usize = diff
+            .hunks
+            .iter()
+            .flat_map(|h| h.lines.iter())
+            .filter(|l| l.kind == HunkLineKind::Remove)
+            .count();
+        output.push_str(&format!(
+            " {} | {} insertion(s), {} deletion(s)\n",
+            diff.new_path, total_add, total_remove
+        ));
     }
     output
 }
@@ -199,7 +236,11 @@ pub(crate) async fn cmd_apply(
     let mut files_applied = 0usize;
 
     for diff in &diffs {
-        let target_path = if reverse { &diff.old_path } else { &diff.new_path };
+        let target_path = if reverse {
+            &diff.old_path
+        } else {
+            &diff.new_path
+        };
         if target_path.is_empty() || target_path == "/dev/null" {
             continue;
         }

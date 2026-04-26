@@ -10,13 +10,17 @@ pub(crate) async fn cmd_commit(message: &str, all: bool) -> Result<(), Box<dyn s
     let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))
         .map_err(|e| user_error("failed to open repository", e))?;
     if all {
-        let count = repo.add_all().map_err(|e| user_error("failed to stage files", e))?;
+        let count = repo
+            .add_all()
+            .map_err(|e| user_error("failed to stage files", e))?;
         if count > 0 {
             println!("Staged {} file(s)", count);
         }
     }
 
-    let status = repo.status().map_err(|e| user_error("failed to check repository status", e))?;
+    let status = repo
+        .status()
+        .map_err(|e| user_error("failed to check repository status", e))?;
     if status.staged_files.is_empty() {
         return Err("nothing to commit (use 'suture add' to stage files)".into());
     }
@@ -35,7 +39,9 @@ pub(crate) async fn cmd_commit(message: &str, all: bool) -> Result<(), Box<dyn s
     extra.insert("SUTURE_HEAD".to_string(), head_id.to_hex());
     run_hook_if_exists(repo.root(), "pre-commit", extra)?;
 
-    let patch_id = repo.commit(message).map_err(|e| user_error("failed to create commit", e))?;
+    let patch_id = repo
+        .commit(message)
+        .map_err(|e| user_error("failed to create commit", e))?;
     println!("Committed: {}", patch_id);
 
     {
@@ -72,9 +78,8 @@ pub(crate) async fn cmd_commit(message: &str, all: bool) -> Result<(), Box<dyn s
         if let Ok(key_bytes) = std::fs::read(&key_path)
             && key_bytes.len() == 32
         {
-            let signing_key = ed25519_dalek::SigningKey::from_bytes(
-                key_bytes.as_slice().try_into().unwrap(),
-            );
+            let signing_key =
+                ed25519_dalek::SigningKey::from_bytes(key_bytes.as_slice().try_into().unwrap());
             let patch = repo.dag().get_patch(&patch_id);
             if let Some(patch) = patch {
                 let canonical = suture_core::signing::canonical_patch_bytes(
@@ -88,14 +93,12 @@ pub(crate) async fn cmd_commit(message: &str, all: bool) -> Result<(), Box<dyn s
                     patch.timestamp,
                 );
                 let sig = signing_key.sign(&canonical);
-                let _ = repo.meta().store_signature(
-                    &patch.id.to_hex(),
-                    &sig.to_bytes(),
-                );
-                let _ = repo.meta().store_public_key(
-                    &patch.author,
-                    &signing_key.verifying_key().to_bytes(),
-                );
+                let _ = repo
+                    .meta()
+                    .store_signature(&patch.id.to_hex(), &sig.to_bytes());
+                let _ = repo
+                    .meta()
+                    .store_public_key(&patch.author, &signing_key.verifying_key().to_bytes());
             }
         }
     }

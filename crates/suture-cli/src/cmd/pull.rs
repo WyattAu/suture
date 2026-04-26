@@ -1,7 +1,11 @@
 use crate::cmd::user_error;
 use crate::remote_proto::{do_fetch, do_pull};
 
-pub(crate) async fn cmd_pull(remote: &str, rebase: bool, autostash: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) async fn cmd_pull(
+    remote: &str,
+    rebase: bool,
+    autostash: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))
         .map_err(|e| user_error("failed to open repository", e))?;
 
@@ -16,7 +20,9 @@ pub(crate) async fn cmd_pull(remote: &str, rebase: bool, autostash: bool) -> Res
     eprintln!("Pulling from {}...", remote);
 
     let had_changes = if autostash {
-        let status = repo.status().map_err(|e| user_error("failed to check repository status", e))?;
+        let status = repo
+            .status()
+            .map_err(|e| user_error("failed to check repository status", e))?;
         let dirty = !status.staged_files.is_empty();
         if dirty {
             eprintln!("Auto-stashing uncommitted changes...");
@@ -98,7 +104,10 @@ pub(crate) async fn cmd_pull(remote: &str, rebase: bool, autostash: bool) -> Res
                     println!("Resolved {} LFS object(s)", resolved);
                 }
                 if missing > 0 {
-                    eprintln!("{} LFS object(s) not found locally (run `suture lfs pull`)", missing);
+                    eprintln!(
+                        "{} LFS object(s) not found locally (run `suture lfs pull`)",
+                        missing
+                    );
                 }
             }
             Err(e) => {

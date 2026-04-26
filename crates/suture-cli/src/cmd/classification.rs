@@ -252,7 +252,9 @@ fn get_content(
     hash: Option<&suture_common::Hash>,
     path: &str,
 ) -> Vec<u8> {
-    if let Some(h) = hash && let Ok(blob) = repo.cas().get_blob(h) {
+    if let Some(h) = hash
+        && let Ok(blob) = repo.cas().get_blob(h)
+    {
         return blob;
     }
     std::fs::read(repo.root().join(path)).unwrap_or_default()
@@ -312,11 +314,7 @@ async fn cmd_scan(
 
     if let Some(since_ref) = since {
         let since_id = repo.resolve_ref(since_ref)?;
-        all_patches.retain(|p| {
-            repo.dag()
-                .patch_chain(&since_id)
-                .contains(&p.id)
-        });
+        all_patches.retain(|p| repo.dag().patch_chain(&since_id).contains(&p.id));
     }
 
     all_patches.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
@@ -339,7 +337,9 @@ async fn cmd_scan(
             Some(parent_hex.as_str())
         };
 
-        let entries = repo.diff(from_ref, Some(commit_hex.as_str())).unwrap_or_default();
+        let entries = repo
+            .diff(from_ref, Some(commit_hex.as_str()))
+            .unwrap_or_default();
         let results = analyze_classification_changes(&entries, &repo);
 
         for r in &results {
@@ -453,8 +453,10 @@ async fn cmd_report(output: Option<&str>) -> Result<(), Box<dyn std::error::Erro
     let total_commits = all_patches.len();
 
     let mut events: Vec<ClassificationEvent> = Vec::new();
-    let mut current_state: std::collections::HashMap<String, String> = std::collections::HashMap::new();
-    let mut file_change_count: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut current_state: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
+    let mut file_change_count: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
     let mut chain_of_custody: std::collections::HashMap<String, Vec<(String, String, String)>> =
         std::collections::HashMap::new();
     let mut seq = 0usize;
@@ -472,7 +474,9 @@ async fn cmd_report(output: Option<&str>) -> Result<(), Box<dyn std::error::Erro
             Some(parent_hex.as_str())
         };
 
-        let entries = repo.diff(from_ref, Some(commit_hex.as_str())).unwrap_or_default();
+        let entries = repo
+            .diff(from_ref, Some(commit_hex.as_str()))
+            .unwrap_or_default();
         let results = analyze_classification_changes(&entries, &repo);
 
         for r in &results {
@@ -508,19 +512,26 @@ async fn cmd_report(output: Option<&str>) -> Result<(), Box<dyn std::error::Erro
                 }
             }
 
-            chain_of_custody
-                .entry(r.path.clone())
-                .or_default()
-                .push((short_hash, patch.author.clone(), event_type.to_string()));
+            chain_of_custody.entry(r.path.clone()).or_default().push((
+                short_hash,
+                patch.author.clone(),
+                event_type.to_string(),
+            ));
         }
     }
 
     let added_count = events.iter().filter(|e| e.event_type == "ADDED").count();
     let removed_count = events.iter().filter(|e| e.event_type == "REMOVED").count();
     let upgraded_count = events.iter().filter(|e| e.event_type == "UPGRADED").count();
-    let downgraded_count = events.iter().filter(|e| e.event_type == "DOWNGRADED").count();
+    let downgraded_count = events
+        .iter()
+        .filter(|e| e.event_type == "DOWNGRADED")
+        .count();
 
-    let mut sorted_files: Vec<(String, usize)> = file_change_count.iter().map(|(k, &v)| (k.clone(), v)).collect();
+    let mut sorted_files: Vec<(String, usize)> = file_change_count
+        .iter()
+        .map(|(k, &v)| (k.clone(), v))
+        .collect();
     sorted_files.sort_by(|a, b| b.1.cmp(&a.1));
 
     let above_unclassified: Vec<(String, String)> = current_state
@@ -543,7 +554,10 @@ async fn cmd_report(output: Option<&str>) -> Result<(), Box<dyn std::error::Erro
     report.push_str(&format!("Repository:   {}\n", repo_name));
     report.push_str(&format!("Scan Time:    {}\n", scan_time));
     report.push_str(&format!("Total Commits Scanned: {}\n", total_commits));
-    report.push_str(&format!("Total Classification Events: {}\n\n", events.len()));
+    report.push_str(&format!(
+        "Total Classification Events: {}\n\n",
+        events.len()
+    ));
 
     report.push_str("--- Event Breakdown ---\n");
     report.push_str(&format!("  Added:     {}\n", added_count));

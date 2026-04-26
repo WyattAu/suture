@@ -81,7 +81,9 @@ fn resolve_ref(
         return Ok(current);
     }
 
-    if let Ok(hash) = Hash::from_hex(target) && repo.dag().has_patch(&hash) {
+    if let Ok(hash) = Hash::from_hex(target)
+        && repo.dag().has_patch(&hash)
+    {
         return Ok(hash);
     }
 

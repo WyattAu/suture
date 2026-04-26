@@ -2,7 +2,10 @@ use clap::Parser;
 use suture_daemon::{DaemonCommand, execute_command};
 
 #[derive(Parser)]
-#[command(name = "suture-daemon", about = "Suture background daemon for file watching and automatic sync")]
+#[command(
+    name = "suture-daemon",
+    about = "Suture background daemon for file watching and automatic sync"
+)]
 struct Cli {
     #[command(subcommand)]
     command: DaemonCommand,

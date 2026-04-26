@@ -100,7 +100,13 @@ where
         return Ok(());
     };
 
-    apply_single_op_mut_with_resolve(tree, &patch.operation_type, target_path, &patch.payload, &mut get_payload_blob)
+    apply_single_op_mut_with_resolve(
+        tree,
+        &patch.operation_type,
+        target_path,
+        &patch.payload,
+        &mut get_payload_blob,
+    )
 }
 
 /// Apply a chain of patches (from oldest to newest) to produce a final FileTree.
@@ -215,12 +221,7 @@ fn resolve_hex_to_hash(payload: &[u8]) -> Option<suture_common::Hash> {
     suture_common::Hash::from_hex(hex).ok()
 }
 
-fn apply_single_op_mut(
-    tree: &mut FileTree,
-    op: &OperationType,
-    target_path: &str,
-    payload: &[u8],
-) {
+fn apply_single_op_mut(tree: &mut FileTree, op: &OperationType, target_path: &str, payload: &[u8]) {
     match op {
         OperationType::Create => {
             if tree.contains(target_path) {

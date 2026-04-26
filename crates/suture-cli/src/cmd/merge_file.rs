@@ -1,4 +1,4 @@
-use crate::style::{ANSI_GREEN, ANSI_RED, ANSI_YELLOW, ANSI_RESET};
+use crate::style::{ANSI_GREEN, ANSI_RED, ANSI_RESET, ANSI_YELLOW};
 
 /// Read a file's contents as bytes and convert to String.
 ///
@@ -28,12 +28,10 @@ pub(crate) async fn cmd_merge_file(
     use std::path::Path as StdPath;
 
     // Read all three files (binary-safe for OOXML formats)
-    let base_content = read_file_bytes(base_path).map_err(|e| {
-        format!("{ANSI_RED}Error reading base file '{base_path}': {e}{ANSI_RESET}")
-    })?;
-    let ours_content = read_file_bytes(ours_path).map_err(|e| {
-        format!("{ANSI_RED}Error reading ours file '{ours_path}': {e}{ANSI_RESET}")
-    })?;
+    let base_content = read_file_bytes(base_path)
+        .map_err(|e| format!("{ANSI_RED}Error reading base file '{base_path}': {e}{ANSI_RESET}"))?;
+    let ours_content = read_file_bytes(ours_path)
+        .map_err(|e| format!("{ANSI_RED}Error reading ours file '{ours_path}': {e}{ANSI_RESET}"))?;
     let theirs_content = read_file_bytes(theirs_path).map_err(|e| {
         format!("{ANSI_RED}Error reading theirs file '{theirs_path}': {e}{ANSI_RESET}")
     })?;
@@ -145,8 +143,7 @@ pub(crate) async fn cmd_merge_file(
     } else {
         eprintln!(
             "{ANSI_RED}Merge conflicts: {} conflict(s), {} auto-merged{ANSI_RESET}",
-            result.conflicts,
-            result.auto_merged
+            result.conflicts, result.auto_merged
         );
         std::process::exit(1);
     }

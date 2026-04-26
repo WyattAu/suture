@@ -1,11 +1,15 @@
-pub(crate) async fn cmd_gc(dry_run: bool, aggressive: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) async fn cmd_gc(
+    dry_run: bool,
+    aggressive: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
 
     let branches = repo.dag().list_branches();
     let all_ids: std::collections::HashSet<suture_common::Hash> =
         repo.dag().patch_ids().into_iter().collect();
 
-    let mut reachable: std::collections::HashSet<suture_common::Hash> = std::collections::HashSet::new();
+    let mut reachable: std::collections::HashSet<suture_common::Hash> =
+        std::collections::HashSet::new();
     for (_name, tip_id) in &branches {
         reachable.insert(*tip_id);
         for anc in repo.dag().ancestors(tip_id).iter() {
@@ -15,7 +19,8 @@ pub(crate) async fn cmd_gc(dry_run: bool, aggressive: bool) -> Result<(), Box<dy
 
     let unreachable_count = all_ids.iter().filter(|id| !reachable.contains(id)).count();
 
-    let mut referenced_blobs: std::collections::HashSet<suture_common::Hash> = std::collections::HashSet::new();
+    let mut referenced_blobs: std::collections::HashSet<suture_common::Hash> =
+        std::collections::HashSet::new();
     for id in &reachable {
         if let Some(patch) = repo.dag().get_patch(id) {
             for addr in patch.touch_set.addresses() {
@@ -31,7 +36,10 @@ pub(crate) async fn cmd_gc(dry_run: bool, aggressive: bool) -> Result<(), Box<dy
     }
 
     let all_blobs = repo.cas().list_blobs().unwrap_or_default();
-    let orphan_count = all_blobs.iter().filter(|b| !referenced_blobs.contains(b)).count();
+    let orphan_count = all_blobs
+        .iter()
+        .filter(|b| !referenced_blobs.contains(b))
+        .count();
 
     let total_size = repo.cas().total_size().unwrap_or(0);
     let estimated_bytes = if orphan_count > 0 && !all_blobs.is_empty() {
@@ -76,8 +84,10 @@ pub(crate) async fn cmd_gc(dry_run: bool, aggressive: bool) -> Result<(), Box<dy
         let _ = repo.cas().repack(10);
     }
 
-    println!("Cleaned {} unreachable patches, {} orphan blobs, freed ~{} bytes",
-        result.patches_removed, result.blobs_removed, estimated_bytes);
+    println!(
+        "Cleaned {} unreachable patches, {} orphan blobs, freed ~{} bytes",
+        result.patches_removed, result.blobs_removed, estimated_bytes
+    );
 
     if result.patches_removed > 0 || result.blobs_removed > 0 {
         println!("  Hint: reopen the repository to fully update the in-memory DAG");

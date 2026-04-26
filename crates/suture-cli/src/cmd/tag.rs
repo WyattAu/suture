@@ -22,16 +22,8 @@ pub(crate) async fn cmd_tag(
         match sort {
             Some("date") => {
                 tags.sort_by(|a, b| {
-                    let ts_a = repo
-                        .dag()
-                        .get_patch(&a.1)
-                        .map(|p| p.timestamp)
-                        .unwrap_or(0);
-                    let ts_b = repo
-                        .dag()
-                        .get_patch(&b.1)
-                        .map(|p| p.timestamp)
-                        .unwrap_or(0);
+                    let ts_a = repo.dag().get_patch(&a.1).map(|p| p.timestamp).unwrap_or(0);
+                    let ts_b = repo.dag().get_patch(&b.1).map(|p| p.timestamp).unwrap_or(0);
                     ts_b.cmp(&ts_a)
                 });
             }
@@ -58,12 +50,16 @@ pub(crate) async fn cmd_tag(
         return Ok(());
     }
 
-    let name =
-        name.ok_or_else(|| "tag name required (use --list to show tags)".to_string())?;
+    let name = name.ok_or_else(|| "tag name required (use --list to show tags)".to_string())?;
     if delete {
-        let tags = repo.list_tags().map_err(|e| user_error("failed to list tags", e))?;
+        let tags = repo
+            .list_tags()
+            .map_err(|e| user_error("failed to list tags", e))?;
         if !tags.iter().any(|(t, _)| t == name) {
-            return Err(format!("tag '{name}' not found (use 'suture tag --list' to see available tags)").into());
+            return Err(format!(
+                "tag '{name}' not found (use 'suture tag --list' to see available tags)"
+            )
+            .into());
         }
         repo.delete_tag(name)
             .map_err(|e| user_error(&format!("failed to delete tag '{name}'"), e))?;
@@ -71,9 +67,14 @@ pub(crate) async fn cmd_tag(
         let _ = repo.meta().delete_config(&msg_key);
         println!("Deleted tag '{}'", name);
     } else {
-        let tags = repo.list_tags().map_err(|e| user_error("failed to list tags", e))?;
+        let tags = repo
+            .list_tags()
+            .map_err(|e| user_error("failed to list tags", e))?;
         if tags.iter().any(|(t, _)| t == name) {
-            return Err(format!("tag '{name}' already exists (delete it first with 'suture tag -d {name}')").into());
+            return Err(format!(
+                "tag '{name}' already exists (delete it first with 'suture tag -d {name}')"
+            )
+            .into());
         }
         repo.create_tag(name, target)
             .map_err(|e| user_error(&format!("failed to create tag '{name}'"), e))?;

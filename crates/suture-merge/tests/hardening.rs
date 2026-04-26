@@ -22,23 +22,43 @@ fn no_panic_merge(
     ours: &str,
     theirs: &str,
 ) -> Result<MergeResult, MergeError> {
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| merge_fn(base, ours, theirs)));
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        merge_fn(base, ours, theirs)
+    }));
     match result {
         Ok(r) => r,
-        Err(_) => panic!("PANIC on input base={} ours={} theirs={}", base.len(), ours.len(), theirs.len()),
+        Err(_) => panic!(
+            "PANIC on input base={} ours={} theirs={}",
+            base.len(),
+            ours.len(),
+            theirs.len()
+        ),
     }
 }
 
-fn no_panic_diff(ext: &str, base: &str, modified: &str) -> Result<Vec<suture_driver::SemanticChange>, MergeError> {
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| diff(base, modified, Some(ext))));
+fn no_panic_diff(
+    ext: &str,
+    base: &str,
+    modified: &str,
+) -> Result<Vec<suture_driver::SemanticChange>, MergeError> {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        diff(base, modified, Some(ext))
+    }));
     match result {
         Ok(r) => r,
-        Err(_) => panic!("PANIC in diff for ext={} base={} modified={}", ext, base.len(), modified.len()),
+        Err(_) => panic!(
+            "PANIC in diff for ext={} base={} modified={}",
+            ext,
+            base.len(),
+            modified.len()
+        ),
     }
 }
 
 fn no_panic_format_diff(ext: &str, base: &str, modified: &str) -> Result<String, MergeError> {
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| format_diff(base, modified, Some(ext))));
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        format_diff(base, modified, Some(ext))
+    }));
     match result {
         Ok(r) => r,
         Err(_) => panic!("PANIC in format_diff for ext={}", ext),
@@ -248,7 +268,10 @@ fn unicode_mixed_scripts() {
 
 #[test]
 fn unicode_zero_width_chars() {
-    let input = format!("{{\"key\": \"val{}{}{}\"}}", '\u{200b}', '\u{200c}', '\u{200d}');
+    let input = format!(
+        "{{\"key\": \"val{}{}{}\"}}",
+        '\u{200b}', '\u{200c}', '\u{200d}'
+    );
     let r = merge_json(&input, &input, &input);
     let _ = r;
 }
@@ -303,14 +326,20 @@ fn unicode_max_codepoint() {
 fn stress_json_1000_fields() {
     let mut parts: Vec<String> = vec!["{".to_string()];
     for i in 0..1000 {
-        if i > 0 { parts.push(",".to_string()); }
+        if i > 0 {
+            parts.push(",".to_string());
+        }
         parts.push(format!(r#""f{i}": {i}"#));
     }
     parts.push("}".to_string());
     let content = parts.join("");
 
     let r = merge_json(&content, &content, &content);
-    assert!(r.is_ok(), "1000-field JSON merge should succeed: {:?}", r.err());
+    assert!(
+        r.is_ok(),
+        "1000-field JSON merge should succeed: {:?}",
+        r.err()
+    );
 }
 
 #[test]
@@ -326,7 +355,11 @@ fn stress_json_deep_nesting_100() {
     base.push_str("}");
 
     let r = merge_json(&base, &base, &base);
-    assert!(r.is_ok(), "100-deep nested JSON merge should succeed: {:?}", r.err());
+    assert!(
+        r.is_ok(),
+        "100-deep nested JSON merge should succeed: {:?}",
+        r.err()
+    );
 }
 
 #[test]
@@ -339,7 +372,11 @@ fn stress_csv_10000_rows() {
     let theirs = base.replace("row9999", "ROW_LAST");
 
     let r = merge_csv(&base, &ours, &theirs);
-    assert!(r.is_ok(), "10000-row CSV merge should succeed: {:?}", r.err());
+    assert!(
+        r.is_ok(),
+        "10000-row CSV merge should succeed: {:?}",
+        r.err()
+    );
     if let Ok(result) = r {
         assert_eq!(result.status, MergeStatus::Clean);
     }
@@ -358,7 +395,11 @@ fn stress_xml_500_elements() {
     let theirs = base.replace("val499", "MODIFIED_499");
 
     let r = merge_xml(&base, &ours, &theirs);
-    assert!(r.is_ok(), "500-element XML merge should succeed: {:?}", r.err());
+    assert!(
+        r.is_ok(),
+        "500-element XML merge should succeed: {:?}",
+        r.err()
+    );
     if let Ok(result) = r {
         assert_eq!(result.status, MergeStatus::Clean);
     }
@@ -369,13 +410,20 @@ fn stress_xml_500_elements() {
 fn stress_markdown_200_sections() {
     let mut base = String::new();
     for i in 0..200 {
-        base.push_str(&format!("# Section {}\n\nContent for section {}.\n\n", i, i));
+        base.push_str(&format!(
+            "# Section {}\n\nContent for section {}.\n\n",
+            i, i
+        ));
     }
     let ours = base.replace("Content for section 0", "MODIFIED section 0");
     let theirs = base.replace("Content for section 199", "MODIFIED section 199");
 
     let r = merge_markdown(&base, &ours, &theirs);
-    assert!(r.is_ok(), "200-section Markdown merge should succeed: {:?}", r.err());
+    assert!(
+        r.is_ok(),
+        "200-section Markdown merge should succeed: {:?}",
+        r.err()
+    );
 }
 
 #[test]
@@ -388,7 +436,11 @@ fn stress_yaml_500_keys() {
     let theirs = base.replace("value499", "MODIFIED_499");
 
     let r = merge_yaml(&base, &ours, &theirs);
-    assert!(r.is_ok(), "500-key YAML merge should succeed: {:?}", r.err());
+    assert!(
+        r.is_ok(),
+        "500-key YAML merge should succeed: {:?}",
+        r.err()
+    );
 }
 
 #[cfg(feature = "ical")]
@@ -407,7 +459,11 @@ fn stress_ical_50_events() {
     let theirs = base.replace("Event 49", "MODIFIED Event 49");
 
     let r = merge_ical(&base, &ours, &theirs);
-    assert!(r.is_ok(), "50-event iCal merge should succeed: {:?}", r.err());
+    assert!(
+        r.is_ok(),
+        "50-event iCal merge should succeed: {:?}",
+        r.err()
+    );
 }
 
 #[cfg(feature = "feed")]
@@ -428,7 +484,11 @@ fn stress_feed_50_entries() {
     let theirs = base.replace("Article 49", "MODIFIED Article 49");
 
     let r = merge_feed(&base, &ours, &theirs);
-    assert!(r.is_ok(), "50-entry feed merge should succeed: {:?}", r.err());
+    assert!(
+        r.is_ok(),
+        "50-entry feed merge should succeed: {:?}",
+        r.err()
+    );
 }
 
 // ============================================================================
@@ -477,9 +537,17 @@ trivial_test!(xml_trivial, merge_xml, "<r><a>1</a></r>");
 #[cfg(feature = "markdown")]
 trivial_test!(md_trivial, merge_markdown, "# A\n\nB\n");
 #[cfg(feature = "svg")]
-trivial_test!(svg_trivial, merge_svg, r#"<svg xmlns="http://www.w3.org/2000/svg"><rect id="r"/></svg>"#);
+trivial_test!(
+    svg_trivial,
+    merge_svg,
+    r#"<svg xmlns="http://www.w3.org/2000/svg"><rect id="r"/></svg>"#
+);
 #[cfg(feature = "html")]
-trivial_test!(html_trivial, merge_html, "<html><body><p>a</p></body></html>");
+trivial_test!(
+    html_trivial,
+    merge_html,
+    "<html><body><p>a</p></body></html>"
+);
 
 // ============================================================================
 // Phase 5: Cross-Driver Consistency
@@ -488,26 +556,64 @@ trivial_test!(html_trivial, merge_html, "<html><body><p>a</p></body></html>");
 /// All drivers should handle "no change" identically
 #[test]
 fn consistency_all_drivers_no_change() {
-    let mut inputs: Vec<(&str, &str, fn(&str, &str, &str) -> Result<MergeResult, MergeError>)> = vec![
-        (".json", r#"{"a": 1}"#, merge_json as fn(&str, &str, &str) -> Result<MergeResult, MergeError>),
-        (".yaml", "a: 1\n", merge_yaml as fn(&str, &str, &str) -> Result<MergeResult, MergeError>),
-        (".toml", "a = 1\n", merge_toml as fn(&str, &str, &str) -> Result<MergeResult, MergeError>),
-        (".csv", "a\n1\n", merge_csv as fn(&str, &str, &str) -> Result<MergeResult, MergeError>),
+    let mut inputs: Vec<(
+        &str,
+        &str,
+        fn(&str, &str, &str) -> Result<MergeResult, MergeError>,
+    )> = vec![
+        (
+            ".json",
+            r#"{"a": 1}"#,
+            merge_json as fn(&str, &str, &str) -> Result<MergeResult, MergeError>,
+        ),
+        (
+            ".yaml",
+            "a: 1\n",
+            merge_yaml as fn(&str, &str, &str) -> Result<MergeResult, MergeError>,
+        ),
+        (
+            ".toml",
+            "a = 1\n",
+            merge_toml as fn(&str, &str, &str) -> Result<MergeResult, MergeError>,
+        ),
+        (
+            ".csv",
+            "a\n1\n",
+            merge_csv as fn(&str, &str, &str) -> Result<MergeResult, MergeError>,
+        ),
     ];
     #[cfg(feature = "xml")]
-    inputs.push((".xml", "<r><a>1</a></r>", merge_xml as fn(&str, &str, &str) -> Result<MergeResult, MergeError>));
+    inputs.push((
+        ".xml",
+        "<r><a>1</a></r>",
+        merge_xml as fn(&str, &str, &str) -> Result<MergeResult, MergeError>,
+    ));
     #[cfg(feature = "markdown")]
-    inputs.push((".md", "# A\n\nB\n", merge_markdown as fn(&str, &str, &str) -> Result<MergeResult, MergeError>));
+    inputs.push((
+        ".md",
+        "# A\n\nB\n",
+        merge_markdown as fn(&str, &str, &str) -> Result<MergeResult, MergeError>,
+    ));
     #[cfg(feature = "svg")]
-    inputs.push((".svg", r#"<svg xmlns="http://www.w3.org/2000/svg"><rect id="r"/></svg>"#, merge_svg as fn(&str, &str, &str) -> Result<MergeResult, MergeError>));
+    inputs.push((
+        ".svg",
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><rect id="r"/></svg>"#,
+        merge_svg as fn(&str, &str, &str) -> Result<MergeResult, MergeError>,
+    ));
     #[cfg(feature = "html")]
-    inputs.push((".html", "<html><p>a</p></html>", merge_html as fn(&str, &str, &str) -> Result<MergeResult, MergeError>));
+    inputs.push((
+        ".html",
+        "<html><p>a</p></html>",
+        merge_html as fn(&str, &str, &str) -> Result<MergeResult, MergeError>,
+    ));
 
     for (label, content, merge_fn) in inputs {
         let r = merge_fn(content, content, content).unwrap();
         assert_eq!(
-            r.status, MergeStatus::Clean,
-            "{}: identical inputs should be Clean", label
+            r.status,
+            MergeStatus::Clean,
+            "{}: identical inputs should be Clean",
+            label
         );
     }
 }
@@ -520,17 +626,26 @@ fn consistency_xml_family_basic() {
     let ours = r#"<root><a>10</a><b>2</b></root>"#;
     let theirs = r#"<root><a>1</a><b>20</b></root>"#;
 
-    let mut drivers: Vec<(&str, fn(&str, &str, &str) -> Result<MergeResult, MergeError>)> = vec![
-        ("xml", merge_xml as fn(&str, &str, &str) -> Result<MergeResult, MergeError>),
-    ];
+    let mut drivers: Vec<(
+        &str,
+        fn(&str, &str, &str) -> Result<MergeResult, MergeError>,
+    )> = vec![(
+        "xml",
+        merge_xml as fn(&str, &str, &str) -> Result<MergeResult, MergeError>,
+    )];
     #[cfg(feature = "html")]
-    drivers.push(("html", merge_html as fn(&str, &str, &str) -> Result<MergeResult, MergeError>));
+    drivers.push((
+        "html",
+        merge_html as fn(&str, &str, &str) -> Result<MergeResult, MergeError>,
+    ));
 
     for (label, merge_fn) in drivers {
         let r = merge_fn(base, ours, theirs).unwrap();
         assert_eq!(
-            r.status, MergeStatus::Clean,
-            "{}: different-element merge should be Clean", label
+            r.status,
+            MergeStatus::Clean,
+            "{}: different-element merge should be Clean",
+            label
         );
     }
 }
@@ -545,7 +660,10 @@ fn consistency_auto_matches_specific() {
     let specific = merge_json(base, ours, theirs).unwrap();
     let auto = merge_auto(base, ours, theirs, Some(".json")).unwrap();
 
-    assert_eq!(specific.status, auto.status, "merge_auto should match merge_json status");
+    assert_eq!(
+        specific.status, auto.status,
+        "merge_auto should match merge_json status"
+    );
 }
 
 // ============================================================================
@@ -557,7 +675,11 @@ fn error_merge_auto_unsupported_has_message() {
     let err = merge_auto("a", "b", "c", Some(".xyz")).unwrap_err();
     let msg = err.to_string();
     assert!(!msg.is_empty(), "Error message should not be empty");
-    assert!(msg.len() > 5, "Error message should be descriptive, got: {}", msg);
+    assert!(
+        msg.len() > 5,
+        "Error message should be descriptive, got: {}",
+        msg
+    );
 }
 
 #[test]
@@ -584,7 +706,7 @@ fn error_malformed_json_is_parse_error() {
     let r = merge_json("{bad", "{bad", "{bad");
     match r {
         Err(MergeError::ParseError(_)) => {} // expected
-        Ok(_) => {} // also acceptable (driver may handle gracefully)
+        Ok(_) => {}                          // also acceptable (driver may handle gracefully)
         Err(e) => panic!("Expected ParseError or Ok, got: {:?}", e),
     }
 }
@@ -613,7 +735,10 @@ fn conflict_result_has_merged_content() {
     )
     .unwrap();
     assert_eq!(r.status, MergeStatus::Conflict);
-    assert!(!r.merged.is_empty(), "Conflict result should have merged content (even if best-effort)");
+    assert!(
+        !r.merged.is_empty(),
+        "Conflict result should have merged content (even if best-effort)"
+    );
 }
 
 #[test]
@@ -643,7 +768,12 @@ fn conflict_result_yaml_has_content() {
 
 #[test]
 fn conflict_result_toml_has_content() {
-    let r = merge_toml("key = \"original\"\n", "key = \"ours\"\n", "key = \"theirs\"\n").unwrap();
+    let r = merge_toml(
+        "key = \"original\"\n",
+        "key = \"ours\"\n",
+        "key = \"theirs\"\n",
+    )
+    .unwrap();
     assert_eq!(r.status, MergeStatus::Conflict);
     assert!(!r.merged.is_empty());
 }
@@ -706,7 +836,12 @@ fn conflict_result_html_has_content() {
 #[test]
 fn conflict_result_ical_has_content() {
     let base = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nSUMMARY:Meeting\r\nUID:x@t\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
-    let r = merge_ical(base, &base.replace("Meeting", "Ours"), &base.replace("Meeting", "Theirs")).unwrap();
+    let r = merge_ical(
+        base,
+        &base.replace("Meeting", "Ours"),
+        &base.replace("Meeting", "Theirs"),
+    )
+    .unwrap();
     assert_eq!(r.status, MergeStatus::Conflict);
     assert!(!r.merged.is_empty());
 }
@@ -715,7 +850,12 @@ fn conflict_result_ical_has_content() {
 #[test]
 fn conflict_result_feed_has_content() {
     let base = r#"<?xml version="1.0"?><rss version="2.0"><channel><title>F</title><item><title>P</title><guid>x</guid></item></channel></rss>"#;
-    let r = merge_feed(base, &base.replace("P", "Ours"), &base.replace("P", "Theirs")).unwrap();
+    let r = merge_feed(
+        base,
+        &base.replace("P", "Ours"),
+        &base.replace("P", "Theirs"),
+    )
+    .unwrap();
     assert_eq!(r.status, MergeStatus::Conflict);
     assert!(!r.merged.is_empty());
 }

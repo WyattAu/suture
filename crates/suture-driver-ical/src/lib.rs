@@ -46,25 +46,27 @@ impl IcalDriver {
             } else if let Some(rest) = line.strip_prefix("END:") {
                 let end_type = rest.trim();
                 if let Some((comp_type, props)) = component_stack.pop()
-                    && comp_type == end_type {
-                        if component_stack.is_empty() {
-                            components.push((comp_type, props));
-                        } else if let Some(parent) = component_stack.last_mut() {
-                            parent
-                                .1
-                                .push((format!("BEGIN:{comp_type}"), comp_type.clone()));
-                            for (k, v) in props {
-                                parent.1.push((k, v));
-                            }
-                            parent
-                                .1
-                                .push((format!("END:{comp_type}"), comp_type.clone()));
+                    && comp_type == end_type
+                {
+                    if component_stack.is_empty() {
+                        components.push((comp_type, props));
+                    } else if let Some(parent) = component_stack.last_mut() {
+                        parent
+                            .1
+                            .push((format!("BEGIN:{comp_type}"), comp_type.clone()));
+                        for (k, v) in props {
+                            parent.1.push((k, v));
                         }
+                        parent
+                            .1
+                            .push((format!("END:{comp_type}"), comp_type.clone()));
                     }
-            } else if let Some(entry) = component_stack.last_mut()
-                && let Some((key, value)) = Self::parse_property_line(line) {
-                    entry.1.push((key, value));
                 }
+            } else if let Some(entry) = component_stack.last_mut()
+                && let Some((key, value)) = Self::parse_property_line(line)
+            {
+                entry.1.push((key, value));
+            }
         }
 
         Ok(components)
@@ -93,9 +95,7 @@ impl IcalDriver {
         None
     }
 
-    fn components_by_uid(
-        components: &[Component],
-    ) -> BTreeMap<String, Vec<(String, String)>> {
+    fn components_by_uid(components: &[Component]) -> BTreeMap<String, Vec<(String, String)>> {
         let mut map = BTreeMap::new();
         for (comp_type, props) in components {
             if matches!(
@@ -181,9 +181,7 @@ impl IcalDriver {
         output
     }
 
-    fn extract_inner_components(
-        components: &[Component],
-    ) -> Vec<Component> {
+    fn extract_inner_components(components: &[Component]) -> Vec<Component> {
         let mut inner = Vec::new();
         for (comp_type, props) in components {
             if *comp_type == "VCALENDAR" {

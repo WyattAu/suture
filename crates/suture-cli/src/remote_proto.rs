@@ -359,9 +359,7 @@ pub(crate) async fn do_fetch(
         let target_id = suture_common::Hash::from_hex(&branch.target_id.value)?;
         let branch_name = suture_common::BranchName::new(&branch.name)?;
         let ref_key = format!("remote.{}.ref.{}", remote, branch.name);
-        repo.meta()
-            .set_config(&ref_key, &target_id.to_hex())
-            .ok();
+        repo.meta().set_config(&ref_key, &target_id.to_hex()).ok();
         if !repo.dag().branch_exists(&branch_name) {
             let _ = repo.dag_mut().create_branch(branch_name.clone(), target_id);
         } else {

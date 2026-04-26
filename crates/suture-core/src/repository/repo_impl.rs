@@ -45,7 +45,9 @@
 
 use crate::cas::store::{BlobStore, CasError};
 use crate::dag::graph::{DagError, PatchDag};
-    use crate::engine::apply::{apply_patch_chain, apply_patch_mut, resolve_payload_to_hash, ApplyError};
+use crate::engine::apply::{
+    ApplyError, apply_patch_chain, apply_patch_mut, resolve_payload_to_hash,
+};
 use crate::engine::diff::{DiffEntry, DiffType, diff_trees};
 use crate::engine::tree::FileTree;
 use crate::metadata::MetaError;
@@ -202,9 +204,10 @@ impl Repository {
                     .parse()
                     .map_err(|_| RepoError::Custom(format!("invalid HEAD~N: {}", name)))?;
                 for _ in 0..n {
-                    let patch = self.dag.get_patch(&target_id).ok_or_else(|| {
-                        RepoError::Custom("HEAD ancestor not found".to_string())
-                    })?;
+                    let patch = self
+                        .dag
+                        .get_patch(&target_id)
+                        .ok_or_else(|| RepoError::Custom("HEAD ancestor not found".to_string()))?;
                     target_id = patch
                         .parent_ids
                         .first()
@@ -356,12 +359,12 @@ impl Repository {
         //   "3" — incremental mutable apply (apply_patch_mut) + in-memory cache
         //         persistence across commits
         const SNAPSHOT_ENGINE_VERSION: &str = "3";
-        let stored_version = meta
-            .get_config("snapshot_engine_version")
-            .unwrap_or(None);
+        let stored_version = meta.get_config("snapshot_engine_version").unwrap_or(None);
         if stored_version.as_deref() != Some(SNAPSHOT_ENGINE_VERSION) {
             let _ = meta.conn().execute("DELETE FROM file_trees", []);
-            let _ = meta.conn().execute("DELETE FROM config WHERE key = 'head_tree_hash'", []);
+            let _ = meta
+                .conn()
+                .execute("DELETE FROM config WHERE key = 'head_tree_hash'", []);
             let _ = meta.set_config("snapshot_engine_version", SNAPSHOT_ENGINE_VERSION);
         }
 
@@ -600,9 +603,7 @@ impl Repository {
             let patch_id = self
                 .get_detached_head()
                 .map_err(|e| RepoError::Custom(e.to_string()))?
-                .ok_or_else(|| {
-                    RepoError::Custom("detached HEAD but no commit ID stored".into())
-                })?;
+                .ok_or_else(|| RepoError::Custom("detached HEAD but no commit ID stored".into()))?;
             let label = "(detached)".to_string();
             *self.cached_head_branch.borrow_mut() = Some(label.clone());
             *self.cached_head_id.borrow_mut() = Some(patch_id);
@@ -737,9 +738,7 @@ impl Repository {
                                 .first()
                                 .ok_or_else(|| RepoError::Custom("HEAD has no parent".into()))?;
                         } else {
-                            return Err(RepoError::Custom(
-                                "HEAD ancestor not found".into(),
-                            ));
+                            return Err(RepoError::Custom("HEAD ancestor not found".into()));
                         }
                     }
                 }
@@ -1446,11 +1445,11 @@ impl Repository {
         if let (Some(tree), Some(cached_id)) = (
             self.cached_head_snapshot.borrow().clone(),
             self.cached_head_id.borrow().as_ref().copied(),
-        )
-            && cached_id == head_id {
-                return Ok(tree.clone());
-            }
-            // HEAD changed — stale cache, fall through
+        ) && cached_id == head_id
+        {
+            return Ok(tree.clone());
+        }
+        // HEAD changed — stale cache, fall through
 
         // Try loading from SQLite (O(1) — no patch replay needed)
         if let Some(tree) = self
@@ -1588,7 +1587,10 @@ impl Repository {
         let staged_paths: Vec<&str> = working_set
             .iter()
             .filter(|(_, s)| {
-                matches!(s, FileStatus::Added | FileStatus::Modified | FileStatus::Deleted)
+                matches!(
+                    s,
+                    FileStatus::Added | FileStatus::Modified | FileStatus::Deleted
+                )
             })
             .map(|(p, _)| p.as_str())
             .collect();
@@ -1711,18 +1713,17 @@ impl Repository {
         let old_head = self.head().map(|(_, id)| id).unwrap_or(Hash::ZERO);
         let old_branch = self.head().ok().map(|(n, _)| n);
 
-        let (target_id, is_detached) =
-            if let Ok(target) = BranchName::new(branch_name) {
-                if let Some(id) = self.dag.get_branch(&target) {
-                    (id, false)
-                } else {
-                    let id = self.resolve_ref(branch_name)?;
-                    (id, true)
-                }
+        let (target_id, is_detached) = if let Ok(target) = BranchName::new(branch_name) {
+            if let Some(id) = self.dag.get_branch(&target) {
+                (id, false)
             } else {
                 let id = self.resolve_ref(branch_name)?;
                 (id, true)
-            };
+            }
+        } else {
+            let id = self.resolve_ref(branch_name)?;
+            (id, true)
+        };
 
         let has_changes = self.has_uncommitted_changes()?;
         if has_changes {
@@ -1777,14 +1778,14 @@ impl Repository {
             self.set_config("core.detached", "true")?;
             self.set_config("core.detachedHead", &target_id.to_hex())?;
         } else {
-            let _ = self.meta().conn().execute(
-                "DELETE FROM config WHERE key = 'core.detached'",
-                [],
-            );
-            let _ = self.meta().conn().execute(
-                "DELETE FROM config WHERE key = 'core.detachedHead'",
-                [],
-            );
+            let _ = self
+                .meta()
+                .conn()
+                .execute("DELETE FROM config WHERE key = 'core.detached'", []);
+            let _ = self
+                .meta()
+                .conn()
+                .execute("DELETE FROM config WHERE key = 'core.detachedHead'", []);
             self.write_head_branch(branch_name)?;
         }
 
@@ -2213,10 +2214,7 @@ impl Repository {
     /// but without creating any patches, moving branches, or writing files.
     /// The `merge_patch_id` and `unresolved_conflicts` fields are computed
     /// heuristically (the patch ID is a placeholder since no patch is actually created).
-    pub fn preview_merge(
-        &self,
-        source_branch: &str,
-    ) -> Result<MergeExecutionResult, RepoError> {
+    pub fn preview_merge(&self, source_branch: &str) -> Result<MergeExecutionResult, RepoError> {
         if !self.pending_merge_parents.is_empty() {
             return Err(RepoError::MergeInProgress);
         }
@@ -2258,7 +2256,9 @@ impl Repository {
         if is_clean {
             // For a clean merge preview, compute what the merge tree would look like
             // without actually writing files or creating patches.
-            let source_tree = self.snapshot(&source_tip).unwrap_or_else(|_| FileTree::empty());
+            let source_tree = self
+                .snapshot(&source_tip)
+                .unwrap_or_else(|_| FileTree::empty());
             let lca_id = self
                 .dag
                 .lca(&head_id, &source_tip)
@@ -2296,8 +2296,12 @@ impl Repository {
             })
         } else {
             // For conflicting merge preview, compute conflicts without writing files.
-            let head_tree = self.snapshot(&head_id).unwrap_or_else(|_| FileTree::empty());
-            let source_tree = self.snapshot(&source_tip).unwrap_or_else(|_| FileTree::empty());
+            let head_tree = self
+                .snapshot(&head_id)
+                .unwrap_or_else(|_| FileTree::empty());
+            let source_tree = self
+                .snapshot(&source_tip)
+                .unwrap_or_else(|_| FileTree::empty());
             let lca_id = self
                 .dag
                 .lca(&head_id, &source_tip)
@@ -2591,7 +2595,8 @@ impl Repository {
                 }
                 let base_hash: Option<suture_common::Hash> = lca_tree.get(&entry.path).copied();
                 let ours_hash: Option<suture_common::Hash> = head_tree.get(&entry.path).copied();
-                let theirs_hash: Option<suture_common::Hash> = source_tree.get(&entry.path).copied();
+                let theirs_hash: Option<suture_common::Hash> =
+                    source_tree.get(&entry.path).copied();
 
                 // File only changed on source side (not on ours) — apply directly
                 if base_hash == ours_hash {
@@ -3416,9 +3421,13 @@ impl Repository {
         };
 
         let tree = self.snapshot(&target_id)?;
-        let hash = tree
-            .get(path)
-            .ok_or_else(|| RepoError::Custom(format!("file not found at '{}': {}", at.unwrap_or("HEAD"), path)))?;
+        let hash = tree.get(path).ok_or_else(|| {
+            RepoError::Custom(format!(
+                "file not found at '{}': {}",
+                at.unwrap_or("HEAD"),
+                path
+            ))
+        })?;
 
         let blob = self.cas.get_blob(hash)?;
         let content = String::from_utf8_lossy(&blob);
@@ -3719,7 +3728,10 @@ impl Repository {
         let new_url_key = format!("remote.{}.url", new_name);
 
         if self.meta.get_config(&old_url_key)?.is_none() {
-            return Err(RepoError::Custom(format!("remote '{}' not found", old_name)));
+            return Err(RepoError::Custom(format!(
+                "remote '{}' not found",
+                old_name
+            )));
         }
         if self.meta.get_config(&new_url_key)?.is_some() {
             return Err(RepoError::Custom(format!(
@@ -3736,7 +3748,10 @@ impl Repository {
         self.meta.set_config(&new_url_key, &url)?;
         self.meta.delete_config(&old_url_key)?;
 
-        if let Some(token) = self.meta.get_config(&format!("remote.{}.token", old_name))? {
+        if let Some(token) = self
+            .meta
+            .get_config(&format!("remote.{}.token", old_name))?
+        {
             self.meta
                 .set_config(&format!("remote.{}.token", new_name), &token)?;
             self.meta
@@ -4045,8 +4060,11 @@ impl Repository {
             tx.execute("DELETE FROM patches WHERE id = ?1", rusqlite::params![hex])
                 .map_err(|e| RepoError::Custom(e.to_string()))?;
             // Also clean up file_trees for unreachable patches
-            tx.execute("DELETE FROM file_trees WHERE patch_id = ?1", rusqlite::params![hex])
-                .map_err(|e| RepoError::Custom(e.to_string()))?;
+            tx.execute(
+                "DELETE FROM file_trees WHERE patch_id = ?1",
+                rusqlite::params![hex],
+            )
+            .map_err(|e| RepoError::Custom(e.to_string()))?;
             // Clean up reflog entries that reference unreachable patches
             tx.execute(
                 "DELETE FROM reflog WHERE old_head = ?1 OR new_head = ?1",
@@ -4055,8 +4073,7 @@ impl Repository {
             .map_err(|e| RepoError::Custom(e.to_string()))?;
         }
 
-        tx.commit()
-            .map_err(|e| RepoError::Custom(e.to_string()))?;
+        tx.commit().map_err(|e| RepoError::Custom(e.to_string()))?;
 
         // Collect all blob hashes referenced by reachable patches
         let mut referenced_blobs: HashSet<Hash> = HashSet::new();
@@ -4066,9 +4083,9 @@ impl Repository {
                     if let Some(changes) = patch.file_changes() {
                         for change in &changes {
                             if !change.payload.is_empty()
-                                && let Ok(hash) = Hash::from_hex(
-                                    &String::from_utf8_lossy(&change.payload),
-                                ) && referenced_blobs.insert(hash)
+                                && let Ok(hash) =
+                                    Hash::from_hex(&String::from_utf8_lossy(&change.payload))
+                                && referenced_blobs.insert(hash)
                             {
                                 // blob hash collected
                             }
@@ -5811,11 +5828,7 @@ mod tests {
         let elapsed = start.elapsed();
 
         assert_eq!(log.len(), 101); // 100 commits + 1 root "Initial commit"
-        assert!(
-            elapsed.as_secs() < 1,
-            "log() took {:?}",
-            elapsed
-        );
+        assert!(elapsed.as_secs() < 1, "log() took {:?}", elapsed);
     }
 
     #[test]
@@ -5836,11 +5849,7 @@ mod tests {
         let elapsed = start.elapsed();
 
         assert_eq!(log.len(), 201); // 200 commits + 1 root "Initial commit"
-        assert!(
-            elapsed.as_secs() < 2,
-            "log() took {:?}",
-            elapsed
-        );
+        assert!(elapsed.as_secs() < 2, "log() took {:?}", elapsed);
     }
 
     #[test]
@@ -5863,7 +5872,11 @@ mod tests {
         let t1 = std::time::Instant::now();
         let log = repo.log(None).unwrap();
         let log_time = t1.elapsed();
-        eprintln!("log() 10001 entries: {:?} ({} entries)", log_time, log.len());
+        eprintln!(
+            "log() 10001 entries: {:?} ({} entries)",
+            log_time,
+            log.len()
+        );
 
         assert_eq!(log.len(), 10_001); // 10K commits + 1 root
         // 10K commits should complete in <60s even in debug mode on slow CI
@@ -5883,10 +5896,10 @@ mod tests {
         repo.add("hello.txt")?;
         repo.commit("add hello.txt")?;
 
-        let count: i64 = repo
-            .meta()
-            .conn()
-            .query_row("SELECT COUNT(*) FROM file_trees", [], |r| r.get(0))?;
+        let count: i64 =
+            repo.meta()
+                .conn()
+                .query_row("SELECT COUNT(*) FROM file_trees", [], |r| r.get(0))?;
         assert!(count > 0, "file_trees should have rows after commit");
 
         repo.meta()
@@ -5896,16 +5909,13 @@ mod tests {
 
         let repo = Repository::open(dir.path())?;
 
-        let version = repo
-            .meta()
-            .get_config("snapshot_engine_version")
-            .unwrap();
+        let version = repo.meta().get_config("snapshot_engine_version").unwrap();
         assert_eq!(version.as_deref(), Some("3"));
 
-        let count: i64 = repo
-            .meta()
-            .conn()
-            .query_row("SELECT COUNT(*) FROM file_trees", [], |r| r.get(0))?;
+        let count: i64 =
+            repo.meta()
+                .conn()
+                .query_row("SELECT COUNT(*) FROM file_trees", [], |r| r.get(0))?;
         assert_eq!(count, 0, "file_trees should be empty after migration");
 
         let tree = repo.snapshot_head()?;
@@ -5927,10 +5937,10 @@ mod tests {
         repo.add("data.txt")?;
         repo.commit("add data.txt")?;
 
-        let count: i64 = repo
-            .meta()
-            .conn()
-            .query_row("SELECT COUNT(*) FROM file_trees", [], |r| r.get(0))?;
+        let count: i64 =
+            repo.meta()
+                .conn()
+                .query_row("SELECT COUNT(*) FROM file_trees", [], |r| r.get(0))?;
         assert!(count > 0);
 
         repo.meta()
@@ -5940,16 +5950,13 @@ mod tests {
 
         let repo = Repository::open(dir.path())?;
 
-        let version = repo
-            .meta()
-            .get_config("snapshot_engine_version")
-            .unwrap();
+        let version = repo.meta().get_config("snapshot_engine_version").unwrap();
         assert_eq!(version.as_deref(), Some("3"));
 
-        let count: i64 = repo
-            .meta()
-            .conn()
-            .query_row("SELECT COUNT(*) FROM file_trees", [], |r| r.get(0))?;
+        let count: i64 =
+            repo.meta()
+                .conn()
+                .query_row("SELECT COUNT(*) FROM file_trees", [], |r| r.get(0))?;
         assert_eq!(count, 0);
 
         let tree = repo.snapshot_head()?;
@@ -5979,16 +5986,13 @@ mod tests {
 
         let repo = Repository::open(dir.path())?;
 
-        let version = repo
-            .meta()
-            .get_config("snapshot_engine_version")
-            .unwrap();
+        let version = repo.meta().get_config("snapshot_engine_version").unwrap();
         assert_eq!(version.as_deref(), Some("3"));
 
-        let count: i64 = repo
-            .meta()
-            .conn()
-            .query_row("SELECT COUNT(*) FROM file_trees", [], |r| r.get(0))?;
+        let count: i64 =
+            repo.meta()
+                .conn()
+                .query_row("SELECT COUNT(*) FROM file_trees", [], |r| r.get(0))?;
         assert_eq!(count, 0);
 
         let tree = repo.snapshot_head()?;
@@ -6006,25 +6010,22 @@ mod tests {
         repo.add("keep.txt")?;
         repo.commit("add keep.txt")?;
 
-        let version = repo
-            .meta()
-            .get_config("snapshot_engine_version")
-            .unwrap();
+        let version = repo.meta().get_config("snapshot_engine_version").unwrap();
         assert_eq!(version.as_deref(), Some("3"));
 
-        let count_before: i64 = repo
-            .meta()
-            .conn()
-            .query_row("SELECT COUNT(*) FROM file_trees", [], |r| r.get(0))?;
+        let count_before: i64 =
+            repo.meta()
+                .conn()
+                .query_row("SELECT COUNT(*) FROM file_trees", [], |r| r.get(0))?;
         assert!(count_before > 0);
         drop(repo);
 
         let repo = Repository::open(dir.path())?;
 
-        let count_after: i64 = repo
-            .meta()
-            .conn()
-            .query_row("SELECT COUNT(*) FROM file_trees", [], |r| r.get(0))?;
+        let count_after: i64 =
+            repo.meta()
+                .conn()
+                .query_row("SELECT COUNT(*) FROM file_trees", [], |r| r.get(0))?;
         assert_eq!(
             count_after, count_before,
             "file_trees should not be wiped when version matches"

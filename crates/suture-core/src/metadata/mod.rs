@@ -9,7 +9,7 @@ pub(crate) mod repo_config;
 
 use crate::engine::tree::FileTree;
 use crate::patch::types::{Patch, PatchId, TouchSet};
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use std::collections::BTreeMap;
 use std::path::Path;
 use suture_common::{BranchName, FileStatus, Hash, RepoPath};
@@ -379,8 +379,7 @@ impl MetadataStore {
         if paths.is_empty() {
             return Ok(());
         }
-        let json = serde_json::to_string(paths)
-            .map_err(|e| MetaError::Custom(e.to_string()))?;
+        let json = serde_json::to_string(paths).map_err(|e| MetaError::Custom(e.to_string()))?;
         self.conn.execute(
             "DELETE FROM working_set WHERE path IN (SELECT value FROM json_each(?1))",
             params![json],

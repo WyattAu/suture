@@ -76,8 +76,11 @@ fn make_pptx(slide_names: &[impl AsRef<str>]) -> String {
             .collect::<Vec<_>>()
             .join("\n");
 
-        zip.start_file("[Content_Types].xml", zip::write::SimpleFileOptions::default())
-            .unwrap();
+        zip.start_file(
+            "[Content_Types].xml",
+            zip::write::SimpleFileOptions::default(),
+        )
+        .unwrap();
         zip.write_all(
             format!(
                 r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -138,8 +141,11 @@ fn make_pptx(slide_names: &[impl AsRef<str>]) -> String {
             .collect::<Vec<_>>()
             .join("\n");
 
-        zip.start_file("ppt/presentation.xml", zip::write::SimpleFileOptions::default())
-            .unwrap();
+        zip.start_file(
+            "ppt/presentation.xml",
+            zip::write::SimpleFileOptions::default(),
+        )
+        .unwrap();
         zip.write_all(
             format!(
                 r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

@@ -9,7 +9,10 @@ pub(crate) async fn cmd_blame(
     let (start, end) = if let Some(range) = lines {
         let parts: Vec<&str> = range.split(',').collect();
         if parts.len() != 2 {
-            let msg = format!("invalid line range format: '{}' (expected start,end)", range);
+            let msg = format!(
+                "invalid line range format: '{}' (expected start,end)",
+                range
+            );
             eprintln!("error: {msg}");
             std::process::exit(1);
         }

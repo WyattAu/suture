@@ -8,6 +8,6 @@
 pub(crate) mod repo_impl;
 pub use repo_impl::{
     BlameEntry, ConflictInfo, FsckResult, GcResult, MergeExecutionResult, RebaseAction, RebasePlan,
-    RebasePlanEntry, RebaseResult, RebaseState, ReflogEntry, RepoError, RepoStatus, Repository, ResetMode,
-    StashEntry, WorktreeEntry,
+    RebasePlanEntry, RebaseResult, RebaseState, ReflogEntry, RepoError, RepoStatus, Repository,
+    ResetMode, StashEntry, WorktreeEntry,
 };

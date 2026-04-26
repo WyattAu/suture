@@ -1,8 +1,6 @@
 use crate::ref_utils::resolve_ref;
 
-pub(crate) async fn cmd_rollback(
-    commit: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) async fn cmd_rollback(commit: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
     let patches = repo.all_patches();
     let target = resolve_ref(&repo, commit, &patches)?;

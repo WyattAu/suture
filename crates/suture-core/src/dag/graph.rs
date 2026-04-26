@@ -385,12 +385,7 @@ impl PatchDag {
         // Generation is assigned in add_patch as max(parent generations) + 1,
         // so parents always have strictly lower generation than children.
         let mut sorted: Vec<PatchId> = all.iter().copied().collect();
-        sorted.sort_by_key(|pid| {
-            self.nodes
-                .get(pid)
-                .map(|n| n.generation)
-                .unwrap_or(0)
-        });
+        sorted.sort_by_key(|pid| self.nodes.get(pid).map(|n| n.generation).unwrap_or(0));
 
         sorted
     }

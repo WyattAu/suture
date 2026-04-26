@@ -1,6 +1,9 @@
 use crate::display::format_timestamp;
 use crate::ref_utils::resolve_ref;
-pub(crate) async fn cmd_show(commit_ref: &str, stat: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) async fn cmd_show(
+    commit_ref: &str,
+    stat: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
     let patches = repo.all_patches();
     let target = resolve_ref(&repo, commit_ref, &patches)?;
@@ -84,7 +87,12 @@ fn print_stat(
     );
 
     for (file, icon) in &file_list {
-        println!("{} {} ({})", icon, file, classify_file(file, &parent_tree, &commit_tree));
+        println!(
+            "{} {} ({})",
+            icon,
+            file,
+            classify_file(file, &parent_tree, &commit_tree)
+        );
     }
 
     Ok(())
