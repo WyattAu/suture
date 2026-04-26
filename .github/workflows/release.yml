@@ -221,8 +221,22 @@ jobs:
             --exclude='node_modules' \
             --exclude='desktop-app/node_modules' \
             --exclude='desktop-app/src-tauri/target' \
+            --exclude='.cargo' \
             --warning=no-file-changed \
-            .
+            --ignore-failed-read \
+            . || true
+          # Fallback: create tarball from known directories
+          if [ ! -f suture-src.tar.gz ] || [ ! -s suture-src.tar.gz ]; then
+            tar czf suture-src.tar.gz \
+              --exclude='.git' \
+              --exclude='target' \
+              --exclude='.direnv' \
+              --exclude='node_modules' \
+              --exclude='desktop-app' \
+              --exclude='.cargo' \
+              crates packages scripts docs CHANGELOG.md VERSION.md README.md LICENSE Apache-2.0.md CONTRIBUTING.md .github
+          fi
+          ls -la suture-src.tar.gz
 
       - name: Upload source artifact
         uses: actions/upload-artifact@v4
