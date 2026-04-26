@@ -796,7 +796,7 @@ impl Repository {
                 tags.push((name.to_string(), id));
             }
         }
-        tags.sort_by(|a, b| a.0.cmp(&b.0));
+        tags.sort_by_key(|a| a.0.clone());
         Ok(tags)
     }
 

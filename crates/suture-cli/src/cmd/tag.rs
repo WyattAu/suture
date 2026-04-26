@@ -28,7 +28,7 @@ pub(crate) async fn cmd_tag(
                 });
             }
             Some("name") | None => {
-                tags.sort_by(|a, b| a.0.cmp(&b.0));
+                tags.sort_by_key(|a| a.0.clone());
             }
             Some(other) => {
                 eprintln!("error: unsupported sort order '{other}' (use 'date' or 'name')");

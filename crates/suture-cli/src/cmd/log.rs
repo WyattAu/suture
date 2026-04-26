@@ -109,7 +109,7 @@ pub(crate) async fn cmd_log(
                     }
                 }
             }
-            all_patches.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+            all_patches.sort_by_key(|b| std::cmp::Reverse(b.timestamp));
             all_patches
         } else if first_parent {
             use suture_common::Hash;
@@ -279,7 +279,7 @@ pub(crate) async fn cmd_log(
         return Ok(());
     }
     // Sort branches for deterministic graph column assignment
-    branches.sort_by(|a, b| a.0.cmp(&b.0));
+    branches.sort_by_key(|a| a.0.clone());
     let head_branch = repo.head().map(|(name, _)| name).unwrap_or_default();
 
     let all_patches = repo.all_patches_ref();
@@ -472,7 +472,7 @@ async fn cmd_audit(
         all_patches.retain(|p| p.message.to_lowercase().contains(&grep_lower));
     }
 
-    all_patches.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+    all_patches.sort_by_key(|a| a.timestamp);
 
     let entries: Vec<AuditEntry> = all_patches
         .iter()

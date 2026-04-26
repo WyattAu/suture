@@ -81,7 +81,7 @@ fn collect_entries<'a>(
             .map_err(|e| std::io::Error::other(e.to_string()));
         entries.push((path.clone(), data));
     }
-    entries.sort_by(|a, b| a.0.cmp(&b.0));
+    entries.sort_by_key(|a| a.0.clone());
     entries
 }
 

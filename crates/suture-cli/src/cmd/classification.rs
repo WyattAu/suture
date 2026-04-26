@@ -317,7 +317,7 @@ async fn cmd_scan(
         all_patches.retain(|p| repo.dag().patch_chain(&since_id).contains(&p.id));
     }
 
-    all_patches.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+    all_patches.sort_by_key(|a| a.timestamp);
 
     let mut events: Vec<ClassificationEvent> = Vec::new();
     let mut commits_with_events = std::collections::HashSet::new();
@@ -449,7 +449,7 @@ async fn cmd_report(output: Option<&str>) -> Result<(), Box<dyn std::error::Erro
         }
     }
 
-    all_patches.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+    all_patches.sort_by_key(|a| a.timestamp);
     let total_commits = all_patches.len();
 
     let mut events: Vec<ClassificationEvent> = Vec::new();
@@ -532,7 +532,7 @@ async fn cmd_report(output: Option<&str>) -> Result<(), Box<dyn std::error::Erro
         .iter()
         .map(|(k, &v)| (k.clone(), v))
         .collect();
-    sorted_files.sort_by(|a, b| b.1.cmp(&a.1));
+    sorted_files.sort_by_key(|b| std::cmp::Reverse(b.1));
 
     let above_unclassified: Vec<(String, String)> = current_state
         .iter()

@@ -99,7 +99,7 @@ async fn cmd_report_change(
         });
     }
 
-    commit_entries.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+    commit_entries.sort_by_key(|b| std::cmp::Reverse(b.timestamp));
 
     let repo_name = std::env::current_dir()
         .unwrap_or_default()
@@ -306,7 +306,7 @@ async fn cmd_report_activity(days: u64, format: &str) -> Result<(), Box<dyn std:
     }
 
     let mut sorted_authors: Vec<_> = author_stats.into_iter().collect();
-    sorted_authors.sort_by(|a, b| b.1.most_recent.cmp(&a.1.most_recent));
+    sorted_authors.sort_by_key(|b| std::cmp::Reverse(b.1.most_recent));
 
     match format {
         "markdown" => {
@@ -382,13 +382,13 @@ async fn cmd_report_stats(at: &str) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    file_sizes.sort_by(|a, b| b.1.cmp(&a.1));
+    file_sizes.sort_by_key(|b| std::cmp::Reverse(b.1));
 
     println!("File Statistics (at {})", at);
     println!("{}", "─".repeat(60));
 
     let mut categories: Vec<_> = type_counts.into_iter().collect();
-    categories.sort_by(|a, b| b.1.cmp(&a.1));
+    categories.sort_by_key(|b| std::cmp::Reverse(b.1));
 
     println!("\nFiles by type:");
     for (category, count) in &categories {

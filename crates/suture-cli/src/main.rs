@@ -2,6 +2,10 @@
 // Rust 1.95 warns about if-inside-match (collapsible_match). These conflict.
 // Both are style-only lints. We intentionally use if-inside-match for readability.
 #![allow(clippy::collapsible_match)]
+// Allow unnecessary_sort_by: Rust 1.95 new lint that flags sort_by when sort_by_key
+// could be used. Some multi-key sorts with .then_with() still trigger this lint.
+// We've migrated all simple cases; remaining ones are intentionally complex.
+#![allow(clippy::unnecessary_sort_by)]
 
 use clap::{CommandFactory, Parser, Subcommand};
 

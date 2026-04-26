@@ -348,7 +348,7 @@ impl PatchDag {
             .iter()
             .map(|(name, id)| (name.clone(), *id))
             .collect();
-        branches.sort_by(|a, b| a.0.cmp(&b.0));
+        branches.sort_by_key(|a| a.0.clone());
         branches
     }
 
