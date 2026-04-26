@@ -181,7 +181,6 @@ jobs:
           key: ${{ matrix.features }}
 
       - name: Install protoc (for gRPC feature)
-        if: contains(matrix.features, 'raft-cluster')
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
       - name: Check with features
