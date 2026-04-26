@@ -6,7 +6,7 @@ license.workspace = true
 repository.workspace = true
 description = "Dead-simple semantic merge for structured files. Merge JSON, YAML, TOML, CSV, XML, Markdown, DOCX, XLSX, PPTX, SVG, HTML, iCalendar, and RSS/Atom feeds."
 homepage.workspace = true
-keywords = ["merge", "semantic-merge", "json", "yaml", "three-way-merge", "docx", "office"]
+keywords = ["merge", "semantic-merge", "json", "yaml", "docx"]
 readme = "README.md"
 categories = ["text-processing", "config", "parser-implementations"]
 
