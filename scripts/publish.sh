@@ -87,6 +87,9 @@ for crate in "${PUBLISH_ORDER[@]}"; do
     if echo "$output" | grep -q "no matching package named"; then
       echo "SKIPPED (intra-workspace dep not yet published)"
       DEP_SKIPPED+=("$crate")
+    elif echo "$output" | grep -q "already exists"; then
+      echo "SKIPPED (already published)"
+      PASSED+=("$crate")
     else
       echo "FAILED (exit code $rc)"
       echo "$output" | tail -5
