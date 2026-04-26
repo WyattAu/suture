@@ -94,6 +94,8 @@ pub(crate) async fn cmd_add(
     } else {
         for path in &file_paths {
             if maybe_convert_to_lfs_pointer(path)? {
+                // repo.add() reads the pointer from disk and stores it
+                repo.add(path)?;
                 println!("Added {} (LFS pointer, {} bytes)", path, std::fs::metadata(path)?.len());
             } else {
                 repo.add(path)?;

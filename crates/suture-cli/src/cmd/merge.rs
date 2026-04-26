@@ -445,14 +445,14 @@ pub(crate) async fn cmd_merge(
         report.push_str("\n## Binary File Conflicts\n");
 
         for conflict in &binary_conflicts {
-            if let Some(hash) = conflict.their_content_hash {
-                if let Ok(blob) = repo.cas().get_blob(&hash) {
-                    let theirs_path = conflicts_dir.join(format!("{}.theirs", conflict.path));
-                    if let Some(parent) = theirs_path.parent() {
-                        let _ = std::fs::create_dir_all(parent);
-                    }
-                    let _ = std::fs::write(&theirs_path, &blob);
+            if let Some(hash) = conflict.their_content_hash
+                && let Ok(blob) = repo.cas().get_blob(&hash)
+            {
+                let theirs_path = conflicts_dir.join(format!("{}.theirs", conflict.path));
+                if let Some(parent) = theirs_path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
                 }
+                let _ = std::fs::write(&theirs_path, &blob);
             }
 
             let theirs_rel = format!(".suture/conflicts/{}.theirs", conflict.path);

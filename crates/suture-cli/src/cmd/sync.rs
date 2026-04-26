@@ -563,26 +563,27 @@ fn detect_pending_conflicts(
 ) -> Vec<String> {
     let mut conflicts = Vec::new();
 
-    if let Ok(Some(json)) = repo.meta().get_config("pending_merge_parents") {
-        if !json.is_empty() && json != "[]" {
-            let parent_ids: Vec<String> = serde_json::from_str(&json).unwrap_or_default();
-            if !parent_ids.is_empty() {
-                let msg = format!("{} pending merge parents (merge in progress)", parent_ids.len());
-                conflicts.push(msg);
-            }
+    if let Ok(Some(json)) = repo.meta().get_config("pending_merge_parents")
+        && !json.is_empty()
+        && json != "[]"
+    {
+        let parent_ids: Vec<String> = serde_json::from_str(&json).unwrap_or_default();
+        if !parent_ids.is_empty() {
+            let msg = format!("{} pending merge parents (merge in progress)", parent_ids.len());
+            conflicts.push(msg);
         }
     }
 
     let conflict_report = Path::new(".suture/conflicts/report.md");
-    if conflict_report.exists() {
-        if let Ok(content) = std::fs::read_to_string(conflict_report) {
-            for line in content.lines() {
-                let trimmed = line.trim();
-                if trimmed.starts_with("- ") || trimmed.starts_with("* ") {
-                    let desc = trimmed.trim_start_matches("- ").trim_start_matches("* ");
-                    if !desc.is_empty() && !conflicts.iter().any(|c| c.contains(desc)) {
-                        conflicts.push(desc.to_string());
-                    }
+    if conflict_report.exists()
+        && let Ok(content) = std::fs::read_to_string(conflict_report)
+    {
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("- ") || trimmed.starts_with("* ") {
+                let desc = trimmed.trim_start_matches("- ").trim_start_matches("* ");
+                if !desc.is_empty() && !conflicts.iter().any(|c| c.contains(desc)) {
+                    conflicts.push(desc.to_string());
                 }
             }
         }

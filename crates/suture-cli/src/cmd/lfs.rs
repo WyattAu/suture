@@ -69,22 +69,20 @@ fn parse_human_size(s: &str) -> Option<u64> {
 }
 
 fn get_threshold(repo_root: &Path) -> u64 {
-    if let Ok(content) = std::fs::read_to_string(repo_root.join(".suture").join("config.toml")) {
-        if let Ok(table) = content.parse::<toml::Table>() {
-            if let Some(lfs) = table.get("lfs").and_then(|v| v.as_table()) {
-                if let Some(threshold) = lfs.get("threshold") {
-                    if let Some(s) = threshold.as_str() {
-                        if let Some(bytes) = parse_human_size(s) {
-                            return bytes;
-                        }
-                    }
-                    if let Some(n) = threshold.as_integer() {
-                        if n > 0 {
-                            return n as u64;
-                        }
-                    }
-                }
-            }
+    if let Ok(content) = std::fs::read_to_string(repo_root.join(".suture").join("config.toml"))
+        && let Ok(table) = content.parse::<toml::Table>()
+        && let Some(lfs) = table.get("lfs").and_then(|v| v.as_table())
+        && let Some(threshold) = lfs.get("threshold")
+    {
+        if let Some(s) = threshold.as_str()
+            && let Some(bytes) = parse_human_size(s)
+        {
+            return bytes;
+        }
+        if let Some(n) = threshold.as_integer()
+            && n > 0
+        {
+            return n as u64;
         }
     }
     DEFAULT_THRESHOLD
@@ -193,10 +191,10 @@ pub(crate) fn matches_lfs_pattern(
 ) -> Option<u64> {
     for rule in rules {
         if pattern_matches(&rule.pattern, rel_path) {
-            if let Some(ref limit_str) = rule.size_limit {
-                if let Some(limit) = parse_human_size(limit_str) {
-                    return Some(limit);
-                }
+            if let Some(ref limit_str) = rule.size_limit
+                && let Some(limit) = parse_human_size(limit_str)
+            {
+                return Some(limit);
             }
             return Some(0);
         }
@@ -263,12 +261,11 @@ fn list_lfs_pointers_in_tree() -> Vec<(String, LfsPointer)> {
         Err(_) => return pointers,
     };
     for (path, hash) in tree.iter() {
-        if let Ok(blob) = repo.cas().get_blob(hash) {
-            if let Ok(text) = std::str::from_utf8(&blob) {
-                if let Some(ptr) = parse_lfs_pointer(text) {
-                    pointers.push((path.clone(), ptr));
-                }
-            }
+        if let Ok(blob) = repo.cas().get_blob(hash)
+            && let Ok(text) = std::str::from_utf8(&blob)
+            && let Some(ptr) = parse_lfs_pointer(text)
+        {
+            pointers.push((path.clone(), ptr));
         }
     }
     pointers

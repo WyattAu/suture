@@ -27,3 +27,6 @@ build/
 
 # Manual test artifacts in repo root
 /test.*
+
+# Suture repository data (created by `suture init` in tests)
+.suture/
