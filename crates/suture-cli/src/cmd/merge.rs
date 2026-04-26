@@ -358,7 +358,7 @@ pub(crate) async fn cmd_merge(
                     && let Ok(blob) = repo.cas().get_blob(&hash)
                 {
                     if let Err(e) = std::fs::write(&conflict.path, &blob) {
-                        eprintln!("Warning: could not restore '{}': {}", conflict.path, e);
+                        eprintln!("warning: could not restore '{}': {}", conflict.path, e);
                     } else {
                         ooxml_resolved += 1;
                         let _ = repo.add(&conflict.path);
@@ -366,7 +366,7 @@ pub(crate) async fn cmd_merge(
                 }
             }
             if let Err(e) = generate_ooxml_conflict_report(&ooxml, repo.root()) {
-                eprintln!("Warning: could not write conflict report: {}", e);
+                eprintln!("warning: could not write conflict report: {}", e);
             }
             println!(
                 "Preserved your version for {} OOXML file(s) (see .suture_conflicts/report.md)",
@@ -456,7 +456,7 @@ pub(crate) async fn cmd_merge(
                     && let Ok(blob) = repo.cas().get_blob(&hash)
                 {
                     if let Err(e) = std::fs::write(&conflict.path, &blob) {
-                        eprintln!("Warning: could not write '{}': {}", conflict.path, e);
+                        eprintln!("warning: could not write '{}': {}", conflict.path, e);
                     } else {
                         let _ = repo.add(&conflict.path);
                         resolved_count += 1;
@@ -524,7 +524,7 @@ pub(crate) async fn cmd_merge(
 
                 if let Err(e) = std::fs::write(&conflict.path, &content) {
                     eprintln!(
-                        "Warning: could not write resolved file '{}': {e}",
+                        "warning: could not write resolved file '{}': {e}",
                         conflict.path
                     );
                     remaining.push(conflict.clone());
@@ -533,7 +533,7 @@ pub(crate) async fn cmd_merge(
 
                 if let Err(e) = repo.add(&conflict.path) {
                     eprintln!(
-                        "Warning: could not stage resolved file '{}': {e}",
+                        "warning: could not stage resolved file '{}': {e}",
                         conflict.path
                     );
                     remaining.push(conflict.clone());

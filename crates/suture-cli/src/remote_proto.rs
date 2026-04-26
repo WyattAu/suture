@@ -300,15 +300,15 @@ pub(crate) async fn do_fetch(
     let resp = req_builder.send().await?;
 
     if !resp.status().is_success() {
+        let status = resp.status();
         let text = resp.text().await?;
-        eprintln!("Fetch failed: {}", text);
-        return Ok(0);
+        return Err(format!("fetch failed: server returned {status} — {text}").into());
     }
 
     let result: PullResponse = resp.json().await?;
     if !result.success {
-        eprintln!("Fetch failed: {:?}", result.error);
-        return Ok(0);
+        let detail = result.error.as_deref().unwrap_or("unknown error");
+        return Err(format!("fetch failed: {detail}").into());
     }
 
     if !result.blobs.is_empty() || !result.patches.is_empty() {

@@ -1,3 +1,4 @@
+use crate::UnpoisonMutex;
 use axum::{
     Router,
     body::Body,
@@ -71,8 +72,8 @@ fn build_propfind_resource(path: &str, size: usize) -> String {
 }
 
 fn list_entries(state: &WebDavState, dir_path: &str) -> Vec<(String, bool)> {
-    let files = state.file_contents.lock().unwrap();
-    let dirs = state.dirs.lock().unwrap();
+    let files = state.file_contents.unpoison_lock();
+    let dirs = state.dirs.unpoison_lock();
 
     let mut entries: Vec<(String, bool)> = Vec::new();
 
@@ -147,7 +148,7 @@ async fn handle_propfind_path(
 ) -> impl IntoResponse {
     let clean = path.trim_start_matches('/').trim_end_matches('/');
 
-    let dirs = state.dirs.lock().unwrap();
+    let dirs = state.dirs.unpoison_lock();
     let is_dir = clean.is_empty() || dirs.contains(&clean.to_string());
     drop(dirs);
 
@@ -162,7 +163,7 @@ async fn handle_propfind_path(
             body,
         )
     } else {
-        let files = state.file_contents.lock().unwrap();
+        let files = state.file_contents.unpoison_lock();
         let size = files.get(clean).map(|d| d.len()).unwrap_or(0);
         drop(files);
         let body = build_propfind_resource(clean, size);
@@ -205,7 +206,7 @@ async fn handle_get_file(
 ) -> Response {
     let clean = path.trim_start_matches('/');
 
-    let files = state.file_contents.lock().unwrap();
+    let files = state.file_contents.unpoison_lock();
     match files.get(clean) {
         Some(data) => {
             let mime = mime_guess_path(clean);
@@ -260,7 +261,7 @@ async fn handle_put(
     }
 
     {
-        let mut dirs = state.dirs.lock().unwrap();
+        let mut dirs = state.dirs.unpoison_lock();
         ensure_parent_dirs(&mut dirs, &clean);
     }
 
@@ -294,14 +295,14 @@ async fn handle_delete(
     let mut removed = false;
 
     {
-        let mut files = state.file_contents.lock().unwrap();
+        let mut files = state.file_contents.unpoison_lock();
         if files.remove(clean).is_some() {
             removed = true;
         }
     }
 
     if !removed {
-        let mut dirs = state.dirs.lock().unwrap();
+        let mut dirs = state.dirs.unpoison_lock();
         if let Some(pos) = dirs.iter().position(|d| d == clean) {
             dirs.remove(pos);
             removed = true;
@@ -340,7 +341,7 @@ async fn handle_mkcol(
     }
 
     {
-        let mut dirs = state.dirs.lock().unwrap();
+        let mut dirs = state.dirs.unpoison_lock();
         if dirs.contains(&clean) {
             return StatusCode::METHOD_NOT_ALLOWED.into_response();
         }
@@ -655,7 +656,7 @@ mod tests {
         let res = app.oneshot(req).await.unwrap();
         assert_eq!(res.status(), StatusCode::NO_CONTENT);
 
-        let files = state.file_contents.lock().unwrap();
+        let files = state.file_contents.unpoison_lock();
         assert_eq!(files.get("newfile.txt").unwrap().as_slice(), b"new content");
     }
 
@@ -676,7 +677,7 @@ mod tests {
         let res = app.oneshot(req).await.unwrap();
         assert_eq!(res.status(), StatusCode::NO_CONTENT);
 
-        let files = state.file_contents.lock().unwrap();
+        let files = state.file_contents.unpoison_lock();
         assert!(!files.contains_key("hello.txt"));
     }
 
@@ -694,7 +695,7 @@ mod tests {
         let res = app.oneshot(req).await.unwrap();
         assert_eq!(res.status(), StatusCode::CREATED);
 
-        let dirs = state.dirs.lock().unwrap();
+        let dirs = state.dirs.unpoison_lock();
         assert!(dirs.contains(&"newdir".to_string()));
     }
 

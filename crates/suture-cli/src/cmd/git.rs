@@ -84,7 +84,7 @@ fn read_git_object(
     sha: &str,
 ) -> Result<(String, Vec<u8>), Box<dyn std::error::Error>> {
     if sha.len() < 4 {
-        return Err("SHA too short".into());
+        return Err("SHA too short (minimum 4 characters)".into());
     }
     let obj_path = git_dir.join("objects").join(&sha[..2]).join(&sha[2..]);
     let compressed = std::fs::read(&obj_path).map_err(|e| {

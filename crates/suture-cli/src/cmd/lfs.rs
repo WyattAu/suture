@@ -525,7 +525,7 @@ async fn cmd_lfs_push() -> Result<(), Box<dyn std::error::Error>> {
                 let data = match std::fs::read(&obj_path) {
                     Ok(d) => d,
                     Err(e) => {
-                        eprintln!("  error: failed to read {}: {}", &oid[..16], e);
+                        eprintln!("  error: failed to read {}: {}", &oid[..12], e);
                         failed += 1;
                         continue;
                     }
@@ -552,13 +552,13 @@ async fn cmd_lfs_push() -> Result<(), Box<dyn std::error::Error>> {
                     uploaded += 1;
                     println!(
                         "  uploaded: {} ({} bytes)",
-                        &oid[..16],
+                        &oid[..12],
                         action_val.get("size").and_then(|v| v.as_u64()).unwrap_or(0)
                     );
                 } else {
                     eprintln!(
                         "  error: upload failed for {}: {}",
-                        &oid[..16],
+                        &oid[..12],
                         upload_resp.status()
                     );
                     failed += 1;
@@ -569,11 +569,11 @@ async fn cmd_lfs_push() -> Result<(), Box<dyn std::error::Error>> {
                     .get("error")
                     .and_then(|v| v.as_str())
                     .unwrap_or("unknown error");
-                eprintln!("  error: server rejected {}: {}", &oid[..16], msg);
+                eprintln!("  error: server rejected {}: {}", &oid[..12], msg);
                 failed += 1;
             }
             other => {
-                eprintln!("  warning: unknown action '{}' for {}", other, &oid[..16]);
+                eprintln!("  warning: unknown action '{}' for {}", other, &oid[..12]);
             }
         }
     }
@@ -661,7 +661,7 @@ async fn cmd_lfs_pull() -> Result<(), Box<dyn std::error::Error>> {
 
         match action {
             "none" => {
-                eprintln!("  warning: object not available on remote: {}", &oid[..16]);
+                eprintln!("  warning: object not available on remote: {}", &oid[..12]);
                 skipped += 1;
             }
             "download" => {
@@ -683,17 +683,17 @@ async fn cmd_lfs_pull() -> Result<(), Box<dyn std::error::Error>> {
                     match store_lfs_object(&repo_root, oid, &data) {
                         Ok(()) => {
                             downloaded += 1;
-                            println!("  downloaded: {} ({} bytes)", &oid[..16], data.len());
+                            println!("  downloaded: {} ({} bytes)", &oid[..12], data.len());
                         }
                         Err(e) => {
-                            eprintln!("  error: failed to store {}: {}", &oid[..16], e);
+                            eprintln!("  error: failed to store {}: {}", &oid[..12], e);
                             failed += 1;
                         }
                     }
                 } else {
                     eprintln!(
                         "  error: download failed for {}: {}",
-                        &oid[..16],
+                        &oid[..12],
                         download_resp.status()
                     );
                     failed += 1;
@@ -704,11 +704,11 @@ async fn cmd_lfs_pull() -> Result<(), Box<dyn std::error::Error>> {
                     .get("error")
                     .and_then(|v| v.as_str())
                     .unwrap_or("unknown error");
-                eprintln!("  error: server rejected {}: {}", &oid[..16], msg);
+                eprintln!("  error: server rejected {}: {}", &oid[..12], msg);
                 failed += 1;
             }
             other => {
-                eprintln!("  warning: unknown action '{}' for {}", other, &oid[..16]);
+                eprintln!("  warning: unknown action '{}' for {}", other, &oid[..12]);
             }
         }
     }

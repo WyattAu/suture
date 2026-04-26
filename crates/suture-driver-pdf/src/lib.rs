@@ -17,7 +17,7 @@ impl PdfDriver {
     fn load_doc(bytes: &[u8]) -> Result<lopdf::Document, DriverError> {
         let cursor = std::io::Cursor::new(bytes);
         lopdf::Document::load_from(cursor)
-            .map_err(|e| DriverError::ParseError(format!("Failed to parse PDF: {e}")))
+            .map_err(|e| DriverError::ParseError(format!("failed to parse PDF: {e}")))
     }
 
     fn extract_pages(bytes: &[u8]) -> Result<Vec<String>, DriverError> {
@@ -320,7 +320,7 @@ impl SutureDriver for PdfDriver {
 
                 let mut buf = Vec::new();
                 ours_doc.save_to(&mut buf).map_err(|e| {
-                    DriverError::SerializationError(format!("Failed to serialize PDF: {e}"))
+                    DriverError::SerializationError(format!("failed to serialize PDF: {e}"))
                 })?;
 
                 Ok(Some(buf))

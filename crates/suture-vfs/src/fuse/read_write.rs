@@ -1,3 +1,4 @@
+use crate::UnpoisonMutex;
 use crate::fuse::inode::{InodeEntry, InodeGenerator, InodeKind};
 use crate::path_translation::PathTranslator;
 use async_stream::try_stream;
@@ -106,7 +107,7 @@ impl RwFilesystem {
     }
 
     fn resolve_path(&self, parent: u64, name: &str) -> Result<String, Errno> {
-        let inode_map = self.inner.inode_map.lock().unwrap();
+        let inode_map = self.inner.inode_map.unpoison_lock();
         let parent_path = inode_map
             .get_path(parent)
             .ok_or_else(Errno::new_not_exist)?;
@@ -118,7 +119,7 @@ impl RwFilesystem {
     }
 
     fn ensure_parent_dirs_in_inode_map(&self, path: &str) {
-        let mut inode_map = self.inner.inode_map.lock().unwrap();
+        let mut inode_map = self.inner.inode_map.unpoison_lock();
         let parts: Vec<&str> = path.split('/').collect();
         let mut prefix = String::new();
         for part in parts.iter().take(parts.len() - 1) {
@@ -131,8 +132,8 @@ impl RwFilesystem {
     }
 
     fn rebuild_path_translator(&self) {
-        let file_contents = self.inner.file_contents.lock().unwrap();
-        let pending_dirs = self.inner.pending_dirs.lock().unwrap();
+        let file_contents = self.inner.file_contents.unpoison_lock();
+        let pending_dirs = self.inner.pending_dirs.unpoison_lock();
 
         let mut all_paths: Vec<String> = file_contents.keys().cloned().collect();
 
@@ -144,7 +145,7 @@ impl RwFilesystem {
         let all_paths_ref: Vec<&str> = all_paths.iter().map(|s| s.as_str()).collect();
         let path_translator = PathTranslator::build(&all_paths_ref);
 
-        *self.inner.path_translator.lock().unwrap() = path_translator;
+        *self.inner.path_translator.unpoison_lock() = path_translator;
     }
 
     fn commit_file_change(&self, path: &str, content: &[u8], is_new: bool) -> anyhow::Result<()> {
@@ -154,7 +155,7 @@ impl RwFilesystem {
         }
         std::fs::write(&full_path, content)?;
 
-        let mut repo = self.inner.repo.lock().unwrap();
+        let mut repo = self.inner.repo.unpoison_lock();
         repo.add(path).map_err(|e| anyhow::anyhow!("stage: {e}"))?;
 
         let msg = if is_new {
@@ -165,7 +166,7 @@ impl RwFilesystem {
         repo.commit(&msg)
             .map_err(|e| anyhow::anyhow!("commit: {e}"))?;
 
-        self.inner.pending_files.lock().unwrap().remove(path);
+        self.inner.pending_files.unpoison_lock().remove(path);
         self.rebuild_from_repo(&repo)?;
         Ok(())
     }
@@ -176,7 +177,7 @@ impl RwFilesystem {
             std::fs::remove_file(&full_path)?;
         }
 
-        let mut repo = self.inner.repo.lock().unwrap();
+        let mut repo = self.inner.repo.unpoison_lock();
         repo.add(path)
             .map_err(|e| anyhow::anyhow!("stage delete: {e}"))?;
         repo.commit(&format!("vfs: delete {}", path))
@@ -191,8 +192,8 @@ impl RwFilesystem {
             .snapshot_head()
             .map_err(|e| anyhow::anyhow!("snapshot: {e}"))?;
 
-        let pending_files = self.inner.pending_files.lock().unwrap();
-        let mut file_contents = self.inner.file_contents.lock().unwrap();
+        let pending_files = self.inner.pending_files.unpoison_lock();
+        let mut file_contents = self.inner.file_contents.unpoison_lock();
 
         for (path, hash) in file_tree.iter() {
             if let Ok(data) = repo.cas().get_blob(hash) {
@@ -204,7 +205,7 @@ impl RwFilesystem {
 
         drop(pending_files);
 
-        let pending_dirs = self.inner.pending_dirs.lock().unwrap();
+        let pending_dirs = self.inner.pending_dirs.unpoison_lock();
         let mut all_paths: Vec<String> = file_contents.keys().cloned().collect();
         for dir in pending_dirs.iter() {
             all_paths.push(format!("{}.d", dir));
@@ -230,15 +231,15 @@ impl RwFilesystem {
             inode_map.alloc_dir(dir);
         }
 
-        *self.inner.inode_map.lock().unwrap() = inode_map;
-        *self.inner.path_translator.lock().unwrap() = path_translator;
+        *self.inner.inode_map.unpoison_lock() = inode_map;
+        *self.inner.path_translator.unpoison_lock() = path_translator;
 
         Ok(())
     }
 
     fn list_dir_entries(&self, dir_path: &str) -> Vec<(String, String, bool)> {
-        let path_translator = self.inner.path_translator.lock().unwrap();
-        let pending_dirs = self.inner.pending_dirs.lock().unwrap();
+        let path_translator = self.inner.path_translator.unpoison_lock();
+        let pending_dirs = self.inner.pending_dirs.unpoison_lock();
 
         let mut entries: Vec<(String, String, bool)> = path_translator
             .list_dir(dir_path)
@@ -272,7 +273,7 @@ impl RwFilesystem {
 
     fn process_close(&self, fh: u64) -> anyhow::Result<()> {
         let open_file = {
-            let mut open_files = self.inner.open_files.lock().unwrap();
+            let mut open_files = self.inner.open_files.unpoison_lock();
             open_files.remove(&fh)
         };
 
@@ -281,7 +282,7 @@ impl RwFilesystem {
             let content = open_file.buffer;
             let is_new = open_file.is_new;
 
-            let file_contents = self.inner.file_contents.lock().unwrap();
+            let file_contents = self.inner.file_contents.unpoison_lock();
             let existing = file_contents.get(&path).cloned();
             drop(file_contents);
 
@@ -293,8 +294,8 @@ impl RwFilesystem {
             if changed {
                 self.commit_file_change(&path, &content, is_new)?;
             } else if is_new {
-                self.inner.pending_files.lock().unwrap().remove(&path);
-                self.inner.file_contents.lock().unwrap().remove(&path);
+                self.inner.pending_files.unpoison_lock().remove(&path);
+                self.inner.file_contents.unpoison_lock().remove(&path);
                 self.rebuild_path_translator();
             }
         }
@@ -348,14 +349,14 @@ impl Filesystem for RwFilesystem {
         let name_str = name.to_str().ok_or_else(Errno::new_not_exist)?;
         let child_path = self.resolve_path(parent, name_str)?;
 
-        let inode_map = self.inner.inode_map.lock().unwrap();
+        let inode_map = self.inner.inode_map.unpoison_lock();
         let inode = inode_map
             .lookup(&child_path)
             .ok_or_else(Errno::new_not_exist)?;
         let entry = inode_map.get(inode).unwrap();
 
         let size = if entry.kind == InodeKind::File {
-            let file_contents = self.inner.file_contents.lock().unwrap();
+            let file_contents = self.inner.file_contents.unpoison_lock();
             file_contents
                 .get(&child_path)
                 .map(|d| d.len() as u64)
@@ -379,11 +380,11 @@ impl Filesystem for RwFilesystem {
         _fh: Option<u64>,
         _flags: u32,
     ) -> fuse3::Result<ReplyAttr> {
-        let inode_map = self.inner.inode_map.lock().unwrap();
+        let inode_map = self.inner.inode_map.unpoison_lock();
         let entry = inode_map.get(inode).ok_or_else(Errno::new_not_exist)?;
 
         let size = if entry.kind == InodeKind::File {
-            let open_files = self.inner.open_files.lock().unwrap();
+            let open_files = self.inner.open_files.unpoison_lock();
             let open_data = open_files
                 .values()
                 .find(|f| f.path == entry.path)
@@ -391,7 +392,7 @@ impl Filesystem for RwFilesystem {
             drop(open_files);
 
             open_data.unwrap_or_else(|| {
-                let file_contents = self.inner.file_contents.lock().unwrap();
+                let file_contents = self.inner.file_contents.unpoison_lock();
                 file_contents
                     .get(&entry.path)
                     .map(|d| d.len() as u64)
@@ -412,11 +413,11 @@ impl Filesystem for RwFilesystem {
         _fh: Option<u64>,
         _set_attr: SetAttr,
     ) -> fuse3::Result<ReplyAttr> {
-        let inode_map = self.inner.inode_map.lock().unwrap();
+        let inode_map = self.inner.inode_map.unpoison_lock();
         let entry = inode_map.get(inode).ok_or_else(Errno::new_not_exist)?;
 
         let size = if entry.kind == InodeKind::File {
-            let file_contents = self.inner.file_contents.lock().unwrap();
+            let file_contents = self.inner.file_contents.unpoison_lock();
             file_contents
                 .get(&entry.path)
                 .map(|d| d.len() as u64)
@@ -437,7 +438,7 @@ impl Filesystem for RwFilesystem {
         offset: u64,
         size: u32,
     ) -> fuse3::Result<ReplyData> {
-        let inode_map = self.inner.inode_map.lock().unwrap();
+        let inode_map = self.inner.inode_map.unpoison_lock();
         let entry = inode_map.get(inode).ok_or_else(Errno::new_not_exist)?;
         if entry.kind != InodeKind::File {
             return Err(Errno::new_is_dir());
@@ -445,7 +446,7 @@ impl Filesystem for RwFilesystem {
         let path = entry.path.clone();
         drop(inode_map);
 
-        let open_files = self.inner.open_files.lock().unwrap();
+        let open_files = self.inner.open_files.unpoison_lock();
         let data = open_files
             .values()
             .find(|f| f.path == path)
@@ -455,7 +456,7 @@ impl Filesystem for RwFilesystem {
         let data = match data {
             Some(buf) => buf,
             None => {
-                let file_contents = self.inner.file_contents.lock().unwrap();
+                let file_contents = self.inner.file_contents.unpoison_lock();
                 file_contents.get(&path).cloned().unwrap_or_default()
             }
         };
@@ -483,7 +484,7 @@ impl Filesystem for RwFilesystem {
         _write_flags: u32,
         _flags: u32,
     ) -> fuse3::Result<ReplyWrite> {
-        let mut open_files = self.inner.open_files.lock().unwrap();
+        let mut open_files = self.inner.open_files.unpoison_lock();
         let open_file = open_files
             .get_mut(&fh)
             .ok_or_else(|| Errno::from(libc::EBADF))?;
@@ -513,9 +514,9 @@ impl Filesystem for RwFilesystem {
 
         let mut is_new;
         {
-            let pending_files = self.inner.pending_files.lock().unwrap();
+            let pending_files = self.inner.pending_files.unpoison_lock();
             is_new = !pending_files.contains(&path);
-            let file_contents = self.inner.file_contents.lock().unwrap();
+            let file_contents = self.inner.file_contents.unpoison_lock();
             if !file_contents.contains_key(&path) {
                 is_new = true;
             }
@@ -525,12 +526,12 @@ impl Filesystem for RwFilesystem {
 
         let inode;
         {
-            let mut inode_map = self.inner.inode_map.lock().unwrap();
+            let mut inode_map = self.inner.inode_map.unpoison_lock();
             inode = inode_map.alloc_file(&path);
         }
 
         {
-            let mut file_contents = self.inner.file_contents.lock().unwrap();
+            let mut file_contents = self.inner.file_contents.unpoison_lock();
             file_contents.entry(path.clone()).or_default();
         }
 
@@ -547,7 +548,7 @@ impl Filesystem for RwFilesystem {
             buffer: Vec::new(),
             is_new,
         };
-        self.inner.open_files.lock().unwrap().insert(fh, open_file);
+        self.inner.open_files.unpoison_lock().insert(fh, open_file);
 
         let entry = InodeEntry {
             kind: InodeKind::File,
@@ -573,19 +574,19 @@ impl Filesystem for RwFilesystem {
         let name_str = name.to_str().ok_or_else(Errno::new_not_exist)?;
         let path = self.resolve_path(parent, name_str)?;
 
-        let is_pending = self.inner.pending_files.lock().unwrap().contains(&path);
+        let is_pending = self.inner.pending_files.unpoison_lock().contains(&path);
 
         {
-            let mut open_files = self.inner.open_files.lock().unwrap();
+            let mut open_files = self.inner.open_files.unpoison_lock();
             open_files.retain(|_, f| f.path != path);
         }
 
         if is_pending {
-            self.inner.pending_files.lock().unwrap().remove(&path);
-            self.inner.file_contents.lock().unwrap().remove(&path);
+            self.inner.pending_files.unpoison_lock().remove(&path);
+            self.inner.file_contents.unpoison_lock().remove(&path);
             self.rebuild_path_translator();
         } else {
-            self.inner.file_contents.lock().unwrap().remove(&path);
+            self.inner.file_contents.unpoison_lock().remove(&path);
             self.commit_file_delete(&path)
                 .map_err(std::io::Error::other)?;
         }
@@ -605,18 +606,18 @@ impl Filesystem for RwFilesystem {
         let path = self.resolve_path(parent, name_str)?;
 
         {
-            let mut inode_map = self.inner.inode_map.lock().unwrap();
+            let mut inode_map = self.inner.inode_map.unpoison_lock();
             inode_map.alloc_dir(&path);
         }
 
-        self.inner.pending_dirs.lock().unwrap().insert(path.clone());
+        self.inner.pending_dirs.unpoison_lock().insert(path.clone());
         self.rebuild_path_translator();
 
         let entry = InodeEntry {
             kind: InodeKind::Directory,
             path: path.clone(),
         };
-        let inode = self.inner.inode_map.lock().unwrap().lookup(&path).unwrap();
+        let inode = self.inner.inode_map.unpoison_lock().lookup(&path).unwrap();
         let attr = make_file_attr(&entry, inode, 0);
 
         Ok(ReplyEntry {
@@ -634,7 +635,7 @@ impl Filesystem for RwFilesystem {
             return Err(Errno::from(libc::ENOTEMPTY));
         }
 
-        self.inner.pending_dirs.lock().unwrap().remove(&path);
+        self.inner.pending_dirs.unpoison_lock().remove(&path);
         self.rebuild_path_translator();
 
         Ok(())
@@ -649,7 +650,7 @@ impl Filesystem for RwFilesystem {
     ) -> fuse3::Result<
         ReplyDirectory<impl futures_core::Stream<Item = fuse3::Result<DirectoryEntry>> + Send + 'a>,
     > {
-        let inode_map = self.inner.inode_map.lock().unwrap();
+        let inode_map = self.inner.inode_map.unpoison_lock();
         let parent_path = inode_map
             .get_path(parent)
             .ok_or_else(Errno::new_not_exist)?
@@ -659,8 +660,8 @@ impl Filesystem for RwFilesystem {
         let entries = self.list_dir_entries(&parent_path);
 
         let precomputed: Vec<(u64, FileAttr, std::ffi::OsString, i64)> = {
-            let inode_map = self.inner.inode_map.lock().unwrap();
-            let file_contents = self.inner.file_contents.lock().unwrap();
+            let inode_map = self.inner.inode_map.unpoison_lock();
+            let file_contents = self.inner.file_contents.unpoison_lock();
 
             let mut result = Vec::new();
             for (i, (name, path, is_dir)) in entries.iter().enumerate() {
@@ -705,7 +706,7 @@ impl Filesystem for RwFilesystem {
             blocks: 1,
             bfree: 0,
             bavail: 0,
-            files: self.inner.inode_map.lock().unwrap().len() as u64,
+            files: self.inner.inode_map.unpoison_lock().len() as u64,
             ffree: 0,
             bsize: 4096,
             namelen: 255,
@@ -714,7 +715,7 @@ impl Filesystem for RwFilesystem {
     }
 
     async fn open(&self, _req: Request, inode: u64, flags: u32) -> fuse3::Result<ReplyOpen> {
-        let inode_map = self.inner.inode_map.lock().unwrap();
+        let inode_map = self.inner.inode_map.unpoison_lock();
         let entry = inode_map.get(inode).ok_or_else(Errno::new_not_exist)?;
         if entry.kind != InodeKind::File {
             return Err(Errno::new_is_dir());
@@ -743,7 +744,7 @@ impl Filesystem for RwFilesystem {
                 buffer: content,
                 is_new: false,
             };
-            self.inner.open_files.lock().unwrap().insert(fh, open_file);
+            self.inner.open_files.unpoison_lock().insert(fh, open_file);
         }
 
         Ok(ReplyOpen { fh, flags: 0 })
@@ -773,7 +774,7 @@ impl Filesystem for RwFilesystem {
         _lock_owner: u64,
         _flush: bool,
     ) -> fuse3::Result<()> {
-        if self.inner.open_files.lock().unwrap().contains_key(&fh) {
+        if self.inner.open_files.unpoison_lock().contains_key(&fh) {
             self.process_close(fh).map_err(std::io::Error::other)?;
         }
         Ok(())
@@ -840,7 +841,7 @@ mod tests {
         let fh = fs.alloc_fh();
 
         {
-            let file_contents = fs.inner.file_contents.lock().unwrap();
+            let file_contents = fs.inner.file_contents.unpoison_lock();
             let content = file_contents.get("hello.txt").cloned().unwrap();
             drop(file_contents);
 
@@ -849,17 +850,17 @@ mod tests {
                 buffer: content,
                 is_new: false,
             };
-            fs.inner.open_files.lock().unwrap().insert(fh, open_file);
+            fs.inner.open_files.unpoison_lock().insert(fh, open_file);
         }
 
         {
-            let mut open_files = fs.inner.open_files.lock().unwrap();
+            let mut open_files = fs.inner.open_files.unpoison_lock();
             let open_file = open_files.get_mut(&fh).unwrap();
             open_file.buffer[6..11].copy_from_slice(b"WORLD");
         }
 
         let buffer = {
-            let lock = fs.inner.open_files.lock().unwrap();
+            let lock = fs.inner.open_files.unpoison_lock();
             lock.get(&fh).unwrap().buffer.clone()
         };
         assert_eq!(buffer.as_slice(), b"hello WORLD");
@@ -879,13 +880,13 @@ mod tests {
         let fs = RwFilesystem::new(repo_path, None).await.unwrap();
 
         let original_count = {
-            let repo = fs.inner.repo.lock().unwrap();
+            let repo = fs.inner.repo.unpoison_lock();
             repo.log(None).unwrap().len()
         };
 
         let fh = fs.alloc_fh();
         {
-            let file_contents = fs.inner.file_contents.lock().unwrap();
+            let file_contents = fs.inner.file_contents.unpoison_lock();
             let content = file_contents.get("hello.txt").cloned().unwrap();
             drop(file_contents);
 
@@ -894,13 +895,13 @@ mod tests {
                 buffer: content,
                 is_new: false,
             };
-            fs.inner.open_files.lock().unwrap().insert(fh, open_file);
+            fs.inner.open_files.unpoison_lock().insert(fh, open_file);
         }
 
         fs.process_close(fh).unwrap();
 
         let new_count = {
-            let repo = fs.inner.repo.lock().unwrap();
+            let repo = fs.inner.repo.unpoison_lock();
             repo.log(None).unwrap().len()
         };
 
@@ -927,7 +928,7 @@ mod tests {
         assert_eq!(fh3, 3);
 
         {
-            let mut open_files = fs.inner.open_files.lock().unwrap();
+            let mut open_files = fs.inner.open_files.unpoison_lock();
             open_files.insert(
                 fh1,
                 OpenFile {
@@ -946,13 +947,13 @@ mod tests {
             );
         }
 
-        assert_eq!(fs.inner.open_files.lock().unwrap().len(), 2);
+        assert_eq!(fs.inner.open_files.unpoison_lock().len(), 2);
 
-        fs.inner.open_files.lock().unwrap().remove(&fh1);
-        assert_eq!(fs.inner.open_files.lock().unwrap().len(), 1);
+        fs.inner.open_files.unpoison_lock().remove(&fh1);
+        assert_eq!(fs.inner.open_files.unpoison_lock().len(), 1);
 
         let remaining = {
-            let lock = fs.inner.open_files.lock().unwrap();
+            let lock = fs.inner.open_files.unpoison_lock();
             lock.get(&fh2).unwrap().path.clone()
         };
         assert_eq!(remaining, "b.txt");
@@ -974,7 +975,7 @@ mod tests {
         fs.commit_file_change("new_file.txt", b"new content", true)
             .unwrap();
 
-        let repo = fs.inner.repo.lock().unwrap();
+        let repo = fs.inner.repo.unpoison_lock();
         let tree = repo.snapshot_head().unwrap();
         assert!(tree.contains("new_file.txt"));
         assert!(tree.contains("existing.txt"));
@@ -1002,7 +1003,7 @@ mod tests {
         fs.commit_file_change("hello.txt", b"hello modified", false)
             .unwrap();
 
-        let repo = fs.inner.repo.lock().unwrap();
+        let repo = fs.inner.repo.unpoison_lock();
         let blob = repo
             .cas()
             .get_blob(repo.snapshot_head().unwrap().get("hello.txt").unwrap())
@@ -1025,7 +1026,7 @@ mod tests {
 
         fs.commit_file_delete("hello.txt").unwrap();
 
-        let repo = fs.inner.repo.lock().unwrap();
+        let repo = fs.inner.repo.unpoison_lock();
         let tree = repo.snapshot_head().unwrap();
         assert!(!tree.contains("hello.txt"));
     }

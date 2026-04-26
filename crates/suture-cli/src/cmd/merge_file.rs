@@ -57,7 +57,7 @@ pub(crate) async fn cmd_merge_file(
                 match registry.get(&ext) {
                     Ok(d) => Some(d),
                     Err(e) => {
-                        eprintln!("{ANSI_RED}Error: {e}{ANSI_RESET}");
+                        eprintln!("{ANSI_RED}error: {e}{ANSI_RESET}");
                         std::process::exit(1);
                     }
                 }

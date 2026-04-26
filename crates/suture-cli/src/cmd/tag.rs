@@ -83,7 +83,7 @@ pub(crate) async fn cmd_tag(
             .ok_or_else(|| format!("created tag '{}', but could not resolve it", name))?;
         if annotate {
             let msg = message.ok_or_else(|| {
-                eprintln!("Error: --annotate requires a message (-m)");
+                eprintln!("error: --annotate requires a message (-m)");
                 std::process::exit(1);
             })?;
             repo.set_config(&format!("tag.{}.message", name), msg)?;

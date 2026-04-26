@@ -10,7 +10,7 @@ impl ImageDriver {
 
     fn extract_metadata(bytes: &[u8]) -> Result<ImageMetadata, DriverError> {
         let img = image::load_from_memory(bytes)
-            .map_err(|e| DriverError::ParseError(format!("Failed to decode image: {e}")))?;
+            .map_err(|e| DriverError::ParseError(format!("failed to decode image: {e}")))?;
 
         Ok(ImageMetadata {
             width: img.width(),

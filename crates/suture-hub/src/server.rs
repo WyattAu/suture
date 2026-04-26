@@ -183,11 +183,11 @@ impl SutureHubServer {
     }
 
     pub fn set_replication_role(&self, role: &str) {
-        *self.replication_role.write().unwrap() = role.to_string();
+        *self.replication_role.write().unwrap_or_else(|e| e.into_inner()) = role.to_string();
     }
 
     pub fn get_replication_role(&self) -> String {
-        self.replication_role.read().unwrap().clone()
+        self.replication_role.read().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     pub fn set_blob_backend(&mut self, backend: Arc<dyn BlobBackend>) {
@@ -306,7 +306,7 @@ impl SutureHubServer {
 
         let full_key = format!("{}:{}", key, ip);
         let now = std::time::Instant::now();
-        let mut limits = self.rate_limits.write().unwrap();
+        let mut limits = self.rate_limits.write().unwrap_or_else(|e| e.into_inner());
 
         limits.retain(|_, (_, start)| now.duration_since(*start) < window);
 

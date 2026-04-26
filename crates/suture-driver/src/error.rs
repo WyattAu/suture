@@ -14,6 +14,6 @@ pub enum DriverError {
     #[error("driver not found for extension: {0}")]
     DriverNotFound(String),
 
-    #[error("IO error: {0}")]
+    #[error("I/O error: {0}")]
     IoError(#[from] std::io::Error),
 }

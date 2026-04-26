@@ -106,12 +106,12 @@ impl SqliteRaftLog {
 
     pub fn append(&mut self, term: u64, command: Vec<u8>) -> u64 {
         let index = self.last_index() + 1;
-        self.conn
-            .execute(
-                "INSERT INTO raft_log (\"index\", term, command) VALUES (?1, ?2, ?3)",
-                rusqlite::params![index as i64, term as i64, command],
-            )
-            .expect("insert into raft_log must succeed");
+        if let Err(e) = self.conn.execute(
+            "INSERT INTO raft_log (\"index\", term, command) VALUES (?1, ?2, ?3)",
+            rusqlite::params![index as i64, term as i64, command],
+        ) {
+            eprintln!("raft: failed to append log entry: {e}");
+        }
         index
     }
 

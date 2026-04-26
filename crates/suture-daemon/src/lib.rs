@@ -376,7 +376,7 @@ impl AutoSync {
             .map_err(|e| format!("failed to parse pull response: {e}"))?;
 
         if !result.success {
-            return Err(format!("pull failed: {:?}", result.error));
+            return Err(format!("pull failed: {}", result.error.as_deref().unwrap_or("unknown error")));
         }
 
         if result.patches.is_empty() {
@@ -572,7 +572,7 @@ impl AutoSync {
             .map_err(|e| format!("failed to parse push response: {e}"))?;
 
         if !result.success {
-            return Err(format!("push failed: {:?}", result.error));
+            return Err(format!("push failed: {}", result.error.as_deref().unwrap_or("unknown error")));
         }
 
         let patch_count = push_data.patches.len();
