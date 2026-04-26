@@ -352,6 +352,13 @@ mod tests {
     fn make_hook(dir: &Path, name: &str, content: &str) -> PathBuf {
         let path = dir.join(name);
         fs::write(&path, content).unwrap();
+        // Ensure the file is fully written before marking executable,
+        // to avoid "Text file busy" (os error 26) on Linux.
+        {
+            use std::io::Write;
+            let mut f = fs::OpenOptions::new().write(true).open(&path).unwrap();
+            f.sync_all().unwrap();
+        }
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
