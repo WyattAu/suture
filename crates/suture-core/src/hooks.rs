@@ -351,19 +351,22 @@ mod tests {
 
     fn make_hook(dir: &Path, name: &str, content: &str) -> PathBuf {
         let path = dir.join(name);
-        fs::write(&path, content).unwrap();
-        // Ensure the file is fully written before marking executable,
-        // to avoid "Text file busy" (os error 26) on Linux.
+        // Write to a temporary file first, sync it, then rename.
+        // This avoids "Text file busy" (ETXTBSY) on Linux where the kernel
+        // may still be flushing the file when another thread tries to exec it.
+        let tmp_path = path.with_extension("tmp");
         {
             use std::io::Write;
-            let mut f = fs::OpenOptions::new().write(true).open(&path).unwrap();
+            let mut f = fs::File::create(&tmp_path).unwrap();
+            f.write_all(content.as_bytes()).unwrap();
             f.sync_all().unwrap();
         }
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+            fs::set_permissions(&tmp_path, fs::Permissions::from_mode(0o755)).unwrap();
         }
+        fs::rename(&tmp_path, &path).unwrap();
         path
     }
 
