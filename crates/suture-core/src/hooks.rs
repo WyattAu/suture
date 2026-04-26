@@ -404,6 +404,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(target_os = "windows"))]
     fn test_run_hook_success() {
         let tmp = tempfile::tempdir().unwrap();
         let hook_dir = tmp.path().join(".suture").join("hooks");
@@ -421,6 +422,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(target_os = "windows"))]
     fn test_run_hook_failure() {
         let tmp = tempfile::tempdir().unwrap();
         let hook_dir = tmp.path().join(".suture").join("hooks");
@@ -559,6 +561,7 @@ hooksPath = "/tmp/custom-hooks"
     }
 
     #[test]
+    #[cfg(not(target_os = "windows"))]
     fn test_run_hooks_directory() {
         let tmp = tempfile::tempdir().unwrap();
         let hook_dir = tmp.path().join(".suture").join("hooks");
@@ -577,6 +580,7 @@ hooksPath = "/tmp/custom-hooks"
     }
 
     #[test]
+    #[cfg(not(target_os = "windows"))]
     fn test_run_hooks_directory_failure_stops() {
         let tmp = tempfile::tempdir().unwrap();
         let hook_dir = tmp.path().join(".suture").join("hooks");
