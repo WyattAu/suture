@@ -1,5 +1,4 @@
 use crate::cmd::user_error;
-use crate::cmd::lfs::{is_lfs_pointer, parse_lfs_pointer, read_lfs_object};
 
 pub(crate) async fn cmd_checkout(
     branch: Option<&str>,
@@ -49,50 +48,19 @@ pub(crate) async fn cmd_checkout(
         }
     }
 
-    resolve_lfs_pointers();
-
-    Ok(())
-}
-
-fn resolve_lfs_pointers() {
-    let repo_root = std::path::Path::new(".");
-    let tree = match suture_core::repository::Repository::open(repo_root)
-        .ok()
-        .and_then(|r| r.snapshot_head().ok())
-    {
-        Some(t) => t,
-        None => return,
-    };
-
-    for (path, _hash) in tree.iter() {
-        let full_path = repo_root.join(path);
-        if !full_path.exists() {
-            continue;
-        }
-        let blob = match std::fs::read(&full_path) {
-            Ok(b) => b,
-            Err(_) => continue,
-        };
-        if !is_lfs_pointer(&blob) {
-            continue;
-        }
-        let text = match std::str::from_utf8(&blob) {
-            Ok(t) => t,
-            Err(_) => continue,
-        };
-        let pointer = match parse_lfs_pointer(text) {
-            Some(p) => p,
-            None => continue,
-        };
-        match read_lfs_object(repo_root, &pointer.oid) {
-            Ok(data) => {
-                if let Err(e) = std::fs::write(&full_path, &data) {
-                    eprintln!("warning: failed to restore LFS object for '{}': {}", path, e);
-                }
+    match crate::cmd::lfs::resolve_lfs_pointers_in_workdir() {
+        Ok((resolved, missing)) => {
+            if resolved > 0 {
+                println!("Resolved {} LFS object(s)", resolved);
             }
-            Err(_) => {
-                eprintln!("warning: LFS object not found for '{}'. Run 'suture lfs pull'.", path);
+            if missing > 0 {
+                eprintln!("{} LFS object(s) not found locally (run `suture lfs pull`)", missing);
             }
+        }
+        Err(e) => {
+            eprintln!("warning: LFS pointer resolution failed: {e}");
         }
     }
+
+    Ok(())
 }

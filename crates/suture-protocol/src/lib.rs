@@ -257,6 +257,55 @@ pub struct HandshakeResponseV2 {
     pub server_capabilities: ServerCapabilities,
 }
 
+// === LFS Protocol Types ===
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LfsBatchRequest {
+    pub repo_id: String,
+    pub objects: Vec<LfsObjectRef>,
+    pub operation: LfsOperation,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LfsOperation {
+    Upload,
+    Download,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LfsObjectRef {
+    pub oid: String,
+    pub size: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LfsBatchResponse {
+    pub objects: Vec<LfsObjectAction>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LfsObjectAction {
+    pub oid: String,
+    pub size: u64,
+    pub action: LfsAction,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub href: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub header: Option<std::collections::HashMap<String, String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LfsAction {
+    None,
+    Upload,
+    Download,
+    Error,
+}
+
 pub fn compute_delta(base: &[u8], target: &[u8]) -> (Vec<u8>, Vec<u8>) {
     let prefix_len = base
         .iter()

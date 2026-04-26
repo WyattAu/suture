@@ -4209,6 +4209,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "toml",
+ "walkdir",
 ]
 
 [[package]]
@@ -4479,6 +4480,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "blake3",
+ "bytes",
  "clap",
  "criterion",
  "ed25519-dalek",

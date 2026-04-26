@@ -299,10 +299,12 @@ EXAMPLES:
     suture merge --dry-run feature  # Preview merge without modifying working tree
     suture merge -s ours feature    # Auto-resolve conflicts by keeping our version
     suture merge -s theirs feature  # Auto-resolve conflicts by keeping their version
-    suture merge -s manual feature  # Leave all conflicts for manual resolution")]
+    suture merge -s manual feature  # Leave all conflicts for manual resolution
+    suture merge --continue         # Continue a merge after resolving conflicts
+    suture merge --abort            # Abort a merge and restore pre-merge state")]
     Merge {
         /// Source branch to merge into HEAD
-        source: String,
+        source: Option<String>,
         /// Preview merge without modifying the working tree
         #[arg(long)]
         dry_run: bool,
@@ -314,6 +316,12 @@ EXAMPLES:
         /// - manual: leave all conflicts as conflict markers (skip semantic drivers)
         #[arg(short, long, default_value = "semantic")]
         strategy: String,
+        /// Continue a merge after resolving conflicts
+        #[arg(long)]
+        r#continue: bool,
+        /// Abort a merge and restore pre-merge state
+        #[arg(long)]
+        abort: bool,
     },
     /// Perform three-way file merge (standalone, no branch merge needed)
     #[command(after_long_help = "\
@@ -1499,8 +1507,16 @@ async fn main() {
         Commands::Revert { commit, message } => {
             cmd::revert::cmd_revert(&commit, message.as_deref()).await
         }
-        Commands::Merge { source, dry_run, strategy } => {
-            cmd::merge::cmd_merge(&source, dry_run, strategy.as_str()).await
+        Commands::Merge { source, dry_run, strategy, r#continue, abort } => {
+            if abort {
+                cmd::merge::cmd_merge_abort().await
+            } else if r#continue {
+                cmd::merge::cmd_merge_continue().await
+            } else if let Some(source) = source {
+                cmd::merge::cmd_merge(&source, dry_run, strategy.as_str()).await
+            } else {
+                Err("error: <source> is required when not using --continue or --abort".into())
+            }
         }
         Commands::MergeFile {
             base,
@@ -2087,10 +2103,12 @@ mod tests {
     fn test_merge_dry_run() {
         let cli = parse(&["suture", "merge", "--dry-run", "feature"]);
         match cli.command {
-            Commands::Merge { source, dry_run, strategy } => {
-                assert_eq!(source, "feature");
+            Commands::Merge { source, dry_run, strategy, r#continue, abort } => {
+                assert_eq!(source.as_deref(), Some("feature"));
                 assert!(dry_run);
                 assert_eq!(strategy, "semantic");
+                assert!(!r#continue);
+                assert!(!abort);
             }
             other => panic!("expected Merge, got {other:?}"),
         }

@@ -271,6 +271,50 @@ fn list_lfs_pointers_in_tree() -> Vec<(String, LfsPointer)> {
     pointers
 }
 
+pub(crate) fn resolve_lfs_pointers_in_workdir() -> Result<(usize, usize), Box<dyn std::error::Error>> {
+    let mut resolved = 0usize;
+    let mut missing = 0usize;
+
+    for entry in walkdir::WalkDir::new(".")
+        .min_depth(1)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        let path = entry.path();
+        if path.starts_with(".suture") || !path.is_file() {
+            continue;
+        }
+
+        let content = match std::fs::read(path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+
+        if !is_lfs_pointer(&content) {
+            continue;
+        }
+
+        let text = std::str::from_utf8(&content).unwrap_or("");
+        let ptr = match parse_lfs_pointer(text) {
+            Some(p) => p,
+            None => continue,
+        };
+
+        match read_lfs_object(Path::new("."), &ptr.oid) {
+            Ok(data) => {
+                std::fs::write(path, &data)?;
+                resolved += 1;
+            }
+            Err(_) => {
+                missing += 1;
+                eprintln!("warning: LFS object not found: {} (run `suture lfs pull`)", path.display());
+            }
+        }
+    }
+
+    Ok((resolved, missing))
+}
+
 pub(crate) enum LfsAction {
     Track {
         pattern: String,
@@ -290,8 +334,8 @@ pub(crate) async fn cmd_lfs(action: &LfsAction) -> Result<(), Box<dyn std::error
         LfsAction::Track { pattern, size_limit } => cmd_lfs_track(pattern, size_limit),
         LfsAction::Untrack { pattern } => cmd_lfs_untrack(pattern),
         LfsAction::List => cmd_lfs_list(),
-        LfsAction::Push => cmd_lfs_push(),
-        LfsAction::Pull => cmd_lfs_pull(),
+        LfsAction::Push => cmd_lfs_push().await,
+        LfsAction::Pull => cmd_lfs_pull().await,
         LfsAction::Status => cmd_lfs_status(),
     }
 }
@@ -377,17 +421,141 @@ fn cmd_lfs_list() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn cmd_lfs_push() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Not implemented: 'suture lfs push'");
+async fn cmd_lfs_push() -> Result<(), Box<dyn std::error::Error>> {
+    let repo_dir = std::env::current_dir()?;
+    let repo = suture_core::repository::Repository::open(&repo_dir)
+        .map_err(|e| format!("not a suture repository: {e}"))?;
+
+    let remotes = repo.list_remotes().unwrap_or_default();
+    if remotes.is_empty() {
+        return Err("no remotes configured. Use `suture remote add origin <url>` first.".into());
+    }
+    let remote_name = "origin";
+    let url = repo.get_remote_url(remote_name)
+        .map_err(|e| format!("remote '{}' not found: {e}", remote_name))?;
+
+    let pointers = list_lfs_pointers_in_tree();
+    if pointers.is_empty() {
+        println!("No LFS objects to push.");
+        return Ok(());
+    }
+
+    let mut to_upload = Vec::new();
+    for (path, ptr) in &pointers {
+        let obj_path = lfs_object_path(&ptr.oid);
+        if obj_path.exists() {
+            to_upload.push((path.clone(), ptr.clone()));
+        } else {
+            eprintln!("warning: LFS object missing locally: {} ({})", path, &ptr.oid[..16]);
+        }
+    }
+
+    if to_upload.is_empty() {
+        println!("All LFS objects already on remote or missing locally.");
+        return Ok(());
+    }
+
+    println!("Pushing {} LFS object(s) to {}...", to_upload.len(), url);
+
+    let client = reqwest::Client::new();
+    let objects: Vec<serde_json::Value> = to_upload.iter().map(|(_, ptr)| {
+        serde_json::json!({"oid": ptr.oid, "size": ptr.size})
+    }).collect();
+
+    let batch_body = serde_json::json!({
+        "repo_id": crate::remote_proto::derive_repo_id(&url, remote_name),
+        "operation": "upload",
+        "objects": objects,
+    });
+
+    let batch_resp: serde_json::Value = client
+        .post(format!("{}/lfs/batch", url))
+        .json(&batch_body)
+        .send()
+        .await?
+        .json()
+        .await?;
+
+    let actions = batch_resp.get("objects").and_then(|o| o.as_array())
+        .ok_or("invalid batch response: missing 'objects'")?;
+
+    let mut uploaded = 0usize;
+    let mut skipped = 0usize;
+    let mut failed = 0usize;
+
+    for action_val in actions {
+        let oid = action_val.get("oid").and_then(|v| v.as_str()).unwrap_or("");
+        let action = action_val.get("action").and_then(|v| v.as_str()).unwrap_or("none");
+
+        match action {
+            "none" => {
+                skipped += 1;
+            }
+            "upload" => {
+                let obj_path = lfs_object_path(oid);
+                let data = match std::fs::read(&obj_path) {
+                    Ok(d) => d,
+                    Err(e) => {
+                        eprintln!("  error: failed to read {}: {}", &oid[..16], e);
+                        failed += 1;
+                        continue;
+                    }
+                };
+
+                let href = action_val.get("href").and_then(|v| v.as_str())
+                    .ok_or("upload action missing href")?;
+                let upload_url = if href.starts_with('/') {
+                    format!("{}{}", url, href)
+                } else {
+                    href.to_string()
+                };
+
+                let upload_resp = client
+                    .put(&upload_url)
+                    .header("Content-Type", "application/octet-stream")
+                    .body(data)
+                    .send()
+                    .await?;
+
+                if upload_resp.status().is_success() {
+                    uploaded += 1;
+                    println!("  uploaded: {} ({} bytes)", &oid[..16],
+                        action_val.get("size").and_then(|v| v.as_u64()).unwrap_or(0));
+                } else {
+                    eprintln!("  error: upload failed for {}: {}", &oid[..16], upload_resp.status());
+                    failed += 1;
+                }
+            }
+            "error" => {
+                let msg = action_val.get("error").and_then(|v| v.as_str()).unwrap_or("unknown error");
+                eprintln!("  error: server rejected {}: {}", &oid[..16], msg);
+                failed += 1;
+            }
+            other => {
+                eprintln!("  warning: unknown action '{}' for {}", other, &oid[..16]);
+            }
+        }
+    }
+
     println!();
-    println!("LFS push will upload local LFS objects to the remote hub.");
-    println!("This requires remote LFS storage support.");
+    println!("LFS push complete: {} uploaded, {} skipped, {} failed", uploaded, skipped, failed);
+    if failed > 0 {
+        return Err(format!("{} LFS object(s) failed to upload", failed).into());
+    }
     Ok(())
 }
 
-fn cmd_lfs_pull() -> Result<(), Box<dyn std::error::Error>> {
-    let _repo = suture_core::repository::Repository::open(Path::new("."))
+async fn cmd_lfs_pull() -> Result<(), Box<dyn std::error::Error>> {
+    let repo = suture_core::repository::Repository::open(Path::new("."))
         .map_err(|e| format!("not a suture repository: {e}"))?;
+
+    let remotes = repo.list_remotes().unwrap_or_default();
+    if remotes.is_empty() {
+        return Err("no remotes configured. Use `suture remote add origin <url>` first.".into());
+    }
+    let remote_name = "origin";
+    let url = repo.get_remote_url(remote_name)
+        .map_err(|e| format!("remote '{}' not found: {e}", remote_name))?;
 
     let pointers = list_lfs_pointers_in_tree();
     let mut missing = Vec::new();
@@ -404,16 +572,88 @@ fn cmd_lfs_pull() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    println!("Not implemented: 'suture lfs pull'");
-    println!();
-    println!("{} LFS object(s) need to be downloaded:", missing.len());
-    for (path, ptr) in &missing {
-        println!("  {} ({}, {} bytes)", path, &ptr.oid[..16], ptr.size);
-    }
-    println!();
-    println!("LFS pull will download objects from the remote hub.");
-    println!("This requires remote LFS storage support.");
+    println!("Downloading {} LFS object(s) from {}...", missing.len(), url);
 
+    let client = reqwest::Client::new();
+    let objects: Vec<serde_json::Value> = missing.iter().map(|(_, ptr)| {
+        serde_json::json!({"oid": ptr.oid, "size": ptr.size})
+    }).collect();
+
+    let batch_body = serde_json::json!({
+        "repo_id": crate::remote_proto::derive_repo_id(&url, remote_name),
+        "operation": "download",
+        "objects": objects,
+    });
+
+    let batch_resp: serde_json::Value = client
+        .post(format!("{}/lfs/batch", url))
+        .json(&batch_body)
+        .send()
+        .await?
+        .json()
+        .await?;
+
+    let actions = batch_resp.get("objects").and_then(|o| o.as_array())
+        .ok_or("invalid batch response: missing 'objects'")?;
+
+    let mut downloaded = 0usize;
+    let mut skipped = 0usize;
+    let mut failed = 0usize;
+
+    for action_val in actions {
+        let oid = action_val.get("oid").and_then(|v| v.as_str()).unwrap_or("");
+        let action = action_val.get("action").and_then(|v| v.as_str()).unwrap_or("none");
+
+        match action {
+            "none" => {
+                eprintln!("  warning: object not available on remote: {}", &oid[..16]);
+                skipped += 1;
+            }
+            "download" => {
+                let href = action_val.get("href").and_then(|v| v.as_str())
+                    .ok_or("download action missing href")?;
+                let download_url = if href.starts_with('/') {
+                    format!("{}{}", url, href)
+                } else {
+                    href.to_string()
+                };
+
+                let download_resp = client.get(&download_url).send().await?;
+
+                if download_resp.status().is_success() {
+                    let data = download_resp.bytes().await?;
+                    let repo_root = std::env::current_dir()?;
+                    match store_lfs_object(&repo_root, oid, &data) {
+                        Ok(()) => {
+                            downloaded += 1;
+                            println!("  downloaded: {} ({} bytes)", &oid[..16], data.len());
+                        }
+                        Err(e) => {
+                            eprintln!("  error: failed to store {}: {}", &oid[..16], e);
+                            failed += 1;
+                        }
+                    }
+                } else {
+                    eprintln!("  error: download failed for {}: {}", &oid[..16], download_resp.status());
+                    failed += 1;
+                }
+            }
+            "error" => {
+                let msg = action_val.get("error").and_then(|v| v.as_str()).unwrap_or("unknown error");
+                eprintln!("  error: server rejected {}: {}", &oid[..16], msg);
+                failed += 1;
+            }
+            other => {
+                eprintln!("  warning: unknown action '{}' for {}", other, &oid[..16]);
+            }
+        }
+    }
+
+    println!();
+    println!("LFS pull complete: {} downloaded, {} skipped, {} failed", downloaded, skipped, failed);
+    if failed > 0 {
+        return Err(format!("{} LFS object(s) failed to download", failed).into());
+    }
     Ok(())
 }
 

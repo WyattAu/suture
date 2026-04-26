@@ -93,6 +93,7 @@ pub struct SutureHubServer {
     webhook_manager: Arc<WebhookManager>,
     #[allow(dead_code)]
     rate_limit_db: Option<Arc<tokio::sync::Mutex<rusqlite::Connection>>>,
+    lfs_data_dir: Option<std::path::PathBuf>,
 }
 
 impl Default for SutureHubServer {
@@ -121,6 +122,7 @@ impl SutureHubServer {
             replication_role: Arc::new(std::sync::RwLock::new("standalone".to_string())),
             webhook_manager: Arc::new(WebhookManager::new()),
             rate_limit_db: None,
+            lfs_data_dir: None,
         }
     }
 
@@ -147,6 +149,7 @@ impl SutureHubServer {
             replication_role: Arc::new(std::sync::RwLock::new("standalone".to_string())),
             webhook_manager: Arc::new(WebhookManager::new()),
             rate_limit_db: Some(Arc::new(tokio::sync::Mutex::new(rate_limit_conn))),
+            lfs_data_dir: None,
         })
     }
 
@@ -175,6 +178,12 @@ impl SutureHubServer {
         self.max_pushes_per_hour = pushes;
         self.max_pulls_per_hour = pulls;
         self.rate_limit_window = window;
+    }
+
+    pub fn with_lfs_dir(mut self, path: std::path::PathBuf) -> Self {
+        let _ = std::fs::create_dir_all(&path);
+        self.lfs_data_dir = Some(path);
+        self
     }
 
     pub fn set_replication_role(&self, role: &str) {
@@ -2396,6 +2405,140 @@ pub async fn get_blob_handler(
     }
 }
 
+pub async fn lfs_batch_handler(
+    State(hub): State<Arc<SutureHubServer>>,
+    Json(req): Json<suture_protocol::LfsBatchRequest>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    let lfs_dir = match &hub.lfs_data_dir {
+        Some(d) => d.clone(),
+        None => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+            "message": "LFS storage not configured on this hub"
+        }))),
+    };
+
+    let repo_dir = lfs_dir.join(&req.repo_id);
+    let obj_dir = repo_dir.join("objects");
+    let _ = std::fs::create_dir_all(&obj_dir);
+
+    let mut actions = Vec::new();
+    for obj in &req.objects {
+        let prefix = &obj.oid[..2.min(obj.oid.len())];
+        let obj_path = obj_dir.join(prefix).join(&obj.oid);
+
+        let action = match req.operation {
+            suture_protocol::LfsOperation::Upload => {
+                if obj_path.exists() {
+                    suture_protocol::LfsAction::None
+                } else {
+                    suture_protocol::LfsAction::Upload
+                }
+            }
+            suture_protocol::LfsOperation::Download => {
+                if obj_path.exists() {
+                    suture_protocol::LfsAction::Download
+                } else {
+                    suture_protocol::LfsAction::None
+                }
+            }
+        };
+
+        actions.push(suture_protocol::LfsObjectAction {
+            oid: obj.oid.clone(),
+            size: obj.size,
+            action,
+            href: None,
+            header: None,
+        });
+    }
+
+    for action in &mut actions {
+        if matches!(action.action, suture_protocol::LfsAction::Upload | suture_protocol::LfsAction::Download) {
+            action.href = Some(format!("/lfs/objects/{}/{}", req.repo_id, action.oid));
+        }
+    }
+
+    (StatusCode::OK, Json(serde_json::json!({
+        "objects": actions,
+        "transfer": "basic",
+    })))
+}
+
+pub async fn lfs_upload_handler(
+    State(hub): State<Arc<SutureHubServer>>,
+    Path((repo_id, oid)): Path<(String, String)>,
+    body: bytes::Bytes,
+) -> (StatusCode, Json<serde_json::Value>) {
+    let lfs_dir = match &hub.lfs_data_dir {
+        Some(d) => d.clone(),
+        None => return (StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+            "message": "LFS storage not configured"
+        }))),
+    };
+
+    if body.is_empty() {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
+            "message": "empty body"
+        })));
+    }
+
+    use sha2::{Sha256, Digest};
+    let hash = Sha256::digest(&body);
+    let hash_hex = hex::encode(hash);
+    if hash_hex != oid {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({
+            "message": format!("hash mismatch: expected {}, got {}", oid, hash_hex)
+        })));
+    }
+
+    let prefix = &oid[..2.min(oid.len())];
+    let obj_path = lfs_dir.join(&repo_id).join("objects").join(prefix).join(&oid);
+    if let Some(parent) = obj_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    match std::fs::write(&obj_path, &body) {
+        Ok(()) => (StatusCode::OK, Json(serde_json::json!({
+            "message": "uploaded",
+            "oid": oid,
+            "size": body.len(),
+        }))),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
+            "message": e.to_string()
+        }))),
+    }
+}
+
+pub async fn lfs_download_handler(
+    State(hub): State<Arc<SutureHubServer>>,
+    Path((repo_id, oid)): Path<(String, String)>,
+) -> (StatusCode, axum::response::Response) {
+    let lfs_dir = match &hub.lfs_data_dir {
+        Some(d) => d.clone(),
+        None => return (StatusCode::SERVICE_UNAVAILABLE, axum::response::Response::new(
+            axum::body::Body::from(serde_json::json!({"message": "LFS storage not configured"}).to_string())
+        )),
+    };
+
+    let prefix = &oid[..2.min(oid.len())];
+    let obj_path = lfs_dir.join(&repo_id).join("objects").join(prefix).join(&oid);
+
+    match std::fs::read(&obj_path) {
+        Ok(data) => {
+            let response = axum::response::Response::builder()
+                .status(StatusCode::OK)
+                .header("Content-Type", "application/octet-stream")
+                .header("Content-Length", data.len().to_string())
+                .body(axum::body::Body::from(data))
+                .unwrap();
+            (StatusCode::OK, response)
+        }
+        Err(_) => {
+            (StatusCode::NOT_FOUND, axum::response::Response::new(
+                axum::body::Body::from(serde_json::json!({"message": "object not found"}).to_string())
+            ))
+        }
+    }
+}
+
 pub async fn login_handler(
     State(hub): State<Arc<SutureHubServer>>,
     Json(req): Json<crate::types::LoginRequest>,
@@ -3252,6 +3395,9 @@ pub async fn run_server(
         .route("/webhooks/{repo_id}", axum::routing::get(list_webhooks_handler))
         .route("/webhooks/{repo_id}/{id}", axum::routing::delete(delete_webhook_handler))
         .route("/repos/{repo_id}/patches/batch", axum::routing::post(batch_push_handler))
+        .route("/lfs/batch", axum::routing::post(lfs_batch_handler))
+        .route("/lfs/objects/{repo_id}/{oid}", axum::routing::put(lfs_upload_handler))
+        .route("/lfs/objects/{repo_id}/{oid}", axum::routing::get(lfs_download_handler))
         .with_state(Arc::clone(&hub))
         .layer(set_request_id)
         .layer(propagate_request_id);

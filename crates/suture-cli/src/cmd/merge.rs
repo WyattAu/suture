@@ -26,6 +26,101 @@ impl MergeStrategy {
     }
 }
 
+pub(crate) async fn cmd_merge_abort() -> Result<(), Box<dyn std::error::Error>> {
+    let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))
+        .map_err(|e| user_error("failed to open repository", e))?;
+
+    let parents_json = match repo.get_config("pending_merge_parents") {
+        Ok(Some(v)) => v,
+        _ => {
+            println!("no merge in progress");
+            return Ok(());
+        }
+    };
+
+    let parents: Vec<suture_common::Hash> = serde_json::from_str(&parents_json)
+        .map_err(|e| format!("failed to parse pending_merge_parents: {}", e))?;
+
+    if parents.len() != 2 {
+        return Err(format!("invalid pending_merge_parents (expected 2 entries, got {})", parents.len()).into());
+    }
+
+    let original_head = parents[0];
+
+    let (branch, _) = repo.head().map_err(|e| user_error("failed to get HEAD", e))?;
+
+    let old_tree = repo.snapshot_head().unwrap_or_else(|_| suture_core::engine::FileTree::empty());
+
+    let bn = suture_common::BranchName::new(&branch)
+        .map_err(|e| format!("invalid branch name '{}': {}", branch, e))?;
+    repo.dag_mut().update_branch(&bn, original_head)
+        .map_err(|e| user_error("failed to update branch", e))?;
+    repo.invalidate_head_cache();
+
+    repo.sync_working_tree(&old_tree)
+        .map_err(|e| user_error("failed to sync working tree", e))?;
+
+    repo.set_config("pending_merge_parents", "")?;
+    let _ = repo.meta().conn().execute("DELETE FROM config WHERE key = 'pending_merge_parents'", []);
+    let _ = repo.meta().conn().execute("DELETE FROM config WHERE key = 'pending_merge_branch'", []);
+
+    let conflicts_dir = repo.root().join(".suture").join("conflicts");
+    if conflicts_dir.exists() {
+        let _ = std::fs::remove_dir_all(&conflicts_dir);
+    }
+    let suture_conflicts_dir = repo.root().join(".suture_conflicts");
+    if suture_conflicts_dir.exists() {
+        let _ = std::fs::remove_dir_all(&suture_conflicts_dir);
+    }
+
+    println!("Merge aborted, restored to pre-merge state");
+    Ok(())
+}
+
+pub(crate) async fn cmd_merge_continue() -> Result<(), Box<dyn std::error::Error>> {
+    let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))
+        .map_err(|e| user_error("failed to open repository", e))?;
+
+    match repo.get_config("pending_merge_parents") {
+        Ok(Some(_)) => {}
+        _ => {
+            println!("no merge in progress");
+            return Ok(());
+        }
+    }
+
+    let report_path = repo.root().join(".suture").join("conflicts").join("report.md");
+    if report_path.exists() {
+        println!("there are still unresolved conflicts");
+        println!("resolve conflicts in the affected files, then run `suture merge --continue`");
+        return Ok(());
+    }
+
+    let count = repo.add_all().map_err(|e| user_error("failed to stage changes", e))?;
+    if count == 0 {
+        return Err("no changes to commit".into());
+    }
+
+    let branch_name = repo.get_config("pending_merge_branch").ok().flatten().unwrap_or_else(|| "unknown".to_string());
+    let message = format!("Merge branch '{}' (conflicts resolved)", branch_name);
+
+    let patch_id = repo.commit(&message).map_err(|e| user_error("failed to commit", e))?;
+    println!("Merge complete: {}", patch_id);
+
+    let _ = repo.meta().conn().execute("DELETE FROM config WHERE key = 'pending_merge_branch'", []);
+
+    let conflicts_dir = repo.root().join(".suture").join("conflicts");
+    if conflicts_dir.exists() {
+        let _ = std::fs::remove_dir_all(&conflicts_dir);
+    }
+    let suture_conflicts_dir = repo.root().join(".suture_conflicts");
+    if suture_conflicts_dir.exists() {
+        let _ = std::fs::remove_dir_all(&suture_conflicts_dir);
+    }
+
+    Ok(())
+}
+
 pub(crate) async fn cmd_merge(
     source: &str,
     dry_run: bool,
@@ -103,6 +198,10 @@ pub(crate) async fn cmd_merge(
     } else {
         repo.execute_merge(source).map_err(|e| user_error("merge failed", e))?
     };
+
+    if !result.is_clean && !dry_run {
+        let _ = repo.set_config("pending_merge_branch", source);
+    }
 
     if result.is_clean {
         if dry_run {

@@ -91,5 +91,21 @@ pub(crate) async fn cmd_pull(remote: &str, rebase: bool, autostash: bool) -> Res
         }
     }
 
+    if pull_result.is_ok() {
+        match crate::cmd::lfs::resolve_lfs_pointers_in_workdir() {
+            Ok((resolved, missing)) => {
+                if resolved > 0 {
+                    println!("Resolved {} LFS object(s)", resolved);
+                }
+                if missing > 0 {
+                    eprintln!("{} LFS object(s) not found locally (run `suture lfs pull`)", missing);
+                }
+            }
+            Err(e) => {
+                eprintln!("warning: LFS pointer resolution failed: {e}");
+            }
+        }
+    }
+
     pull_result
 }

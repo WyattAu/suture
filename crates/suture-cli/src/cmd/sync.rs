@@ -1,12 +1,16 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use crate::cmd::pull::cmd_pull;
+use crate::cmd::push::cmd_push;
 use crate::remote_proto::do_pull;
 
 const SYNC_PID_FILE: &str = ".suture/sync.pid";
 const SYNC_LAST_SYNC_FILE: &str = ".suture/sync.last_sync";
 const DEBOUNCE_SECS: u64 = 2;
 const POLL_INTERVAL_SECS: u64 = 1;
+const SYNC_PUSH_COOLDOWN_SECS: u64 = 30;
+const SYNC_PULL_INTERVAL_SECS: u64 = 60;
 
 pub(crate) async fn cmd_sync(
     remote: &str,
@@ -686,20 +690,53 @@ fn snapshot_dir(
 
 async fn run_polling_watcher(repo_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let mut prev_snapshot = compute_file_snapshot(repo_dir)?;
+    let mut last_push_time = std::time::Instant::now();
+    let mut last_pull_time = std::time::Instant::now();
+    let has_origin = {
+        let repo = suture_core::repository::Repository::open(repo_dir)?;
+        has_configured_remote(&repo, "origin")
+    };
 
     loop {
         tokio::select! {
             _ = tokio::time::sleep(std::time::Duration::from_secs(POLL_INTERVAL_SECS)) => {
                 let current = compute_file_snapshot(repo_dir)?;
 
+                if has_origin && last_pull_time.elapsed().as_secs() >= SYNC_PULL_INTERVAL_SECS {
+                    let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
+                    match cmd_pull("origin", false, true).await {
+                        Ok(()) => {
+                            last_pull_time = std::time::Instant::now();
+                            eprintln!("[{timestamp}] pulled from origin");
+                            prev_snapshot = compute_file_snapshot(repo_dir)?;
+                            continue;
+                        }
+                        Err(e) => {
+                            eprintln!("[{timestamp}] pull failed: {e}");
+                        }
+                    }
+                }
+
                 if current != prev_snapshot {
-                    // debounce: wait for changes to settle
                     tokio::time::sleep(std::time::Duration::from_secs(DEBOUNCE_SECS)).await;
 
                     let settled = compute_file_snapshot(repo_dir)?;
                     if settled != prev_snapshot {
                         auto_commit_changes(repo_dir)?;
                         prev_snapshot = settled;
+
+                        if has_origin && last_push_time.elapsed().as_secs() >= SYNC_PUSH_COOLDOWN_SECS {
+                            let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
+                            match cmd_push("origin", false, None).await {
+                                Ok(()) => {
+                                    last_push_time = std::time::Instant::now();
+                                    eprintln!("[{timestamp}] pushed to origin");
+                                }
+                                Err(e) => {
+                                    eprintln!("[{timestamp}] push failed: {e}");
+                                }
+                            }
+                        }
                     }
                 }
             }
