@@ -1,3 +1,4 @@
+// Allow collapsible_match: Rust 1.94/1.95 lint conflict
 use suture_driver::{DriverError, SemanticChange, SutureDriver};
 use toml::Value;
 

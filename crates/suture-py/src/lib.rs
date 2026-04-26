@@ -1,3 +1,4 @@
+// Allow collapsible_match: Rust 1.94/1.95 lint conflict
 //! Python bindings for Suture version control.
 //!
 //! This module provides a Python-accessible interface to the Suture

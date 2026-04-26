@@ -1,3 +1,4 @@
+// Allow collapsible_match: Rust 1.94/1.95 lint conflict
 //! Node.js bindings for Suture via napi-rs.
 //!
 //! This crate exposes the Suture core library as a native Node.js addon,

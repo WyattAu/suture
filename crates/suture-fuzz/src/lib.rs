@@ -1,3 +1,4 @@
+// Allow collapsible_match: Rust 1.94/1.95 lint conflict
 //! Fuzz smoke harnesses for suture-core.
 //!
 //! These use proptest for property-based testing since cargo-fuzz is not available.

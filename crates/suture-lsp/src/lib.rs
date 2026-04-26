@@ -1,3 +1,4 @@
+// Allow collapsible_match: Rust 1.94/1.95 lint conflict
 //! Suture Language Server Protocol implementation.
 //!
 //! Provides patch-aware editor features:
