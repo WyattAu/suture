@@ -180,11 +180,15 @@ jobs:
         with:
           key: ${{ matrix.features }}
 
+      - name: Install protoc (for gRPC feature)
+        if: contains(matrix.features, 'raft-cluster')
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
       - name: Check with features
-        run: cargo check --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --features "${{ matrix.features }}"
+        run: cargo check --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp --features "${{ matrix.features }}"
 
       - name: Test with features
-        run: cargo test --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --features "${{ matrix.features }}" -- --test-threads=4
+        run: cargo test --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp --features "${{ matrix.features }}" -- --test-threads=4
 
       - name: Clippy with features
-        run: cargo clippy --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --features "${{ matrix.features }}" -- -D warnings
+        run: cargo clippy --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp --features "${{ matrix.features }}" -- -D warnings
