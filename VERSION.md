@@ -1,12 +1,12 @@
 # Suture Version
 
-- **Current Version:** 5.0.0-beta.1
-- **Crates.io:** 37 crates ready to publish (suture-common dry-run passes)
-- **Current Phase:** Beta — Tier 2 complete, deferred items remain
-- **Status:** Shipping v5.0.0-beta.1
+- **Current Version:** 5.0.0
+- **Crates.io:** 37 crates ready to publish
+- **Current Phase:** GA — Production Ready
+- **Status:** Shipping v5.0.0
 - **Last Updated:** 2026-04-26
 - **Rust Edition:** 2024
-- **Tests:** 1,430 passed, 0 failed, 3 ignored (1,243 unit + 21 raft + 186 E2E - 1 ignored)
+- **Tests:** 1,438 passed, 0 failed, 3 ignored (1,231 unit + 21 raft + 186 E2E)
 - **Lean 4:** v4.29.1 (23 theorems proved)
 
 ## Tier 2 Status (All Complete)
@@ -17,14 +17,14 @@
 | Sync daemon push/pull reconciliation | ✅ Complete |
 | merge --continue / merge --abort | ✅ Complete |
 | LFS checkout pointer resolution | ✅ Complete |
+| Hub LFS integration tests (4 tests) | ✅ Complete |
+| Snapshot migration tests (4 tests) | ✅ Complete |
 
 ## Remaining Deferrals (not blocking GA)
 
 | Item | Impact | Risk |
 |------|--------|------|
 | Wasmtime v22 has 16 CVEs | Optional plugin feature (feature-gated, off by default) | Low |
-| Hub has no integration tests | HTTP server untested end-to-end | Medium |
-| No migration test (v2→v3 snapshot engine) | Risk if users upgrade from old versions | Low |
 
 ## Strategic Roadmap
 

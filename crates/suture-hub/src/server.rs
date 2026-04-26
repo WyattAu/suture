@@ -3431,7 +3431,7 @@ pub async fn run_server(
 #[cfg(test)]
 mod tests {
     use super::*;
-
+    use sha2::Digest;
     async fn create_test_user_hub(hub: &SutureHubServer, username: &str, display_name: &str, role: &str) -> String {
         let api_token = generate_api_token();
         let store = hub.storage.write().await;
@@ -3521,6 +3521,85 @@ mod tests {
             .route("/webhooks/{repo_id}", axum::routing::get(list_webhooks_handler))
             .route("/webhooks/{repo_id}/{id}", axum::routing::delete(delete_webhook_handler))
             .route("/repos/{repo_id}/patches/batch", axum::routing::post(batch_push_handler))
+            .with_state(Arc::clone(&hub));
+
+        tokio::spawn(async move {
+            axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>())
+                .await
+                .unwrap();
+        });
+
+        for _ in 0..50 {
+            if reqwest::Client::new()
+                .get(format!("{}/repos", &base))
+                .send()
+                .await
+                .is_ok()
+            {
+                return (hub, port, base);
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        panic!("test server did not start in time");
+    }
+
+    async fn start_test_hub_with_lfs(hub: Arc<SutureHubServer>) -> (Arc<SutureHubServer>, u16, String) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let base = format!("http://127.0.0.1:{}", port);
+
+        let app = axum::Router::new()
+            .route("/", axum::routing::get(serve_index))
+            .route("/push", axum::routing::post(push_handler))
+            .route("/push/compressed", axum::routing::post(push_compressed_handler))
+            .route("/pull", axum::routing::post(pull_handler))
+            .route("/pull/compressed", axum::routing::post(pull_compressed_handler))
+            .route("/repos", axum::routing::get(list_repos_handler))
+            .route("/repo/{repo_id}", axum::routing::get(repo_info_handler))
+            .route("/repos/{repo_id}/branches", axum::routing::get(repo_branches_handler))
+            .route("/repos/{repo_id}/patches", axum::routing::get(repo_patches_handler))
+            .route("/handshake", axum::routing::get(handshake_get_handler))
+            .route("/handshake", axum::routing::post(handshake_handler))
+            .route("/v2/handshake", axum::routing::get(handshake_v2_handler))
+            .route("/v2/handshake", axum::routing::post(handshake_v2_handler))
+            .route("/v2/pull", axum::routing::post(v2_pull_handler))
+            .route("/v2/push", axum::routing::post(v2_push_handler))
+            .route("/auth/token", axum::routing::post(create_token_handler))
+            .route("/auth/verify", axum::routing::post(verify_token_handler))
+            .route("/mirror/setup", axum::routing::post(mirror_setup_handler))
+            .route("/mirror/sync", axum::routing::post(mirror_sync_handler))
+            .route("/mirror/status", axum::routing::get(mirror_status_get_handler))
+            .route("/mirror/status", axum::routing::post(mirror_status_handler))
+            .route("/repos/{repo_id}/protect/{branch}", axum::routing::post(protect_branch_handler))
+            .route("/repos/{repo_id}/unprotect/{branch}", axum::routing::post(unprotect_branch_handler))
+            .route("/auth/register", axum::routing::post(register_handler))
+            .route("/users", axum::routing::get(list_users_handler))
+            .route("/users/{username}", axum::routing::get(get_user_handler))
+            .route("/users/{username}/role", axum::routing::patch(update_role_handler))
+            .route("/users/{username}", axum::routing::delete(delete_user_handler))
+            .route("/static/{*path}", axum::routing::get(serve_static_file))
+            .route("/replication/peers", axum::routing::post(add_peer_handler))
+            .route("/replication/peers", axum::routing::get(list_peers_handler))
+            .route("/replication/peers/{id}", axum::routing::delete(remove_peer_handler))
+            .route("/replication/status", axum::routing::get(replication_status_handler))
+            .route("/replication/sync", axum::routing::post(replication_sync_handler))
+            .route("/repos", axum::routing::post(create_repo_handler))
+            .route("/repos/{repo_id}", axum::routing::delete(delete_repo_handler))
+            .route("/repos/{repo_id}/branches", axum::routing::post(create_branch_handler))
+            .route("/repos/{repo_id}/branches/{branch}", axum::routing::delete(delete_branch_handler))
+            .route("/repos/{repo_id}/blobs/{hash}", axum::routing::get(get_blob_handler))
+            .route("/repos/{repo_id}/tree/{branch}", axum::routing::get(repo_tree_handler))
+            .route("/auth/login", axum::routing::post(login_handler))
+            .route("/search", axum::routing::get(search_handler))
+            .route("/activity", axum::routing::get(activity_handler))
+            .route("/mirrors/{id}", axum::routing::delete(delete_mirror_handler))
+            .route("/webhooks/{repo_id}", axum::routing::post(create_webhook_handler))
+            .route("/webhooks/{repo_id}", axum::routing::get(list_webhooks_handler))
+            .route("/webhooks/{repo_id}/{id}", axum::routing::delete(delete_webhook_handler))
+            .route("/repos/{repo_id}/patches/batch", axum::routing::post(batch_push_handler))
+            .route("/lfs/batch", axum::routing::post(lfs_batch_handler))
+            .route("/lfs/objects/{repo_id}/{oid}", axum::routing::put(lfs_upload_handler))
+            .route("/lfs/objects/{repo_id}/{oid}", axum::routing::get(lfs_download_handler))
             .with_state(Arc::clone(&hub));
 
         tokio::spawn(async move {
@@ -4647,6 +4726,133 @@ mod tests {
         assert_eq!(data["success"], true);
         let files = data["files"].as_array().unwrap();
         assert_eq!(files.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_lfs_batch_upload_none() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo_id = "test-repo";
+        let oid = "aabbccdd";
+        let prefix = &oid[..2];
+        let obj_path = tmp.path().join(repo_id).join("objects").join(prefix).join(oid);
+        std::fs::create_dir_all(obj_path.parent().unwrap()).unwrap();
+        std::fs::write(&obj_path, b"existing data").unwrap();
+
+        let hub = SutureHubServer::new_in_memory().with_lfs_dir(tmp.path().to_path_buf());
+        let (_hub, _port, base) = start_test_hub_with_lfs(Arc::new(hub)).await;
+        let client = reqwest::Client::new();
+
+        let resp = post_json(&client, &format!("{}/lfs/batch", &base), &serde_json::json!({
+            "repo_id": repo_id,
+            "operation": "upload",
+            "objects": [{"oid": oid, "size": 12}],
+        }))
+        .send().await.unwrap();
+
+        assert_eq!(resp.status(), 200);
+        let data: serde_json::Value = resp.json().await.unwrap();
+        assert_eq!(data["objects"][0]["action"], "none");
+    }
+
+    #[tokio::test]
+    async fn test_lfs_upload_download_roundtrip() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo_id = "test-repo";
+
+        let hub = SutureHubServer::new_in_memory().with_lfs_dir(tmp.path().to_path_buf());
+        let (_hub, _port, base) = start_test_hub_with_lfs(Arc::new(hub)).await;
+        let client = reqwest::Client::new();
+
+        let payload = b"hello lfs world".repeat(1000);
+        let hash = sha2::Sha256::digest(&payload);
+        let oid = hex::encode(hash);
+
+        let resp = post_json(&client, &format!("{}/lfs/batch", &base), &serde_json::json!({
+            "repo_id": repo_id,
+            "operation": "upload",
+            "objects": [{"oid": &oid, "size": payload.len()}],
+        }))
+        .send().await.unwrap();
+        assert_eq!(resp.status(), 200);
+        let data: serde_json::Value = resp.json().await.unwrap();
+        assert_eq!(data["objects"][0]["action"], "upload");
+
+        let resp = client
+            .put(format!("{}/lfs/objects/{}/{}", &base, repo_id, &oid))
+            .body(payload.clone())
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+
+        let resp = post_json(&client, &format!("{}/lfs/batch", &base), &serde_json::json!({
+            "repo_id": repo_id,
+            "operation": "download",
+            "objects": [{"oid": &oid, "size": payload.len()}],
+        }))
+        .send().await.unwrap();
+        assert_eq!(resp.status(), 200);
+        let data: serde_json::Value = resp.json().await.unwrap();
+        assert_eq!(data["objects"][0]["action"], "download");
+
+        let resp = client
+            .get(format!("{}/lfs/objects/{}/{}", &base, repo_id, &oid))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        let downloaded = resp.bytes().await.unwrap();
+        assert_eq!(downloaded.as_ref(), payload.as_slice());
+
+        let resp = client
+            .put(format!("{}/lfs/objects/{}/{}", &base, repo_id, "badbadbadbadbadbadbadbadbadbadbadbadbadbadbad"))
+            .body(payload.clone())
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 400);
+    }
+
+    #[tokio::test]
+    async fn test_lfs_batch_download_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let hub = SutureHubServer::new_in_memory().with_lfs_dir(tmp.path().to_path_buf());
+        let (_hub, _port, base) = start_test_hub_with_lfs(Arc::new(hub)).await;
+        let client = reqwest::Client::new();
+
+        let resp = post_json(&client, &format!("{}/lfs/batch", &base), &serde_json::json!({
+            "repo_id": "test-repo",
+            "operation": "download",
+            "objects": [{"oid": "ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00", "size": 100}],
+        }))
+        .send().await.unwrap();
+
+        assert_eq!(resp.status(), 200);
+        let data: serde_json::Value = resp.json().await.unwrap();
+        assert_eq!(data["objects"][0]["action"], "none");
+    }
+
+    #[tokio::test]
+    async fn test_lfs_no_storage_configured() {
+        let hub = SutureHubServer::new_in_memory();
+        let (_hub, _port, base) = start_test_hub_with_lfs(Arc::new(hub)).await;
+        let client = reqwest::Client::new();
+
+        let resp = post_json(&client, &format!("{}/lfs/batch", &base), &serde_json::json!({
+            "repo_id": "test-repo",
+            "operation": "upload",
+            "objects": [{"oid": "aa00aa00aa00aa00aa00aa00aa00aa00aa00aa00aa00aa00aa00aa00aa00aa00", "size": 10}],
+        }))
+        .send().await.unwrap();
+        assert_eq!(resp.status(), 503);
+
+        let resp = client
+            .put(format!("{base}/lfs/objects/test-repo/aa00aa00aa00aa00aa00aa00aa00aa00aa00aa00aa00aa00aa00aa00aa00aa00"))
+            .body(b"some data".to_vec())
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 503);
     }
 
     #[cfg(feature = "s3-backend")]

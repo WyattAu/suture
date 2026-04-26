@@ -5874,6 +5874,165 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_snapshot_migration_v2_to_v3() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir().unwrap();
+        let mut repo = Repository::init(dir.path(), "alice")?;
+
+        fs::write(dir.path().join("hello.txt"), "hello world")?;
+        repo.add("hello.txt")?;
+        repo.commit("add hello.txt")?;
+
+        let count: i64 = repo
+            .meta()
+            .conn()
+            .query_row("SELECT COUNT(*) FROM file_trees", [], |r| r.get(0))?;
+        assert!(count > 0, "file_trees should have rows after commit");
+
+        repo.meta()
+            .set_config("snapshot_engine_version", "2")
+            .unwrap();
+        drop(repo);
+
+        let repo = Repository::open(dir.path())?;
+
+        let version = repo
+            .meta()
+            .get_config("snapshot_engine_version")
+            .unwrap();
+        assert_eq!(version.as_deref(), Some("3"));
+
+        let count: i64 = repo
+            .meta()
+            .conn()
+            .query_row("SELECT COUNT(*) FROM file_trees", [], |r| r.get(0))?;
+        assert_eq!(count, 0, "file_trees should be empty after migration");
+
+        let tree = repo.snapshot_head()?;
+        assert!(tree.contains("hello.txt"));
+        assert_eq!(
+            tree.get("hello.txt"),
+            Some(&Hash::from_data(b"hello world"))
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_snapshot_migration_v1_to_v3() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir().unwrap();
+        let mut repo = Repository::init(dir.path(), "alice")?;
+
+        fs::write(dir.path().join("data.txt"), "some data")?;
+        repo.add("data.txt")?;
+        repo.commit("add data.txt")?;
+
+        let count: i64 = repo
+            .meta()
+            .conn()
+            .query_row("SELECT COUNT(*) FROM file_trees", [], |r| r.get(0))?;
+        assert!(count > 0);
+
+        repo.meta()
+            .set_config("snapshot_engine_version", "1")
+            .unwrap();
+        drop(repo);
+
+        let repo = Repository::open(dir.path())?;
+
+        let version = repo
+            .meta()
+            .get_config("snapshot_engine_version")
+            .unwrap();
+        assert_eq!(version.as_deref(), Some("3"));
+
+        let count: i64 = repo
+            .meta()
+            .conn()
+            .query_row("SELECT COUNT(*) FROM file_trees", [], |r| r.get(0))?;
+        assert_eq!(count, 0);
+
+        let tree = repo.snapshot_head()?;
+        assert!(tree.contains("data.txt"));
+        assert_eq!(tree.get("data.txt"), Some(&Hash::from_data(b"some data")));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_snapshot_migration_no_version_key() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir().unwrap();
+        let mut repo = Repository::init(dir.path(), "alice")?;
+
+        fs::write(dir.path().join("file.txt"), "content")?;
+        repo.add("file.txt")?;
+        repo.commit("add file.txt")?;
+
+        repo.meta()
+            .conn()
+            .execute(
+                "DELETE FROM config WHERE key = 'snapshot_engine_version'",
+                [],
+            )
+            .unwrap();
+        drop(repo);
+
+        let repo = Repository::open(dir.path())?;
+
+        let version = repo
+            .meta()
+            .get_config("snapshot_engine_version")
+            .unwrap();
+        assert_eq!(version.as_deref(), Some("3"));
+
+        let count: i64 = repo
+            .meta()
+            .conn()
+            .query_row("SELECT COUNT(*) FROM file_trees", [], |r| r.get(0))?;
+        assert_eq!(count, 0);
+
+        let tree = repo.snapshot_head()?;
+        assert!(tree.contains("file.txt"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_snapshot_no_migration_when_current() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir().unwrap();
+        let mut repo = Repository::init(dir.path(), "alice")?;
+
+        fs::write(dir.path().join("keep.txt"), "keep me")?;
+        repo.add("keep.txt")?;
+        repo.commit("add keep.txt")?;
+
+        let version = repo
+            .meta()
+            .get_config("snapshot_engine_version")
+            .unwrap();
+        assert_eq!(version.as_deref(), Some("3"));
+
+        let count_before: i64 = repo
+            .meta()
+            .conn()
+            .query_row("SELECT COUNT(*) FROM file_trees", [], |r| r.get(0))?;
+        assert!(count_before > 0);
+        drop(repo);
+
+        let repo = Repository::open(dir.path())?;
+
+        let count_after: i64 = repo
+            .meta()
+            .conn()
+            .query_row("SELECT COUNT(*) FROM file_trees", [], |r| r.get(0))?;
+        assert_eq!(
+            count_after, count_before,
+            "file_trees should not be wiped when version matches"
+        );
+
+        Ok(())
+    }
+
     mod proptests {
         use super::*;
         use proptest::prelude::*;
