@@ -33,7 +33,7 @@ sha2 = "0.10"
 bytes = "1"
 zstd = "0.13"
 url = "2"
-tonic = "0.13"
+tonic = "0.14"
 prost = "0.13"
 suture-raft = { path = "../suture-raft", version = "5.0.0", optional = true }
 suture-s3 = { path = "../suture-s3", version = "5.0.0", optional = true }
