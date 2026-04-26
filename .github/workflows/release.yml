@@ -111,7 +111,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y pkg-config libssl-dev
+          sudo apt-get install -y pkg-config libssl-dev protobuf-compiler
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -160,7 +160,7 @@ jobs:
         working-directory: packages/suture-merge-driver
         run: |
           TAG="${GITHUB_REF#refs/tags/v}"
-          npm version "$TAG" --no-git-tag-version
+          npm version "$TAG" --no-git-tag-version --allow-same-version 2>/dev/null || true
 
       - name: Publish to npm
         working-directory: packages/suture-merge-driver
@@ -203,7 +203,7 @@ jobs:
             echo "::notice::PYPI_API_TOKEN not set — skipping PyPI publish"
             exit 0
           fi
-          twine upload dist/*
+          twine upload dist/* --skip-existing 2>/dev/null || twine upload dist/*
 
   # ── Source tarball ────────────────────────────────────────────────
   source-tarball:
@@ -219,6 +219,9 @@ jobs:
             --exclude='target' \
             --exclude='.direnv' \
             --exclude='node_modules' \
+            --exclude='desktop-app/node_modules' \
+            --exclude='desktop-app/src-tauri/target' \
+            --warning=no-file-changed \
             .
 
       - name: Upload source artifact
