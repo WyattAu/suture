@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CLI Reference — Suture</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a2e;
+  --fg:#e2e2f0;--fg2:#8888a8;
+  --accent:#7c3aed;--accent2:#3b82f6;--accent-grad:linear-gradient(135deg,#7c3aed,#3b82f6);
+  --border:#2a2a3e;
+  --mono:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+  --radius:12px;
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);line-height:1.7;overflow-x:hidden}
+a{color:var(--accent);text-decoration:none;transition:color .15s}
+a:hover{color:#a78bfa}
+
+.topnav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(10,10,15,.85);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);height:52px;display:flex;align-items:center;padding:0 20px}
+.topnav-inner{max-width:1400px;width:100%;margin:0 auto;display:flex;align-items:center;justify-content:space-between}
+.topnav-logo{font-family:var(--mono);font-weight:800;font-size:1.1rem;color:#fff;display:flex;align-items:center;gap:8px}
+.topnav-logo span{color:var(--accent)}
+.topnav-links{display:flex;gap:20px;align-items:center}
+.topnav-links a{color:var(--fg2);font-size:.85rem}
+.topnav-links a:hover{color:#fff}
+.menu-btn{display:none;background:none;border:1px solid var(--border);color:var(--fg);padding:6px 10px;border-radius:6px;cursor:pointer;font-size:1.1rem;line-height:1}
+
+.layout{display:flex;margin-top:52px;min-height:calc(100vh - 52px)}
+
+.sidebar{width:260px;min-width:260px;background:var(--bg2);border-right:1px solid var(--border);height:calc(100vh - 52px);position:sticky;top:52px;overflow-y:auto;padding:20px 0}
+.sidebar::-webkit-scrollbar{width:4px}
+.sidebar::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.sidebar-home{display:block;padding:8px 20px;color:var(--fg2);font-size:.8rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
+.sidebar-home:hover{color:var(--fg)}
+.nav-group{margin-bottom:4px}
+.nav-group-title{padding:8px 20px 4px;font-size:.7rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--fg2);opacity:.7}
+.nav-item{display:block;padding:6px 20px 6px 28px;color:var(--fg2);font-size:.85rem;border-left:2px solid transparent;transition:all .15s}
+.nav-item:hover{color:var(--fg);background:rgba(124,58,237,.05)}
+.nav-item.active{color:#fff;border-left-color:var(--accent);background:rgba(124,58,237,.08)}
+
+.content{flex:1;max-width:860px;padding:32px 40px 80px}
+.breadcrumb{font-size:.8rem;color:var(--fg2);margin-bottom:24px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.breadcrumb a{color:var(--fg2)}
+.breadcrumb a:hover{color:var(--accent)}
+.breadcrumb .sep{opacity:.4}
+
+.doc h1{font-size:2rem;color:#fff;font-weight:700;letter-spacing:-.02em;margin-bottom:8px;line-height:1.3}
+.doc h1:first-child{margin-top:0}
+.doc h2{font-size:1.4rem;color:#fff;font-weight:600;margin:40px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.doc h3{font-size:1.1rem;color:#fff;font-weight:600;margin:28px 0 8px}
+.doc h4{font-size:.95rem;color:var(--fg);font-weight:600;margin:24px 0 6px}
+.doc p{margin:0 0 16px;color:var(--fg)}
+.doc ul,.doc ol{margin:0 0 16px 24px;color:var(--fg)}
+.doc li{margin-bottom:4px}
+.doc li>p{margin-bottom:8px}
+.doc strong{color:#fff;font-weight:600}
+.doc em{color:var(--fg2);font-style:italic}
+.doc code{font-family:var(--mono);background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-size:.85em;color:#a78bfa}
+.doc pre{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:20px 24px;overflow-x:auto;font-size:.85rem;line-height:1.7;margin:0 0 20px}
+.doc pre code{background:none;border:none;padding:0;color:var(--fg);font-size:inherit}
+.doc blockquote{border-left:3px solid var(--accent);padding:12px 20px;margin:0 0 20px;background:rgba(124,58,237,.05);border-radius:0 var(--radius) var(--radius) 0}
+.doc blockquote p{color:var(--fg2);margin-bottom:0}
+.doc blockquote p:last-child{margin-bottom:0}
+.doc hr{border:none;border-top:1px solid var(--border);margin:32px 0}
+.doc img{max-width:100%;border-radius:var(--radius);margin:8px 0 20px}
+.doc table{width:100%;border-collapse:collapse;margin:0 0 20px;font-size:.9rem}
+.doc thead th{text-align:left;padding:10px 14px;border-bottom:2px solid var(--border);color:var(--fg);font-weight:600;font-size:.8rem;text-transform:uppercase;letter-spacing:.04em}
+.doc tbody td{padding:10px 14px;border-bottom:1px solid var(--border);color:var(--fg)}
+.doc tbody tr:hover{background:rgba(124,58,237,.03)}
+.doc del{opacity:.5}
+
+.doc-footer{margin-top:48px;padding-top:24px;border-top:1px solid var(--border);font-size:.8rem;color:var(--fg2)}
+.doc-footer a{color:var(--fg2)}
+.doc-footer a:hover{color:var(--accent)}
+
+@media(max-width:900px){
+  .menu-btn{display:block}
+  .sidebar{position:fixed;top:52px;left:-280px;height:calc(100vh - 52px);z-index:90;transition:left .25s ease;box-shadow:none}
+  .sidebar.open{left:0;box-shadow:4px 0 24px rgba(0,0,0,.4)}
+  .sidebar-overlay{display:none;position:fixed;top:52px;left:0;right:0;bottom:0;z-index:89;background:rgba(0,0,0,.4)}
+  .sidebar-overlay.open{display:block}
+  .content{padding:24px 20px 60px}
+}
+@media(max-width:600px){
+  .topnav-links{display:none}
+  .doc h1{font-size:1.5rem}
+  .doc h2{font-size:1.2rem}
+}
+</style>
+</head>
+<body>
+
+<nav class="topnav">
+  <div class="topnav-inner">
+    <a href="index.html" class="topnav-logo">/suture<span>/</span></a>
+    <div class="topnav-links">
+      <a href="index.html">Home</a>
+      <a href="quickstart.html">Docs</a>
+      <a href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">GitHub</a>
+    </div>
+    <button class="menu-btn" onclick="toggleSidebar()" aria-label="Menu">&#9776;</button>
+  </div>
+</nav>
+
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <a href="index.html" class="sidebar-home">&larr; Back to Home</a>
+<div class="nav-group">
+<div class="nav-group-title">Getting Started</div>
+<a href="getting_started.html" class="nav-item">Getting Started with Suture</a>
+<a href="quickstart.html" class="nav-item">Quickstart: Stop Losing Work to Google Drive</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Core Concepts</div>
+<a href="comparing-with-git.html" class="nav-item">Suture vs. Git: When to Use What</a>
+<a href="comparison.html" class="nav-item">Suture vs Other Version Control Systems</a>
+<a href="semantic-merge.html" class="nav-item">Semantic Merge</a>
+<a href="why-suture.html" class="nav-item">Why Suture?</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Reference</div>
+<a href="api_reference.html" class="nav-item">API Reference</a>
+<a href="cli-reference.html" class="nav-item active">CLI Reference</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Merge Drivers</div>
+<a href="driver_sdk.html" class="nav-item">Driver SDK</a>
+<a href="git_merge_driver.html" class="nav-item">Git Merge Driver</a>
+<a href="merge-driver-guide.html" class="nav-item">Suture Merge Driver Guide</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Integration</div>
+<a href="github-action.html" class="nav-item">Suture Semantic Merge GitHub Action</a>
+<a href="ide-integration.html" class="nav-item">IDE Integration</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Guides</div>
+<a href="data-science.html" class="nav-item">Suture for Data Science</a>
+<a href="document-authors.html" class="nav-item">Suture for Document Authors</a>
+<a href="video-editors.html" class="nav-item">Suture for Video Editors</a>
+<a href="video-merge-guide.html" class="nav-item">Video Merge Guide: Version Control for OTIO Timelines</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Onboarding</div>
+<a href="onboarding-defence.html" class="nav-item">Suture VCS — Defence Contractor Onboarding Guide</a>
+<a href="onboarding-film.html" class="nav-item">Suture VCS — Onboarding Guide for Film & TV Post-Production</a>
+<a href="onboarding-youtube.html" class="nav-item">Suture VCS — Onboarding Guide for YouTube Channel Managers & PE Firms</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Platform</div>
+<a href="desktop-build.html" class="nav-item">Building the Suture Desktop App</a>
+<a href="hub.html" class="nav-item">Suture Hub</a>
+<a href="wasm-feasibility.html" class="nav-item">WASM Feasibility Report: Suture Semantic Merge Engine</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Development</div>
+<a href="performance.html" class="nav-item">Suture Performance Baseline</a>
+<a href="release-notes.html" class="nav-item">Suture v2.9.0 — First Public Release</a>
+<a href="shipping-checklist.html" class="nav-item">Suture v2.9.0 Shipping Checklist</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Other</div>
+<a href="demo.html" class="nav-item">Suture Demo: Semantic Merge in 60 Seconds</a>
+</div>
+  </aside>
+  <main class="content">
+    <div class="breadcrumb">
+      <a href="index.html">Home</a>
+      <span class="sep">/</span>
+      <span>Docs</span>
+    </div>
+    <article class="doc">
+      <h1>CLI Reference</h1>
+<p>Global flag: <code>-C &lt;path&gt;</code> -- run as if started in <code>&lt;path&gt;</code>.</p>
+<hr>
+<h2 id="repository">Repository</h2>
+<h3 id="suture-init-path"><code>suture init [path]</code></h3>
+<p>Initialize a new repository. Creates a <code>.suture/</code> directory.</p>
+<pre><code class="language-bash">suture init                # current directory
+suture init my-project     # new directory
+</code></pre>
+<h3 id="suture-status"><code>suture status</code></h3>
+<p>Show working tree status (branch, staged files, patch count).</p>
+<pre><code class="language-bash">suture status
+</code></pre>
+<h3 id="suture-config-keyvalue"><code>suture config [key[=value]]</code></h3>
+<p>Get or set configuration values.</p>
+<pre><code class="language-bash">suture config                          # list all config
+suture config user.name                # get a value
+suture config user.name=Alice          # set a value
+suture config --global user.name=Alice # set global config
+</code></pre>
+<p>Flag | Description -----|------------ <code>--global</code> | Operate on <code>~/.config/suture/config.toml</code> instead of repo config</p>
+<hr>
+<h2 id="staging">Staging</h2>
+<h3 id="suture-add-ltpathgt"><code>suture add &lt;path&gt;...</code></h3>
+<p>Stage files for the next commit.</p>
+<pre><code class="language-bash">suture add file.txt        # stage a file
+suture add src/            # stage a directory
+suture add --all           # stage all modified/deleted files
+suture add -p              # interactively choose files
+</code></pre>
+<p>Flag | Description -----|------------ <code>-a</code>, <code>--all</code> | Stage all changes (respects <code>.sutureignore</code>) <code>-p</code>, <code>--patch</code> | Interactive file selection</p>
+<h3 id="suture-rm-ltpathgt"><code>suture rm &lt;path&gt;...</code></h3>
+<p>Remove files from the working tree and staging area.</p>
+<pre><code class="language-bash">suture rm file.txt         # remove from tree and staging
+suture rm --cached file    # remove from staging only
+</code></pre>
+<p>Flag | Description -----|------------ <code>--cached</code> | Keep the file on disk, remove from staging only</p>
+<h3 id="suture-mv-ltsrcgt-ltdstgt"><code>suture mv &lt;src&gt; &lt;dst&gt;</code></h3>
+<p>Move or rename a tracked file.</p>
+<pre><code class="language-bash">suture mv old.txt new.txt  # rename
+suture mv file dir/        # move into directory
+</code></pre>
+<hr>
+<h2 id="commits">Commits</h2>
+<h3 id="suture-commit-ltmessagegt"><code>suture commit &lt;message&gt;</code></h3>
+<p>Commit staged changes.</p>
+<pre><code class="language-bash">suture commit "fix typo"
+suture commit -a "update all"   # auto-stage and commit
+</code></pre>
+<p>Flag | Description -----|------------ <code>-a</code>, <code>--all</code> | Auto-stage all modified/deleted files before committing</p>
+<h3 id="suture-log-branch"><code>suture log [branch]</code></h3>
+<p>Show commit history.</p>
+<pre><code class="language-bash">suture log                         # HEAD history
+suture log --oneline               # compact format
+suture log --graph                 # ASCII graph
+suture log --all                   # all branches
+suture log --author alice          # filter by author
+suture log --grep "fix"            # filter by message
+suture log --since "2 weeks ago"   # filter by date
+</code></pre>
+<p>Flag | Description -----|------------ <code>--graph</code> | Show ASCII graph of branch topology <code>--oneline</code> | Compact one-line format <code>--all</code> | Show commits across all branches <code>--author</code> | Filter by author name <code>--grep</code> | Filter by commit message pattern <code>--since</code> | Show commits newer than date <code>--until</code> | Show commits older than date <code>--first-parent</code> | Show only the first-parent chain</p>
+<h3 id="suture-diff"><code>suture diff</code></h3>
+<p>Show differences between commits or the working tree.</p>
+<pre><code class="language-bash">suture diff                        # working tree vs staging
+suture diff --cached               # staging vs HEAD
+suture diff --from main            # compare main to working tree
+suture diff --from main --to feat  # compare two refs
+</code></pre>
+<p>Flag | Description -----|------------ <code>--from</code> | From ref (commit hash or branch). Omit for HEAD. <code>--to</code> | To ref (commit hash or branch). Omit for working tree. <code>--cached</code> | Show staged changes (staging vs HEAD)</p>
+<h3 id="suture-blame-ltpathgt"><code>suture blame &lt;path&gt;</code></h3>
+<p>Show per-line commit attribution.</p>
+<pre><code class="language-bash">suture blame src/main.rs
+</code></pre>
+<h3 id="suture-show-ltcommitgt"><code>suture show &lt;commit&gt;</code></h3>
+<p>Show detailed information about a commit.</p>
+<pre><code class="language-bash">suture show HEAD
+suture show abc123
+</code></pre>
+<hr>
+<h2 id="branches">Branches</h2>
+<h3 id="suture-branch-name"><code>suture branch [name]</code></h3>
+<p>List, create, delete, or protect branches.</p>
+<pre><code class="language-bash">suture branch                      # list branches
+suture branch feature              # create branch
+suture branch feature main         # create from specific target
+suture branch -d old-branch        # delete
+suture branch --protect main       # protect from force-push
+suture branch --unprotect main     # unprotect
+</code></pre>
+<p>Flag | Description -----|------------ <code>-t</code>, <code>--target</code> | Start branch from this target <code>-d</code>, <code>--delete</code> | Delete a branch <code>--list</code> | List branches (explicit) <code>--protect</code> | Protect branch from force-push/deletion <code>--unprotect</code> | Unprotect a branch</p>
+<h3 id="suture-checkout-ltbranchgt"><code>suture checkout &lt;branch&gt;</code></h3>
+<p>Switch to a different branch.</p>
+<pre><code class="language-bash">suture checkout main               # switch branch
+suture checkout -b feature         # create and switch
+suture checkout -b feat main       # create from main
+</code></pre>
+<p>Flag | Description -----|------------ <code>-b</code> | Create a new branch before switching</p>
+<h3 id="suture-merge-ltbranchgt"><code>suture merge &lt;branch&gt;</code></h3>
+<p>Merge a branch into the current branch.</p>
+<pre><code class="language-bash">suture merge feature               # merge into current
+suture merge --dry-run feature     # preview without applying
+</code></pre>
+<p>Flag | Description -----|------------ <code>--dry-run</code> | Preview merge without modifying the working tree</p>
+<hr>
+<h2 id="advanced">Advanced</h2>
+<h3 id="suture-rebase-lttargetgt"><code>suture rebase &lt;target&gt;</code></h3>
+<p>Rebase the current branch onto another branch.</p>
+<pre><code class="language-bash">suture rebase main                 # rebase onto main
+suture rebase -i main              # interactive rebase
+suture rebase --abort              # abort in-progress rebase
+suture rebase --continue           # continue after resolving
+</code></pre>
+<p>Flag | Description -----|------------ <code>-i</code>, <code>--interactive</code> | Open editor to reorder/edit/squash commits <code>--continue</code> | Continue an in-progress interactive rebase <code>--abort</code> | Abort an in-progress interactive rebase</p>
+<h3 id="suture-cherry-pick-ltcommitgt"><code>suture cherry-pick &lt;commit&gt;</code></h3>
+<p>Apply a specific commit onto the current branch.</p>
+<pre><code class="language-bash">suture cherry-pick abc123
+</code></pre>
+<h3 id="suture-revert-ltcommitgt"><code>suture revert &lt;commit&gt;</code></h3>
+<p>Revert a commit by creating a new patch that undoes it.</p>
+<pre><code class="language-bash">suture revert abc123
+suture revert abc123 -m "revert fix"
+</code></pre>
+<p>Flag | Description -----|------------ <code>-m</code> | Custom revert message</p>
+<h3 id="suture-stash"><code>suture stash</code></h3>
+<p>Stash changes away and re-apply them later.</p>
+<pre><code class="language-bash">suture stash push                  # stash current changes
+suture stash push -m "WIP"         # with a message
+suture stash pop                   # apply and remove latest stash
+suture stash apply 0               # apply specific stash
+suture stash list                  # list stashes
+suture stash drop 0                # discard specific stash
+</code></pre>
+<h3 id="suture-reset-lttargetgt"><code>suture reset &lt;target&gt;</code></h3>
+<p>Reset HEAD to a specific commit.</p>
+<pre><code class="language-bash">suture reset HEAD~1                # mixed (default)
+suture reset abc123 --soft         # keep changes staged
+suture reset abc123 --hard         # discard all changes
+</code></pre>
+<p>Flag | Description -----|------------ <code>--soft</code> | Keep changes staged <code>--mixed</code> | Unstage changes, keep in working tree (default) <code>--hard</code> | Discard all changes</p>
+<h3 id="suture-undo-steps"><code>suture undo [steps]</code></h3>
+<p>Soft reset to undo recent commits.</p>
+<pre><code class="language-bash">suture undo                        # undo last commit
+suture undo --steps 3              # undo last 3 commits
+</code></pre>
+<h3 id="suture-squash-ltcountgt"><code>suture squash &lt;count&gt;</code></h3>
+<p>Squash the last N commits into one.</p>
+<pre><code class="language-bash">suture squash 3                    # squash last 3 commits
+suture squash 3 -m "combined"      # with custom message
+</code></pre>
+<hr>
+<h2 id="tags">Tags</h2>
+<h3 id="suture-tag-name"><code>suture tag [name]</code></h3>
+<p>Create, list, or delete tags.</p>
+<pre><code class="language-bash">suture tag                         # list tags
+suture tag v1.0                    # lightweight tag
+suture tag -a v1.0 -m "release"    # annotated tag
+suture tag -d v0.9                 # delete
+</code></pre>
+<p>Flag | Description -----|------------ <code>-a</code>, <code>--annotate</code> | Create annotated tag <code>-m</code> | Tag message (used with <code>--annotate</code>) <code>-t</code>, <code>--target</code> | Target commit/branch (default: HEAD) <code>-d</code>, <code>--delete</code> | Delete a tag</p>
+<hr>
+<h2 id="remotes">Remotes</h2>
+<h3 id="suture-remote"><code>suture remote</code></h3>
+<p>Manage remote Hub connections.</p>
+<pre><code class="language-bash">suture remote add origin http://localhost:50051
+suture remote list
+suture remote remove upstream
+suture remote login                 # authenticate with origin
+suture remote mirror http://upstream/repo upstream-name
+</code></pre>
+<h3 id="suture-push"><code>suture push</code></h3>
+<p>Push patches to a remote Hub.</p>
+<pre><code class="language-bash">suture push                        # push all branches to origin
+suture push --force                # force push
+suture push origin feature         # push specific branch
+</code></pre>
+<p>Flag | Description -----|------------ <code>--force</code> | Skip fast-forward check <code>&lt;remote&gt;</code> | Remote name (default: <code>origin</code>) <code>&lt;branch&gt;</code> | Specific branch to push</p>
+<h3 id="suture-pull"><code>suture pull</code></h3>
+<p>Pull patches from a remote Hub.</p>
+<pre><code class="language-bash">suture pull                        # pull and merge from origin
+suture pull --rebase               # pull with rebase
+suture pull upstream               # pull from specific remote
+</code></pre>
+<p>Flag | Description -----|------------ <code>--rebase</code> | Rebase local commits on top of fetched history</p>
+<h3 id="suture-fetch"><code>suture fetch</code></h3>
+<p>Fetch patches without merging.</p>
+<pre><code class="language-bash">suture fetch                       # fetch from origin
+suture fetch --depth 5             # shallow fetch last 5 commits
+</code></pre>
+<p>Flag | Description -----|------------ <code>--depth</code> | Limit fetch to last N commits</p>
+<h3 id="suture-clone-lturlgt-dir"><code>suture clone &lt;url&gt; [dir]</code></h3>
+<p>Clone a repository from a remote Hub.</p>
+<pre><code class="language-bash">suture clone http://localhost:50051/my-repo
+suture clone http://localhost:50051/my-repo my-local-dir
+suture clone --depth 10 http://localhost:50051/my-repo
+</code></pre>
+<p>Flag | Description -----|------------ <code>--depth</code> | Shallow clone: fetch only the last N patches</p>
+<hr>
+<h2 id="notes">Notes</h2>
+<h3 id="suture-notes"><code>suture notes</code></h3>
+<p>Attach notes to commits.</p>
+<pre><code class="language-bash">suture notes add abc123 -m "reviewed"    # add note
+suture notes add abc123                 # enter note interactively
+suture notes list abc123                # list notes
+suture notes show abc123                # show notes (alias for list)
+suture notes remove abc123 0            # remove note by index
+</code></pre>
+<hr>
+<h2 id="maintenance">Maintenance</h2>
+<h3 id="suture-gc"><code>suture gc</code></h3>
+<p>Garbage collect unreachable objects.</p>
+<pre><code class="language-bash">suture gc
+</code></pre>
+<h3 id="suture-fsck"><code>suture fsck</code></h3>
+<p>Verify repository integrity.</p>
+<pre><code class="language-bash">suture fsck
+</code></pre>
+<h3 id="suture-key"><code>suture key</code></h3>
+<p>Signing key management.</p>
+<pre><code class="language-bash">suture key generate           # generate default Ed25519 keypair
+suture key generate deploy    # generate named key
+suture key list               # list local public keys
+suture key public             # show default public key
+suture key public deploy      # show named key
+</code></pre>
+<hr>
+<h2 id="other">Other</h2>
+<h3 id="suture-version"><code>suture version</code></h3>
+<p>Show version information.</p>
+<h3 id="suture-tui"><code>suture tui</code></h3>
+<p>Launch the terminal UI (7 tabs: Status, Log, Staging, Diff, Branches, Remote, Help).</p>
+<h3 id="suture-bisect"><code>suture bisect</code></h3>
+<p>Binary search for bug-introducing commit.</p>
+<pre><code class="language-bash">suture bisect start abc123 def456   # abc123=good, def456=bad
+suture bisect run abc123 def456 -- cargo test  # automated
+suture bisect reset                  # cancel session
+</code></pre>
+<h3 id="suture-reflog"><code>suture reflog</code></h3>
+<p>Show the reference log (HEAD movements).</p>
+<h3 id="suture-shortlog"><code>suture shortlog</code></h3>
+<p>Compact commit summary grouped by author.</p>
+<pre><code class="language-bash">suture shortlog
+suture shortlog -n 10
+</code></pre>
+<h3 id="suture-drivers"><code>suture drivers</code></h3>
+<p>List available semantic merge drivers.</p>
+<h3 id="suture-merge-file"><code>suture merge-file</code></h3>
+<p>Standalone three-way file merge (no repo required).</p>
+<pre><code class="language-bash">suture merge-file base.txt ours.txt theirs.txt
+suture merge-file --driver json base.json ours.json theirs.json
+suture merge-file -o merged.yaml base.yaml ours.yaml theirs.yaml
+</code></pre>
+<p>Flag | Description -----|------------ <code>--driver</code> | Semantic driver (json, yaml, toml, csv, xml, markdown, docx, xlsx, pptx). Auto-detected if omitted. <code>-o</code>, <code>--output</code> | Write result to file instead of stdout <code>--label-ours</code> | Label for ours side in conflict markers <code>--label-theirs</code> | Label for theirs side in conflict markers</p>
+<h3 id="suture-worktree"><code>suture worktree</code></h3>
+<p>Manage working trees.</p>
+<pre><code class="language-bash">suture worktree add ../feature         # create worktree
+suture worktree add hotfix -b fix      # create on new branch
+suture worktree list                   # list all worktrees
+suture worktree remove feature         # remove worktree
+</code></pre>
+<h3 id="suture-ignore"><code>suture ignore</code></h3>
+<p>Inspect <code>.sutureignore</code> patterns.</p>
+<pre><code class="language-bash">suture ignore list         # list ignore patterns
+suture ignore check foo.o  # check if path is ignored
+</code></pre>
+<h3 id="suture-completions-ltshellgt"><code>suture completions &lt;shell&gt;</code></h3>
+<p>Generate shell completions.</p>
+<pre><code class="language-bash">suture completions bash &gt; ~/.bash_completion.d/suture
+suture completions zsh &gt; ~/.zfunc/_suture
+suture completions fish &gt; ~/.config/fish/completions/suture.fish
+suture completions nushell | save -f ~/.cache/suture/completions.nu
+</code></pre>
+<p>Supported shells: <code>bash</code>, <code>zsh</code>, <code>fish</code>, <code>powershell</code>, <code>nushell</code>.</p>
+    </article>
+    <div class="doc-footer">
+      <a href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">GitHub</a> &middot;
+      <a href="https://github.com/WyattAu/suture/blob/main/LICENSE" target="_blank" rel="noopener">Apache-2.0</a>
+    </div>
+  </main>
+</div>
+
+<script>
+function toggleSidebar(){
+  document.getElementById("sidebar").classList.toggle("open");
+  document.getElementById("sidebarOverlay").classList.toggle("open");
+}
+</script>
+</body>
+</html>

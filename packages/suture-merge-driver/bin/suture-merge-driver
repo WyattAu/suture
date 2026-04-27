@@ -32,7 +32,7 @@ find_suture() {
     fi
 
     # 2. Installed mode: prebuilt binary from GitHub Releases
-    if [ -f "$PKG_DIR/binaries/$PLATFORM/suture" ]; then
+    if [ -f "$PKG_DIR/binaries/$PLATFORM/suture" ] || [ -f "$PKG_DIR/binaries/$PLATFORM/suture.exe" ]; then
         echo "$PKG_DIR/binaries/$PLATFORM/suture"
         return
     fi

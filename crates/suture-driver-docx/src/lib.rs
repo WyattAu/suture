@@ -22,6 +22,13 @@
 use suture_driver::{DriverError, SemanticChange, SutureDriver};
 use suture_ooxml::OoxmlDocument;
 
+/// Convert bytes to String, replacing invalid UTF-8 sequences with the Unicode replacement character.
+/// This is safe for binary formats like OOXML (ZIP/XML) where the content should be valid UTF-8
+/// per specification (ECMA-376, ISO 29500), but we defensively handle edge cases.
+fn bytes_to_string_lossy(bytes: Vec<u8>) -> String {
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
 /// A parsed block from a DOCX document.xml body.
 ///
 /// Can be either a paragraph (`<w:p>`) or a table (`<w:tbl>`).
@@ -456,12 +463,7 @@ impl SutureDriver for DocxDriver {
         // Delegate to merge_raw and convert bytes → String.
         let bytes = self.merge_raw(base.as_bytes(), ours.as_bytes(), theirs.as_bytes())?;
         match bytes {
-            Some(b) => {
-                // SAFETY: OOXML documents are valid UTF-8 per ECMA-376.
-                // The bytes round-trip through ZIP → XML → merge → XML → ZIP
-                // and are written to disk as raw bytes, never interpreted as text.
-                Ok(Some(unsafe { String::from_utf8_unchecked(b) }))
-            }
+            Some(b) => Ok(Some(bytes_to_string_lossy(b))),
             None => Ok(None),
         }
     }
@@ -516,11 +518,8 @@ impl SutureDriver for DocxDriver {
         base: Option<&[u8]>,
         new_content: &[u8],
     ) -> Result<Vec<SemanticChange>, DriverError> {
-        let base_str = base.map(|b| {
-            // SAFETY: OOXML documents are valid UTF-8 per ECMA-376.
-            unsafe { String::from_utf8_unchecked(b.to_vec()) }
-        });
-        let new_str = unsafe { String::from_utf8_unchecked(new_content.to_vec()) };
+        let base_str = base.map(|b| bytes_to_string_lossy(b.to_vec()));
+        let new_str = bytes_to_string_lossy(new_content.to_vec());
         self.diff(base_str.as_deref(), &new_str)
     }
 }

@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IDE Integration — Suture</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a2e;
+  --fg:#e2e2f0;--fg2:#8888a8;
+  --accent:#7c3aed;--accent2:#3b82f6;--accent-grad:linear-gradient(135deg,#7c3aed,#3b82f6);
+  --border:#2a2a3e;
+  --mono:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+  --radius:12px;
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);line-height:1.7;overflow-x:hidden}
+a{color:var(--accent);text-decoration:none;transition:color .15s}
+a:hover{color:#a78bfa}
+
+.topnav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(10,10,15,.85);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);height:52px;display:flex;align-items:center;padding:0 20px}
+.topnav-inner{max-width:1400px;width:100%;margin:0 auto;display:flex;align-items:center;justify-content:space-between}
+.topnav-logo{font-family:var(--mono);font-weight:800;font-size:1.1rem;color:#fff;display:flex;align-items:center;gap:8px}
+.topnav-logo span{color:var(--accent)}
+.topnav-links{display:flex;gap:20px;align-items:center}
+.topnav-links a{color:var(--fg2);font-size:.85rem}
+.topnav-links a:hover{color:#fff}
+.menu-btn{display:none;background:none;border:1px solid var(--border);color:var(--fg);padding:6px 10px;border-radius:6px;cursor:pointer;font-size:1.1rem;line-height:1}
+
+.layout{display:flex;margin-top:52px;min-height:calc(100vh - 52px)}
+
+.sidebar{width:260px;min-width:260px;background:var(--bg2);border-right:1px solid var(--border);height:calc(100vh - 52px);position:sticky;top:52px;overflow-y:auto;padding:20px 0}
+.sidebar::-webkit-scrollbar{width:4px}
+.sidebar::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.sidebar-home{display:block;padding:8px 20px;color:var(--fg2);font-size:.8rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
+.sidebar-home:hover{color:var(--fg)}
+.nav-group{margin-bottom:4px}
+.nav-group-title{padding:8px 20px 4px;font-size:.7rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--fg2);opacity:.7}
+.nav-item{display:block;padding:6px 20px 6px 28px;color:var(--fg2);font-size:.85rem;border-left:2px solid transparent;transition:all .15s}
+.nav-item:hover{color:var(--fg);background:rgba(124,58,237,.05)}
+.nav-item.active{color:#fff;border-left-color:var(--accent);background:rgba(124,58,237,.08)}
+
+.content{flex:1;max-width:860px;padding:32px 40px 80px}
+.breadcrumb{font-size:.8rem;color:var(--fg2);margin-bottom:24px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.breadcrumb a{color:var(--fg2)}
+.breadcrumb a:hover{color:var(--accent)}
+.breadcrumb .sep{opacity:.4}
+
+.doc h1{font-size:2rem;color:#fff;font-weight:700;letter-spacing:-.02em;margin-bottom:8px;line-height:1.3}
+.doc h1:first-child{margin-top:0}
+.doc h2{font-size:1.4rem;color:#fff;font-weight:600;margin:40px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.doc h3{font-size:1.1rem;color:#fff;font-weight:600;margin:28px 0 8px}
+.doc h4{font-size:.95rem;color:var(--fg);font-weight:600;margin:24px 0 6px}
+.doc p{margin:0 0 16px;color:var(--fg)}
+.doc ul,.doc ol{margin:0 0 16px 24px;color:var(--fg)}
+.doc li{margin-bottom:4px}
+.doc li>p{margin-bottom:8px}
+.doc strong{color:#fff;font-weight:600}
+.doc em{color:var(--fg2);font-style:italic}
+.doc code{font-family:var(--mono);background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-size:.85em;color:#a78bfa}
+.doc pre{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:20px 24px;overflow-x:auto;font-size:.85rem;line-height:1.7;margin:0 0 20px}
+.doc pre code{background:none;border:none;padding:0;color:var(--fg);font-size:inherit}
+.doc blockquote{border-left:3px solid var(--accent);padding:12px 20px;margin:0 0 20px;background:rgba(124,58,237,.05);border-radius:0 var(--radius) var(--radius) 0}
+.doc blockquote p{color:var(--fg2);margin-bottom:0}
+.doc blockquote p:last-child{margin-bottom:0}
+.doc hr{border:none;border-top:1px solid var(--border);margin:32px 0}
+.doc img{max-width:100%;border-radius:var(--radius);margin:8px 0 20px}
+.doc table{width:100%;border-collapse:collapse;margin:0 0 20px;font-size:.9rem}
+.doc thead th{text-align:left;padding:10px 14px;border-bottom:2px solid var(--border);color:var(--fg);font-weight:600;font-size:.8rem;text-transform:uppercase;letter-spacing:.04em}
+.doc tbody td{padding:10px 14px;border-bottom:1px solid var(--border);color:var(--fg)}
+.doc tbody tr:hover{background:rgba(124,58,237,.03)}
+.doc del{opacity:.5}
+
+.doc-footer{margin-top:48px;padding-top:24px;border-top:1px solid var(--border);font-size:.8rem;color:var(--fg2)}
+.doc-footer a{color:var(--fg2)}
+.doc-footer a:hover{color:var(--accent)}
+
+@media(max-width:900px){
+  .menu-btn{display:block}
+  .sidebar{position:fixed;top:52px;left:-280px;height:calc(100vh - 52px);z-index:90;transition:left .25s ease;box-shadow:none}
+  .sidebar.open{left:0;box-shadow:4px 0 24px rgba(0,0,0,.4)}
+  .sidebar-overlay{display:none;position:fixed;top:52px;left:0;right:0;bottom:0;z-index:89;background:rgba(0,0,0,.4)}
+  .sidebar-overlay.open{display:block}
+  .content{padding:24px 20px 60px}
+}
+@media(max-width:600px){
+  .topnav-links{display:none}
+  .doc h1{font-size:1.5rem}
+  .doc h2{font-size:1.2rem}
+}
+</style>
+</head>
+<body>
+
+<nav class="topnav">
+  <div class="topnav-inner">
+    <a href="index.html" class="topnav-logo">/suture<span>/</span></a>
+    <div class="topnav-links">
+      <a href="index.html">Home</a>
+      <a href="quickstart.html">Docs</a>
+      <a href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">GitHub</a>
+    </div>
+    <button class="menu-btn" onclick="toggleSidebar()" aria-label="Menu">&#9776;</button>
+  </div>
+</nav>
+
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <a href="index.html" class="sidebar-home">&larr; Back to Home</a>
+<div class="nav-group">
+<div class="nav-group-title">Getting Started</div>
+<a href="getting_started.html" class="nav-item">Getting Started with Suture</a>
+<a href="quickstart.html" class="nav-item">Quickstart: Stop Losing Work to Google Drive</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Core Concepts</div>
+<a href="comparing-with-git.html" class="nav-item">Suture vs. Git: When to Use What</a>
+<a href="comparison.html" class="nav-item">Suture vs Other Version Control Systems</a>
+<a href="semantic-merge.html" class="nav-item">Semantic Merge</a>
+<a href="why-suture.html" class="nav-item">Why Suture?</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Reference</div>
+<a href="api_reference.html" class="nav-item">API Reference</a>
+<a href="cli-reference.html" class="nav-item">CLI Reference</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Merge Drivers</div>
+<a href="driver_sdk.html" class="nav-item">Driver SDK</a>
+<a href="git_merge_driver.html" class="nav-item">Git Merge Driver</a>
+<a href="merge-driver-guide.html" class="nav-item">Suture Merge Driver Guide</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Integration</div>
+<a href="github-action.html" class="nav-item">Suture Semantic Merge GitHub Action</a>
+<a href="ide-integration.html" class="nav-item active">IDE Integration</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Guides</div>
+<a href="data-science.html" class="nav-item">Suture for Data Science</a>
+<a href="document-authors.html" class="nav-item">Suture for Document Authors</a>
+<a href="video-editors.html" class="nav-item">Suture for Video Editors</a>
+<a href="video-merge-guide.html" class="nav-item">Video Merge Guide: Version Control for OTIO Timelines</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Onboarding</div>
+<a href="onboarding-defence.html" class="nav-item">Suture VCS — Defence Contractor Onboarding Guide</a>
+<a href="onboarding-film.html" class="nav-item">Suture VCS — Onboarding Guide for Film & TV Post-Production</a>
+<a href="onboarding-youtube.html" class="nav-item">Suture VCS — Onboarding Guide for YouTube Channel Managers & PE Firms</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Platform</div>
+<a href="desktop-build.html" class="nav-item">Building the Suture Desktop App</a>
+<a href="hub.html" class="nav-item">Suture Hub</a>
+<a href="wasm-feasibility.html" class="nav-item">WASM Feasibility Report: Suture Semantic Merge Engine</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Development</div>
+<a href="performance.html" class="nav-item">Suture Performance Baseline</a>
+<a href="release-notes.html" class="nav-item">Suture v2.9.0 — First Public Release</a>
+<a href="shipping-checklist.html" class="nav-item">Suture v2.9.0 Shipping Checklist</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Other</div>
+<a href="demo.html" class="nav-item">Suture Demo: Semantic Merge in 60 Seconds</a>
+</div>
+  </aside>
+  <main class="content">
+    <div class="breadcrumb">
+      <a href="index.html">Home</a>
+      <span class="sep">/</span>
+      <span>Docs</span>
+    </div>
+    <article class="doc">
+      <h1>IDE Integration</h1>
+<p>Set up Suture as a merge driver in VS Code and JetBrains IDEs so that merge conflicts in structured files (JSON, YAML, TOML, XML, DOCX, XLSX, PPTX, iCal, OTIO, and more) are resolved automatically at the semantic level.</p>
+<hr>
+<h2 id="vs-code-integration">VS Code Integration</h2>
+<h3 id="install-the-extension">Install the Extension</h3>
+<p>The Suture VS Code extension lives in <code>extensions/vscode/</code>. Install it from the VS Code Marketplace, or build from source:</p>
+<pre><code class="language-bash">cd extensions/vscode
+npm install
+npm run compile
+npx @vscode/vsce package
+code --install-extension suture-5.0.0.vsix
+</code></pre>
+<h3 id="workspace-configuration">Workspace Configuration</h3>
+<p>Create or update <code>.vscode/settings.json</code> in your project root:</p>
+<pre><code class="language-json">{
+  "suture.executablePath": "suture",
+  "suture.autoConfigure": true,
+  "git.mergeDriver": "suture",
+  "git.mergeEditor": true
+}
+</code></pre>
+<thead><tr><th>Setting</th><th>Default</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>suture.executablePath</code></td><td><code>"suture"</code></td><td>Path to the <code>suture</code> binary. Use an absolute path if it's not on your PATH.</td></tr>
+<tr><td><code>suture.autoConfigure</code></td><td><code>false</code></td><td>Automatically registers Suture as the merge driver when a <code>.suture</code> directory is detected.</td></tr>
+</tbody>
+</table>
+<h3 id="register-suture-as-the-merge-tool">Register Suture as the Merge Tool</h3>
+<p>Use the command palette (<code>Ctrl+Shift+P</code> / <code>Cmd+Shift+P</code>) to run one of:</p>
+<ul>
+<li><strong>Suture: Configure Git Merge Driver</strong> — registers the driver in <code>.git/config</code></li>
+<li><strong>Suture: Enable Semantic Merge for JSON</strong> — configures <code>.gitattributes</code> for <code>.json</code> files only</li>
+<li><strong>Suture: Enable Semantic Merge for YAML</strong> — configures <code>.gitattributes</code> for <code>.yaml</code>/<code>.yml</code> files only</li>
+<li><strong>Suture: Enable Semantic Merge for All Formats</strong> — configures <code>.gitattributes</code> for all 20+ supported formats</li>
+</ul>
+<h3 id="workflow">Workflow</h3>
+<ol>
+<li>Two branches edit different fields in the same structured file (e.g., one changes <code>database.host</code>, the other changes <code>cache.ttl</code> in <code>config.json</code>).</li>
+<li>You run <strong>Git: Merge Branch</strong> in VS Code (or use the Source Control view).</li>
+<li>Git detects a line-level conflict and invokes the Suture merge driver.</li>
+<li>Suture parses the file semantically, applies both sets of changes, and writes the merged result.</li>
+<li>VS Code shows the file as resolved — no conflict markers, no manual editing.</li>
+</ol>
+<p>For binary formats (DOCX, XLSX, PPTX), the extension also sets <code>merge.suture.recursive</code> to <code>binary</code> automatically so Git passes those files to the driver instead of marking them unmergeable.</p>
+<hr>
+<h2 id="jetbrains-integration">JetBrains Integration</h2>
+<p>Suture has a native JetBrains plugin (<code>jetbrains-plugin/</code>) compatible with IntelliJ IDEA, PyCharm, WebStorm, and other JetBrains IDEs built on the 2024.2+ platform.</p>
+<h3 id="install-the-plugin">Install the Plugin</h3>
+<p>Build from source or install from the JetBrains Marketplace:</p>
+<pre><code class="language-bash">cd jetbrains-plugin
+./gradlew buildPlugin
+# Install: Settings &gt; Plugins &gt; Gear Icon &gt; Install Plugin from Disk...
+# Select: build/distributions/suture-1.0.0.zip
+</code></pre>
+<h3 id="configure-as-external-merge-tool">Configure as External Merge Tool</h3>
+<ol>
+<li>Open <strong>Settings > Version Control > Git</strong>.</li>
+<li>Set <strong>Path to Git</strong> if Git is not already detected.</li>
+<li>Expand <strong>Settings > Version Control > Diff & Merge > External Merge Tools</strong>.</li>
+<li>Click <strong>+</strong> to add a new tool:</li>
+</ol>
+<thead><tr><th>Field</th><th>Value</th></tr></thead>
+<tbody>
+<tr><td>Name</td><td><code>Suture</code></td></tr>
+<tr><td>Program</td><td><code>/usr/local/bin/suture</code> (or path to your <code>suture</code> binary)</td></tr>
+<tr><td>Arguments</td><td><code>merge-file --driver auto %base %local %other --label-ours %local.title --label-theirs %other.title -o %merged</code></td></tr>
+</tbody>
+</table>
+<p>If the <code>suture</code> binary is on your PATH, you can use <code>suture</code> as the program name without a full path.</p>
+<h3 id="three-way-merge-arguments">Three-Way Merge Arguments</h3>
+<p>The JetBrains merge tool passes these placeholders:</p>
+<thead><tr><th>Placeholder</th><th>Git equivalent</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>%base</code></td><td><code>%O</code></td><td>Common ancestor</td></tr>
+<tr><td><code>%local</code></td><td><code>%A</code></td><td>Your changes (ours)</td></tr>
+<tr><td><code>%other</code></td><td><code>%B</code></td><td>Their changes (theirs)</td></tr>
+<tr><td><code>%merged</code></td><td>(stdout)</td><td>Output path for the resolved file</td></tr>
+</tbody>
+</table>
+<p>For the native Suture CLI:</p>
+<pre><code>
+merge-file --driver auto %base %local %other -o %merged
+</code></pre>
+<p>For the npm <code>suture-merge-driver</code> wrapper:</p>
+<pre><code>
+merge-file %base %local %other
+</code></pre>
+<p>The npm driver writes the result to the <code>%local</code> file in-place (matching Git's <code>%A</code> convention), so <code>%merged</code> should point to the same path or you should copy the result afterward.</p>
+<h3 id="set-suture-as-default-merge-tool">Set Suture as Default Merge Tool</h3>
+<p>After adding the tool, go to <strong>Settings > Version Control > Diff & Merge</strong> and set:</p>
+<ul>
+<li><strong>Merge tool</strong>: <code>Suture</code></li>
+</ul>
+<p>Now JetBrains will invoke Suture for all merge conflicts, including those triggered during rebase, cherry-pick, and patch apply operations.</p>
+<hr>
+<h2 id="git-interop">Git Interop</h2>
+<p>For teams that use Git alongside Suture, configure Suture as a Git merge driver so that <code>git merge</code>, <code>git rebase</code>, and <code>git cherry-pick</code> all benefit from semantic conflict resolution.</p>
+<h3 id="quick-setup">Quick Setup</h3>
+<pre><code class="language-bash">cargo install suture-cli
+suture git driver install
+</code></pre>
+<p>This registers the driver and writes <code>.gitattributes</code> for all supported formats in one step.</p>
+<h3 id="manual-setup">Manual Setup</h3>
+<p>If you prefer manual configuration or are distributing setup across a team:</p>
+<pre><code class="language-bash"># Register the merge driver in git config
+git config merge.suture.name "Suture semantic merge"
+git config merge.suture.driver "suture-merge-driver %O %A %B %P"
+git config merge.suture.recursive binary
+</code></pre>
+<p>The <code>suture-merge-driver</code> npm package provides the thin wrapper that Git invokes. Install it globally:</p>
+<pre><code class="language-bash">npm install -g suture-merge-driver
+</code></pre>
+<p>Or use the full CLI directly:</p>
+<pre><code class="language-bash">git config merge.suture.driver "suture merge-file --driver auto %O %A %B %P"
+</code></pre>
+<h3 id="example-gitattributes">Example .gitattributes</h3>
+<pre><code class="language-gitattributes"># Data serialization formats
+*.json merge=suture
+*.jsonl merge=suture
+*.yaml merge=suture
+*.yml merge=suture
+*.toml merge=suture
+*.csv merge=suture
+*.tsv merge=suture
+*.xml merge=suture
+*.xsl merge=suture
+*.svg merge=suture
+
+# Documents
+*.md merge=suture
+*.docx merge=suture
+*.docm merge=suture
+*.xlsx merge=suture
+*.pptx merge=suture
+
+# Media and timelines
+*.otio merge=suture
+*.ics merge=suture
+
+# Path-restricted patterns
+kubernetes/*.yaml merge=suture
+configs/*.toml merge=suture
+
+# Exclude generated files from semantic merge
+generated/*.json merge=default
+</code></pre>
+<p>Commit <code>.gitattributes</code> so the entire team uses the same configuration.</p>
+<hr>
+<h2 id="merge-driver-configuration">Merge Driver Configuration</h2>
+<h3 id="format-specific-driver-selection">Format-Specific Driver Selection</h3>
+<p>The merge driver detects file format automatically from the extension. You can override this per-pattern in <code>.gitattributes</code>:</p>
+<pre><code class="language-bash"># Use the JSON driver for all files in this directory regardless of extension
+git config merge.suture-json.name "Suture JSON merge"
+git config merge.suture-json.driver "suture merge-file --driver json %O %A %B %P"
+
+# In .gitattributes
+secrets/* merge=suture-json
+</code></pre>
+<p>Available drivers: <code>json</code>, <code>yaml</code>, <code>toml</code>, <code>csv</code>, <code>xml</code>, <code>markdown</code>, <code>docx</code>, <code>xlsx</code>, <code>pptx</code>, <code>otio</code>, <code>ical</code>, <code>auto</code> (default — detects from extension).</p>
+<h3 id="conflict-resolution-strategies">Conflict Resolution Strategies</h3>
+<p>Control how Suture handles semantic conflicts (both sides changed the same element) with the <code>SUTURE_MERGE_STRATEGY</code> environment variable:</p>
+<pre><code class="language-bash"># Default: semantic merge with line-based fallback for unresolvable conflicts
+SUTURE_MERGE_STRATEGY=semantic git merge feature-branch
+
+# Always keep "ours" on conflict; still merge non-conflicting changes from both sides
+SUTURE_MERGE_STRATEGY=ours git merge feature-branch
+
+# Always take "theirs" on conflict
+SUTURE_MERGE_STRATEGY=theirs git merge feature-branch
+</code></pre>
+<p>For a single merge without affecting future merges:</p>
+<pre><code class="language-bash">git -c merge.suture.name="Suture" \
+    -c merge.suture.driver="SUTURE_MERGE_STRATEGY=ours suture-merge-driver %O %A %B %P" \
+    merge feature-branch
+</code></pre>
+<h3 id="environment-variables">Environment Variables</h3>
+<thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>SUTURE_MERGE_STRATEGY</code></td><td><code>semantic</code></td><td>Conflict resolution strategy: <code>semantic</code>, <code>ours</code>, or <code>theirs</code></td></tr>
+<tr><td><code>SUTURE_PATH</code></td><td>(auto-detected)</td><td>Path to the <code>suture</code> binary</td></tr>
+<tr><td><code>SUTURE_LOG_LEVEL</code></td><td><code>warn</code></td><td>Log verbosity: <code>error</code>, <code>warn</code>, <code>info</code>, <code>debug</code>, <code>trace</code></td></tr>
+<tr><td><code>SUTURE_CONFLICT_DIR</code></td><td><code>.suture_conflicts</code></td><td>Directory for conflict reports on binary formats</td></tr>
+<tr><td><code>SUTURE_DRIVER</code></td><td><code>auto</code></td><td>Override automatic format detection</td></tr>
+<tr><td><code>SUTURE_IGNORE_UNKNOWN_KEYS</code></td><td><code>false</code></td><td>If <code>true</code>, unknown keys during merge are silently preserved rather than flagged</td></tr>
+</tbody>
+</table>
+<h3 id="verification">Verification</h3>
+<p>After setup, confirm everything is wired correctly:</p>
+<pre><code class="language-bash">git config --get merge.suture.driver
+# suture-merge-driver %O %A %B %P
+
+git check-attr -a -- config.json
+# config.json: merge: suture
+
+suture merge-file --driver json --version
+# suture-merge-driver 5.0.0
+</code></pre>
+    </article>
+    <div class="doc-footer">
+      <a href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">GitHub</a> &middot;
+      <a href="https://github.com/WyattAu/suture/blob/main/LICENSE" target="_blank" rel="noopener">Apache-2.0</a>
+    </div>
+  </main>
+</div>
+
+<script>
+function toggleSidebar(){
+  document.getElementById("sidebar").classList.toggle("open");
+  document.getElementById("sidebarOverlay").classList.toggle("open");
+}
+</script>
+</body>
+</html>

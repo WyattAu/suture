@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Suture Hub — Suture</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a2e;
+  --fg:#e2e2f0;--fg2:#8888a8;
+  --accent:#7c3aed;--accent2:#3b82f6;--accent-grad:linear-gradient(135deg,#7c3aed,#3b82f6);
+  --border:#2a2a3e;
+  --mono:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+  --radius:12px;
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);line-height:1.7;overflow-x:hidden}
+a{color:var(--accent);text-decoration:none;transition:color .15s}
+a:hover{color:#a78bfa}
+
+.topnav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(10,10,15,.85);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);height:52px;display:flex;align-items:center;padding:0 20px}
+.topnav-inner{max-width:1400px;width:100%;margin:0 auto;display:flex;align-items:center;justify-content:space-between}
+.topnav-logo{font-family:var(--mono);font-weight:800;font-size:1.1rem;color:#fff;display:flex;align-items:center;gap:8px}
+.topnav-logo span{color:var(--accent)}
+.topnav-links{display:flex;gap:20px;align-items:center}
+.topnav-links a{color:var(--fg2);font-size:.85rem}
+.topnav-links a:hover{color:#fff}
+.menu-btn{display:none;background:none;border:1px solid var(--border);color:var(--fg);padding:6px 10px;border-radius:6px;cursor:pointer;font-size:1.1rem;line-height:1}
+
+.layout{display:flex;margin-top:52px;min-height:calc(100vh - 52px)}
+
+.sidebar{width:260px;min-width:260px;background:var(--bg2);border-right:1px solid var(--border);height:calc(100vh - 52px);position:sticky;top:52px;overflow-y:auto;padding:20px 0}
+.sidebar::-webkit-scrollbar{width:4px}
+.sidebar::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.sidebar-home{display:block;padding:8px 20px;color:var(--fg2);font-size:.8rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
+.sidebar-home:hover{color:var(--fg)}
+.nav-group{margin-bottom:4px}
+.nav-group-title{padding:8px 20px 4px;font-size:.7rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--fg2);opacity:.7}
+.nav-item{display:block;padding:6px 20px 6px 28px;color:var(--fg2);font-size:.85rem;border-left:2px solid transparent;transition:all .15s}
+.nav-item:hover{color:var(--fg);background:rgba(124,58,237,.05)}
+.nav-item.active{color:#fff;border-left-color:var(--accent);background:rgba(124,58,237,.08)}
+
+.content{flex:1;max-width:860px;padding:32px 40px 80px}
+.breadcrumb{font-size:.8rem;color:var(--fg2);margin-bottom:24px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.breadcrumb a{color:var(--fg2)}
+.breadcrumb a:hover{color:var(--accent)}
+.breadcrumb .sep{opacity:.4}
+
+.doc h1{font-size:2rem;color:#fff;font-weight:700;letter-spacing:-.02em;margin-bottom:8px;line-height:1.3}
+.doc h1:first-child{margin-top:0}
+.doc h2{font-size:1.4rem;color:#fff;font-weight:600;margin:40px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.doc h3{font-size:1.1rem;color:#fff;font-weight:600;margin:28px 0 8px}
+.doc h4{font-size:.95rem;color:var(--fg);font-weight:600;margin:24px 0 6px}
+.doc p{margin:0 0 16px;color:var(--fg)}
+.doc ul,.doc ol{margin:0 0 16px 24px;color:var(--fg)}
+.doc li{margin-bottom:4px}
+.doc li>p{margin-bottom:8px}
+.doc strong{color:#fff;font-weight:600}
+.doc em{color:var(--fg2);font-style:italic}
+.doc code{font-family:var(--mono);background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-size:.85em;color:#a78bfa}
+.doc pre{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:20px 24px;overflow-x:auto;font-size:.85rem;line-height:1.7;margin:0 0 20px}
+.doc pre code{background:none;border:none;padding:0;color:var(--fg);font-size:inherit}
+.doc blockquote{border-left:3px solid var(--accent);padding:12px 20px;margin:0 0 20px;background:rgba(124,58,237,.05);border-radius:0 var(--radius) var(--radius) 0}
+.doc blockquote p{color:var(--fg2);margin-bottom:0}
+.doc blockquote p:last-child{margin-bottom:0}
+.doc hr{border:none;border-top:1px solid var(--border);margin:32px 0}
+.doc img{max-width:100%;border-radius:var(--radius);margin:8px 0 20px}
+.doc table{width:100%;border-collapse:collapse;margin:0 0 20px;font-size:.9rem}
+.doc thead th{text-align:left;padding:10px 14px;border-bottom:2px solid var(--border);color:var(--fg);font-weight:600;font-size:.8rem;text-transform:uppercase;letter-spacing:.04em}
+.doc tbody td{padding:10px 14px;border-bottom:1px solid var(--border);color:var(--fg)}
+.doc tbody tr:hover{background:rgba(124,58,237,.03)}
+.doc del{opacity:.5}
+
+.doc-footer{margin-top:48px;padding-top:24px;border-top:1px solid var(--border);font-size:.8rem;color:var(--fg2)}
+.doc-footer a{color:var(--fg2)}
+.doc-footer a:hover{color:var(--accent)}
+
+@media(max-width:900px){
+  .menu-btn{display:block}
+  .sidebar{position:fixed;top:52px;left:-280px;height:calc(100vh - 52px);z-index:90;transition:left .25s ease;box-shadow:none}
+  .sidebar.open{left:0;box-shadow:4px 0 24px rgba(0,0,0,.4)}
+  .sidebar-overlay{display:none;position:fixed;top:52px;left:0;right:0;bottom:0;z-index:89;background:rgba(0,0,0,.4)}
+  .sidebar-overlay.open{display:block}
+  .content{padding:24px 20px 60px}
+}
+@media(max-width:600px){
+  .topnav-links{display:none}
+  .doc h1{font-size:1.5rem}
+  .doc h2{font-size:1.2rem}
+}
+</style>
+</head>
+<body>
+
+<nav class="topnav">
+  <div class="topnav-inner">
+    <a href="index.html" class="topnav-logo">/suture<span>/</span></a>
+    <div class="topnav-links">
+      <a href="index.html">Home</a>
+      <a href="quickstart.html">Docs</a>
+      <a href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">GitHub</a>
+    </div>
+    <button class="menu-btn" onclick="toggleSidebar()" aria-label="Menu">&#9776;</button>
+  </div>
+</nav>
+
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <a href="index.html" class="sidebar-home">&larr; Back to Home</a>
+<div class="nav-group">
+<div class="nav-group-title">Getting Started</div>
+<a href="getting_started.html" class="nav-item">Getting Started with Suture</a>
+<a href="quickstart.html" class="nav-item">Quickstart: Stop Losing Work to Google Drive</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Core Concepts</div>
+<a href="comparing-with-git.html" class="nav-item">Suture vs. Git: When to Use What</a>
+<a href="comparison.html" class="nav-item">Suture vs Other Version Control Systems</a>
+<a href="semantic-merge.html" class="nav-item">Semantic Merge</a>
+<a href="why-suture.html" class="nav-item">Why Suture?</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Reference</div>
+<a href="api_reference.html" class="nav-item">API Reference</a>
+<a href="cli-reference.html" class="nav-item">CLI Reference</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Merge Drivers</div>
+<a href="driver_sdk.html" class="nav-item">Driver SDK</a>
+<a href="git_merge_driver.html" class="nav-item">Git Merge Driver</a>
+<a href="merge-driver-guide.html" class="nav-item">Suture Merge Driver Guide</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Integration</div>
+<a href="github-action.html" class="nav-item">Suture Semantic Merge GitHub Action</a>
+<a href="ide-integration.html" class="nav-item">IDE Integration</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Guides</div>
+<a href="data-science.html" class="nav-item">Suture for Data Science</a>
+<a href="document-authors.html" class="nav-item">Suture for Document Authors</a>
+<a href="video-editors.html" class="nav-item">Suture for Video Editors</a>
+<a href="video-merge-guide.html" class="nav-item">Video Merge Guide: Version Control for OTIO Timelines</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Onboarding</div>
+<a href="onboarding-defence.html" class="nav-item">Suture VCS — Defence Contractor Onboarding Guide</a>
+<a href="onboarding-film.html" class="nav-item">Suture VCS — Onboarding Guide for Film & TV Post-Production</a>
+<a href="onboarding-youtube.html" class="nav-item">Suture VCS — Onboarding Guide for YouTube Channel Managers & PE Firms</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Platform</div>
+<a href="desktop-build.html" class="nav-item">Building the Suture Desktop App</a>
+<a href="hub.html" class="nav-item active">Suture Hub</a>
+<a href="wasm-feasibility.html" class="nav-item">WASM Feasibility Report: Suture Semantic Merge Engine</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Development</div>
+<a href="performance.html" class="nav-item">Suture Performance Baseline</a>
+<a href="release-notes.html" class="nav-item">Suture v2.9.0 — First Public Release</a>
+<a href="shipping-checklist.html" class="nav-item">Suture v2.9.0 Shipping Checklist</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Other</div>
+<a href="demo.html" class="nav-item">Suture Demo: Semantic Merge in 60 Seconds</a>
+</div>
+  </aside>
+  <main class="content">
+    <div class="breadcrumb">
+      <a href="index.html">Home</a>
+      <span class="sep">/</span>
+      <span>Docs</span>
+    </div>
+    <article class="doc">
+      <h1>Suture Hub</h1>
+<p>Suture Hub is a self-hosted collaboration server for Suture repositories. It provides a web UI, HTTP API, and gRPC access for push/pull, repository browsing, user management, and replication.</p>
+<h2 id="starting-a-hub">Starting a Hub</h2>
+<pre><code class="language-bash">suture-hub --db hub.db
+# Web UI at http://localhost:50051
+# API at http://localhost:50051/api/v2
+</code></pre>
+<p>Flags:</p>
+<thead><tr><th>Flag</th><th>Default</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>--addr</code></td><td><code>0.0.0.0:50051</code></td><td>Bind address</td></tr>
+<tr><td><code>--db</code></td><td>in-memory</td><td>SQLite database file path</td></tr>
+<tr><td><code>--replication-role</code></td><td><code>standalone</code></td><td><code>standalone</code>, <code>leader</code>, or <code>follower</code></td></tr>
+</tbody>
+</table>
+<p>Omit <code>--db</code> for in-memory storage (useful for testing). Use <code>--db hub.db</code> for persistent storage.</p>
+<h2 id="authentication">Authentication</h2>
+<p>When a hub has no users or tokens, all operations are open. Once the first user is created, authentication is required.</p>
+<h3 id="create-a-user-admin-only">Create a User (Admin Only)</h3>
+<pre><code class="language-bash">curl -X POST http://localhost:50051/auth/register \
+  -H "Authorization: Bearer &lt;admin-token&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{"username": "alice", "display_name": "Alice", "role": "member"}'
+</code></pre>
+<p>Roles: <code>admin</code> (full access), <code>member</code> (push/pull), <code>reader</code> (pull only).</p>
+<h3 id="generate-an-api-token">Generate an API Token</h3>
+<pre><code class="language-bash">curl -X POST http://localhost:50051/auth/token \
+  -H "Authorization: Bearer &lt;admin-token&gt;"
+</code></pre>
+<h3 id="cli-login">CLI Login</h3>
+<pre><code class="language-bash">suture remote add origin http://localhost:50051
+suture remote login
+</code></pre>
+<h3 id="ed25519-key-authentication">Ed25519 Key Authentication</h3>
+<p>Generate a keypair and register the public key with the hub. Pushes signed with the corresponding private key are verified automatically.</p>
+<pre><code class="language-bash">suture key generate
+</code></pre>
+<h2 id="pushing-and-pulling">Pushing and Pulling</h2>
+<h3 id="cli">CLI</h3>
+<pre><code class="language-bash">suture remote add origin http://localhost:50051
+suture push
+suture pull
+suture clone http://localhost:50051/my-repo
+</code></pre>
+<h3 id="api">API</h3>
+<p><strong>Push:</strong></p>
+<pre><code class="language-bash">curl -X POST http://localhost:50051/push \
+  -H "Authorization: Bearer &lt;token&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "repo_id": "my-repo",
+    "patches": [...],
+    "branches": [...],
+    "blobs": [...]
+  }'
+</code></pre>
+<p><strong>Pull:</strong></p>
+<pre><code class="language-bash">curl -X POST http://localhost:50051/pull \
+  -H "Authorization: Bearer &lt;token&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "repo_id": "my-repo",
+    "known_branches": [...]
+  }'
+</code></pre>
+<h3 id="protocol-v2-delta-transfer">Protocol V2 (Delta Transfer)</h3>
+<p>Suture Hub supports delta-based transfer for efficient syncs when both sides share common blobs.</p>
+<pre><code class="language-bash"># Handshake to discover capabilities
+curl -X POST http://localhost:50051/v2/handshake \
+  -H "Content-Type: application/json" \
+  -d '{"client_version": 2}'
+</code></pre>
+<p>Response includes <code>server_capabilities</code> with <code>supports_delta</code> and <code>supports_compression</code> flags.</p>
+<h2 id="web-ui">Web UI</h2>
+<p>Open <code>http://localhost:50051</code> in a browser. Features:</p>
+<ul>
+<li><strong>Repository list</strong> -- browse all repositories</li>
+<li><strong>File tree</strong> -- navigate files at any branch (<code>/repos/{id}/tree/{branch}</code>)</li>
+<li><strong>Branch browser</strong> -- view branches and their targets</li>
+<li><strong>Patch history</strong> -- paginated commit log with cursor-based pagination</li>
+<li><strong>Branch protection</strong> -- prevent force-push on protected branches</li>
+<li><strong>Search</strong> -- search repositories and patches by keyword</li>
+</ul>
+<h2 id="mirrors">Mirrors</h2>
+<p>Mirror a remote repository locally for redundancy or faster access.</p>
+<h3 id="setup-a-mirror">Setup a Mirror</h3>
+<pre><code class="language-bash">curl -X POST http://localhost:50051/mirror/setup \
+  -H "Content-Type: application/json" \
+  -d '{
+    "repo_name": "local-copy",
+    "upstream_url": "http://upstream-hub:50051",
+    "upstream_repo": "upstream-repo"
+  }'
+</code></pre>
+<h3 id="sync-a-mirror">Sync a Mirror</h3>
+<pre><code class="language-bash">curl -X POST http://localhost:50051/mirror/sync \
+  -H "Content-Type: application/json" \
+  -d '{"mirror_id": 1}'
+</code></pre>
+<h3 id="check-mirror-status">Check Mirror Status</h3>
+<pre><code class="language-bash">curl http://localhost:50051/mirror/status
+</code></pre>
+<h3 id="cli-mirror">CLI Mirror</h3>
+<pre><code class="language-bash">suture remote mirror http://upstream/repo upstream-name
+</code></pre>
+<h2 id="replication">Replication</h2>
+<p>Suture Hub supports leader-follower replication for high availability.</p>
+<p><strong>Leader</strong> (<code>--replication-role leader</code>):</p>
+<ul>
+<li>Pushes replication log entries to followers every 30 seconds</li>
+<li>Accepts peer management requests</li>
+</ul>
+<p><strong>Follower</strong> (<code>--replication-role follower</code>):</p>
+<ul>
+<li>Accepts replication entries from the leader</li>
+<li>Read-only for replication sync endpoint</li>
+</ul>
+<p><strong>Standalone</strong> (default):</p>
+<ul>
+<li>No replication; works independently</li>
+</ul>
+<h3 id="manage-peers-leader-only">Manage Peers (Leader Only)</h3>
+<pre><code class="language-bash"># Add a follower
+curl -X POST http://localhost:50051/replication/peers \
+  -H "Content-Type: application/json" \
+  -d '{"peer_url": "http://follower:50051", "role": "follower"}'
+
+# List peers
+curl http://localhost:50051/replication/peers
+
+# Remove a peer
+curl -X DELETE http://localhost:50051/replication/peers/1
+
+# Check replication status
+curl http://localhost:50051/replication/status
+</code></pre>
+<h2 id="api-reference">API Reference</h2>
+<h3 id="repositories">Repositories</h3>
+<thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>GET</td><td><code>/repos</code></td><td>List all repositories</td></tr>
+<tr><td>POST</td><td><code>/repos</code></td><td>Create a repository</td></tr>
+<tr><td>GET</td><td><code>/repo/{id}</code></td><td>Repository info (patch count, branches)</td></tr>
+<tr><td>DELETE</td><td><code>/repos/{id}</code></td><td>Delete a repository</td></tr>
+</tbody>
+</table>
+<h3 id="branches">Branches</h3>
+<thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>GET</td><td><code>/repos/{id}/branches</code></td><td>List branches</td></tr>
+<tr><td>POST</td><td><code>/repos/{id}/branches</code></td><td>Create a branch</td></tr>
+<tr><td>DELETE</td><td><code>/repos/{id}/branches/{name}</code></td><td>Delete a branch</td></tr>
+<tr><td>POST</td><td><code>/repos/{id}/protect/{branch}</code></td><td>Protect a branch</td></tr>
+<tr><td>POST</td><td><code>/repos/{id}/unprotect/{branch}</code></td><td>Unprotect a branch</td></tr>
+</tbody>
+</table>
+<h3 id="content">Content</h3>
+<thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>GET</td><td><code>/repos/{id}/tree/{branch}</code></td><td>File tree at branch</td></tr>
+<tr><td>GET</td><td><code>/repos/{id}/blobs/{hash}</code></td><td>Get blob content (base64)</td></tr>
+<tr><td>GET</td><td><code>/repos/{id}/patches</code></td><td>Paginated patch history</td></tr>
+</tbody>
+</table>
+<h3 id="sync">Sync</h3>
+<thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>POST</td><td><code>/push</code></td><td>Push patches (v1)</td></tr>
+<tr><td>POST</td><td><code>/pull</code></td><td>Pull patches (v1)</td></tr>
+<tr><td>POST</td><td><code>/push/compressed</code></td><td>Push with Zstd compression</td></tr>
+<tr><td>POST</td><td><code>/pull/compressed</code></td><td>Pull with Zstd compression</td></tr>
+<tr><td>POST</td><td><code>/v2/push</code></td><td>Push with delta transfer (v2)</td></tr>
+<tr><td>POST</td><td><code>/v2/pull</code></td><td>Pull with delta transfer (v2)</td></tr>
+</tbody>
+</table>
+<h3 id="auth">Auth</h3>
+<thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>POST</td><td><code>/auth/token</code></td><td>Generate API token</td></tr>
+<tr><td>POST</td><td><code>/auth/verify</code></td><td>Verify a token</td></tr>
+<tr><td>POST</td><td><code>/auth/login</code></td><td>Login with username + token</td></tr>
+<tr><td>POST</td><td><code>/auth/register</code></td><td>Create a user (admin only)</td></tr>
+</tbody>
+</table>
+<h3 id="users">Users</h3>
+<thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>GET</td><td><code>/users</code></td><td>List users (admin only)</td></tr>
+<tr><td>GET</td><td><code>/users/{username}</code></td><td>Get user info</td></tr>
+<tr><td>PATCH</td><td><code>/users/{username}/role</code></td><td>Update user role (admin only)</td></tr>
+<tr><td>DELETE</td><td><code>/users/{username}</code></td><td>Delete user (admin only)</td></tr>
+</tbody>
+</table>
+<h3 id="mirrors">Mirrors</h3>
+<thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>POST</td><td><code>/mirror/setup</code></td><td>Register a mirror</td></tr>
+<tr><td>POST</td><td><code>/mirror/sync</code></td><td>Sync a mirror</td></tr>
+<tr><td>GET</td><td><code>/mirror/status</code></td><td>Mirror status</td></tr>
+<tr><td>DELETE</td><td><code>/mirrors/{id}</code></td><td>Delete a mirror</td></tr>
+</tbody>
+</table>
+<h3 id="replication">Replication</h3>
+<thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>POST</td><td><code>/replication/peers</code></td><td>Add a replication peer (leader)</td></tr>
+<tr><td>GET</td><td><code>/replication/peers</code></td><td>List peers</td></tr>
+<tr><td>DELETE</td><td><code>/replication/peers/{id}</code></td><td>Remove a peer</td></tr>
+<tr><td>GET</td><td><code>/replication/status</code></td><td>Replication status</td></tr>
+<tr><td>POST</td><td><code>/replication/sync</code></td><td>Accept replication entries (follower)</td></tr>
+</tbody>
+</table>
+<h3 id="other">Other</h3>
+<thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>GET</td><td><code>/search?q=</code></td><td>Search repos and patches</td></tr>
+<tr><td>GET</td><td><code>/activity</code></td><td>Activity log (paginated)</td></tr>
+<tr><td>POST</td><td><code>/handshake</code></td><td>Protocol version handshake (v1)</td></tr>
+<tr><td>POST</td><td><code>/v2/handshake</code></td><td>Protocol version handshake (v2)</td></tr>
+</tbody>
+</table>
+<h2 id="grpc-access">gRPC Access</h2>
+<p>Suture Hub exposes a gRPC service alongside the HTTP API. See the <code>crates/suture-hub/grpc/</code> directory for service definitions.</p>
+<h2 id="rate-limits">Rate Limits</h2>
+<p>Default limits (configurable):</p>
+<thead><tr><th>Operation</th><th>Limit</th></tr></thead>
+<tbody>
+<tr><td>Pushes</td><td>100 per hour per IP</td></tr>
+<tr><td>Pulls</td><td>1000 per hour per IP</td></tr>
+<tr><td>Token creation</td><td>5 per minute per IP</td></tr>
+</tbody>
+</table>
+<p>Rate-limited responses include a <code>Retry-After</code> header.</p>
+    </article>
+    <div class="doc-footer">
+      <a href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">GitHub</a> &middot;
+      <a href="https://github.com/WyattAu/suture/blob/main/LICENSE" target="_blank" rel="noopener">Apache-2.0</a>
+    </div>
+  </main>
+</div>
+
+<script>
+function toggleSidebar(){
+  document.getElementById("sidebar").classList.toggle("open");
+  document.getElementById("sidebarOverlay").classList.toggle("open");
+}
+</script>
+</body>
+</html>

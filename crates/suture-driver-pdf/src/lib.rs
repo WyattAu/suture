@@ -7,6 +7,13 @@
 
 use suture_driver::{DriverError, SemanticChange, SutureDriver};
 
+/// Convert bytes to String, replacing invalid UTF-8 sequences with the Unicode replacement character.
+/// This is safe for binary formats where the content is stored as bytes but round-tripped
+/// through String for the driver interface.
+fn bytes_to_string_lossy(bytes: Vec<u8>) -> String {
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
 pub struct PdfDriver;
 
 impl PdfDriver {
@@ -295,11 +302,7 @@ impl SutureDriver for PdfDriver {
     fn merge(&self, base: &str, ours: &str, theirs: &str) -> Result<Option<String>, DriverError> {
         let bytes = self.merge_raw(base.as_bytes(), ours.as_bytes(), theirs.as_bytes())?;
         match bytes {
-            Some(b) => {
-                // SAFETY: PDF bytes round-trip through lopdf load/save.
-                // Written to disk as raw bytes, never interpreted as text.
-                Ok(Some(unsafe { String::from_utf8_unchecked(b) }))
-            }
+            Some(b) => Ok(Some(bytes_to_string_lossy(b))),
             None => Ok(None),
         }
     }
@@ -334,8 +337,8 @@ impl SutureDriver for PdfDriver {
         base: Option<&[u8]>,
         new_content: &[u8],
     ) -> Result<Vec<SemanticChange>, DriverError> {
-        let base_str = base.map(|b| unsafe { String::from_utf8_unchecked(b.to_vec()) });
-        let new_str = unsafe { String::from_utf8_unchecked(new_content.to_vec()) };
+        let base_str = base.map(|b| bytes_to_string_lossy(b.to_vec()));
+        let new_str = bytes_to_string_lossy(new_content.to_vec());
         self.diff(base_str.as_deref(), &new_str)
     }
 }

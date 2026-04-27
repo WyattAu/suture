@@ -11,14 +11,14 @@ const { createHash } = require("crypto");
 const { get } = require("https");
 const { pipeline } = require("stream/promises");
 
-const VERSION = "5.0.0";
+const VERSION = "5.0.1";
 const BASE_URL = `https://github.com/WyattAu/suture/releases/download/v${VERSION}`;
 
 const PLATFORMS = {
-  "linux-x64": "suture-linux-x64.tar.gz",
-  "darwin-x64": "suture-darwin-x64.tar.gz",
-  "darwin-arm64": "suture-darwin-arm64.tar.gz",
-  "win32-x64": "suture-windows-x64.tar.gz",
+  "linux-x64":    { file: "suture-x86_64-linux.tar.gz",    format: "tar.gz" },
+  "darwin-x64":   { file: "suture-x86_64-macos.tar.gz",   format: "tar.gz" },
+  "darwin-arm64": { file: "suture-aarch64-macos.tar.gz",  format: "tar.gz" },
+  "win32-x64":    { file: "suture-x86_64-windows.zip",    format: "zip" },
 };
 
 function detectPlatform() {
@@ -122,19 +122,58 @@ async function verifySha256(filePath, expectedHash) {
   }
 }
 
+async function extractZip(archivePath, destDir) {
+  // Minimal ZIP extraction using built-in modules (Store method only).
+  // ZIP format: local file headers followed by file data.
+  const { createReadStream } = require("fs");
+  const data = createReadStream(archivePath);
+  const chunks = [];
+  for await (const chunk of data) chunks.push(chunk);
+  const buf = Buffer.concat(chunks);
+  let offset = 0;
+
+  while (offset < buf.length - 4) {
+    const sig = buf.readUInt32LE(offset);
+    if (sig !== 0x04034b50) break; // Not a local file header
+    const nameLen = buf.readUInt16LE(offset + 26);
+    const extraLen = buf.readUInt16LE(offset + 28);
+    const compMethod = buf.readUInt16LE(offset + 8);
+    const compSize = buf.readUInt32LE(offset + 18);
+    const uncompSize = buf.readUInt32LE(offset + 22);
+    const name = buf.subarray(offset + 30, offset + 30 + nameLen).toString("utf8").replace(/\\/g, "/");
+    offset += 30 + nameLen + extraLen;
+
+    if (name.endsWith("/")) {
+      mkdirSync(join(destDir, name), { recursive: true });
+      offset += compSize;
+      continue;
+    }
+
+    const fileData = buf.subarray(offset, offset + compSize);
+    const outPath = join(destDir, name);
+    mkdirSync(dirname(outPath), { recursive: true });
+    require("fs").writeFileSync(outPath, compMethod === 0 ? fileData : require("zlib").inflateRawSync(fileData));
+    if (process.platform !== "win32") {
+      chmodSync(outPath, 0o755);
+    }
+    offset += compSize;
+  }
+}
+
 async function main() {
   const pkgDir = dirname(require("url").pathToFileURL(__filename).pathname.replace(/^file:/, ""));
   const platform = detectPlatform();
-  const archiveName = PLATFORMS[platform];
+  const platformInfo = PLATFORMS[platform];
+  const archiveName = platformInfo.file;
+  const archiveFormat = platformInfo.format;
   const archiveUrl = `${BASE_URL}/${archiveName}`;
-  const checksumsUrl = `${BASE_URL}/checksums.sha256`;
   const binDir = join(pkgDir, "binaries", platform);
 
   console.log(`suture-merge-driver: downloading suture ${VERSION} for ${platform}...`);
 
   mkdirSync(binDir, { recursive: true });
   const archivePath = join(binDir, archiveName);
-  const binPath = join(binDir, "suture");
+  const binPath = join(binDir, process.platform === "win32" ? "suture.exe" : "suture");
 
   // Already downloaded and executable
   if (existsSync(binPath) && statSync(binPath).size > 0) {
@@ -142,19 +181,17 @@ async function main() {
     return;
   }
 
-  // Download checksums first
+  // Download checksum first (per-asset .sha256 file)
   let expectedHash = "";
   try {
-    const checksums = await fetchText(checksumsUrl);
-    for (const line of checksums.split("\n")) {
-      const match = line.trim().match(/^([a-fA-F0-9]+)\s+/);
-      if (match && line.includes(archiveName)) {
-        expectedHash = match[1];
-        break;
-      }
+    const checksumUrl = `${BASE_URL}/${archiveName}.sha256`;
+    const checksumContent = await fetchText(checksumUrl);
+    const match = checksumContent.trim().match(/^([a-fA-F0-9]+)/);
+    if (match) {
+      expectedHash = match[1];
     }
   } catch {
-    console.warn("Warning: could not fetch checksums, skipping verification.");
+    console.warn("Warning: could not fetch checksum, skipping verification.");
   }
 
   await download(archiveUrl, archivePath);
@@ -164,7 +201,11 @@ async function main() {
     console.log("Checksum verified.");
   }
 
-  await extractTarGz(archivePath, binDir);
+  if (archiveFormat === "tar.gz") {
+    await extractTarGz(archivePath, binDir);
+  } else if (archiveFormat === "zip") {
+    await extractZip(archivePath, binDir);
+  }
 
   // Clean up archive
   require("fs").unlinkSync(archivePath);

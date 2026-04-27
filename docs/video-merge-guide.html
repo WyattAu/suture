@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Video Merge Guide: Version Control for OTIO Timelines — Suture</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a2e;
+  --fg:#e2e2f0;--fg2:#8888a8;
+  --accent:#7c3aed;--accent2:#3b82f6;--accent-grad:linear-gradient(135deg,#7c3aed,#3b82f6);
+  --border:#2a2a3e;
+  --mono:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+  --radius:12px;
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);line-height:1.7;overflow-x:hidden}
+a{color:var(--accent);text-decoration:none;transition:color .15s}
+a:hover{color:#a78bfa}
+
+.topnav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(10,10,15,.85);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);height:52px;display:flex;align-items:center;padding:0 20px}
+.topnav-inner{max-width:1400px;width:100%;margin:0 auto;display:flex;align-items:center;justify-content:space-between}
+.topnav-logo{font-family:var(--mono);font-weight:800;font-size:1.1rem;color:#fff;display:flex;align-items:center;gap:8px}
+.topnav-logo span{color:var(--accent)}
+.topnav-links{display:flex;gap:20px;align-items:center}
+.topnav-links a{color:var(--fg2);font-size:.85rem}
+.topnav-links a:hover{color:#fff}
+.menu-btn{display:none;background:none;border:1px solid var(--border);color:var(--fg);padding:6px 10px;border-radius:6px;cursor:pointer;font-size:1.1rem;line-height:1}
+
+.layout{display:flex;margin-top:52px;min-height:calc(100vh - 52px)}
+
+.sidebar{width:260px;min-width:260px;background:var(--bg2);border-right:1px solid var(--border);height:calc(100vh - 52px);position:sticky;top:52px;overflow-y:auto;padding:20px 0}
+.sidebar::-webkit-scrollbar{width:4px}
+.sidebar::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.sidebar-home{display:block;padding:8px 20px;color:var(--fg2);font-size:.8rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
+.sidebar-home:hover{color:var(--fg)}
+.nav-group{margin-bottom:4px}
+.nav-group-title{padding:8px 20px 4px;font-size:.7rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--fg2);opacity:.7}
+.nav-item{display:block;padding:6px 20px 6px 28px;color:var(--fg2);font-size:.85rem;border-left:2px solid transparent;transition:all .15s}
+.nav-item:hover{color:var(--fg);background:rgba(124,58,237,.05)}
+.nav-item.active{color:#fff;border-left-color:var(--accent);background:rgba(124,58,237,.08)}
+
+.content{flex:1;max-width:860px;padding:32px 40px 80px}
+.breadcrumb{font-size:.8rem;color:var(--fg2);margin-bottom:24px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.breadcrumb a{color:var(--fg2)}
+.breadcrumb a:hover{color:var(--accent)}
+.breadcrumb .sep{opacity:.4}
+
+.doc h1{font-size:2rem;color:#fff;font-weight:700;letter-spacing:-.02em;margin-bottom:8px;line-height:1.3}
+.doc h1:first-child{margin-top:0}
+.doc h2{font-size:1.4rem;color:#fff;font-weight:600;margin:40px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.doc h3{font-size:1.1rem;color:#fff;font-weight:600;margin:28px 0 8px}
+.doc h4{font-size:.95rem;color:var(--fg);font-weight:600;margin:24px 0 6px}
+.doc p{margin:0 0 16px;color:var(--fg)}
+.doc ul,.doc ol{margin:0 0 16px 24px;color:var(--fg)}
+.doc li{margin-bottom:4px}
+.doc li>p{margin-bottom:8px}
+.doc strong{color:#fff;font-weight:600}
+.doc em{color:var(--fg2);font-style:italic}
+.doc code{font-family:var(--mono);background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-size:.85em;color:#a78bfa}
+.doc pre{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:20px 24px;overflow-x:auto;font-size:.85rem;line-height:1.7;margin:0 0 20px}
+.doc pre code{background:none;border:none;padding:0;color:var(--fg);font-size:inherit}
+.doc blockquote{border-left:3px solid var(--accent);padding:12px 20px;margin:0 0 20px;background:rgba(124,58,237,.05);border-radius:0 var(--radius) var(--radius) 0}
+.doc blockquote p{color:var(--fg2);margin-bottom:0}
+.doc blockquote p:last-child{margin-bottom:0}
+.doc hr{border:none;border-top:1px solid var(--border);margin:32px 0}
+.doc img{max-width:100%;border-radius:var(--radius);margin:8px 0 20px}
+.doc table{width:100%;border-collapse:collapse;margin:0 0 20px;font-size:.9rem}
+.doc thead th{text-align:left;padding:10px 14px;border-bottom:2px solid var(--border);color:var(--fg);font-weight:600;font-size:.8rem;text-transform:uppercase;letter-spacing:.04em}
+.doc tbody td{padding:10px 14px;border-bottom:1px solid var(--border);color:var(--fg)}
+.doc tbody tr:hover{background:rgba(124,58,237,.03)}
+.doc del{opacity:.5}
+
+.doc-footer{margin-top:48px;padding-top:24px;border-top:1px solid var(--border);font-size:.8rem;color:var(--fg2)}
+.doc-footer a{color:var(--fg2)}
+.doc-footer a:hover{color:var(--accent)}
+
+@media(max-width:900px){
+  .menu-btn{display:block}
+  .sidebar{position:fixed;top:52px;left:-280px;height:calc(100vh - 52px);z-index:90;transition:left .25s ease;box-shadow:none}
+  .sidebar.open{left:0;box-shadow:4px 0 24px rgba(0,0,0,.4)}
+  .sidebar-overlay{display:none;position:fixed;top:52px;left:0;right:0;bottom:0;z-index:89;background:rgba(0,0,0,.4)}
+  .sidebar-overlay.open{display:block}
+  .content{padding:24px 20px 60px}
+}
+@media(max-width:600px){
+  .topnav-links{display:none}
+  .doc h1{font-size:1.5rem}
+  .doc h2{font-size:1.2rem}
+}
+</style>
+</head>
+<body>
+
+<nav class="topnav">
+  <div class="topnav-inner">
+    <a href="index.html" class="topnav-logo">/suture<span>/</span></a>
+    <div class="topnav-links">
+      <a href="index.html">Home</a>
+      <a href="quickstart.html">Docs</a>
+      <a href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">GitHub</a>
+    </div>
+    <button class="menu-btn" onclick="toggleSidebar()" aria-label="Menu">&#9776;</button>
+  </div>
+</nav>
+
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <a href="index.html" class="sidebar-home">&larr; Back to Home</a>
+<div class="nav-group">
+<div class="nav-group-title">Getting Started</div>
+<a href="getting_started.html" class="nav-item">Getting Started with Suture</a>
+<a href="quickstart.html" class="nav-item">Quickstart: Stop Losing Work to Google Drive</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Core Concepts</div>
+<a href="comparing-with-git.html" class="nav-item">Suture vs. Git: When to Use What</a>
+<a href="comparison.html" class="nav-item">Suture vs Other Version Control Systems</a>
+<a href="semantic-merge.html" class="nav-item">Semantic Merge</a>
+<a href="why-suture.html" class="nav-item">Why Suture?</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Reference</div>
+<a href="api_reference.html" class="nav-item">API Reference</a>
+<a href="cli-reference.html" class="nav-item">CLI Reference</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Merge Drivers</div>
+<a href="driver_sdk.html" class="nav-item">Driver SDK</a>
+<a href="git_merge_driver.html" class="nav-item">Git Merge Driver</a>
+<a href="merge-driver-guide.html" class="nav-item">Suture Merge Driver Guide</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Integration</div>
+<a href="github-action.html" class="nav-item">Suture Semantic Merge GitHub Action</a>
+<a href="ide-integration.html" class="nav-item">IDE Integration</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Guides</div>
+<a href="data-science.html" class="nav-item">Suture for Data Science</a>
+<a href="document-authors.html" class="nav-item">Suture for Document Authors</a>
+<a href="video-editors.html" class="nav-item">Suture for Video Editors</a>
+<a href="video-merge-guide.html" class="nav-item active">Video Merge Guide: Version Control for OTIO Timelines</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Onboarding</div>
+<a href="onboarding-defence.html" class="nav-item">Suture VCS — Defence Contractor Onboarding Guide</a>
+<a href="onboarding-film.html" class="nav-item">Suture VCS — Onboarding Guide for Film & TV Post-Production</a>
+<a href="onboarding-youtube.html" class="nav-item">Suture VCS — Onboarding Guide for YouTube Channel Managers & PE Firms</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Platform</div>
+<a href="desktop-build.html" class="nav-item">Building the Suture Desktop App</a>
+<a href="hub.html" class="nav-item">Suture Hub</a>
+<a href="wasm-feasibility.html" class="nav-item">WASM Feasibility Report: Suture Semantic Merge Engine</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Development</div>
+<a href="performance.html" class="nav-item">Suture Performance Baseline</a>
+<a href="release-notes.html" class="nav-item">Suture v2.9.0 — First Public Release</a>
+<a href="shipping-checklist.html" class="nav-item">Suture v2.9.0 Shipping Checklist</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Other</div>
+<a href="demo.html" class="nav-item">Suture Demo: Semantic Merge in 60 Seconds</a>
+</div>
+  </aside>
+  <main class="content">
+    <div class="breadcrumb">
+      <a href="index.html">Home</a>
+      <span class="sep">/</span>
+      <span>Docs</span>
+    </div>
+    <article class="doc">
+      <h1>Video Merge Guide: Version Control for OTIO Timelines</h1>
+<p>A deep dive into how video editing teams use Suture for collaborative version control of OpenTimelineIO timelines.</p>
+<h2 id="the-problem-version-control-for-video-timelines">The Problem: Version Control for Video Timelines</h2>
+<p>Non-linear editors — DaVinci Resolve, Adobe Premiere Pro, Avid Media Composer — store projects as opaque binary files. A <code>.drp</code>, <code>.prproj</code>, or <code>.avp</code> is a monolithic blob that can't be meaningfully diffed or merged. Open your project file in a hex editor and you'll see compressed or proprietary data, not something a VCS can reason about.</p>
+<p>Even when you export to OpenTimelineIO (OTIO) — the industry-standard interchange format for editorial timelines — traditional version control still falls short. OTIO files are JSON, but they're deeply nested JSON describing clips, tracks, transitions, rational time values, and metadata. A Git diff of an OTIO timeline is unintelligible:</p>
+<pre><code class="language-json">-            "duration": {"value": 500.0, "rate": 24.0}
++            "duration": {"value": 600.0, "rate": 24.0}
+</code></pre>
+<p>That could be any clip on any track. There's no indication of <em>which</em> clip changed, <em>where</em> it sits in the timeline, or <em>why</em> the change matters. When two editors work on the same OTIO file and both modify different clips, Git sees overlapping line changes and produces conflict markers. Collaborative editing is reduced to file locking and manual replay.</p>
+<h2 id="how-suture-handles-otio-timelines">How Suture Handles OTIO Timelines</h2>
+<p>Suture's <code>suture-driver-otio</code> parses the OTIO JSON schema into a structured element tree. It understands <a href="https://opentimelineio.io/">OpenTimelineIO</a> types: <code>Timeline</code>, <code>Track</code>, <code>Clip</code>, <code>Transition</code>, and <code>Stack</code>. Each element gets a deterministic hierarchical ID:</p>
+<pre><code>
+0:timeline:FeatureFilm_RoughCut
+  0:timeline:FeatureFilm_RoughCut/0:track:V1_Main
+    0:timeline:FeatureFilm_RoughCut/0:track:V1_Main/0:clip:Scene1_Take3
+    0:timeline:FeatureFilm_RoughCut/0:track:V1_Main/1:transition:Dissolve_1
+    0:timeline:FeatureFilm_RoughCut/0:track:V1_Main/2:clip:Scene2_Take1
+  0:timeline:FeatureFilm_RoughCut/1:track:V2_BRoll
+  0:timeline:FeatureFilm_RoughCut/2:track:A1_Dialogue
+</code></pre>
+<p>Changes are mapped to these element addresses. The driver uses <strong>touch-set propagation</strong>: when a track is modified, all its child clips and transitions are included in the patch's touch set. This means changing a track name and changing a clip on that track are correctly detected as overlapping changes.</p>
+<p>Three-way merge operates at the element level. If Editor A trims a clip on <code>V1_Main</code> (address <code>.../0:track:V1_Main/0:clip:Scene1_Take3</code>) and Editor B adds a clip to <code>A1_Dialogue</code> (address <code>.../2:track:A1_Dialogue</code>), the touch sets are disjoint and both changes merge cleanly. Reordering clips within a track changes the positional index, which causes the touch sets to overlap — this is correctly flagged as a conflict because both editors modified the same structural region.</p>
+<h2 id="workflow-editing-with-suture">Workflow: Editing with Suture</h2>
+<h3 id="1-initialize-a-video-aware-repository">1. Initialize a video-aware repository</h3>
+<pre><code class="language-bash">suture init --type video
+suture config user.name "Jane Editor"
+</code></pre>
+<h3 id="2-import-your-timeline">2. Import your timeline</h3>
+<p>Export from your NLE as OTIO and commit:</p>
+<pre><code class="language-bash">cp /path/to/export/timeline.otio .
+suture add timeline.otio &amp;&amp; suture commit "initial assembly"
+</code></pre>
+<h3 id="3-branch-for-parallel-work">3. Branch for parallel work</h3>
+<pre><code class="language-bash">suture branch editor-B &amp;&amp; suture checkout editor-B
+</code></pre>
+<h3 id="4-edit-commit-merge">4. Edit, commit, merge</h3>
+<p>Editor B adjusts audio levels on <code>A1_Dialogue</code>, then commits:</p>
+<pre><code class="language-bash">suture add timeline.otio &amp;&amp; suture commit "raise dialogue 3dB"
+</code></pre>
+<p>Back on main, you trim Act 2 and commit:</p>
+<pre><code class="language-bash">suture checkout main
+# Edit timeline — trim clips on V1_Main
+suture add timeline.otio &amp;&amp; suture commit "tighten Act 2"
+</code></pre>
+<p>Merge cleanly:</p>
+<pre><code class="language-bash">$ suture merge editor-B
+
+ merge editor-B into main
+
+ track: V1_Main
+   clip "Scene2_Take1" trimmed 00:00:04:00
+ track: A1_Dialogue
+   clip "Boom_Scene1" gain raised +3.0 dB
+
+ 2 clips changed, 0 conflicts
+</code></pre>
+<p>Both edits land without conflict — different tracks, different touch sets.</p>
+<h3 id="5-inspect-history">5. Inspect history</h3>
+<pre><code class="language-bash">$ suture log --oneline
+e7f2a1  raise dialogue 3dB
+b3c9d4  tighten Act 2
+4f2d0b  initial assembly
+
+$ suture diff HEAD~1 timeline.otio
+ track: A1_Dialogue
+   clip "Boom_Scene1"
+-    duration.value: 480.0
++    duration.value: 480.0
+     metadata.gain: -3.0 dB → 0.0 dB
+</code></pre>
+<h2 id="supported-scenarios">Supported Scenarios</h2>
+<thead><tr><th>Scenario</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td>Non-overlapping track edits</td><td>Clean merge — both editors' clips preserved</td></tr>
+<tr><td>Same-track clip edits</td><td>Conflict — editors resolve manually</td></tr>
+<tr><td>New track addition</td><td>Clean merge — existing tracks + new track</td></tr>
+<tr><td>Metadata changes (name, color space)</td><td>Clean merge — independent fields</td></tr>
+<tr><td>Nested stack restructuring</td><td>Detected at depth — child elements tracked individually</td></tr>
+<tr><td>Clip reordering within a track</td><td>Conflict — positional index overlap</td></tr>
+</tbody>
+</table>
+<h2 id="integration-points">Integration Points</h2>
+<p><strong>VS Code extension</strong>: OTIO files get semantic diff coloring. Open a <code>.otio</code> file in VS Code and see clip-level additions, removals, and modifications with track-aware grouping — not raw JSON noise.</p>
+<p><strong>Git merge driver</strong>: Install Suture as a Git merge driver to get OTIO-aware merging in any Git repository:</p>
+<pre><code class="language-bash">suture git driver install
+</code></pre>
+<p>This configures <code>.gitattributes</code> to route <code>.otio</code> files through <code>suture merge-file</code>, so <code>git merge</code> produces clean merges instead of conflict markers when two branches modify different parts of the same timeline.</p>
+<p><strong>CI/CD</strong>: The <a href="github-action.html">Suture GitHub Action</a> runs semantic merge on PRs that touch OTIO files. If a PR introduces changes to <code>V2_BRoll</code> while <code>main</code> has changes to <code>A1_Dialogue</code>, the action auto-resolves the merge and posts a comment with the results.</p>
+<h2 id="see-also">See Also</h2>
+<ul>
+<li><a href="video-editors.html">Suture for Video Editors</a> — high-level overview</li>
+<li><a href="semantic-merge.html">Semantic Merge</a> — how Suture's merge engine works</li>
+<li><a href="git_merge_driver.html">Git Merge Driver</a> — using Suture inside Git</li>
+<li><a href="cli-reference.html">CLI Reference</a> — full command listing</li>
+</ul>
+    </article>
+    <div class="doc-footer">
+      <a href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">GitHub</a> &middot;
+      <a href="https://github.com/WyattAu/suture/blob/main/LICENSE" target="_blank" rel="noopener">Apache-2.0</a>
+    </div>
+  </main>
+</div>
+
+<script>
+function toggleSidebar(){
+  document.getElementById("sidebar").classList.toggle("open");
+  document.getElementById("sidebarOverlay").classList.toggle("open");
+}
+</script>
+</body>
+</html>

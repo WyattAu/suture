@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{TITLE}} — Suture</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a2e;
+  --fg:#e2e2f0;--fg2:#8888a8;
+  --accent:#7c3aed;--accent2:#3b82f6;--accent-grad:linear-gradient(135deg,#7c3aed,#3b82f6);
+  --border:#2a2a3e;
+  --mono:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+  --radius:12px;
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);line-height:1.7;overflow-x:hidden}
+a{color:var(--accent);text-decoration:none;transition:color .15s}
+a:hover{color:#a78bfa}
+
+.topnav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(10,10,15,.85);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);height:52px;display:flex;align-items:center;padding:0 20px}
+.topnav-inner{max-width:1400px;width:100%;margin:0 auto;display:flex;align-items:center;justify-content:space-between}
+.topnav-logo{font-family:var(--mono);font-weight:800;font-size:1.1rem;color:#fff;display:flex;align-items:center;gap:8px}
+.topnav-logo span{color:var(--accent)}
+.topnav-links{display:flex;gap:20px;align-items:center}
+.topnav-links a{color:var(--fg2);font-size:.85rem}
+.topnav-links a:hover{color:#fff}
+.menu-btn{display:none;background:none;border:1px solid var(--border);color:var(--fg);padding:6px 10px;border-radius:6px;cursor:pointer;font-size:1.1rem;line-height:1}
+
+.layout{display:flex;margin-top:52px;min-height:calc(100vh - 52px)}
+
+.sidebar{width:260px;min-width:260px;background:var(--bg2);border-right:1px solid var(--border);height:calc(100vh - 52px);position:sticky;top:52px;overflow-y:auto;padding:20px 0}
+.sidebar::-webkit-scrollbar{width:4px}
+.sidebar::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.sidebar-home{display:block;padding:8px 20px;color:var(--fg2);font-size:.8rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
+.sidebar-home:hover{color:var(--fg)}
+.nav-group{margin-bottom:4px}
+.nav-group-title{padding:8px 20px 4px;font-size:.7rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--fg2);opacity:.7}
+.nav-item{display:block;padding:6px 20px 6px 28px;color:var(--fg2);font-size:.85rem;border-left:2px solid transparent;transition:all .15s}
+.nav-item:hover{color:var(--fg);background:rgba(124,58,237,.05)}
+.nav-item.active{color:#fff;border-left-color:var(--accent);background:rgba(124,58,237,.08)}
+
+.content{flex:1;max-width:860px;padding:32px 40px 80px}
+.breadcrumb{font-size:.8rem;color:var(--fg2);margin-bottom:24px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.breadcrumb a{color:var(--fg2)}
+.breadcrumb a:hover{color:var(--accent)}
+.breadcrumb .sep{opacity:.4}
+
+.doc h1{font-size:2rem;color:#fff;font-weight:700;letter-spacing:-.02em;margin-bottom:8px;line-height:1.3}
+.doc h1:first-child{margin-top:0}
+.doc h2{font-size:1.4rem;color:#fff;font-weight:600;margin:40px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.doc h3{font-size:1.1rem;color:#fff;font-weight:600;margin:28px 0 8px}
+.doc h4{font-size:.95rem;color:var(--fg);font-weight:600;margin:24px 0 6px}
+.doc p{margin:0 0 16px;color:var(--fg)}
+.doc ul,.doc ol{margin:0 0 16px 24px;color:var(--fg)}
+.doc li{margin-bottom:4px}
+.doc li>p{margin-bottom:8px}
+.doc strong{color:#fff;font-weight:600}
+.doc em{color:var(--fg2);font-style:italic}
+.doc code{font-family:var(--mono);background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-size:.85em;color:#a78bfa}
+.doc pre{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:20px 24px;overflow-x:auto;font-size:.85rem;line-height:1.7;margin:0 0 20px}
+.doc pre code{background:none;border:none;padding:0;color:var(--fg);font-size:inherit}
+.doc blockquote{border-left:3px solid var(--accent);padding:12px 20px;margin:0 0 20px;background:rgba(124,58,237,.05);border-radius:0 var(--radius) var(--radius) 0}
+.doc blockquote p{color:var(--fg2);margin-bottom:0}
+.doc blockquote p:last-child{margin-bottom:0}
+.doc hr{border:none;border-top:1px solid var(--border);margin:32px 0}
+.doc img{max-width:100%;border-radius:var(--radius);margin:8px 0 20px}
+.doc table{width:100%;border-collapse:collapse;margin:0 0 20px;font-size:.9rem}
+.doc thead th{text-align:left;padding:10px 14px;border-bottom:2px solid var(--border);color:var(--fg);font-weight:600;font-size:.8rem;text-transform:uppercase;letter-spacing:.04em}
+.doc tbody td{padding:10px 14px;border-bottom:1px solid var(--border);color:var(--fg)}
+.doc tbody tr:hover{background:rgba(124,58,237,.03)}
+.doc del{opacity:.5}
+
+.doc-footer{margin-top:48px;padding-top:24px;border-top:1px solid var(--border);font-size:.8rem;color:var(--fg2)}
+.doc-footer a{color:var(--fg2)}
+.doc-footer a:hover{color:var(--accent)}
+
+@media(max-width:900px){
+  .menu-btn{display:block}
+  .sidebar{position:fixed;top:52px;left:-280px;height:calc(100vh - 52px);z-index:90;transition:left .25s ease;box-shadow:none}
+  .sidebar.open{left:0;box-shadow:4px 0 24px rgba(0,0,0,.4)}
+  .sidebar-overlay{display:none;position:fixed;top:52px;left:0;right:0;bottom:0;z-index:89;background:rgba(0,0,0,.4)}
+  .sidebar-overlay.open{display:block}
+  .content{padding:24px 20px 60px}
+}
+@media(max-width:600px){
+  .topnav-links{display:none}
+  .doc h1{font-size:1.5rem}
+  .doc h2{font-size:1.2rem}
+}
+</style>
+</head>
+<body>
+
+<nav class="topnav">
+  <div class="topnav-inner">
+    <a href="index.html" class="topnav-logo">/suture<span>/</span></a>
+    <div class="topnav-links">
+      <a href="index.html">Home</a>
+      <a href="quickstart.html">Docs</a>
+      <a href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">GitHub</a>
+    </div>
+    <button class="menu-btn" onclick="toggleSidebar()" aria-label="Menu">&#9776;</button>
+  </div>
+</nav>
+
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    {{NAV}}
+  </aside>
+  <main class="content">
+    <div class="breadcrumb">
+      <a href="index.html">Home</a>
+      <span class="sep">/</span>
+      <span>Docs</span>
+    </div>
+    <article class="doc">
+      {{CONTENT}}
+    </article>
+    <div class="doc-footer">
+      <a href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">GitHub</a> &middot;
+      <a href="https://github.com/WyattAu/suture/blob/main/LICENSE" target="_blank" rel="noopener">Apache-2.0</a>
+    </div>
+  </main>
+</div>
+
+<script>
+function toggleSidebar(){
+  document.getElementById("sidebar").classList.toggle("open");
+  document.getElementById("sidebarOverlay").classList.toggle("open");
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Suture VCS — Onboarding Guide for YouTube Channel Managers & PE Firms — Suture</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a2e;
+  --fg:#e2e2f0;--fg2:#8888a8;
+  --accent:#7c3aed;--accent2:#3b82f6;--accent-grad:linear-gradient(135deg,#7c3aed,#3b82f6);
+  --border:#2a2a3e;
+  --mono:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+  --radius:12px;
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);line-height:1.7;overflow-x:hidden}
+a{color:var(--accent);text-decoration:none;transition:color .15s}
+a:hover{color:#a78bfa}
+
+.topnav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(10,10,15,.85);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);height:52px;display:flex;align-items:center;padding:0 20px}
+.topnav-inner{max-width:1400px;width:100%;margin:0 auto;display:flex;align-items:center;justify-content:space-between}
+.topnav-logo{font-family:var(--mono);font-weight:800;font-size:1.1rem;color:#fff;display:flex;align-items:center;gap:8px}
+.topnav-logo span{color:var(--accent)}
+.topnav-links{display:flex;gap:20px;align-items:center}
+.topnav-links a{color:var(--fg2);font-size:.85rem}
+.topnav-links a:hover{color:#fff}
+.menu-btn{display:none;background:none;border:1px solid var(--border);color:var(--fg);padding:6px 10px;border-radius:6px;cursor:pointer;font-size:1.1rem;line-height:1}
+
+.layout{display:flex;margin-top:52px;min-height:calc(100vh - 52px)}
+
+.sidebar{width:260px;min-width:260px;background:var(--bg2);border-right:1px solid var(--border);height:calc(100vh - 52px);position:sticky;top:52px;overflow-y:auto;padding:20px 0}
+.sidebar::-webkit-scrollbar{width:4px}
+.sidebar::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.sidebar-home{display:block;padding:8px 20px;color:var(--fg2);font-size:.8rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
+.sidebar-home:hover{color:var(--fg)}
+.nav-group{margin-bottom:4px}
+.nav-group-title{padding:8px 20px 4px;font-size:.7rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--fg2);opacity:.7}
+.nav-item{display:block;padding:6px 20px 6px 28px;color:var(--fg2);font-size:.85rem;border-left:2px solid transparent;transition:all .15s}
+.nav-item:hover{color:var(--fg);background:rgba(124,58,237,.05)}
+.nav-item.active{color:#fff;border-left-color:var(--accent);background:rgba(124,58,237,.08)}
+
+.content{flex:1;max-width:860px;padding:32px 40px 80px}
+.breadcrumb{font-size:.8rem;color:var(--fg2);margin-bottom:24px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.breadcrumb a{color:var(--fg2)}
+.breadcrumb a:hover{color:var(--accent)}
+.breadcrumb .sep{opacity:.4}
+
+.doc h1{font-size:2rem;color:#fff;font-weight:700;letter-spacing:-.02em;margin-bottom:8px;line-height:1.3}
+.doc h1:first-child{margin-top:0}
+.doc h2{font-size:1.4rem;color:#fff;font-weight:600;margin:40px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.doc h3{font-size:1.1rem;color:#fff;font-weight:600;margin:28px 0 8px}
+.doc h4{font-size:.95rem;color:var(--fg);font-weight:600;margin:24px 0 6px}
+.doc p{margin:0 0 16px;color:var(--fg)}
+.doc ul,.doc ol{margin:0 0 16px 24px;color:var(--fg)}
+.doc li{margin-bottom:4px}
+.doc li>p{margin-bottom:8px}
+.doc strong{color:#fff;font-weight:600}
+.doc em{color:var(--fg2);font-style:italic}
+.doc code{font-family:var(--mono);background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-size:.85em;color:#a78bfa}
+.doc pre{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:20px 24px;overflow-x:auto;font-size:.85rem;line-height:1.7;margin:0 0 20px}
+.doc pre code{background:none;border:none;padding:0;color:var(--fg);font-size:inherit}
+.doc blockquote{border-left:3px solid var(--accent);padding:12px 20px;margin:0 0 20px;background:rgba(124,58,237,.05);border-radius:0 var(--radius) var(--radius) 0}
+.doc blockquote p{color:var(--fg2);margin-bottom:0}
+.doc blockquote p:last-child{margin-bottom:0}
+.doc hr{border:none;border-top:1px solid var(--border);margin:32px 0}
+.doc img{max-width:100%;border-radius:var(--radius);margin:8px 0 20px}
+.doc table{width:100%;border-collapse:collapse;margin:0 0 20px;font-size:.9rem}
+.doc thead th{text-align:left;padding:10px 14px;border-bottom:2px solid var(--border);color:var(--fg);font-weight:600;font-size:.8rem;text-transform:uppercase;letter-spacing:.04em}
+.doc tbody td{padding:10px 14px;border-bottom:1px solid var(--border);color:var(--fg)}
+.doc tbody tr:hover{background:rgba(124,58,237,.03)}
+.doc del{opacity:.5}
+
+.doc-footer{margin-top:48px;padding-top:24px;border-top:1px solid var(--border);font-size:.8rem;color:var(--fg2)}
+.doc-footer a{color:var(--fg2)}
+.doc-footer a:hover{color:var(--accent)}
+
+@media(max-width:900px){
+  .menu-btn{display:block}
+  .sidebar{position:fixed;top:52px;left:-280px;height:calc(100vh - 52px);z-index:90;transition:left .25s ease;box-shadow:none}
+  .sidebar.open{left:0;box-shadow:4px 0 24px rgba(0,0,0,.4)}
+  .sidebar-overlay{display:none;position:fixed;top:52px;left:0;right:0;bottom:0;z-index:89;background:rgba(0,0,0,.4)}
+  .sidebar-overlay.open{display:block}
+  .content{padding:24px 20px 60px}
+}
+@media(max-width:600px){
+  .topnav-links{display:none}
+  .doc h1{font-size:1.5rem}
+  .doc h2{font-size:1.2rem}
+}
+</style>
+</head>
+<body>
+
+<nav class="topnav">
+  <div class="topnav-inner">
+    <a href="index.html" class="topnav-logo">/suture<span>/</span></a>
+    <div class="topnav-links">
+      <a href="index.html">Home</a>
+      <a href="quickstart.html">Docs</a>
+      <a href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">GitHub</a>
+    </div>
+    <button class="menu-btn" onclick="toggleSidebar()" aria-label="Menu">&#9776;</button>
+  </div>
+</nav>
+
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <a href="index.html" class="sidebar-home">&larr; Back to Home</a>
+<div class="nav-group">
+<div class="nav-group-title">Getting Started</div>
+<a href="getting_started.html" class="nav-item">Getting Started with Suture</a>
+<a href="quickstart.html" class="nav-item">Quickstart: Stop Losing Work to Google Drive</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Core Concepts</div>
+<a href="comparing-with-git.html" class="nav-item">Suture vs. Git: When to Use What</a>
+<a href="comparison.html" class="nav-item">Suture vs Other Version Control Systems</a>
+<a href="semantic-merge.html" class="nav-item">Semantic Merge</a>
+<a href="why-suture.html" class="nav-item">Why Suture?</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Reference</div>
+<a href="api_reference.html" class="nav-item">API Reference</a>
+<a href="cli-reference.html" class="nav-item">CLI Reference</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Merge Drivers</div>
+<a href="driver_sdk.html" class="nav-item">Driver SDK</a>
+<a href="git_merge_driver.html" class="nav-item">Git Merge Driver</a>
+<a href="merge-driver-guide.html" class="nav-item">Suture Merge Driver Guide</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Integration</div>
+<a href="github-action.html" class="nav-item">Suture Semantic Merge GitHub Action</a>
+<a href="ide-integration.html" class="nav-item">IDE Integration</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Guides</div>
+<a href="data-science.html" class="nav-item">Suture for Data Science</a>
+<a href="document-authors.html" class="nav-item">Suture for Document Authors</a>
+<a href="video-editors.html" class="nav-item">Suture for Video Editors</a>
+<a href="video-merge-guide.html" class="nav-item">Video Merge Guide: Version Control for OTIO Timelines</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Onboarding</div>
+<a href="onboarding-defence.html" class="nav-item">Suture VCS — Defence Contractor Onboarding Guide</a>
+<a href="onboarding-film.html" class="nav-item">Suture VCS — Onboarding Guide for Film & TV Post-Production</a>
+<a href="onboarding-youtube.html" class="nav-item active">Suture VCS — Onboarding Guide for YouTube Channel Managers & PE Firms</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Platform</div>
+<a href="desktop-build.html" class="nav-item">Building the Suture Desktop App</a>
+<a href="hub.html" class="nav-item">Suture Hub</a>
+<a href="wasm-feasibility.html" class="nav-item">WASM Feasibility Report: Suture Semantic Merge Engine</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Development</div>
+<a href="performance.html" class="nav-item">Suture Performance Baseline</a>
+<a href="release-notes.html" class="nav-item">Suture v2.9.0 — First Public Release</a>
+<a href="shipping-checklist.html" class="nav-item">Suture v2.9.0 Shipping Checklist</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Other</div>
+<a href="demo.html" class="nav-item">Suture Demo: Semantic Merge in 60 Seconds</a>
+</div>
+  </aside>
+  <main class="content">
+    <div class="breadcrumb">
+      <a href="index.html">Home</a>
+      <span class="sep">/</span>
+      <span>Docs</span>
+    </div>
+    <article class="doc">
+      <h1>Suture VCS — Onboarding Guide for YouTube Channel Managers & PE Firms</h1>
+<p>Replace Google Drive sync with full version history, branching, and audit trail.</p>
+<hr>
+<h2 id="1-installation">1. Installation</h2>
+<h3 id="macos">macOS</h3>
+<pre><code class="language-bash">brew install suture-vcs/tap/suture
+</code></pre>
+<h3 id="linux-debianubuntu">Linux (Debian/Ubuntu)</h3>
+<pre><code class="language-bash">curl -fsSL https://get.suture.dev | bash
+</code></pre>
+<h3 id="windows-wsl2-recommended">Windows (WSL2 recommended)</h3>
+<pre><code class="language-bash">curl -fsSL https://get.suture.dev | bash
+</code></pre>
+<p>Verify the installation:</p>
+<pre><code class="language-bash">suture --version
+</code></pre>
+<p>Authenticate with your Suture account:</p>
+<pre><code class="language-bash">suture auth login
+</code></pre>
+<hr>
+<h2 id="2-initial-setup-migrating-from-google-drive">2. Initial Setup — Migrating from Google Drive</h2>
+<h3 id="21-create-a-workspace">2.1 Create a workspace</h3>
+<p>Replace your Google Drive root with a Suture workspace. Each workspace is an independent versioned repository.</p>
+<pre><code class="language-bash">mkdir ~/suture-workspaces &amp;&amp; cd ~/suture-workspaces
+suture init --name "acme-channels"
+</code></pre>
+<p>This creates:</p>
+<pre><code>
+acme-channels/
+  .suture/
+    config.toml
+    branches/
+    history/
+  channels/
+  reports/
+  exports/
+</code></pre>
+<h3 id="22-configure-sync">2.2 Configure sync</h3>
+<p>Point Suture at the folder you want to version-control. If you're migrating from Google Drive, copy files out first:</p>
+<pre><code class="language-bash">suture config set sync.root ./channels
+suture config set sync.watch true
+suture config set sync.auto-commit true
+suture config set sync.auto-commit-interval 300
+</code></pre>
+<p>These settings enable:</p>
+<ul>
+<li>File watching on <code>./channels</code></li>
+<li>Auto-commits every 5 minutes when changes are detected</li>
+<li>Full version history for every save</li>
+</ul>
+<h3 id="23-migrate-existing-google-drive-files">2.3 Migrate existing Google Drive files</h3>
+<pre><code class="language-bash">cp -r ~/Google\ Drive/YouTube\ Projects/* ./channels/
+suture sync
+</code></pre>
+<p><code>suture sync</code> scans the directory, stages all files, and creates an initial commit. Every file now has version history from this point forward.</p>
+<h3 id="24-connect-cloud-remote-optional-but-recommended">2.4 Connect cloud remote (optional but recommended)</h3>
+<pre><code class="language-bash">suture remote add origin suture://acme-channels.cloud.suture.dev
+suture push origin main
+</code></pre>
+<hr>
+<h2 id="3-importing-existing-youtube-metadata">3. Importing Existing YouTube Metadata</h2>
+<h3 id="31-connect-a-youtube-channel">3.1 Connect a YouTube channel</h3>
+<p>You need a Google OAuth token for each channel. Suture stores tokens securely in <code>.suture/credentials</code>.</p>
+<pre><code class="language-bash">suture youtube connect --channel "Acme Gaming"
+</code></pre>
+<p>Follow the browser prompt to authorize. Repeat for each channel.</p>
+<h3 id="32-export-current-metadata-from-youtube">3.2 Export current metadata from YouTube</h3>
+<p>Pull all video metadata (titles, descriptions, tags, thumbnails, settings) into your workspace:</p>
+<pre><code class="language-bash">suture youtube export --channel "Acme Gaming" --output ./channels/acme-gaming/metadata/
+</code></pre>
+<p>This generates structured JSON per video:</p>
+<pre><code>
+channels/acme-gaming/metadata/
+  ABC123.json
+  DEF456.json
+  thumbnails/
+    ABC123.jpg
+    DEF456.jpg
+</code></pre>
+<p>Each JSON file contains:</p>
+<pre><code class="language-json">{
+  "videoId": "ABC123",
+  "title": "Top 10 Tips for Beginners",
+  "description": "In this video we cover...",
+  "tags": ["beginner", "tips", "tutorial"],
+  "categoryId": "27",
+  "privacyStatus": "public",
+  "thumbnail": "thumbnails/ABC123.jpg",
+  "suture": {
+    "lastSynced": "2026-04-25T10:30:00Z",
+    "source": "youtube-export"
+  }
+}
+</code></pre>
+<h3 id="33-commit-the-imported-metadata">3.3 Commit the imported metadata</h3>
+<pre><code class="language-bash">suture add ./channels/acme-gaming/metadata/
+suture commit -m "Import metadata for Acme Gaming channel"
+</code></pre>
+<h3 id="34-import-multiple-channels-at-once">3.4 Import multiple channels at once</h3>
+<pre><code class="language-bash">suture youtube connect --channel "Acme Gaming"
+suture youtube connect --channel "Acme Tech"
+suture youtube connect --channel "Acme Vlogs"
+
+suture batch add \
+  --channels "Acme Gaming,Acme Tech,Acme Vlogs" \
+  --output ./channels/
+
+suture batch commit -m "Import metadata for all Acme channels"
+</code></pre>
+<hr>
+<h2 id="4-daily-workflow">4. Daily Workflow</h2>
+<h3 id="41-start-the-sync-daemon">4.1 Start the sync daemon</h3>
+<p>Run this at the start of each session (or set up a launchd/systemd service):</p>
+<pre><code class="language-bash">suture sync --daemon
+</code></pre>
+<p>This watches <code>./channels/</code> for changes and auto-commits every 5 minutes (or your configured interval).</p>
+<h3 id="42-edit-metadata-locally">4.2 Edit metadata locally</h3>
+<p>Open the JSON files in your editor of choice:</p>
+<pre><code class="language-bash">vim ./channels/acme-gaming/metadata/ABC123.json
+</code></pre>
+<p>Change the title, description, tags — whatever you need. Save the file.</p>
+<h3 id="43-preview-what-changed">4.3 Preview what changed</h3>
+<p>Before pushing anything to YouTube, see a diff:</p>
+<pre><code class="language-bash">suture youtube diff --channel "Acme Gaming"
+</code></pre>
+<p>Output:</p>
+<pre><code>
+ABC123.json:
+  title:       "Top 10 Tips for Beginners"
+            -&gt; "Top 10 Tips for Beginners (2026 Edition)"
+  tags:        ["beginner", "tips", "tutorial"]
+            -&gt; ["beginner", "tips", "tutorial", "2026"]
+  description:  +2 lines, -0 lines
+
+1 change(s) detected across 1 video(s).
+</code></pre>
+<h3 id="44-push-changes-to-youtube">4.4 Push changes to YouTube</h3>
+<pre><code class="language-bash">suture youtube sync --channel "Acme Gaming" --videos ABC123
+</code></pre>
+<p>To sync all pending changes across a channel:</p>
+<pre><code class="language-bash">suture youtube sync --channel "Acme Gaming" --all
+</code></pre>
+<h3 id="45-review-the-commit-history">4.5 Review the commit history</h3>
+<pre><code class="language-bash">suture log --branch main --limit 10
+</code></pre>
+<pre><code>
+a3f2c1d  2026-04-25 14:32  Updated title and tags for ABC123
+e7b9a4f  2026-04-25 11:00  Auto-commit: 3 files changed
+c5d8e2a  2026-04-24 16:45  Batch tag update across Acme Gaming
+</code></pre>
+<h3 id="46-undo-a-change">4.6 Undo a change</h3>
+<p>If something went wrong, roll back to a previous state:</p>
+<pre><code class="language-bash">suture revert a3f2c1d
+</code></pre>
+<p>Then push the reverted state to YouTube:</p>
+<pre><code class="language-bash">suture youtube sync --channel "Acme Gaming" --all
+</code></pre>
+<hr>
+<h2 id="5-multi-channel-management">5. Multi-Channel Management</h2>
+<h3 id="51-strategy-branch-per-channel">5.1 Strategy: Branch per channel</h3>
+<p>Create a branch for each channel so changes are isolated:</p>
+<pre><code class="language-bash">suture branch create acme-gaming
+suture branch create acme-tech
+suture branch create acme-vlogs
+</code></pre>
+<p>Switch to a branch and work on it:</p>
+<pre><code class="language-bash">suture branch checkout acme-gaming
+# Edit files, make commits
+suture youtube sync --channel "Acme Gaming" --all
+</code></pre>
+<h3 id="52-strategy-folder-per-channel-single-branch">5.2 Strategy: Folder per channel (single branch)</h3>
+<p>If channels share resources (thumbnails, templates), use folders instead:</p>
+<pre><code>
+channels/
+  acme-gaming/
+  acme-tech/
+  acme-vlogs/
+  shared/
+    thumbnails/
+    templates/
+</code></pre>
+<h3 id="53-apply-changes-across-channels">5.3 Apply changes across channels</h3>
+<p>Use batch operations to update metadata across multiple channels at once:</p>
+<pre><code class="language-bash">suture batch add --pattern "channels/*/metadata/*.json"
+suture batch commit -m "Q2 tag refresh across all channels"
+</code></pre>
+<p>Or run a scripted update:</p>
+<pre><code class="language-bash">suture batch run --channels "Acme Gaming,Acme Tech" \
+  --script ./scripts/add-sponsorship-tag.sh
+</code></pre>
+<hr>
+<h2 id="6-client-delivery-and-handoff">6. Client Delivery and Handoff</h2>
+<h3 id="61-export-a-snapshot-for-a-client">6.1 Export a snapshot for a client</h3>
+<p>Generate a clean export of the current state:</p>
+<pre><code class="language-bash">suture export --output ./exports/acme-gaming-q2-2026.zip \
+  --path ./channels/acme-gaming/ \
+  --format structured
+</code></pre>
+<p>The zip contains all metadata, thumbnails, and a manifest file:</p>
+<pre><code>
+acme-gaming-q2-2026.zip
+  manifest.json        (checksums, timestamps, version info)
+  metadata/            (all video JSON files)
+  thumbnails/          (all thumbnail images)
+  reports/             (optional: include generated reports)
+</code></pre>
+<h3 id="62-include-a-report">6.2 Include a report</h3>
+<pre><code class="language-bash">suture report --channel "Acme Gaming" \
+  --period 2026-04-01:2026-04-30 \
+  --format pdf \
+  --output ./exports/acme-gaming-q2-2026.pdf
+</code></pre>
+<p>Bundle both:</p>
+<pre><code class="language-bash">suture export --output ./exports/acme-gaming-q2-delivery.zip \
+  --path ./channels/acme-gaming/ \
+  --attach ./exports/acme-gaming-q2-2026.pdf
+</code></pre>
+<h3 id="63-handoff-to-another-team">6.3 Handoff to another team</h3>
+<p>If another PE firm or agency takes over, give them the workspace:</p>
+<pre><code class="language-bash">suture export --full --output ./exports/acme-gaming-handoff.tar.gz
+</code></pre>
+<p>This includes the entire <code>.suture/</code> history, so the new team has full audit trail from day one.</p>
+<hr>
+<h2 id="7-audit-trail-and-compliance">7. Audit Trail and Compliance</h2>
+<h3 id="71-view-full-change-history">7.1 View full change history</h3>
+<pre><code class="language-bash">suture log --path ./channels/acme-gaming/metadata/ABC123.json --full
+</code></pre>
+<pre><code>
+a3f2c1d  2026-04-25 14:32  user@example.com
+  title: "Top 10 Tips for Beginners" -&gt; "Top 10 Tips for Beginners (2026 Edition)"
+  tags:  +["2026"]
+
+e7b9a4a  2026-04-20 09:15  user@example.com
+  description: +3 lines (sponsorship disclosure added)
+
+c5d8e2a  2026-04-15 11:00  user@example.com
+  initial import from YouTube
+</code></pre>
+<h3 id="72-generate-a-compliance-report">7.2 Generate a compliance report</h3>
+<p>For PE due diligence or regulatory review:</p>
+<pre><code class="language-bash">suture report --channel "Acme Gaming" \
+  --type audit \
+  --period 2026-01-01:2026-04-25 \
+  --output ./reports/acme-gaming-audit-q1q2-2026.pdf
+</code></pre>
+<h3 id="73-lock-a-branch">7.3 Lock a branch</h3>
+<p>Prevent further changes after a delivery milestone:</p>
+<pre><code class="language-bash">suture branch lock acme-gaming --reason "Q2 delivery finalized"
+</code></pre>
+<h3 id="74-require-approval-before-youtube-sync">7.4 Require approval before YouTube sync</h3>
+<p>Configure a pre-sync review gate:</p>
+<pre><code class="language-bash">suture config set youtube.sync.require-approval true
+suture config set youtube.sync.approvers "manager@example.com,compliance@example.com"
+</code></pre>
+<p>Now <code>suture youtube sync</code> creates a pending change request instead of pushing directly:</p>
+<pre><code class="language-bash">suture youtube sync --channel "Acme Gaming" --all
+# Output: Change request CR-0042 created. Awaiting approval.
+</code></pre>
+<p>Approve:</p>
+<pre><code class="language-bash">suture approve CR-0042
+</code></pre>
+<hr>
+<h2 id="8-backup-and-disaster-recovery">8. Backup and Disaster Recovery</h2>
+<h3 id="81-push-to-a-remote">8.1 Push to a remote</h3>
+<pre><code class="language-bash">suture remote add backup suture://backup.suture.dev/acme-channels
+suture push backup --all-branches
+</code></pre>
+<p>Schedule this with cron:</p>
+<pre><code class="language-bash">crontab -e
+# Add:
+0 */6 * * * suture push backup --all-branches --quiet
+</code></pre>
+<h3 id="82-local-backup">8.2 Local backup</h3>
+<p>Export the entire workspace (history included):</p>
+<pre><code class="language-bash">suture export --full --output /mnt/nas/backups/suture-acme-$(date +%Y%m%d).tar.gz
+</code></pre>
+<h3 id="83-restore-from-backup">8.3 Restore from backup</h3>
+<pre><code class="language-bash">mkdir restore &amp;&amp; cd restore
+suture init --name "acme-channels-restored"
+suture import /mnt/nas/backups/suture-acme-20260425.tar.gz
+</code></pre>
+<h3 id="84-recover-a-deleted-file">8.4 Recover a deleted file</h3>
+<pre><code class="language-bash">suture log --deleted --path ./channels/acme-gaming/metadata/
+# Find the commit where the file was last present
+suture checkout c5d8e2a -- ./channels/acme-gaming/metadata/ABC123.json
+</code></pre>
+<h3 id="85-verify-workspace-integrity">8.5 Verify workspace integrity</h3>
+<pre><code class="language-bash">suture verify --full
+</code></pre>
+<p>This checks checksums for all files against the commit history and reports any corruption.</p>
+<hr>
+<h2 id="quick-reference">Quick Reference</h2>
+<thead><tr><th>Command</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td><code>suture init</code></td><td>Create a new workspace</td></tr>
+<tr><td><code>suture sync --daemon</code></td><td>Start file watcher + auto-commit</td></tr>
+<tr><td><code>suture youtube connect</code></td><td>Link a YouTube channel</td></tr>
+<tr><td><code>suture youtube export</code></td><td>Pull metadata from YouTube</td></tr>
+<tr><td><code>suture youtube diff</code></td><td>Preview pending YouTube changes</td></tr>
+<tr><td><code>suture youtube sync</code></td><td>Push metadata changes to YouTube</td></tr>
+<tr><td><code>suture batch add</code></td><td>Stage files across multiple channels</td></tr>
+<tr><td><code>suture batch commit</code></td><td>Commit staged batch changes</td></tr>
+<tr><td><code>suture report</code></td><td>Generate performance or audit reports</td></tr>
+<tr><td><code>suture export</code></td><td>Create a delivery snapshot</td></tr>
+<tr><td><code>suture log</code></td><td>View commit history</td></tr>
+<tr><td><code>suture revert</code></td><td>Undo a commit</td></tr>
+<tr><td><code>suture verify</code></td><td>Check workspace integrity</td></tr>
+</tbody>
+</table>
+    </article>
+    <div class="doc-footer">
+      <a href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">GitHub</a> &middot;
+      <a href="https://github.com/WyattAu/suture/blob/main/LICENSE" target="_blank" rel="noopener">Apache-2.0</a>
+    </div>
+  </main>
+</div>
+
+<script>
+function toggleSidebar(){
+  document.getElementById("sidebar").classList.toggle("open");
+  document.getElementById("sidebarOverlay").classList.toggle("open");
+}
+</script>
+</body>
+</html>

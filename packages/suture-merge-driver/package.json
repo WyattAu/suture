@@ -1,6 +1,6 @@
 {
   "name": "suture-merge-driver",
-  "version": "5.0.0",
+  "version": "5.0.1",
   "description": "Git merge driver that semantically merges JSON, YAML, TOML, CSV, XML, Markdown, DOCX, XLSX, PPTX, and more",
   "bin": {
     "suture-merge-driver": "bin/suture-merge-driver"

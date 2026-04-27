@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Suture VCS — Defence Contractor Onboarding Guide — Suture</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a2e;
+  --fg:#e2e2f0;--fg2:#8888a8;
+  --accent:#7c3aed;--accent2:#3b82f6;--accent-grad:linear-gradient(135deg,#7c3aed,#3b82f6);
+  --border:#2a2a3e;
+  --mono:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+  --radius:12px;
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);line-height:1.7;overflow-x:hidden}
+a{color:var(--accent);text-decoration:none;transition:color .15s}
+a:hover{color:#a78bfa}
+
+.topnav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(10,10,15,.85);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);height:52px;display:flex;align-items:center;padding:0 20px}
+.topnav-inner{max-width:1400px;width:100%;margin:0 auto;display:flex;align-items:center;justify-content:space-between}
+.topnav-logo{font-family:var(--mono);font-weight:800;font-size:1.1rem;color:#fff;display:flex;align-items:center;gap:8px}
+.topnav-logo span{color:var(--accent)}
+.topnav-links{display:flex;gap:20px;align-items:center}
+.topnav-links a{color:var(--fg2);font-size:.85rem}
+.topnav-links a:hover{color:#fff}
+.menu-btn{display:none;background:none;border:1px solid var(--border);color:var(--fg);padding:6px 10px;border-radius:6px;cursor:pointer;font-size:1.1rem;line-height:1}
+
+.layout{display:flex;margin-top:52px;min-height:calc(100vh - 52px)}
+
+.sidebar{width:260px;min-width:260px;background:var(--bg2);border-right:1px solid var(--border);height:calc(100vh - 52px);position:sticky;top:52px;overflow-y:auto;padding:20px 0}
+.sidebar::-webkit-scrollbar{width:4px}
+.sidebar::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.sidebar-home{display:block;padding:8px 20px;color:var(--fg2);font-size:.8rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
+.sidebar-home:hover{color:var(--fg)}
+.nav-group{margin-bottom:4px}
+.nav-group-title{padding:8px 20px 4px;font-size:.7rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--fg2);opacity:.7}
+.nav-item{display:block;padding:6px 20px 6px 28px;color:var(--fg2);font-size:.85rem;border-left:2px solid transparent;transition:all .15s}
+.nav-item:hover{color:var(--fg);background:rgba(124,58,237,.05)}
+.nav-item.active{color:#fff;border-left-color:var(--accent);background:rgba(124,58,237,.08)}
+
+.content{flex:1;max-width:860px;padding:32px 40px 80px}
+.breadcrumb{font-size:.8rem;color:var(--fg2);margin-bottom:24px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.breadcrumb a{color:var(--fg2)}
+.breadcrumb a:hover{color:var(--accent)}
+.breadcrumb .sep{opacity:.4}
+
+.doc h1{font-size:2rem;color:#fff;font-weight:700;letter-spacing:-.02em;margin-bottom:8px;line-height:1.3}
+.doc h1:first-child{margin-top:0}
+.doc h2{font-size:1.4rem;color:#fff;font-weight:600;margin:40px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.doc h3{font-size:1.1rem;color:#fff;font-weight:600;margin:28px 0 8px}
+.doc h4{font-size:.95rem;color:var(--fg);font-weight:600;margin:24px 0 6px}
+.doc p{margin:0 0 16px;color:var(--fg)}
+.doc ul,.doc ol{margin:0 0 16px 24px;color:var(--fg)}
+.doc li{margin-bottom:4px}
+.doc li>p{margin-bottom:8px}
+.doc strong{color:#fff;font-weight:600}
+.doc em{color:var(--fg2);font-style:italic}
+.doc code{font-family:var(--mono);background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-size:.85em;color:#a78bfa}
+.doc pre{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:20px 24px;overflow-x:auto;font-size:.85rem;line-height:1.7;margin:0 0 20px}
+.doc pre code{background:none;border:none;padding:0;color:var(--fg);font-size:inherit}
+.doc blockquote{border-left:3px solid var(--accent);padding:12px 20px;margin:0 0 20px;background:rgba(124,58,237,.05);border-radius:0 var(--radius) var(--radius) 0}
+.doc blockquote p{color:var(--fg2);margin-bottom:0}
+.doc blockquote p:last-child{margin-bottom:0}
+.doc hr{border:none;border-top:1px solid var(--border);margin:32px 0}
+.doc img{max-width:100%;border-radius:var(--radius);margin:8px 0 20px}
+.doc table{width:100%;border-collapse:collapse;margin:0 0 20px;font-size:.9rem}
+.doc thead th{text-align:left;padding:10px 14px;border-bottom:2px solid var(--border);color:var(--fg);font-weight:600;font-size:.8rem;text-transform:uppercase;letter-spacing:.04em}
+.doc tbody td{padding:10px 14px;border-bottom:1px solid var(--border);color:var(--fg)}
+.doc tbody tr:hover{background:rgba(124,58,237,.03)}
+.doc del{opacity:.5}
+
+.doc-footer{margin-top:48px;padding-top:24px;border-top:1px solid var(--border);font-size:.8rem;color:var(--fg2)}
+.doc-footer a{color:var(--fg2)}
+.doc-footer a:hover{color:var(--accent)}
+
+@media(max-width:900px){
+  .menu-btn{display:block}
+  .sidebar{position:fixed;top:52px;left:-280px;height:calc(100vh - 52px);z-index:90;transition:left .25s ease;box-shadow:none}
+  .sidebar.open{left:0;box-shadow:4px 0 24px rgba(0,0,0,.4)}
+  .sidebar-overlay{display:none;position:fixed;top:52px;left:0;right:0;bottom:0;z-index:89;background:rgba(0,0,0,.4)}
+  .sidebar-overlay.open{display:block}
+  .content{padding:24px 20px 60px}
+}
+@media(max-width:600px){
+  .topnav-links{display:none}
+  .doc h1{font-size:1.5rem}
+  .doc h2{font-size:1.2rem}
+}
+</style>
+</head>
+<body>
+
+<nav class="topnav">
+  <div class="topnav-inner">
+    <a href="index.html" class="topnav-logo">/suture<span>/</span></a>
+    <div class="topnav-links">
+      <a href="index.html">Home</a>
+      <a href="quickstart.html">Docs</a>
+      <a href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">GitHub</a>
+    </div>
+    <button class="menu-btn" onclick="toggleSidebar()" aria-label="Menu">&#9776;</button>
+  </div>
+</nav>
+
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <a href="index.html" class="sidebar-home">&larr; Back to Home</a>
+<div class="nav-group">
+<div class="nav-group-title">Getting Started</div>
+<a href="getting_started.html" class="nav-item">Getting Started with Suture</a>
+<a href="quickstart.html" class="nav-item">Quickstart: Stop Losing Work to Google Drive</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Core Concepts</div>
+<a href="comparing-with-git.html" class="nav-item">Suture vs. Git: When to Use What</a>
+<a href="comparison.html" class="nav-item">Suture vs Other Version Control Systems</a>
+<a href="semantic-merge.html" class="nav-item">Semantic Merge</a>
+<a href="why-suture.html" class="nav-item">Why Suture?</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Reference</div>
+<a href="api_reference.html" class="nav-item">API Reference</a>
+<a href="cli-reference.html" class="nav-item">CLI Reference</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Merge Drivers</div>
+<a href="driver_sdk.html" class="nav-item">Driver SDK</a>
+<a href="git_merge_driver.html" class="nav-item">Git Merge Driver</a>
+<a href="merge-driver-guide.html" class="nav-item">Suture Merge Driver Guide</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Integration</div>
+<a href="github-action.html" class="nav-item">Suture Semantic Merge GitHub Action</a>
+<a href="ide-integration.html" class="nav-item">IDE Integration</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Guides</div>
+<a href="data-science.html" class="nav-item">Suture for Data Science</a>
+<a href="document-authors.html" class="nav-item">Suture for Document Authors</a>
+<a href="video-editors.html" class="nav-item">Suture for Video Editors</a>
+<a href="video-merge-guide.html" class="nav-item">Video Merge Guide: Version Control for OTIO Timelines</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Onboarding</div>
+<a href="onboarding-defence.html" class="nav-item active">Suture VCS — Defence Contractor Onboarding Guide</a>
+<a href="onboarding-film.html" class="nav-item">Suture VCS — Onboarding Guide for Film & TV Post-Production</a>
+<a href="onboarding-youtube.html" class="nav-item">Suture VCS — Onboarding Guide for YouTube Channel Managers & PE Firms</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Platform</div>
+<a href="desktop-build.html" class="nav-item">Building the Suture Desktop App</a>
+<a href="hub.html" class="nav-item">Suture Hub</a>
+<a href="wasm-feasibility.html" class="nav-item">WASM Feasibility Report: Suture Semantic Merge Engine</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Development</div>
+<a href="performance.html" class="nav-item">Suture Performance Baseline</a>
+<a href="release-notes.html" class="nav-item">Suture v2.9.0 — First Public Release</a>
+<a href="shipping-checklist.html" class="nav-item">Suture v2.9.0 Shipping Checklist</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Other</div>
+<a href="demo.html" class="nav-item">Suture Demo: Semantic Merge in 60 Seconds</a>
+</div>
+  </aside>
+  <main class="content">
+    <div class="breadcrumb">
+      <a href="index.html">Home</a>
+      <span class="sep">/</span>
+      <span>Docs</span>
+    </div>
+    <article class="doc">
+      <h1>Suture VCS — Defence Contractor Onboarding Guide</h1>
+<p>This guide covers the minimum steps to set up, operate, and maintain a classified workspace using Suture VCS on Ubuntu 22.04 LTS.</p>
+<hr>
+<h2 id="1-installation">1. Installation</h2>
+<h3 id="from-github-releases-recommended">From GitHub Releases (recommended)</h3>
+<pre><code class="language-bash"># Download the latest Linux amd64 binary
+curl -fSL -o suture.tar.gz \
+  https://github.com/WyattAu/suture/releases/latest/download/suture-x86_64-linux.tar.gz
+
+# Verify the SHA-256 checksum
+curl -fSL -o suture.tar.gz.sha256 \
+  https://github.com/WyattAu/suture/releases/latest/download/suture-x86_64-linux.tar.gz.sha256
+sha256sum -c suture.tar.gz.sha256
+
+# Extract and install to /usr/local
+tar xzf suture.tar.gz
+sudo install -m 0755 suture /usr/local/bin/suture
+suture --version
+</code></pre>
+<h3 id="from-source">From Source</h3>
+<pre><code class="language-bash"># Install build dependencies
+sudo apt-get update &amp;&amp; sudo apt-get install -y \
+  build-essential pkg-config libssl-dev cmake
+
+# Clone and build
+git clone https://github.com/WyattAu/suture.git
+cd suture
+cargo build --release --bin suture
+sudo install -m 0755 target/release/suture /usr/local/bin/suture
+suture --version
+</code></pre>
+<hr>
+<h2 id="2-initial-setup">2. Initial Setup</h2>
+<h3 id="identity-and-signing-key">Identity and signing key</h3>
+<pre><code class="language-bash"># Set your identity (used in commit metadata and audit log)
+suture config user.name="Sgt. Jane Doe"
+suture config user.email="jane.doe@mil.example.gov"
+
+# Generate an Ed25519 signing key (default name: "default")
+suture key generate
+
+# Verify the key was created
+suture key list
+
+# Restrict key permissions
+chmod 600 ~/.config/suture/keys/
+</code></pre>
+<h3 id="verify-your-setup">Verify your setup</h3>
+<pre><code class="language-bash">suture doctor
+</code></pre>
+<p>This runs the repository health check and reports any configuration issues. Address all warnings before proceeding to classified work.</p>
+<hr>
+<h2 id="3-creating-a-classified-workspace">3. Creating a Classified Workspace</h2>
+<pre><code class="language-bash">mkdir -p /data/projects/alpha-protocol
+cd /data/projects/alpha-protocol
+
+# Initialise the workspace
+suture init
+
+# Verify the repository was created
+suture status
+</code></pre>
+<p>All files tracked in this workspace are version-controlled with full audit trail. Commit metadata and signatures are embedded in the tamper-evident chain log.</p>
+<hr>
+<h2 id="4-daily-workflow">4. Daily Workflow</h2>
+<h3 id="tracking-files">Tracking files</h3>
+<p>Suture supports semantic diffing across all registered formats (YAML, JSON, TOML, XML, DOCX, XLSX, iCal, OTIO, and 17+ more). Files are added exactly as they are — no conversion required.</p>
+<pre><code class="language-bash"># Add individual files
+suture add requirements.yaml risk-matrix.xlsx
+
+# Add an entire directory
+suture add docs/
+
+# Stage everything
+suture add --all
+</code></pre>
+<h3 id="committing-with-a-signature">Committing with a signature</h3>
+<p>When a signing key is configured, commits are signed automatically.</p>
+<pre><code class="language-bash">suture commit "Update risk matrix per REV-42 review"
+</code></pre>
+<h3 id="reviewing-state">Reviewing state</h3>
+<pre><code class="language-bash"># Show workspace status
+suture status
+
+# Show commit history
+suture log --oneline
+
+# Show detailed history with signature verification
+suture log --verify
+</code></pre>
+<hr>
+<h2 id="5-branching-and-merging">5. Branching and Merging</h2>
+<h3 id="create-a-branch-for-your-task">Create a branch for your task</h3>
+<pre><code class="language-bash"># Create and switch to a new branch
+suture checkout -b feature/rev42-updates
+
+# Work on the branch
+suture add updated-timeline.otio
+suture commit "Add OTIO timeline for REV-42"
+
+# Return to the main line
+suture checkout main
+</code></pre>
+<h3 id="merging-with-semantic-drivers">Merging with semantic drivers</h3>
+<p>When two branches modify the same YAML or XML file, Suture applies semantic merge drivers instead of line-based diffing. This preserves structure and avoids false conflicts on reordered keys or whitespace.</p>
+<pre><code class="language-bash"># Merge a feature branch into main
+suture checkout main
+suture merge feature/rev42-updates
+
+# If there are conflicts, review them
+suture merge --continue
+
+# Or abort and try again
+suture merge --abort
+</code></pre>
+<h3 id="list-and-clean-up-branches">List and clean up branches</h3>
+<pre><code class="language-bash">suture branch              # List branches
+suture branch -d feature/rev42-updates  # Delete a branch
+</code></pre>
+<hr>
+<h2 id="6-audit-trail-verification">6. Audit Trail Verification</h2>
+<p>Suture maintains a tamper-evident chain log in every workspace. Each entry contains the parent hash, file hashes, commit metadata, and a signature. Altering any historical entry invalidates all subsequent hashes.</p>
+<h3 id="inspect-the-audit-log">Inspect the audit log</h3>
+<pre><code class="language-bash"># Show last 10 entries
+suture audit --show
+
+# Show last 50 entries
+suture audit --tail 50
+
+# Count total entries
+suture audit --count
+</code></pre>
+<h3 id="verify-integrity">Verify integrity</h3>
+<pre><code class="language-bash"># Verify the entire chain is intact
+suture audit --verify
+
+# Verify commit signatures
+suture verify
+
+# Verify with key details (author, fingerprint)
+suture verify -v
+</code></pre>
+<p>A non-zero exit code means the chain is broken or a signature is invalid. Treat this as a security incident — see Section 8.</p>
+<h3 id="export-audit-trail">Export audit trail</h3>
+<pre><code class="language-bash"># Export structured audit trail as JSON
+suture log --audit --audit-format json &gt; audit-2025-Q1.json
+
+# Filter by date range
+suture log --audit --since 2025-01-01 --until 2025-04-01 --audit-format csv &gt; audit-Q1.csv
+
+# Filter by author
+suture log --audit --author "jane.doe@mil.example.gov" --audit-format json
+</code></pre>
+<hr>
+<h2 id="7-classification-scanning-and-compliance">7. Classification Scanning and Compliance</h2>
+<h3 id="scan-for-classification-changes">Scan for classification changes</h3>
+<pre><code class="language-bash"># Scan all commits for classification marking changes
+suture classification scan
+
+# Generate a classification compliance report
+suture classification report
+</code></pre>
+<h3 id="run-health-checks">Run health checks</h3>
+<pre><code class="language-bash"># Full health check
+suture doctor
+
+# Auto-fix detected issues
+suture doctor --fix
+</code></pre>
+<h3 id="scheduled-compliance-sweep-cron">Scheduled compliance sweep (cron)</h3>
+<pre><code class="language-bash"># Add to crontab — daily at 0600
+0 6 * * * cd /data/projects/alpha-protocol &amp;&amp; suture classification scan &gt;&gt; /var/log/suture-compliance.log 2&gt;&amp;1
+0 6 * * * cd /data/projects/alpha-protocol &amp;&amp; suture classification report &gt;&gt; /var/log/suture-compliance.log 2&gt;&amp;1
+</code></pre>
+<hr>
+<h2 id="8-multi-team-collaboration">8. Multi-Team Collaboration</h2>
+<p>Each team operates on its own branch. Merges into the shared integration branch use semantic drivers to handle structured file conflicts.</p>
+<h3 id="team-leads-set-up-the-integration-branch">Team leads set up the integration branch</h3>
+<pre><code class="language-bash">cd /data/projects/alpha-protocol
+suture branch integration
+</code></pre>
+<h3 id="each-team-creates-their-working-branch-from-integration">Each team creates their working branch from integration</h3>
+<pre><code class="language-bash"># Team Alpha
+suture checkout integration
+suture checkout -b team-alpha/hardware-specs
+
+# Team Bravo
+suture checkout integration
+suture checkout -b team-bravo/software-requirements
+</code></pre>
+<h3 id="teams-work-independently">Teams work independently</h3>
+<pre><code class="language-bash">suture checkout team-alpha/hardware-specs
+suture add hardware-spec.yaml
+suture commit "Add chassis dimensions v3"
+</code></pre>
+<h3 id="merge-into-integration">Merge into integration</h3>
+<pre><code class="language-bash">suture checkout integration
+suture merge team-alpha/hardware-specs
+suture merge team-bravo/software-requirements
+</code></pre>
+<p>If both teams modified the same YAML/JSON file, the semantic merge driver resolves structural conflicts automatically. Remaining conflicts are surfaced for manual resolution.</p>
+<h3 id="verify-after-merge">Verify after merge</h3>
+<pre><code class="language-bash">suture verify
+suture audit --verify
+suture doctor
+</code></pre>
+<hr>
+<h2 id="9-incident-response">9. Incident Response</h2>
+<h3 id="find-who-changed-a-file-and-when">Find who changed a file and when</h3>
+<pre><code class="language-bash"># Annotate each line with the last commit that touched it
+suture blame requirements.yaml
+
+# Blame a specific line range
+suture blame requirements.yaml -L 50,70
+
+# Blame as of a specific commit
+suture blame requirements.yaml --at HEAD~3
+</code></pre>
+<h3 id="revert-a-problematic-commit">Revert a problematic commit</h3>
+<pre><code class="language-bash"># Identify the commit
+suture log --oneline
+
+# Revert a specific commit (creates a new commit undoing the change)
+suture revert &lt;commit-hash&gt; -m "Revert: incorrect classification applied"
+</code></pre>
+<h3 id="verify-workspace-integrity-after-an-incident">Verify workspace integrity after an incident</h3>
+<pre><code class="language-bash"># Full integrity check
+suture verify -v
+
+# Verify chain integrity
+suture audit --verify
+
+# Export audit trail for forensics
+suture log --audit --audit-format json &gt; incident-forensics.json
+</code></pre>
+<h3 id="escalation-checklist">Escalation checklist</h3>
+<ol>
+<li>Run <code>suture audit --verify</code> and capture the output.</li>
+<li>Run <code>suture verify -v</code> and check all signatures.</li>
+<li>Export audit trail: <code>suture log --audit --audit-format json &gt; incident-&lt;date&gt;.json</code>.</li>
+<li>Restrict workspace access until the break is investigated.</li>
+<li>Do not attempt to repair the chain log manually — this will invalidate</li>
+</ol>
+<p>   further entries and destroy forensic evidence.</p>
+<hr>
+<h2 id="quick-reference">Quick Reference</h2>
+<thead><tr><th>Command</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td><code>suture init</code></td><td>Create a new workspace</td></tr>
+<tr><td><code>suture add &lt;path&gt;</code></td><td>Stage files</td></tr>
+<tr><td><code>suture add --all</code></td><td>Stage all modified files</td></tr>
+<tr><td><code>suture commit "&lt;msg&gt;"</code></td><td>Commit (auto-signed if key set)</td></tr>
+<tr><td><code>suture branch &lt;name&gt;</code></td><td>Create a branch</td></tr>
+<tr><td><code>suture branch</code></td><td>List branches</td></tr>
+<tr><td><code>suture branch -d &lt;name&gt;</code></td><td>Delete a branch</td></tr>
+<tr><td><code>suture checkout &lt;name&gt;</code></td><td>Switch branches</td></tr>
+<tr><td><code>suture checkout -b &lt;name&gt;</code></td><td>Create and switch to branch</td></tr>
+<tr><td><code>suture merge &lt;branch&gt;</code></td><td>Merge a branch</td></tr>
+<tr><td><code>suture merge --continue</code></td><td>Continue after resolving conflicts</td></tr>
+<tr><td><code>suture merge --abort</code></td><td>Abort a merge</td></tr>
+<tr><td><code>suture log --oneline</code></td><td>View commit history (compact)</td></tr>
+<tr><td><code>suture log --verify</code></td><td>View history with signatures</td></tr>
+<tr><td><code>suture log --audit</code></td><td>Export structured audit trail</td></tr>
+<tr><td><code>suture audit --show</code></td><td>Display all audit entries</td></tr>
+<tr><td><code>suture audit --verify</code></td><td>Verify chain integrity</td></tr>
+<tr><td><code>suture verify</code></td><td>Verify commit signatures</td></tr>
+<tr><td><code>suture key generate</code></td><td>Generate a new signing key</td></tr>
+<tr><td><code>suture key list</code></td><td>List local signing keys</td></tr>
+<tr><td><code>suture doctor</code></td><td>Check repository health</td></tr>
+<tr><td><code>suture classification scan</code></td><td>Scan for classification changes</td></tr>
+<tr><td><code>suture classification report</code></td><td>Generate compliance report</td></tr>
+<tr><td><code>suture blame &lt;file&gt;</code></td><td>Annotate file with commit info</td></tr>
+<tr><td><code>suture blame &lt;file&gt; -L 10,20</code></td><td>Blame specific line range</td></tr>
+<tr><td><code>suture revert &lt;hash&gt; -m "&lt;msg&gt;"</code></td><td>Revert a commit</td></tr>
+<tr><td><code>suture config user.name=&lt;name&gt;</code></td><td>Set user identity</td></tr>
+<tr><td><code>suture config user.email=&lt;email&gt;</code></td><td>Set user email</td></tr>
+</tbody>
+</table>
+    </article>
+    <div class="doc-footer">
+      <a href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">GitHub</a> &middot;
+      <a href="https://github.com/WyattAu/suture/blob/main/LICENSE" target="_blank" rel="noopener">Apache-2.0</a>
+    </div>
+  </main>
+</div>
+
+<script>
+function toggleSidebar(){
+  document.getElementById("sidebar").classList.toggle("open");
+  document.getElementById("sidebarOverlay").classList.toggle("open");
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>404 — Page Not Found — Suture</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a2e;
+  --fg:#e2e2f0;--fg2:#8888a8;
+  --accent:#7c3aed;--accent2:#3b82f6;--accent-grad:linear-gradient(135deg,#7c3aed,#3b82f6);
+  --border:#2a2a3e;
+  --mono:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+  --radius:12px;
+}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);display:flex;align-items:center;justify-content:center;min-height:100vh;text-align:center;padding:24px}
+a{color:var(--accent);text-decoration:none;transition:color .15s}
+a:hover{color:#a78bfa}
+.err-code{font-family:var(--mono);font-size:6rem;font-weight:800;background:var(--accent-grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;line-height:1}
+.err-title{font-size:1.5rem;color:#fff;margin:16px 0 8px}
+.err-desc{color:var(--fg2);max-width:400px;margin:0 auto 32px;font-size:.95rem}
+.err-link{display:inline-flex;align-items:center;gap:8px;padding:12px 28px;border-radius:8px;font-size:.95rem;font-weight:600;background:var(--accent-grad);color:#fff;border:none;cursor:pointer;transition:all .2s}
+.err-link:hover{opacity:.9;color:#fff;transform:translateY(-1px);box-shadow:0 8px 24px rgba(124,58,237,.3)}
+.err-sub{margin-top:32px;font-size:.8rem;color:var(--fg2)}
+.err-sub a{color:var(--fg2)}
+.err-sub a:hover{color:#fff}
+</style>
+</head>
+<body>
+<div>
+  <div class="err-code">404</div>
+  <div class="err-title">Page Not Found</div>
+  <div class="err-desc">This page doesn't exist or has been moved. Check the URL or head back to the documentation.</div>
+  <a href="index.html" class="err-link">&larr; Back to Home</a>
+  <div class="err-sub">
+    <a href="quickstart.html">Docs</a> &middot;
+    <a href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">GitHub</a>
+  </div>
+</div>
+</body>
+</html>

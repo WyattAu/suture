@@ -21,6 +21,13 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use suture_driver::{DriverError, SemanticChange, SutureDriver};
 use suture_ooxml::OoxmlDocument;
 
+/// Convert bytes to String, replacing invalid UTF-8 sequences with the Unicode replacement character.
+/// This is safe for binary formats like OOXML (ZIP/XML) where the content should be valid UTF-8
+/// per specification (ECMA-376, ISO 29500), but we defensively handle edge cases.
+fn bytes_to_string_lossy(bytes: Vec<u8>) -> String {
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
 type Cell = (usize, usize, String);
 type SheetData = (String, Vec<Cell>);
 
@@ -434,12 +441,7 @@ impl SutureDriver for XlsxDriver {
     fn merge(&self, base: &str, ours: &str, theirs: &str) -> Result<Option<String>, DriverError> {
         let bytes = self.merge_raw(base.as_bytes(), ours.as_bytes(), theirs.as_bytes())?;
         match bytes {
-            Some(b) => {
-                // SAFETY: OOXML parts are UTF-8 XML. The bytes round-trip
-                // through ZIP → parse → merge → serialize → ZIP and are
-                // written to disk as raw bytes.
-                Ok(Some(unsafe { String::from_utf8_unchecked(b) }))
-            }
+            Some(b) => Ok(Some(bytes_to_string_lossy(b))),
             None => Ok(None),
         }
     }
@@ -523,8 +525,8 @@ impl SutureDriver for XlsxDriver {
         base: Option<&[u8]>,
         new_content: &[u8],
     ) -> Result<Vec<SemanticChange>, DriverError> {
-        let base_str = base.map(|b| unsafe { String::from_utf8_unchecked(b.to_vec()) });
-        let new_str = unsafe { String::from_utf8_unchecked(new_content.to_vec()) };
+        let base_str = base.map(|b| bytes_to_string_lossy(b.to_vec()));
+        let new_str = bytes_to_string_lossy(new_content.to_vec());
         self.diff(base_str.as_deref(), &new_str)
     }
 }

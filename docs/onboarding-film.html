@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Suture VCS — Onboarding Guide for Film & TV Post-Production — Suture</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a2e;
+  --fg:#e2e2f0;--fg2:#8888a8;
+  --accent:#7c3aed;--accent2:#3b82f6;--accent-grad:linear-gradient(135deg,#7c3aed,#3b82f6);
+  --border:#2a2a3e;
+  --mono:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+  --radius:12px;
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);line-height:1.7;overflow-x:hidden}
+a{color:var(--accent);text-decoration:none;transition:color .15s}
+a:hover{color:#a78bfa}
+
+.topnav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(10,10,15,.85);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);height:52px;display:flex;align-items:center;padding:0 20px}
+.topnav-inner{max-width:1400px;width:100%;margin:0 auto;display:flex;align-items:center;justify-content:space-between}
+.topnav-logo{font-family:var(--mono);font-weight:800;font-size:1.1rem;color:#fff;display:flex;align-items:center;gap:8px}
+.topnav-logo span{color:var(--accent)}
+.topnav-links{display:flex;gap:20px;align-items:center}
+.topnav-links a{color:var(--fg2);font-size:.85rem}
+.topnav-links a:hover{color:#fff}
+.menu-btn{display:none;background:none;border:1px solid var(--border);color:var(--fg);padding:6px 10px;border-radius:6px;cursor:pointer;font-size:1.1rem;line-height:1}
+
+.layout{display:flex;margin-top:52px;min-height:calc(100vh - 52px)}
+
+.sidebar{width:260px;min-width:260px;background:var(--bg2);border-right:1px solid var(--border);height:calc(100vh - 52px);position:sticky;top:52px;overflow-y:auto;padding:20px 0}
+.sidebar::-webkit-scrollbar{width:4px}
+.sidebar::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.sidebar-home{display:block;padding:8px 20px;color:var(--fg2);font-size:.8rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
+.sidebar-home:hover{color:var(--fg)}
+.nav-group{margin-bottom:4px}
+.nav-group-title{padding:8px 20px 4px;font-size:.7rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--fg2);opacity:.7}
+.nav-item{display:block;padding:6px 20px 6px 28px;color:var(--fg2);font-size:.85rem;border-left:2px solid transparent;transition:all .15s}
+.nav-item:hover{color:var(--fg);background:rgba(124,58,237,.05)}
+.nav-item.active{color:#fff;border-left-color:var(--accent);background:rgba(124,58,237,.08)}
+
+.content{flex:1;max-width:860px;padding:32px 40px 80px}
+.breadcrumb{font-size:.8rem;color:var(--fg2);margin-bottom:24px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.breadcrumb a{color:var(--fg2)}
+.breadcrumb a:hover{color:var(--accent)}
+.breadcrumb .sep{opacity:.4}
+
+.doc h1{font-size:2rem;color:#fff;font-weight:700;letter-spacing:-.02em;margin-bottom:8px;line-height:1.3}
+.doc h1:first-child{margin-top:0}
+.doc h2{font-size:1.4rem;color:#fff;font-weight:600;margin:40px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.doc h3{font-size:1.1rem;color:#fff;font-weight:600;margin:28px 0 8px}
+.doc h4{font-size:.95rem;color:var(--fg);font-weight:600;margin:24px 0 6px}
+.doc p{margin:0 0 16px;color:var(--fg)}
+.doc ul,.doc ol{margin:0 0 16px 24px;color:var(--fg)}
+.doc li{margin-bottom:4px}
+.doc li>p{margin-bottom:8px}
+.doc strong{color:#fff;font-weight:600}
+.doc em{color:var(--fg2);font-style:italic}
+.doc code{font-family:var(--mono);background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-size:.85em;color:#a78bfa}
+.doc pre{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:20px 24px;overflow-x:auto;font-size:.85rem;line-height:1.7;margin:0 0 20px}
+.doc pre code{background:none;border:none;padding:0;color:var(--fg);font-size:inherit}
+.doc blockquote{border-left:3px solid var(--accent);padding:12px 20px;margin:0 0 20px;background:rgba(124,58,237,.05);border-radius:0 var(--radius) var(--radius) 0}
+.doc blockquote p{color:var(--fg2);margin-bottom:0}
+.doc blockquote p:last-child{margin-bottom:0}
+.doc hr{border:none;border-top:1px solid var(--border);margin:32px 0}
+.doc img{max-width:100%;border-radius:var(--radius);margin:8px 0 20px}
+.doc table{width:100%;border-collapse:collapse;margin:0 0 20px;font-size:.9rem}
+.doc thead th{text-align:left;padding:10px 14px;border-bottom:2px solid var(--border);color:var(--fg);font-weight:600;font-size:.8rem;text-transform:uppercase;letter-spacing:.04em}
+.doc tbody td{padding:10px 14px;border-bottom:1px solid var(--border);color:var(--fg)}
+.doc tbody tr:hover{background:rgba(124,58,237,.03)}
+.doc del{opacity:.5}
+
+.doc-footer{margin-top:48px;padding-top:24px;border-top:1px solid var(--border);font-size:.8rem;color:var(--fg2)}
+.doc-footer a{color:var(--fg2)}
+.doc-footer a:hover{color:var(--accent)}
+
+@media(max-width:900px){
+  .menu-btn{display:block}
+  .sidebar{position:fixed;top:52px;left:-280px;height:calc(100vh - 52px);z-index:90;transition:left .25s ease;box-shadow:none}
+  .sidebar.open{left:0;box-shadow:4px 0 24px rgba(0,0,0,.4)}
+  .sidebar-overlay{display:none;position:fixed;top:52px;left:0;right:0;bottom:0;z-index:89;background:rgba(0,0,0,.4)}
+  .sidebar-overlay.open{display:block}
+  .content{padding:24px 20px 60px}
+}
+@media(max-width:600px){
+  .topnav-links{display:none}
+  .doc h1{font-size:1.5rem}
+  .doc h2{font-size:1.2rem}
+}
+</style>
+</head>
+<body>
+
+<nav class="topnav">
+  <div class="topnav-inner">
+    <a href="index.html" class="topnav-logo">/suture<span>/</span></a>
+    <div class="topnav-links">
+      <a href="index.html">Home</a>
+      <a href="quickstart.html">Docs</a>
+      <a href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">GitHub</a>
+    </div>
+    <button class="menu-btn" onclick="toggleSidebar()" aria-label="Menu">&#9776;</button>
+  </div>
+</nav>
+
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <a href="index.html" class="sidebar-home">&larr; Back to Home</a>
+<div class="nav-group">
+<div class="nav-group-title">Getting Started</div>
+<a href="getting_started.html" class="nav-item">Getting Started with Suture</a>
+<a href="quickstart.html" class="nav-item">Quickstart: Stop Losing Work to Google Drive</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Core Concepts</div>
+<a href="comparing-with-git.html" class="nav-item">Suture vs. Git: When to Use What</a>
+<a href="comparison.html" class="nav-item">Suture vs Other Version Control Systems</a>
+<a href="semantic-merge.html" class="nav-item">Semantic Merge</a>
+<a href="why-suture.html" class="nav-item">Why Suture?</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Reference</div>
+<a href="api_reference.html" class="nav-item">API Reference</a>
+<a href="cli-reference.html" class="nav-item">CLI Reference</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Merge Drivers</div>
+<a href="driver_sdk.html" class="nav-item">Driver SDK</a>
+<a href="git_merge_driver.html" class="nav-item">Git Merge Driver</a>
+<a href="merge-driver-guide.html" class="nav-item">Suture Merge Driver Guide</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Integration</div>
+<a href="github-action.html" class="nav-item">Suture Semantic Merge GitHub Action</a>
+<a href="ide-integration.html" class="nav-item">IDE Integration</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Guides</div>
+<a href="data-science.html" class="nav-item">Suture for Data Science</a>
+<a href="document-authors.html" class="nav-item">Suture for Document Authors</a>
+<a href="video-editors.html" class="nav-item">Suture for Video Editors</a>
+<a href="video-merge-guide.html" class="nav-item">Video Merge Guide: Version Control for OTIO Timelines</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Onboarding</div>
+<a href="onboarding-defence.html" class="nav-item">Suture VCS — Defence Contractor Onboarding Guide</a>
+<a href="onboarding-film.html" class="nav-item active">Suture VCS — Onboarding Guide for Film & TV Post-Production</a>
+<a href="onboarding-youtube.html" class="nav-item">Suture VCS — Onboarding Guide for YouTube Channel Managers & PE Firms</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Platform</div>
+<a href="desktop-build.html" class="nav-item">Building the Suture Desktop App</a>
+<a href="hub.html" class="nav-item">Suture Hub</a>
+<a href="wasm-feasibility.html" class="nav-item">WASM Feasibility Report: Suture Semantic Merge Engine</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Development</div>
+<a href="performance.html" class="nav-item">Suture Performance Baseline</a>
+<a href="release-notes.html" class="nav-item">Suture v2.9.0 — First Public Release</a>
+<a href="shipping-checklist.html" class="nav-item">Suture v2.9.0 Shipping Checklist</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Other</div>
+<a href="demo.html" class="nav-item">Suture Demo: Semantic Merge in 60 Seconds</a>
+</div>
+  </aside>
+  <main class="content">
+    <div class="breadcrumb">
+      <a href="index.html">Home</a>
+      <span class="sep">/</span>
+      <span>Docs</span>
+    </div>
+    <article class="doc">
+      <h1>Suture VCS — Onboarding Guide for Film & TV Post-Production</h1>
+<p>This guide walks post-production teams through using Suture for timeline versioning, multi-department collaboration, and delivery. Suture is a semantic version control system with native OTIO support — it is not Git.</p>
+<hr>
+<h2 id="1-installation">1. Installation</h2>
+<h3 id="macos">macOS</h3>
+<pre><code class="language-bash">brew install suture
+</code></pre>
+<h3 id="linux-debianubuntu">Linux (Debian/Ubuntu)</h3>
+<pre><code class="language-bash">curl -fsSL https://releases.suture.dev/apt/gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/suture.gpg
+echo "deb [signed-by=/etc/apt/keyrings/suture.gpg] https://releases.suture.dev/apt stable main" \
+  | sudo tee /etc/apt/sources.list.d/suture.list
+sudo apt update &amp;&amp; sudo apt install suture
+</code></pre>
+<h3 id="verify">Verify</h3>
+<pre><code class="language-bash">suture --version
+suture --help
+</code></pre>
+<p>You need a Suture account and a workspace. If your post supervisor or assistant editor has already created a workspace, ask them for an invite. Otherwise:</p>
+<pre><code class="language-bash">suture auth login
+suture workspace create "ProjectName_Show_S01"
+</code></pre>
+<hr>
+<h2 id="2-initial-setup">2. Initial Setup</h2>
+<p>Navigate to your project's shared storage or local working directory and initialize a Suture project:</p>
+<pre><code class="language-bash">cd /mnt/projects/projectname/show
+suture init
+</code></pre>
+<p>This creates a <code>.suture/</code> directory with project metadata. Do not manually edit <code>.suture/</code>.</p>
+<p>Set your identity so commits are attributed correctly:</p>
+<pre><code class="language-bash">suture config set user.name "Jane Doe"
+suture config set user.email "jane@studio.com"
+suture config set user.department "editorial"
+</code></pre>
+<p>Configure default timeline format:</p>
+<pre><code class="language-bash">suture config set timeline.format "otio"
+suture config set timeline.frame-rate "23.976"
+</code></pre>
+<h3 id="invite-collaborators">Invite collaborators</h3>
+<pre><code class="language-bash">suture team invite vfx-lead@studio.com --role editor
+suture team invite sound-designer@studio.com --role editor
+suture team invite colorist@studio.com --role editor
+</code></pre>
+<hr>
+<h2 id="3-importing-an-existing-timeline-from-editorial">3. Importing an Existing Timeline from Editorial</h2>
+<p>Assume editorial has delivered an AAF or XML export from Avid/Premiere. First convert to OTIO if needed, then import into Suture:</p>
+<pre><code class="language-bash">suture timeline import --source "s01e01_lock_v1.xml" \
+  --format "premiere-xml" \
+  --label "S01E01 editorial lock v1"
+</code></pre>
+<p>If you already have an OTIO file:</p>
+<pre><code class="language-bash">suture timeline import --source "s01e01_lock_v1.otio" \
+  --label "S01E01 editorial lock v1"
+</code></pre>
+<p>Verify the import:</p>
+<pre><code class="language-bash">suture timeline summary
+</code></pre>
+<p>Expected output includes track count, clip count, total duration, and timecode range.</p>
+<p>Tag the import so it serves as a reference point:</p>
+<pre><code class="language-bash">suture tag add "editorial-lock-v1" --message "Picture lock from editorial"
+</code></pre>
+<hr>
+<h2 id="4-daily-workflow">4. Daily Workflow</h2>
+<h3 id="modify-a-timeline">Modify a timeline</h3>
+<p>Open your timeline in your NLE as usual. Edit, trim, add markers. When you're ready to save a version, export from your NLE and re-import:</p>
+<pre><code class="language-bash">suture timeline import --source "s01e01_v2.otio" \
+  --label "S01E01 v2 — temp VFX added"
+</code></pre>
+<h3 id="commit-changes">Commit changes</h3>
+<p>Every import creates a pending change set. Commit it:</p>
+<pre><code class="language-bash">suture commit --message "Add temp VFX shots on reels 2 and 3"
+</code></pre>
+<h3 id="view-history">View history</h3>
+<pre><code class="language-bash">suture log
+suture log --oneline --last 10
+</code></pre>
+<h3 id="undo-a-bad-commit">Undo a bad commit</h3>
+<pre><code class="language-bash">suture revert HEAD
+suture commit --message "Revert bad temp VFX placement"
+</code></pre>
+<hr>
+<h2 id="5-multi-department-collaboration">5. Multi-Department Collaboration</h2>
+<h3 id="branch-per-department">Branch per department</h3>
+<p>After editorial lock, each department works on its own branch. The assistant editor typically manages branching:</p>
+<pre><code class="language-bash">suture branch create "vfx" --from "editorial-lock-v1"
+suture branch create "sound" --from "editorial-lock-v1"
+suture branch create "color" --from "editorial-lock-v1"
+suture branch create "titles" --from "editorial-lock-v1"
+</code></pre>
+<h3 id="switch-to-a-branch">Switch to a branch</h3>
+<pre><code class="language-bash">suture branch checkout "vfx"
+</code></pre>
+<h3 id="work-on-a-branch">Work on a branch</h3>
+<p>Each department imports their modified timeline into their branch:</p>
+<pre><code class="language-bash">suture timeline import --source "s01e01_vfx_comp_v1.otio" \
+  --label "VFX comp pass 1"
+suture commit --message "VFX: first comp pass for hero shots"
+</code></pre>
+<h3 id="merge-departments-back">Merge departments back</h3>
+<p>When departments finish, merge their branches into a main delivery branch:</p>
+<pre><code class="language-bash">suture branch checkout "main"
+suture merge "vfx" --message "Merge VFX comp pass 1"
+suture merge "sound" --message "Merge sound design mix"
+suture merge "color" --message "Merge color grade"
+</code></pre>
+<p>Suture performs OTIO-aware merges. Timeline tracks from each department are preserved — VFX clips on VFX tracks, sound on audio tracks, color adjustments on metadata. Conflicts are flagged with markers on affected clips rather than silently overwriting.</p>
+<h3 id="resolve-merge-conflicts">Resolve merge conflicts</h3>
+<p>If a merge produces conflicts, list them:</p>
+<pre><code class="language-bash">suture merge conflicts
+</code></pre>
+<p>Open the conflicted timeline in your NLE, resolve, re-export, and commit:</p>
+<pre><code class="language-bash">suture timeline import --source "s01e01_resolved.otio" \
+  --label "Merge conflict resolution"
+suture commit --message "Resolve overlap between VFX and color trim changes"
+</code></pre>
+<hr>
+<h2 id="6-timeline-diff-and-comparison">6. Timeline Diff and Comparison</h2>
+<h3 id="compare-two-versions">Compare two versions</h3>
+<pre><code class="language-bash">suture diff "editorial-lock-v1" HEAD
+</code></pre>
+<p>This shows added, removed, and modified clips with timecode positions. Use <code>--track</code> to filter to specific tracks:</p>
+<pre><code class="language-bash">suture diff "editorial-lock-v1" HEAD --track "VFX1"
+suture diff "editorial-lock-v1" HEAD --track "A1" --track "A2"
+</code></pre>
+<h3 id="blame-who-changed-what-and-when">Blame — who changed what, and when</h3>
+<p><code>suture blame</code> shows which commit last modified each clip in the current timeline:</p>
+<pre><code class="language-bash">suture blame
+</code></pre>
+<p>Use <code>--at</code> to inspect a specific timecode range:</p>
+<pre><code class="language-bash">suture blame --at "00:12:30:00-00:14:00:00"
+</code></pre>
+<p>This is useful during review sessions. If a clip moved unexpectedly, blame tells you which commit moved it and who made that commit.</p>
+<h3 id="side-by-side-summary">Side-by-side summary</h3>
+<pre><code class="language-bash">suture timeline summary --at "editorial-lock-v1"
+suture timeline summary --at HEAD
+</code></pre>
+<p>Compare track counts, durations, and clip counts between versions.</p>
+<hr>
+<h2 id="7-export-and-delivery">7. Export and Delivery</h2>
+<h3 id="single-timeline-export">Single timeline export</h3>
+<p>Export the current timeline to a format your facility or client needs:</p>
+<pre><code class="language-bash">suture timeline export --format "otio" --output "delivery/s01e01_final.otio"
+suture timeline export --format "premiere-xml" --output "delivery/s01e01_final.xml"
+suture timeline export --format "avid-aaf" --output "delivery/s01e01_final.aaf"
+suture timeline export --format "fcpxml" --output "delivery/s01e01_final.fcpxml"
+</code></pre>
+<h3 id="batch-export">Batch export</h3>
+<p>When delivering multiple episodes or reels at once:</p>
+<pre><code class="language-bash">suture batch export \
+  --episodes "s01e01,s01e02,s01e03" \
+  --format "otio" \
+  --output "delivery/batch/"
+</code></pre>
+<p>Or export from a manifest file:</p>
+<pre><code class="language-bash">suture batch export --manifest "delivery/manifest.json"
+</code></pre>
+<p>Manifest format:</p>
+<pre><code class="language-json">{
+  "outputs": [
+    {
+      "episode": "s01e01",
+      "tag": "delivery-final",
+      "formats": ["otio", "premiere-xml"]
+    },
+    {
+      "episode": "s01e02",
+      "tag": "delivery-final",
+      "formats": ["otio", "avid-aaf"]
+    }
+  ],
+  "output_dir": "delivery/batch/"
+}
+</code></pre>
+<h3 id="batch-operations-on-timelines">Batch operations on timelines</h3>
+<p>Process multiple timelines in bulk — useful for conforming or reformatting:</p>
+<pre><code class="language-bash">suture batch retime --episodes "s01e01,s01e02" --target-fps 25
+suture batch rewrap --episodes "s01e01,s01e02" --output "delivery/rewrapped/"
+</code></pre>
+<hr>
+<h2 id="8-review-and-approval-workflow">8. Review and Approval Workflow</h2>
+<h3 id="tag-milestones">Tag milestones</h3>
+<p>Use tags to mark review gates:</p>
+<pre><code class="language-bash">suture tag add "director-review-v1" --message "First director review cut"
+suture tag add "producer-approval" --message "Producer sign-off on final cut"
+suture tag add "network-delivery" --message "Delivered to network"
+</code></pre>
+<h3 id="generate-review-reports">Generate review reports</h3>
+<pre><code class="language-bash">suture report generate \
+  --from "editorial-lock-v1" \
+  --to "director-review-v1" \
+  --format "pdf" \
+  --output "reports/s01e01_editorial_to_director_review.pdf"
+</code></pre>
+<p>Reports include a change summary, clip-level diff, and per-department commit log. Available formats: <code>pdf</code>, <code>xlsx</code>, <code>html</code>.</p>
+<h3 id="video-template-for-review-screenings">Video template for review screenings</h3>
+<p>Generate a reference video from the timeline with burn-in metadata:</p>
+<pre><code class="language-bash">suture video-template \
+  --tag "director-review-v1" \
+  --template "burnin-timecode" \
+  --output "review/s01e01_director_review.mp4"
+</code></pre>
+<p>Available templates vary by installation. Check what's available:</p>
+<pre><code class="language-bash">suture video-template --list
+</code></pre>
+<h3 id="freeze-a-delivery-version">Freeze a delivery version</h3>
+<p>Once approved, lock the version:</p>
+<pre><code class="language-bash">suture tag add "delivery-final-s01e01" --message "Final delivery — do not modify"
+suture branch checkout "main"
+suture export delivery-tag "delivery-final-s01e01"
+</code></pre>
+<hr>
+<h2 id="quick-reference">Quick Reference</h2>
+<thead><tr><th>Task</th><th>Command</th></tr></thead>
+<tbody>
+<tr><td>Initialize project</td><td><code>suture init</code></td></tr>
+<tr><td>Import timeline</td><td><code>suture timeline import --source &lt;file&gt; --label &lt;name&gt;</code></td></tr>
+<tr><td>Commit changes</td><td><code>suture commit --message "&lt;msg&gt;"</code></td></tr>
+<tr><td>View history</td><td><code>suture log</code></td></tr>
+<tr><td>Create branch</td><td><code>suture branch create &lt;name&gt; --from &lt;tag&gt;</code></td></tr>
+<tr><td>Switch branch</td><td><code>suture branch checkout &lt;name&gt;</code></td></tr>
+<tr><td>Merge branch</td><td><code>suture merge &lt;branch&gt; --message "&lt;msg&gt;"</code></td></tr>
+<tr><td>Diff versions</td><td><code>suture diff &lt;from&gt; &lt;to&gt;</code></td></tr>
+<tr><td>Blame at timecode</td><td><code>suture blame --at &lt;tc&gt;</code></td></tr>
+<tr><td>Export timeline</td><td><code>suture timeline export --format &lt;fmt&gt; --output &lt;path&gt;</code></td></tr>
+<tr><td>Batch export</td><td><code>suture batch export --manifest &lt;file&gt;</code></td></tr>
+<tr><td>Generate report</td><td><code>suture report generate --from &lt;tag&gt; --to &lt;tag&gt;</code></td></tr>
+<tr><td>Tag a version</td><td><code>suture tag add &lt;name&gt; --message "&lt;msg&gt;"</code></td></tr>
+<tr><td>Review video</td><td><code>suture video-template --tag &lt;tag&gt; --output &lt;path&gt;</code></td></tr>
+</tbody>
+</table>
+<hr>
+<h2 id="common-issues">Common Issues</h2>
+<h3 id="import-fails-with-format-error">Import fails with format error</h3>
+<p>Ensure your NLE export is a supported format. Check supported formats:</p>
+<pre><code class="language-bash">suture timeline import --help
+</code></pre>
+<p>If importing AAF/XML, Suture converts internally to OTIO. If the source timeline has unsupported effects or transitions, import will warn but proceed — unsupported elements are preserved as metadata.</p>
+<h3 id="merge-produces-many-conflicts">Merge produces many conflicts</h3>
+<p>This usually means two departments edited the same timecode range on the same track. Coordinate with departments to work on separate tracks, or use <code>suture diff</code> before merging to preview changes:</p>
+<pre><code class="language-bash">suture diff "main" "vfx" --track "V1"
+</code></pre>
+<h3 id="large-timelines-are-slow">Large timelines are slow</h3>
+<p>For timelines with over 10 000 clips, consider splitting into reels and using batch operations:</p>
+<pre><code class="language-bash">suture batch export --episodes "s01e01_r1,s01e01_r2,s01e01_r3" \
+  --format "otio" --output "delivery/"
+</code></pre>
+    </article>
+    <div class="doc-footer">
+      <a href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">GitHub</a> &middot;
+      <a href="https://github.com/WyattAu/suture/blob/main/LICENSE" target="_blank" rel="noopener">Apache-2.0</a>
+    </div>
+  </main>
+</div>
+
+<script>
+function toggleSidebar(){
+  document.getElementById("sidebar").classList.toggle("open");
+  document.getElementById("sidebarOverlay").classList.toggle("open");
+}
+</script>
+</body>
+</html>
