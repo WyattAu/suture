@@ -1,3 +1,7 @@
+#![allow(clippy::arc_with_non_send_sync)]
+// FUSE filesystems are inherently single-threaded per mount; the Arc is used for
+// shared ownership across callback closures dispatched by the FUSE library.
+
 use crate::UnpoisonMutex;
 use crate::fuse::inode::{InodeEntry, InodeGenerator, InodeKind};
 use crate::path_translation::PathTranslator;
