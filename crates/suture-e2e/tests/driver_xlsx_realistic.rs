@@ -223,19 +223,19 @@ fn test_xlsx_formula_preservation() {
     let ours = xlsx::with_modified_cell(&xlsx::formula_heavy_sheets(), 0, 2, 1, "150");
     let theirs = xlsx::with_modified_cell(&xlsx::formula_heavy_sheets(), 1, 4, 3, "25000");
 
-    let merged = driver.merge(&base, &ours, &theirs).unwrap();
+    let merged = driver.merge_raw(base.as_bytes(), ours.as_bytes(), theirs.as_bytes()).unwrap();
     assert!(
         merged.is_some(),
         "modifying source data cells on different sheets should merge cleanly"
     );
 
-    let merged_str = merged.unwrap();
+    let merged_bytes = merged.unwrap();
     assert!(
-        merged_str.starts_with("PK"),
+        merged_bytes.starts_with(b"PK"),
         "merged output should be valid XLSX (ZIP magic bytes)"
     );
 
-    let reader = std::io::Cursor::new(merged_str.as_bytes());
+    let reader = std::io::Cursor::new(&merged_bytes);
     let mut archive = zip::ZipArchive::new(reader).unwrap();
     for i in 0..archive.len() {
         let mut file = archive.by_index(i).unwrap();

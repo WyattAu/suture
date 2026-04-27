@@ -4,6 +4,69 @@ fn zip_to_string(buf: Vec<u8>) -> String {
     unsafe { String::from_utf8_unchecked(buf) }
 }
 
+/// Build a DOCX as raw bytes (binary-safe, for use with merge_raw).
+fn make_docx_bytes(paragraphs: &[impl AsRef<str>]) -> Vec<u8> {
+    let content_types = r#"<?xml version="1.0"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>"#;
+
+    let mut doc_xml = String::from(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n\
+         <w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">\n\
+         <w:body>\n",
+    );
+    for p in paragraphs {
+        let text = p.as_ref();
+        let escaped = text
+            .replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('"', "&quot;");
+        doc_xml.push_str(&format!("    <w:p><w:r><w:t>{escaped}</w:t></w:r></w:p>\n"));
+    }
+    doc_xml.push_str("  </w:body>\n</w:document>");
+
+    let mut buf = Vec::new();
+    {
+        let mut zip = zip::ZipWriter::new(Cursor::new(&mut buf));
+        zip.start_file(
+            "[Content_Types].xml",
+            zip::write::SimpleFileOptions::default(),
+        )
+        .unwrap();
+        zip.write_all(content_types.as_bytes()).unwrap();
+        zip.start_file(
+            "word/document.xml",
+            zip::write::SimpleFileOptions::default(),
+        )
+        .unwrap();
+        zip.write_all(doc_xml.as_bytes()).unwrap();
+        zip.finish().unwrap();
+    }
+    buf
+}
+
+pub fn multi_section_bytes() -> Vec<u8> {
+    make_docx_bytes(MULTI_SECTION_PARAGRAPHS)
+}
+
+pub fn with_modified_paragraph_bytes(
+    paragraphs: &[impl AsRef<str>],
+    index: usize,
+    new_text: &str,
+) -> Vec<u8> {
+    let mut modified: Vec<String> = paragraphs.iter().map(|p| p.as_ref().to_string()).collect();
+    if index < modified.len() {
+        modified[index] = new_text.to_string();
+    } else {
+        modified.push(new_text.to_string());
+    }
+    make_docx_bytes(&modified)
+}
+
 pub const SIMPLE_PARAGRAPHS: &[&str] = &["This is a simple document with a single paragraph."];
 
 pub fn simple() -> String {

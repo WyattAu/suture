@@ -1311,21 +1311,18 @@ mod tests {
     fn test_full_merge_add_different_slides() {
         let driver = PptxDriver::new();
         let base_bytes = build_minimal_pptx(&["Shared"]);
-        let base_str = unsafe { String::from_utf8_unchecked(base_bytes) };
         let ours_bytes = build_minimal_pptx(&["Shared", "Ours Slide"]);
-        let ours_str = unsafe { String::from_utf8_unchecked(ours_bytes) };
         let theirs_bytes = build_minimal_pptx(&["Shared", "Theirs Slide"]);
-        let theirs_str = unsafe { String::from_utf8_unchecked(theirs_bytes) };
 
-        let result = driver.merge(&base_str, &ours_str, &theirs_str).unwrap();
+        let result = driver.merge_raw(&base_bytes, &ours_bytes, &theirs_bytes).unwrap();
         assert!(
             result.is_some(),
             "merge should succeed (non-conflicting adds)"
         );
 
         // Verify the merged result has 3 slides
-        let merged_str = result.unwrap();
-        let merged_doc = OoxmlDocument::from_bytes(merged_str.as_bytes()).unwrap();
+        let merged_bytes = result.unwrap();
+        let merged_doc = OoxmlDocument::from_bytes(&merged_bytes).unwrap();
         let merged_slides = PptxDriver::extract_slides(&merged_doc).unwrap();
         assert_eq!(merged_slides.len(), 3);
     }
@@ -1334,14 +1331,11 @@ mod tests {
     fn test_full_merge_modify_conflict() {
         let driver = PptxDriver::new();
         let base_bytes = build_minimal_pptx(&["Original"]);
-        let base_str = unsafe { String::from_utf8_unchecked(base_bytes) };
         let ours_bytes = build_minimal_pptx(&["Ours Version"]);
-        let ours_str = unsafe { String::from_utf8_unchecked(ours_bytes) };
         let theirs_bytes = build_minimal_pptx(&["Theirs Version"]);
-        let theirs_str = unsafe { String::from_utf8_unchecked(theirs_bytes) };
 
         // Both modified the same slide differently — conflict
-        let result = driver.merge(&base_str, &ours_str, &theirs_str).unwrap();
+        let result = driver.merge_raw(&base_bytes, &ours_bytes, &theirs_bytes).unwrap();
         assert!(result.is_none());
     }
 
@@ -1349,19 +1343,16 @@ mod tests {
     fn test_full_merge_one_side_modify() {
         let driver = PptxDriver::new();
         let base_bytes = build_minimal_pptx(&["Original"]);
-        let base_str = unsafe { String::from_utf8_unchecked(base_bytes) };
         let ours_bytes = build_minimal_pptx(&["Modified"]);
-        let ours_str = unsafe { String::from_utf8_unchecked(ours_bytes) };
         let theirs_bytes = build_minimal_pptx(&["Original"]); // unchanged
-        let theirs_str = unsafe { String::from_utf8_unchecked(theirs_bytes) };
 
-        let result = driver.merge(&base_str, &ours_str, &theirs_str).unwrap();
+        let result = driver.merge_raw(&base_bytes, &ours_bytes, &theirs_bytes).unwrap();
         assert!(result.is_some());
 
         // Verify the merged result has the modified content.
         // The merged output is a ZIP file, so we need to extract the slide content.
-        let merged_str = result.unwrap();
-        let merged_doc = OoxmlDocument::from_bytes(merged_str.as_bytes()).unwrap();
+        let merged_bytes = result.unwrap();
+        let merged_doc = OoxmlDocument::from_bytes(&merged_bytes).unwrap();
         let merged_slides = PptxDriver::extract_slides(&merged_doc).unwrap();
         assert_eq!(merged_slides.len(), 1);
 

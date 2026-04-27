@@ -463,7 +463,12 @@ impl SutureDriver for DocxDriver {
         // Delegate to merge_raw and convert bytes → String.
         let bytes = self.merge_raw(base.as_bytes(), ours.as_bytes(), theirs.as_bytes())?;
         match bytes {
-            Some(b) => Ok(Some(bytes_to_string_lossy(b))),
+            Some(b) => {
+                // OOXML documents contain ZIP-compressed data which may include
+                // non-UTF-8 bytes. Use lossy conversion for the text-oriented API;
+                // use merge_raw() for binary-safe operation.
+                Ok(Some(bytes_to_string_lossy(b)))
+            }
             None => Ok(None),
         }
     }
@@ -855,10 +860,10 @@ mod tests {
 </w:document>"#;
         let modified2_str = docx_bytes(&make_docx_from_xml(modified2_doc_xml));
 
-        let merged = d.merge(&styled_str, &modified_str, &modified2_str).unwrap();
+        let merged = d.merge_raw(styled_str.as_bytes(), modified_str.as_bytes(), modified2_str.as_bytes()).unwrap();
         assert!(merged.is_some(), "non-overlapping edits should merge");
 
-        let merged_doc = OoxmlDocument::from_bytes(merged.unwrap().as_bytes()).unwrap();
+        let merged_doc = OoxmlDocument::from_bytes(&merged.unwrap()).unwrap();
         let merged_main = merged_doc
             .get_part(merged_doc.main_document_path().unwrap())
             .unwrap();

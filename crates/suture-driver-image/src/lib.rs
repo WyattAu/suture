@@ -392,13 +392,10 @@ mod tests {
         let base_bytes = create_test_png(50, 50, [0, 0, 0]);
         let ours_bytes = create_test_png(100, 50, [0, 0, 0]);
         let theirs_bytes = create_test_png(50, 50, [0, 0, 0]);
-        let base = bytes_to_string(base_bytes);
-        let ours = bytes_to_string(ours_bytes);
-        let theirs = bytes_to_string(theirs_bytes);
 
-        let result = driver.merge(&base, &ours, &theirs).unwrap();
+        let result = driver.merge_raw(&base_bytes, &ours_bytes, &theirs_bytes).unwrap();
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), ours);
+        assert_eq!(result.unwrap(), ours_bytes);
     }
 
     #[test]
@@ -407,11 +404,8 @@ mod tests {
         let base_bytes = create_test_png(50, 50, [0, 0, 0]);
         let ours_bytes = create_test_png(100, 50, [0, 0, 0]);
         let theirs_bytes = create_test_png(200, 50, [0, 0, 0]);
-        let base = bytes_to_string(base_bytes);
-        let ours = bytes_to_string(ours_bytes);
-        let theirs = bytes_to_string(theirs_bytes);
 
-        let result = driver.merge(&base, &ours, &theirs).unwrap();
+        let result = driver.merge_raw(&base_bytes, &ours_bytes, &theirs_bytes).unwrap();
         assert!(result.is_none());
     }
 

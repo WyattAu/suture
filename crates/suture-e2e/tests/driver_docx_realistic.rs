@@ -37,26 +37,27 @@ fn docx_realistic_simple_modify_and_diff() {
 #[test]
 fn docx_realistic_multi_section_merge_different_paragraphs() {
     let driver = DocxDriver::new();
-    let base = docx::multi_section();
-    let ours = docx::with_modified_paragraph(
+    let base = docx::multi_section_bytes();
+    let ours = docx::with_modified_paragraph_bytes(
         docx::MULTI_SECTION_PARAGRAPHS,
         0,
         "MODIFIED TITLE: Quarterly Report Q4 2025",
     );
-    let theirs = docx::with_modified_paragraph(
+    let theirs = docx::with_modified_paragraph_bytes(
         docx::MULTI_SECTION_PARAGRAPHS,
         7,
         "We plan to expand into ASIA in Q1 2026.",
     );
 
-    let merged = driver.merge(&base, &ours, &theirs).unwrap();
+    let merged = driver.merge_raw(&base, &ours, &theirs).unwrap();
     assert!(
         merged.is_some(),
         "changes to different paragraphs should merge"
     );
 
-    let merged_str = merged.unwrap();
-    let diff = driver.diff(Some(&base), &merged_str).unwrap();
+    let merged_str = unsafe { String::from_utf8_unchecked(merged.unwrap()) };
+    let base_str = unsafe { String::from_utf8_unchecked(base) };
+    let diff = driver.diff(Some(&base_str), &merged_str).unwrap();
     assert!(
         diff.iter().any(|c| matches!(c, SemanticChange::Modified { new_value, .. } if new_value.contains("MODIFIED TITLE"))),
         "should preserve editor A change"
@@ -239,31 +240,33 @@ fn test_docx_two_editor_paragraph_conflict() {
 #[test]
 fn test_docx_table_insertion_merge() {
     let driver = DocxDriver::new();
-    let base = docx::multi_section();
-    let ours = docx::with_modified_paragraph(
+    let base = docx::multi_section_bytes();
+    let ours = docx::with_modified_paragraph_bytes(
         docx::MULTI_SECTION_PARAGRAPHS,
         2,
         "[TABLE INSERTED BY EDITOR A]\nRevenue | Q1 | Q2 | Q3 | Q4\n$4.2M | $1.0M | $1.1M | $1.0M | $1.1M",
     );
-    let theirs = docx::with_modified_paragraph(
+    let theirs = docx::with_modified_paragraph_bytes(
         docx::MULTI_SECTION_PARAGRAPHS,
         4,
         "Total revenue reached $5.0 million, exceeding our target by 31%.",
     );
 
-    let merged = driver.merge(&base, &ours, &theirs).unwrap();
+    let merged = driver.merge_raw(&base, &ours, &theirs).unwrap();
     assert!(
         merged.is_some(),
         "table insertion + text modification should merge cleanly"
     );
 
-    let merged_str = merged.unwrap();
+    let merged_bytes = merged.unwrap();
     assert!(
-        merged_str.starts_with("PK"),
+        merged_bytes.starts_with(b"PK"),
         "merged output should be valid DOCX (ZIP magic bytes)"
     );
 
-    let diff = driver.diff(Some(&base), &merged_str).unwrap();
+    let merged_str = unsafe { String::from_utf8_unchecked(merged_bytes) };
+    let base_str = unsafe { String::from_utf8_unchecked(base) };
+    let diff = driver.diff(Some(&base_str), &merged_str).unwrap();
     assert!(
         diff.iter().any(|c| matches!(c, SemanticChange::Modified { new_value, .. } if new_value.contains("[TABLE INSERTED BY EDITOR A]"))),
         "should preserve editor A table insertion"
