@@ -75,7 +75,7 @@ impl RaftRuntime {
                                 Ok((from, msg)) => {
                                     // Lock hub, process message, get response, DROP lock, then send
                                     let response = {
-                                        let mut hub = hub_for_rx.lock().unwrap();
+                                        let mut hub = hub_for_rx.lock().unwrap_or_else(|e| e.into_inner());
                                         hub.handle_message(from, msg)
                                     };
                                     if let Some(resp) = response
@@ -107,7 +107,7 @@ impl RaftRuntime {
                         break;
                     }
                     Some(cmd) = rx.recv() => {
-                        let mut hub = hub_ref.lock().unwrap();
+                        let mut hub = hub_ref.lock().unwrap_or_else(|e| e.into_inner());
                         match hub.propose(cmd) {
                             Ok(()) => debug!("raft: command proposed"),
                             Err(e) => warn!("raft: propose failed (not leader?): {e}"),
@@ -116,15 +116,15 @@ impl RaftRuntime {
                     _ = tick_interval.tick() => {
                         // Lock hub, tick, collect state + messages, DROP lock
                         let (state, leader, messages) = {
-                            let mut hub = hub_ref.lock().unwrap();
+                            let mut hub = hub_ref.lock().unwrap_or_else(|e| e.into_inner());
                             let s = *hub.state();
                             let l = hub.leader();
                             let msgs = hub.tick();
                             (s, l, msgs)
                         };
                         // Update shared state (no lock needed, these are separate mutexes)
-                        *is_leader_ref.lock().unwrap() = state == NodeState::Leader;
-                        *leader_id_ref.lock().unwrap() = leader;
+                        *is_leader_ref.lock().unwrap_or_else(|e| e.into_inner()) = state == NodeState::Leader;
+                        *leader_id_ref.lock().unwrap_or_else(|e| e.into_inner()) = leader;
 
                         // Send outgoing messages via TCP (no hub lock held)
                         if let Some(ref trans) = transport_for_tick {
@@ -137,7 +137,7 @@ impl RaftRuntime {
 
                         // Collect committed commands (brief lock)
                         let committed = {
-                            let mut hub = hub_ref.lock().unwrap();
+                            let mut hub = hub_ref.lock().unwrap_or_else(|e| e.into_inner());
                             let c = hub.committed_commands();
                             hub.advance_applied(c.len());
                             c.to_vec()
@@ -173,13 +173,13 @@ impl RaftRuntime {
 
     /// Propose a command through Raft consensus.
     pub fn propose(&self, cmd: HubCommand) -> Result<(), suture_raft::RaftError> {
-        let mut hub = self.hub.lock().unwrap();
+        let mut hub = self.hub.lock().unwrap_or_else(|e| e.into_inner());
         hub.propose(cmd)
     }
 
     /// Try to apply committed commands.
     pub fn try_apply_committed(&self) -> Vec<HubCommand> {
-        let mut rx = self.applied_rx.lock().unwrap();
+        let mut rx = self.applied_rx.lock().unwrap_or_else(|e| e.into_inner());
         let mut result = Vec::new();
         while let Ok(cmd) = rx.try_recv() {
             result.push(cmd);
@@ -189,22 +189,22 @@ impl RaftRuntime {
 
     /// Get the current leader ID (if known).
     pub fn leader(&self) -> Option<u64> {
-        *self.leader_id.lock().unwrap()
+        *self.leader_id.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// Check if this node is the leader.
     pub fn is_leader(&self) -> bool {
-        *self.is_leader.lock().unwrap()
+        *self.is_leader.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// Get this node's Raft state.
     pub fn state(&self) -> NodeState {
-        *self.hub.lock().unwrap().state()
+        *self.hub.lock().unwrap_or_else(|e| e.into_inner()).state()
     }
 
     /// Get this node's current term.
     pub fn term(&self) -> u64 {
-        self.hub.lock().unwrap().term()
+        self.hub.lock().unwrap_or_else(|e| e.into_inner()).term()
     }
 
     /// Shut down the runtime.
@@ -214,7 +214,7 @@ impl RaftRuntime {
 
     /// Get the node ID.
     pub fn node_id(&self) -> u64 {
-        self.hub.lock().unwrap().node_id()
+        self.hub.lock().unwrap_or_else(|e| e.into_inner()).node_id()
     }
 
     /// Get a reference to the command sender for proposing commands.
