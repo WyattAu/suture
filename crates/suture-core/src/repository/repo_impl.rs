@@ -63,6 +63,8 @@ use std::path::{Path, PathBuf};
 use suture_common::{BranchName, CommonError, FileStatus, Hash, RepoPath};
 use thiserror::Error;
 
+use rusqlite;
+
 /// Repository errors.
 #[derive(Error, Debug)]
 pub enum RepoError {
@@ -118,13 +120,181 @@ pub enum RepoError {
     #[error("common error: {0}")]
     Common(#[from] CommonError),
 
-    /// A generic custom error.
-    #[error("{0}")]
-    Custom(String),
-
     /// The requested operation is not supported.
     #[error("unsupported operation: {0}")]
     Unsupported(String),
+
+    /// No common ancestor found for merge.
+    #[error("no common ancestor found")]
+    NoCommonAncestor,
+
+    /// HEAD has no parent commit.
+    #[error("HEAD has no parent")]
+    HeadHasNoParent,
+
+    /// HEAD ancestor not found at the given offset.
+    #[error("HEAD ancestor not found")]
+    HeadAncestorNotFound,
+
+    /// HEAD~N revision syntax is invalid.
+    #[error("invalid HEAD~N: {0}")]
+    InvalidHeadOffset(String),
+
+    /// A patch was not found.
+    #[error("patch not found: {0}")]
+    PatchNotFound(String),
+
+    /// A tag was not found.
+    #[error("tag not found: {0}")]
+    TagNotFound(String),
+
+    /// A remote was not found.
+    #[error("remote not found: {0}")]
+    RemoteNotFound(String),
+
+    /// A worktree was not found.
+    #[error("worktree not found: {0}")]
+    WorktreeNotFound(String),
+
+    /// A stash entry was not found.
+    #[error("stash not found: {0}")]
+    StashNotFound(String),
+
+    /// No HEAD branch (detached HEAD).
+    #[error("no HEAD branch")]
+    NoHeadBranch,
+
+    /// Detached HEAD with no stored commit ID.
+    #[error("detached HEAD but no commit ID stored")]
+    DetachedHeadNoCommit,
+
+    /// Batch patch has invalid file changes.
+    #[error("batch patch has invalid file changes")]
+    InvalidBatchPatch,
+
+    /// Cannot revert empty batch.
+    #[error("cannot revert empty batch")]
+    EmptyBatchRevert,
+
+    /// Cannot squash the root patch.
+    #[error("cannot squash root patch")]
+    CannotSquashRoot,
+
+    /// No stashes found.
+    #[error("no stashes found")]
+    NoStashes,
+
+    /// No rebase in progress.
+    #[error("no rebase in progress")]
+    NoRebaseInProgress,
+
+    /// Invalid worktree name.
+    #[error("invalid worktree name")]
+    InvalidWorktreeName,
+
+    /// Remote URL not found.
+    #[error("remote URL not found")]
+    RemoteUrlNotFound,
+
+    /// Nothing to revert in batch.
+    #[error("nothing to revert in batch")]
+    NothingToRevert,
+
+    /// Failed to parse rebase state.
+    #[error("failed to parse rebase state: {0}")]
+    RebaseStateParse(String),
+
+    /// Failed to serialize rebase state.
+    #[error("failed to serialize rebase state: {0}")]
+    RebaseStateSerialize(String),
+
+    /// Invalid hash in stash.
+    #[error("invalid hash in stash: {0}")]
+    InvalidStashHash(String),
+
+    /// Path not found.
+    #[error("path not found: {0}")]
+    PathNotFound(String),
+
+    /// Rename failed.
+    #[error("rename failed: {0}")]
+    RenameFailed(String),
+
+    /// Invalid target revision.
+    #[error("invalid target: {0}")]
+    InvalidTarget(String),
+
+    /// Ambiguous ref matches multiple commits.
+    #[error("ambiguous ref '{0}' matches {1} commits")]
+    AmbiguousRef(String, usize),
+
+    /// Cannot delete the current branch.
+    #[error("cannot delete the current branch '{0}'")]
+    CannotDeleteCurrentBranch(String),
+
+    /// Note index out of range.
+    #[error("note index {0} out of range ({1} notes for commit)")]
+    NoteIndexOutOfRange(usize, usize),
+
+    /// Cannot revert delete (original content not found).
+    #[error("cannot revert delete: original file content not found")]
+    CannotRevertDelete,
+
+    /// Cannot revert the given patch type.
+    #[error("cannot revert {0:?} patches")]
+    CannotRevertPatch(String),
+
+    /// Need at least N patches to squash.
+    #[error("need at least {0} patches to squash")]
+    NotEnoughPatchesToSquash(usize),
+
+    /// Not enough patches on branch to squash.
+    #[error("only {0} patches on branch, cannot squash {1}")]
+    NotEnoughPatchesOnBranch(usize, usize),
+
+    /// Cannot cherry-pick the given number of patches.
+    #[error("cannot cherry-pick {0:?} patches")]
+    CannotCherryPick(String),
+
+    /// Patch already exists in DAG and is not reachable from HEAD.
+    #[error("patch already exists in DAG and is not reachable from HEAD")]
+    PatchNotReachable,
+
+    /// File not found at the given path.
+    #[error("file not found at '{0}': {1}")]
+    FileNotFound(String, String),
+
+    /// Remote already exists.
+    #[error("remote '{0}' already exists")]
+    RemoteAlreadyExists(String),
+
+    /// Path already exists.
+    #[error("path '{0}' already exists")]
+    PathAlreadyExists(String),
+
+    /// Cannot add worktree from a linked worktree.
+    #[error("cannot add worktree from a linked worktree; use the main repo")]
+    WorktreeFromWorktree,
+
+    /// A database error (from rusqlite).
+    #[error("database error: {0}")]
+    Database(#[from] rusqlite::Error),
+
+    /// A branch name validation error.
+    #[error("invalid branch name: {0}")]
+    InvalidBranchName(String),
+
+    /// A patch composition error.
+    #[error("patch composition error: {0}")]
+    PatchComposition(String),
+
+    /// A metadata error.
+    #[error("metadata error: {0}")]
+    Metadata(String),
+
+    /// A generic custom error.
+    #[error("{0}")]
+    Custom(String),
 }
 
 /// Reset mode for the `reset` command.
@@ -202,16 +372,16 @@ impl Repository {
             if let Some(n_str) = name.strip_prefix("HEAD~") {
                 let n: usize = n_str
                     .parse()
-                    .map_err(|_| RepoError::Custom(format!("invalid HEAD~N: {}", name)))?;
+                    .map_err(|_| RepoError::InvalidHeadOffset(name.to_string()))?;
                 for _ in 0..n {
                     let patch = self
                         .dag
                         .get_patch(&target_id)
-                        .ok_or_else(|| RepoError::Custom("HEAD ancestor not found".to_string()))?;
+                        .ok_or_else(|| RepoError::HeadAncestorNotFound)?;
                     target_id = patch
                         .parent_ids
                         .first()
-                        .ok_or_else(|| RepoError::Custom("HEAD has no parent".to_string()))?
+                        .ok_or_else(|| RepoError::HeadHasNoParent)?
                         .to_owned();
                 }
             }
@@ -239,10 +409,7 @@ impl Repository {
                 1 => return Ok(*prefix_matches[0]),
                 0 => {}
                 n => {
-                    return Err(RepoError::Custom(format!(
-                        "ambiguous ref '{}' matches {} commits",
-                        name, n
-                    )));
+                    return Err(RepoError::AmbiguousRef(name.to_string(), n));
                 }
             }
         }
@@ -375,11 +542,9 @@ impl Repository {
         let all_patch_ids: Vec<PatchId> = {
             let mut stmt = meta
                 .conn()
-                .prepare("SELECT id FROM patches ORDER BY id")
-                .map_err(|e: rusqlite::Error| RepoError::Custom(e.to_string()))?;
+                .prepare("SELECT id FROM patches ORDER BY id")?;
             let rows = stmt
-                .query_map([], |row: &rusqlite::Row| row.get::<_, String>(0))
-                .map_err(|e: rusqlite::Error| RepoError::Custom(e.to_string()))?;
+                .query_map([], |row: &rusqlite::Row| row.get::<_, String>(0))?;
             rows.filter_map(|r: Result<String, _>| r.ok())
                 .filter_map(|hex| Hash::from_hex(&hex).ok())
                 .collect()
@@ -553,7 +718,7 @@ impl Repository {
                 let head = self
                     .dag
                     .head()
-                    .ok_or_else(|| RepoError::Custom("no HEAD branch".to_string()))?;
+                    .ok_or_else(|| RepoError::NoHeadBranch)?;
                 head.1
             }
         };
@@ -602,8 +767,8 @@ impl Repository {
         if self.is_detached() {
             let patch_id = self
                 .get_detached_head()
-                .map_err(|e| RepoError::Custom(e.to_string()))?
-                .ok_or_else(|| RepoError::Custom("detached HEAD but no commit ID stored".into()))?;
+                .map_err(|e| RepoError::Metadata(e.to_string()))?
+                .ok_or_else(|| RepoError::DetachedHeadNoCommit)?;
             let label = "(detached)".to_string();
             *self.cached_head_branch.borrow_mut() = Some(label.clone());
             *self.cached_head_id.borrow_mut() = Some(patch_id);
@@ -631,10 +796,7 @@ impl Repository {
     pub fn delete_branch(&mut self, name: &str) -> Result<(), RepoError> {
         let (current_branch, _) = self.head()?;
         if current_branch == name {
-            return Err(RepoError::Custom(format!(
-                "cannot delete the current branch '{}'",
-                name
-            )));
+            return Err(RepoError::CannotDeleteCurrentBranch(name.to_string()));
         }
         let branch = BranchName::new(name)?;
         self.dag.delete_branch(&branch)?;
@@ -644,8 +806,7 @@ impl Repository {
             .execute(
                 "DELETE FROM branches WHERE name = ?1",
                 rusqlite::params![name],
-            )
-            .map_err(|e| RepoError::Custom(e.to_string()))?;
+            )?;
         Ok(())
     }
 
@@ -730,15 +891,15 @@ impl Repository {
                 if let Some(n_str) = t.strip_prefix("HEAD~") {
                     let n: usize = n_str
                         .parse()
-                        .map_err(|_| RepoError::Custom(format!("invalid HEAD~N: {}", n_str)))?;
+                        .map_err(|_| RepoError::InvalidHeadOffset(n_str.to_string()))?;
                     for _ in 0..n {
                         if let Some(patch) = self.dag.get_patch(&current) {
                             current = *patch
                                 .parent_ids
                                 .first()
-                                .ok_or_else(|| RepoError::Custom("HEAD has no parent".into()))?;
+                                .ok_or_else(|| RepoError::HeadHasNoParent)?;
                         } else {
-                            return Err(RepoError::Custom("HEAD ancestor not found".into()));
+                            return Err(RepoError::HeadAncestorNotFound);
                         }
                     }
                 }
@@ -751,7 +912,7 @@ impl Repository {
                         .ok_or_else(|| RepoError::BranchNotFound(t.to_string()))?
                 } else {
                     Hash::from_hex(t)
-                        .map_err(|_| RepoError::Custom(format!("invalid target: {}", t)))?
+                        .map_err(|_| RepoError::InvalidTarget(t.to_string()))?
                 }
             }
             None => {
@@ -773,15 +934,13 @@ impl Repository {
                 rusqlite::params![key],
                 |row| row.get::<_, i64>(0),
             )
-            .map(|count| count > 0)
-            .map_err(|e| RepoError::Custom(e.to_string()))?;
+            .map(|count| count > 0)?;
         if !exists {
-            return Err(RepoError::Custom(format!("tag '{}' not found", name)));
+            return Err(RepoError::TagNotFound(name.to_string()));
         }
         self.meta
             .conn()
-            .execute("DELETE FROM config WHERE key = ?1", rusqlite::params![key])
-            .map_err(|e| RepoError::Custom(e.to_string()))?;
+            .execute("DELETE FROM config WHERE key = ?1", rusqlite::params![key])?;
         Ok(())
     }
 
@@ -841,11 +1000,7 @@ impl Repository {
     pub fn remove_note(&self, patch_id: &PatchId, index: usize) -> Result<(), RepoError> {
         let notes = self.list_notes(patch_id)?;
         if index >= notes.len() {
-            return Err(RepoError::Custom(format!(
-                "note index {} out of range ({} notes for commit)",
-                index,
-                notes.len()
-            )));
+            return Err(RepoError::NoteIndexOutOfRange(index, notes.len()));
         }
         let key = format!("note.{}.{}", patch_id, index);
         self.meta.delete_config(&key).map_err(RepoError::Meta)
@@ -1303,7 +1458,7 @@ impl Repository {
     pub fn stash_pop(&mut self) -> Result<(), RepoError> {
         let stashes = self.stash_list()?;
         if stashes.is_empty() {
-            return Err(RepoError::Custom("No stashes found".to_string()));
+            return Err(RepoError::NoStashes);
         }
         let highest = stashes
             .iter()
@@ -1320,7 +1475,7 @@ impl Repository {
         let files_json = self
             .meta
             .get_config(&files_key)?
-            .ok_or_else(|| RepoError::Custom(format!("stash@{{{}}} not found", index)))?;
+            .ok_or_else(|| RepoError::StashNotFound(format!("stash@{{{index}}}")))?;
 
         let head_id_key = format!("stash.{}.head_id", index);
         let stash_head_id = self.meta.get_config(&head_id_key)?.unwrap_or_default();
@@ -1342,7 +1497,7 @@ impl Repository {
             match hash_opt {
                 Some(hex_hash) => {
                     let hash = Hash::from_hex(hex_hash)
-                        .map_err(|e| RepoError::Custom(format!("invalid hash in stash: {}", e)))?;
+                        .map_err(|e| RepoError::InvalidStashHash(e.to_string()))?;
                     let blob = self.cas.get_blob(&hash)?;
                     if let Some(parent) = full_path.parent() {
                         fs::create_dir_all(parent)?;
@@ -1401,7 +1556,7 @@ impl Repository {
             .collect();
 
         if keys_to_delete.is_empty() {
-            return Err(RepoError::Custom(format!("stash@{{{}}} not found", index)));
+            return Err(RepoError::StashNotFound(format!("stash@{{{index}}}")));
         }
 
         for key in &keys_to_delete {
@@ -1900,18 +2055,18 @@ impl Repository {
         } else if let Some(rest) = target.strip_prefix("HEAD~") {
             let n: usize = rest
                 .parse()
-                .map_err(|_| RepoError::Custom(format!("invalid HEAD~N: {}", target)))?;
+                .map_err(|_| RepoError::InvalidHeadOffset(target.to_string()))?;
             let (_, head_id) = self.head()?;
             let mut current = head_id;
             for _ in 0..n {
                 let patch = self
                     .dag
                     .get_patch(&current)
-                    .ok_or_else(|| RepoError::Custom("HEAD ancestor not found".to_string()))?;
+                    .ok_or_else(|| RepoError::HeadAncestorNotFound)?;
                 current = patch
                     .parent_ids
                     .first()
-                    .ok_or_else(|| RepoError::Custom("HEAD has no parent".to_string()))?
+                    .ok_or_else(|| RepoError::HeadHasNoParent)?
                     .to_owned();
             }
             current
@@ -1994,7 +2149,7 @@ impl Repository {
         let patch = self
             .dag
             .get_patch(patch_id)
-            .ok_or_else(|| RepoError::Custom(format!("patch not found: {}", patch_id)))?;
+            .ok_or_else(|| RepoError::PatchNotFound(patch_id.to_string()))?;
 
         let (branch_name, head_id) = self.head()?;
         let msg = message
@@ -2006,10 +2161,10 @@ impl Repository {
         match &patch.operation_type {
             OperationType::Batch => {
                 let changes = patch.file_changes().ok_or_else(|| {
-                    RepoError::Custom("batch patch has invalid file changes".into())
+                    RepoError::InvalidBatchPatch
                 })?;
                 if changes.is_empty() {
-                    return Err(RepoError::Custom("cannot revert empty batch".into()));
+                    return Err(RepoError::EmptyBatchRevert);
                 }
                 let parent_tree = patch
                     .parent_ids
@@ -2039,7 +2194,7 @@ impl Repository {
                     }
                 }
                 if revert_changes.is_empty() {
-                    return Err(RepoError::Custom("nothing to revert in batch".into()));
+                    return Err(RepoError::NothingToRevert);
                 }
                 let revert_patch =
                     Patch::new_batch(revert_changes, vec![head_id], self.author.clone(), msg);
@@ -2108,14 +2263,9 @@ impl Repository {
                         return Ok(revert_id);
                     }
                 }
-                Err(RepoError::Custom(
-                    "cannot revert delete: original file content not found".into(),
-                ))
+                Err(RepoError::CannotRevertDelete)
             }
-            _ => Err(RepoError::Custom(format!(
-                "cannot revert {:?} patches",
-                patch.operation_type
-            ))),
+            _ => Err(RepoError::CannotRevertPatch(format!("{:?}", patch.operation_type))),
         }
     }
 
@@ -2128,9 +2278,7 @@ impl Repository {
     /// Returns the new tip patch ID.
     pub fn squash(&mut self, count: usize, message: &str) -> Result<PatchId, RepoError> {
         if count < 2 {
-            return Err(RepoError::Custom(
-                "need at least 2 patches to squash".into(),
-            ));
+            return Err(RepoError::NotEnoughPatchesToSquash(2));
         }
 
         let (branch_name, tip_id) = self.head()?;
@@ -2138,11 +2286,7 @@ impl Repository {
 
         // chain is tip-first, so the last N patches are chain[0..count]
         if chain.len() < count + 1 {
-            return Err(RepoError::Custom(format!(
-                "only {} patches on branch, cannot squash {}",
-                chain.len(),
-                count
-            )));
+            return Err(RepoError::NotEnoughPatchesOnBranch(chain.len(), count));
         }
 
         // Extract patches to squash (reversed to get oldest-first)
@@ -2152,24 +2296,24 @@ impl Repository {
             let patch = self
                 .dag()
                 .get_patch(pid)
-                .ok_or_else(|| RepoError::Custom(format!("patch not found: {}", pid.to_hex())))?;
+                .ok_or_else(|| RepoError::PatchNotFound(pid.to_hex().to_string()))?;
             to_squash.push(patch.clone());
         }
 
         let parent_of_first = *to_squash[0]
             .parent_ids
             .first()
-            .ok_or_else(|| RepoError::Custom("cannot squash root patch".into()))?;
+            .ok_or_else(|| RepoError::CannotSquashRoot)?;
 
         let result = crate::patch::compose::compose_chain(&to_squash, &self.author, message)
-            .map_err(|e| RepoError::Custom(e.to_string()))?;
+            .map_err(|e| RepoError::PatchComposition(e.to_string()))?;
 
         let new_id = self
             .dag_mut()
             .add_patch(result.patch.clone(), vec![parent_of_first])?;
         self.meta().store_patch(&result.patch)?;
 
-        let branch = BranchName::new(&branch_name).map_err(|e| RepoError::Custom(e.to_string()))?;
+        let branch = BranchName::new(&branch_name).map_err(|e| RepoError::InvalidBranchName(e.to_string()))?;
         self.dag_mut().update_branch(&branch, new_id)?;
         self.meta().set_branch(&branch, &new_id)?;
 
@@ -2262,7 +2406,7 @@ impl Repository {
             let lca_id = self
                 .dag
                 .lca(&head_id, &source_tip)
-                .ok_or_else(|| RepoError::Custom("no common ancestor found".to_string()))?;
+                .ok_or_else(|| RepoError::NoCommonAncestor)?;
             let lca_tree = self.snapshot(&lca_id).unwrap_or_else(|_| FileTree::empty());
             let head_tree = self.snapshot_head().unwrap_or_else(|_| FileTree::empty());
 
@@ -2305,7 +2449,7 @@ impl Repository {
             let lca_id = self
                 .dag
                 .lca(&head_id, &source_tip)
-                .ok_or_else(|| RepoError::Custom("no common ancestor found".to_string()))?;
+                .ok_or_else(|| RepoError::NoCommonAncestor)?;
             let lca_tree = self.snapshot(&lca_id).unwrap_or_else(|_| FileTree::empty());
 
             // Collect all paths from all three trees
@@ -2424,7 +2568,7 @@ impl Repository {
         let lca_id = self
             .dag
             .lca(head_id, source_tip)
-            .ok_or_else(|| RepoError::Custom("no common ancestor found".to_string()))?;
+            .ok_or_else(|| RepoError::NoCommonAncestor)?;
         let lca_tree = self.snapshot(&lca_id).unwrap_or_else(|_| FileTree::empty());
 
         let source_diffs = diff_trees(&lca_tree, &source_tree);
@@ -2509,7 +2653,7 @@ impl Repository {
         let lca_id = self
             .dag
             .lca(head_id, source_tip)
-            .ok_or_else(|| RepoError::Custom("no common ancestor found".to_string()))?;
+            .ok_or_else(|| RepoError::NoCommonAncestor)?;
         let lca_tree = self.snapshot(&lca_id).unwrap_or_else(|_| FileTree::empty());
 
         let conflicting_patch_ids: HashSet<PatchId> = merge_result
@@ -2815,16 +2959,13 @@ impl Repository {
         let patch = self
             .dag
             .get_patch(patch_id)
-            .ok_or_else(|| RepoError::Custom(format!("patch not found: {}", patch_id)))?;
+            .ok_or_else(|| RepoError::PatchNotFound(patch_id.to_string()))?;
 
         if patch.operation_type == OperationType::Identity
             || patch.operation_type == OperationType::Merge
             || patch.operation_type == OperationType::Create
         {
-            return Err(RepoError::Custom(format!(
-                "cannot cherry-pick {:?} patches",
-                patch.operation_type
-            )));
+            return Err(RepoError::CannotCherryPick(format!("{:?}", patch.operation_type)));
         }
 
         let (branch_name, head_id) = self.head()?;
@@ -2832,7 +2973,7 @@ impl Repository {
         let new_patch = if patch.operation_type == OperationType::Batch {
             let changes = patch
                 .file_changes()
-                .ok_or_else(|| RepoError::Custom("batch patch has invalid file changes".into()))?;
+                .ok_or_else(|| RepoError::InvalidBatchPatch)?;
             Patch::new_batch(
                 changes,
                 vec![head_id],
@@ -2859,9 +3000,7 @@ impl Repository {
                 if head_ancestors.contains(&new_patch_id) {
                     return Ok(new_patch_id);
                 }
-                return Err(RepoError::Custom(
-                    "patch already exists in DAG and is not reachable from HEAD".to_string(),
-                ));
+                return Err(RepoError::PatchNotReachable);
             }
             Err(e) => return Err(RepoError::Dag(e)),
         };
@@ -2909,7 +3048,7 @@ impl Repository {
         let lca_id = self
             .dag
             .lca(&head_id, &target_tip)
-            .ok_or_else(|| RepoError::Custom("no common ancestor found".to_string()))?;
+            .ok_or_else(|| RepoError::NoCommonAncestor)?;
 
         if lca_id == head_id {
             let branch = BranchName::new(&head_branch)?;
@@ -3348,7 +3487,7 @@ impl Repository {
     /// Save interactive rebase state for --continue / --abort.
     fn save_rebase_state(&self, state: &RebaseState) -> Result<(), RepoError> {
         let serialized = serde_json::to_string(state)
-            .map_err(|e| RepoError::Custom(format!("failed to serialize rebase state: {}", e)))?;
+            .map_err(|e| RepoError::RebaseStateSerialize(e.to_string()))?;
         self.meta
             .set_config("rebase_state", &serialized)
             .map_err(RepoError::Meta)?;
@@ -3364,7 +3503,7 @@ impl Repository {
         {
             Some(json) => {
                 let state: RebaseState = serde_json::from_str(&json).map_err(|e| {
-                    RepoError::Custom(format!("failed to parse rebase state: {}", e))
+                    RepoError::RebaseStateParse(e.to_string())
                 })?;
                 Ok(Some(state))
             }
@@ -3387,7 +3526,7 @@ impl Repository {
     pub fn rebase_abort(&mut self) -> Result<(), RepoError> {
         let state = self
             .load_rebase_state()?
-            .ok_or_else(|| RepoError::Custom("no rebase in progress".to_string()))?;
+            .ok_or_else(|| RepoError::NoRebaseInProgress)?;
 
         let branch = BranchName::new(&state.original_branch)?;
         let old_tree = self.snapshot_head().unwrap_or_else(|_| FileTree::empty());
@@ -3422,11 +3561,7 @@ impl Repository {
 
         let tree = self.snapshot(&target_id)?;
         let hash = tree.get(path).ok_or_else(|| {
-            RepoError::Custom(format!(
-                "file not found at '{}': {}",
-                at.unwrap_or("HEAD"),
-                path
-            ))
+            RepoError::FileNotFound(at.unwrap_or("HEAD").to_string(), path.to_string())
         })?;
 
         let blob = self.cas.get_blob(hash)?;
@@ -3728,22 +3863,16 @@ impl Repository {
         let new_url_key = format!("remote.{}.url", new_name);
 
         if self.meta.get_config(&old_url_key)?.is_none() {
-            return Err(RepoError::Custom(format!(
-                "remote '{}' not found",
-                old_name
-            )));
+            return Err(RepoError::RemoteNotFound(old_name.to_string()));
         }
         if self.meta.get_config(&new_url_key)?.is_some() {
-            return Err(RepoError::Custom(format!(
-                "remote '{}' already exists",
-                new_name
-            )));
+            return Err(RepoError::RemoteAlreadyExists(new_name.to_string()));
         }
 
         let url = self
             .meta
             .get_config(&old_url_key)?
-            .ok_or_else(|| RepoError::Custom("remote url not found".to_string()))?;
+            .ok_or_else(|| RepoError::RemoteUrlNotFound)?;
 
         self.meta.set_config(&new_url_key, &url)?;
         self.meta.delete_config(&old_url_key)?;
@@ -3765,7 +3894,7 @@ impl Repository {
     pub fn remove_remote(&self, name: &str) -> Result<(), RepoError> {
         let key = format!("remote.{}.url", name);
         if self.meta.get_config(&key)?.is_none() {
-            return Err(RepoError::Custom(format!("remote '{}' not found", name)));
+            return Err(RepoError::RemoteNotFound(name.to_string()));
         }
         self.meta.delete_config(&key)?;
         if let Ok(Some(_)) = self
@@ -3800,18 +3929,13 @@ impl Repository {
             || name.contains("..")
             || name.contains('\0')
         {
-            return Err(RepoError::Custom("invalid worktree name".into()));
+            return Err(RepoError::InvalidWorktreeName);
         }
         if path.exists() {
-            return Err(RepoError::Custom(format!(
-                "path '{}' already exists",
-                path.display()
-            )));
+            return Err(RepoError::PathAlreadyExists(path.display().to_string()));
         }
         if self.is_worktree {
-            return Err(RepoError::Custom(
-                "cannot add worktree from a linked worktree; use the main repo".into(),
-            ));
+            return Err(RepoError::WorktreeFromWorktree);
         }
 
         let abs_path = if path.is_relative() {
@@ -3928,7 +4052,7 @@ impl Repository {
         let path_val = self
             .meta
             .get_config(&path_key)?
-            .ok_or_else(|| RepoError::Custom(format!("worktree '{}' not found", name)))?;
+            .ok_or_else(|| RepoError::WorktreeNotFound(name.to_string()))?;
 
         let wt_path = Path::new(&path_val);
         if wt_path.exists() {
@@ -3949,17 +4073,14 @@ impl Repository {
         let new = self.root.join(new_path);
 
         if !old.exists() {
-            return Err(RepoError::Custom(format!("path not found: {}", old_path)));
+            return Err(RepoError::PathNotFound(old_path.to_string()));
         }
 
         if new.exists() {
-            return Err(RepoError::Custom(format!(
-                "path already exists: {}",
-                new_path
-            )));
+            return Err(RepoError::PathAlreadyExists(new_path.to_string()));
         }
 
-        fs::rename(old, new).map_err(|e| RepoError::Custom(format!("rename failed: {}", e)))?;
+        fs::rename(old, new).map_err(|e| RepoError::RenameFailed(e.to_string()))?;
 
         self.add(old_path)?;
         self.add(new_path)?;
@@ -3973,7 +4094,7 @@ impl Repository {
         self.meta
             .get_config(&key)
             .unwrap_or(None)
-            .ok_or_else(|| RepoError::Custom(format!("remote '{}' not found", name)))
+            .ok_or_else(|| RepoError::RemoteNotFound(name.to_string()))
     }
 
     /// Get all patches in the DAG as a Vec.
@@ -4042,38 +4163,32 @@ impl Repository {
         // Delete unreachable patches in a transaction (atomic)
         let conn = self.meta().conn();
         let tx = conn
-            .unchecked_transaction()
-            .map_err(|e| RepoError::Custom(e.to_string()))?;
+            .unchecked_transaction()?;
 
         for id in &unreachable {
             let hex = id.to_hex();
             tx.execute(
                 "DELETE FROM signatures WHERE patch_id = ?1",
                 rusqlite::params![hex],
-            )
-            .map_err(|e| RepoError::Custom(e.to_string()))?;
+            )?;
             tx.execute(
                 "DELETE FROM edges WHERE parent_id = ?1 OR child_id = ?1",
                 rusqlite::params![hex],
-            )
-            .map_err(|e| RepoError::Custom(e.to_string()))?;
-            tx.execute("DELETE FROM patches WHERE id = ?1", rusqlite::params![hex])
-                .map_err(|e| RepoError::Custom(e.to_string()))?;
+            )?;
+            tx.execute("DELETE FROM patches WHERE id = ?1", rusqlite::params![hex])?;
             // Also clean up file_trees for unreachable patches
             tx.execute(
                 "DELETE FROM file_trees WHERE patch_id = ?1",
                 rusqlite::params![hex],
-            )
-            .map_err(|e| RepoError::Custom(e.to_string()))?;
+            )?;
             // Clean up reflog entries that reference unreachable patches
             tx.execute(
                 "DELETE FROM reflog WHERE old_head = ?1 OR new_head = ?1",
                 rusqlite::params![hex],
-            )
-            .map_err(|e| RepoError::Custom(e.to_string()))?;
+            )?;
         }
 
-        tx.commit().map_err(|e| RepoError::Custom(e.to_string()))?;
+        tx.commit()?;
 
         // Collect all blob hashes referenced by reachable patches
         let mut referenced_blobs: HashSet<Hash> = HashSet::new();

@@ -518,6 +518,8 @@ fn collect_all_paths(node: roxmltree::Node, out: &mut Vec<SemanticChange>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::proptest;
+    use proptest::prop_assert;
 
     #[test]
     fn test_xml_driver_name() {
@@ -955,5 +957,51 @@ mod tests {
         let merged = result.unwrap();
         assert!(merged.contains("ours_text"), "ours text change");
         assert!(merged.contains(">10<"), "theirs child change");
+    }
+
+    proptest! {
+        #[test]
+        fn test_merge_identity(content in "[a-z0-9]+") {
+            let xml = format!("<root>{}</root>", content);
+            let driver = XmlDriver::new();
+            let result = driver.merge(&xml, &xml, &xml).unwrap();
+            prop_assert!(result.is_some());
+            let merged = result.unwrap();
+            prop_assert!(merged.contains(&content));
+        }
+
+        #[test]
+        fn test_merge_idempotence(
+            base in "[a-z0-9]+",
+            modified in "[a-z0-9]+",
+        ) {
+            let base_xml = format!("<root>{}</root>", base);
+            let modified_xml = format!("<root>{}</root>", modified);
+            let driver = XmlDriver::new();
+            let result = driver.merge(&base_xml, &modified_xml, &modified_xml).unwrap();
+            prop_assert!(result.is_some());
+            let merged = result.unwrap();
+            prop_assert!(merged.contains(&modified));
+        }
+
+        #[test]
+        fn test_xml_merge_non_overlapping_elements(
+            tag in "[a-z][a-z0-9]*",
+            attr1 in "[a-z][a-z0-9]*",
+            child1 in "[a-z][a-z0-9]*",
+            child2 in "[a-z][a-z0-9]*",
+            val1 in "[a-z0-9]+",
+            val2 in "[a-z0-9]+",
+            val3 in "[a-z0-9]+",
+        ) {
+            let base = format!("<{tag}><{child1}>{val1}</{child1}><{child2}>{val2}</{child2}></{tag}>");
+            let ours = format!("<{tag} {attr1}=\"1\"><{child1}>{val1}</{child1}><{child2}>{val2}</{child2}></{tag}>");
+            let theirs = format!("<{tag}><{child1}>{val1}</{child1}><{child2}>{val3}</{child2}></{tag}>");
+
+            let driver = XmlDriver::new();
+            let result = driver.merge(&base, &ours, &theirs);
+            prop_assert!(result.is_ok());
+            prop_assert!(result.unwrap().is_some());
+        }
     }
 }

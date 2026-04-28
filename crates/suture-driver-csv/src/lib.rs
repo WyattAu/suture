@@ -382,6 +382,8 @@ impl SutureDriver for CsvDriver {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::proptest;
+    use proptest::prop_assert;
 
     #[test]
     fn test_csv_driver_name() {
@@ -854,5 +856,57 @@ mod tests {
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0][1], "Alice");
         assert_eq!(rows[1][1], "Robert");
+    }
+
+    proptest! {
+        #[test]
+        fn test_merge_identity(content in "[a-z0-9]+") {
+            let csv = format!("col\n{}\n", content);
+            let driver = CsvDriver::new();
+            let result = driver.merge(&csv, &csv, &csv).unwrap();
+            prop_assert!(result.is_some());
+            let merged = result.unwrap();
+            prop_assert!(merged.contains(&content));
+        }
+
+        #[test]
+        fn test_merge_idempotence(
+            base in "[a-z0-9]+",
+            modified in "[a-z0-9]+",
+        ) {
+            let base_csv = format!("col\n{}\n", base);
+            let modified_csv = format!("col\n{}\n", modified);
+            let driver = CsvDriver::new();
+            let result = driver.merge(&base_csv, &modified_csv, &modified_csv).unwrap();
+            prop_assert!(result.is_some());
+            let merged = result.unwrap();
+            prop_assert!(merged.contains(&modified));
+        }
+
+        #[test]
+        fn test_csv_merge_non_overlapping_rows(
+            col1 in "[a-z]+",
+            col2 in "[a-z]+",
+            row1_key in "[a-z0-9]+",
+            row2_key in "[a-z0-9]+",
+            row3_key in "[a-z0-9]+",
+            row1_val in "[a-z0-9]+",
+            row1_mod_val in "[a-z0-9]+",
+            row3_val in "[a-z0-9]+",
+            row3_mod_val in "[a-z0-9]+",
+        ) {
+            let base = format!("{col1},{col2}\n{row1_key},{row1_val}\n{row2_key},x\n{row3_key},{row3_val}\n");
+            let ours = format!("{col1},{col2}\n{row1_key},{row1_mod_val}\n{row2_key},x\n{row3_key},{row3_val}\n");
+            let theirs = format!("{col1},{col2}\n{row1_key},{row1_val}\n{row2_key},x\n{row3_key},{row3_mod_val}\n");
+
+            let driver = CsvDriver::new();
+            let result = driver.merge(&base, &ours, &theirs);
+            prop_assert!(result.is_ok());
+            let opt = result.unwrap();
+            prop_assert!(opt.is_some());
+            let merged = opt.unwrap();
+            prop_assert!(merged.contains(&row1_mod_val));
+            prop_assert!(merged.contains(&row3_mod_val));
+        }
     }
 }

@@ -664,3 +664,42 @@ fn test_merge_cascade_three_branches() {
     assert!(repo.join("file_b.txt").exists(), "file_b.txt should exist");
     assert!(repo.join("file_c.txt").exists(), "file_c.txt should exist");
 }
+
+#[test]
+fn test_merge_new_file_on_both_sides_keeps_head() {
+    let (_tmp, repo) = new_test_repo("both_new_file");
+
+    fs::write(repo.join("existing.txt"), "base\n").unwrap();
+    suture_success(&repo, &["add", "existing.txt"]);
+    suture_success(&repo, &["commit", "base"]);
+
+    suture_success(&repo, &["branch", "branch-a"]);
+
+    fs::write(repo.join("new.txt"), "from A\n").unwrap();
+    suture_success(&repo, &["add", "new.txt"]);
+    suture_success(&repo, &["commit", "add new.txt from A"]);
+
+    suture_success(&repo, &["checkout", "main"]);
+
+    fs::write(repo.join("new.txt"), "from B\n").unwrap();
+    suture_success(&repo, &["add", "new.txt"]);
+    suture_success(&repo, &["commit", "add new.txt from B"]);
+
+    let output = suture(&repo, &["merge", "branch-a"]);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let combined = format!("{}{}", stdout, stderr);
+
+    assert!(
+        output.status.success(),
+        "merge with both sides adding new file should succeed: {}",
+        combined
+    );
+
+    let content = fs::read_to_string(repo.join("new.txt")).unwrap();
+    assert!(
+        content.contains("from B"),
+        "HEAD's version of new.txt should be kept when both sides add the same file: {}",
+        content
+    );
+}

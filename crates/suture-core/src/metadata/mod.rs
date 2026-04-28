@@ -36,6 +36,9 @@ pub enum MetaError {
     #[error("migration failed: {0}")]
     MigrationFailed(String),
 
+    #[error("serialization error: {0}")]
+    Serialization(#[from] serde_json::Error),
+
     #[error("{0}")]
     Custom(String),
 }
@@ -379,7 +382,7 @@ impl MetadataStore {
         if paths.is_empty() {
             return Ok(());
         }
-        let json = serde_json::to_string(paths).map_err(|e| MetaError::Custom(e.to_string()))?;
+        let json = serde_json::to_string(paths)?;
         self.conn.execute(
             "DELETE FROM working_set WHERE path IN (SELECT value FROM json_each(?1))",
             params![json],
@@ -472,21 +475,19 @@ impl MetadataStore {
             .execute(
                 "INSERT OR REPLACE INTO public_keys (author, public_key) VALUES (?1, ?2)",
                 params![author, public_key_bytes],
-            )
-            .map_err(|e| MetaError::Custom(e.to_string()))?;
+            )?;
         Ok(())
     }
 
     pub fn get_public_key(&self, author: &str) -> Result<Option<Vec<u8>>, MetaError> {
         let mut stmt = self
             .conn
-            .prepare("SELECT public_key FROM public_keys WHERE author = ?1")
-            .map_err(|e| MetaError::Custom(e.to_string()))?;
+            .prepare("SELECT public_key FROM public_keys WHERE author = ?1")?;
         let result = stmt.query_row(params![author], |row| row.get::<_, Vec<u8>>(0));
         match result {
             Ok(bytes) => Ok(Some(bytes)),
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(MetaError::Custom(e.to_string())),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -495,21 +496,19 @@ impl MetadataStore {
             .execute(
                 "INSERT OR REPLACE INTO signatures (patch_id, signature) VALUES (?1, ?2)",
                 params![patch_id, signature_bytes],
-            )
-            .map_err(|e| MetaError::Custom(e.to_string()))?;
+            )?;
         Ok(())
     }
 
     pub fn get_signature(&self, patch_id: &str) -> Result<Option<Vec<u8>>, MetaError> {
         let mut stmt = self
             .conn
-            .prepare("SELECT signature FROM signatures WHERE patch_id = ?1")
-            .map_err(|e| MetaError::Custom(e.to_string()))?;
+            .prepare("SELECT signature FROM signatures WHERE patch_id = ?1")?;
         let result = stmt.query_row(params![patch_id], |row| row.get::<_, Vec<u8>>(0));
         match result {
             Ok(bytes) => Ok(Some(bytes)),
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(MetaError::Custom(e.to_string())),
+            Err(e) => Err(e.into()),
         }
     }
 

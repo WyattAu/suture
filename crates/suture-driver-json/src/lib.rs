@@ -1048,4 +1048,37 @@ mod tests {
         let merged: Value = serde_json::from_str(&result.unwrap()).unwrap();
         assert_eq!(merged["key"], "string");
     }
+
+    #[test]
+    fn test_correctness_merge_associativity() {
+        let driver = JsonDriver::new();
+        let base = r#"{"a": 1, "b": 2, "c": 3, "d": 4}"#;
+        let a = r#"{"a": 10, "b": 2, "c": 3, "d": 4}"#;
+        let b = r#"{"a": 1, "b": 20, "c": 3, "d": 4}"#;
+        let c = r#"{"a": 1, "b": 2, "c": 30, "d": 4}"#;
+
+        let ab = driver.merge(base, a, b).unwrap().expect("merge(base, A, B) should succeed");
+        let merge_left = driver
+            .merge(base, &ab, c)
+            .unwrap()
+            .expect("merge(base, merge(A,B), C) should succeed");
+
+        let bc = driver.merge(base, b, c).unwrap().expect("merge(base, B, C) should succeed");
+        let merge_right = driver
+            .merge(base, a, &bc)
+            .unwrap()
+            .expect("merge(base, A, merge(B,C)) should succeed");
+
+        let v_left: Value = serde_json::from_str(&merge_left).unwrap();
+        let v_right: Value = serde_json::from_str(&merge_right).unwrap();
+
+        assert_eq!(
+            v_left, v_right,
+            "merge(base, merge(A,B), C) must equal merge(base, A, merge(B,C))"
+        );
+        assert_eq!(v_left["a"], 10);
+        assert_eq!(v_left["b"], 20);
+        assert_eq!(v_left["c"], 30);
+        assert_eq!(v_left["d"], 4);
+    }
 }

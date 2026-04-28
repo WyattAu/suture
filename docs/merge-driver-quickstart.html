@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Video Merge Guide: Version Control for OTIO Timelines — Suture</title>
+<title>5-Minute Git Merge Driver Quickstart — Suture</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -144,7 +144,7 @@ a:hover{color:#a78bfa}
 <a href="data-science.html" class="nav-item">Suture for Data Science</a>
 <a href="document-authors.html" class="nav-item">Suture for Document Authors</a>
 <a href="video-editors.html" class="nav-item">Suture for Video Editors</a>
-<a href="video-merge-guide.html" class="nav-item active">Video Merge Guide: Version Control for OTIO Timelines</a>
+<a href="video-merge-guide.html" class="nav-item">Video Merge Guide: Version Control for OTIO Timelines</a>
 </div>
 <div class="nav-group">
 <div class="nav-group-title">Onboarding</div>
@@ -167,7 +167,7 @@ a:hover{color:#a78bfa}
 <div class="nav-group">
 <div class="nav-group-title">Other</div>
 <a href="demo.html" class="nav-item">Suture Demo: Semantic Merge in 60 Seconds</a>
-<a href="merge-driver-quickstart.html" class="nav-item">5-Minute Git Merge Driver Quickstart</a>
+<a href="merge-driver-quickstart.html" class="nav-item active">5-Minute Git Merge Driver Quickstart</a>
 </div>
   </aside>
   <main class="content">
@@ -177,100 +177,140 @@ a:hover{color:#a78bfa}
       <span>Docs</span>
     </div>
     <article class="doc">
-      <h1>Video Merge Guide: Version Control for OTIO Timelines</h1>
-<p>A deep dive into how video editing teams use Suture for collaborative version control of OpenTimelineIO timelines.</p>
-<h2 id="the-problem-version-control-for-video-timelines">The Problem: Version Control for Video Timelines</h2>
-<p>Non-linear editors — DaVinci Resolve, Adobe Premiere Pro, Avid Media Composer — store projects as opaque binary files. A <code>.drp</code>, <code>.prproj</code>, or <code>.avp</code> is a monolithic blob that can't be meaningfully diffed or merged. Open your project file in a hex editor and you'll see compressed or proprietary data, not something a VCS can reason about.</p>
-<p>Even when you export to OpenTimelineIO (OTIO) — the industry-standard interchange format for editorial timelines — traditional version control still falls short. OTIO files are JSON, but they're deeply nested JSON describing clips, tracks, transitions, rational time values, and metadata. A Git diff of an OTIO timeline is unintelligible:</p>
-<pre><code class="language-json">-            "duration": {"value": 500.0, "rate": 24.0}
-+            "duration": {"value": 600.0, "rate": 24.0}
+      <h1>5-Minute Git Merge Driver Quickstart</h1>
+<p>Stop losing work to Git merge conflicts on JSON, YAML, DOCX, XLSX, and 16 other file formats. This guide gets you from zero to conflict-free in 5 minutes.</p>
+<hr>
+<h2 id="step-1-install-30-seconds">Step 1: Install (30 seconds)</h2>
+<p><strong>macOS (Homebrew):</strong></p>
+<pre><code class="language-bash">brew tap WyattAu/suture-merge-driver
+brew install suture-merge-driver
 </code></pre>
-<p>That could be any clip on any track. There's no indication of <em>which</em> clip changed, <em>where</em> it sits in the timeline, or <em>why</em> the change matters. When two editors work on the same OTIO file and both modify different clips, Git sees overlapping line changes and produces conflict markers. Collaborative editing is reduced to file locking and manual replay.</p>
-<h2 id="how-suture-handles-otio-timelines">How Suture Handles OTIO Timelines</h2>
-<p>Suture's <code>suture-driver-otio</code> parses the OTIO JSON schema into a structured element tree. It understands <a href="https://opentimelineio.io/">OpenTimelineIO</a> types: <code>Timeline</code>, <code>Track</code>, <code>Clip</code>, <code>Transition</code>, and <code>Stack</code>. Each element gets a deterministic hierarchical ID:</p>
-<pre><code>
-0:timeline:FeatureFilm_RoughCut
-  0:timeline:FeatureFilm_RoughCut/0:track:V1_Main
-    0:timeline:FeatureFilm_RoughCut/0:track:V1_Main/0:clip:Scene1_Take3
-    0:timeline:FeatureFilm_RoughCut/0:track:V1_Main/1:transition:Dissolve_1
-    0:timeline:FeatureFilm_RoughCut/0:track:V1_Main/2:clip:Scene2_Take1
-  0:timeline:FeatureFilm_RoughCut/1:track:V2_BRoll
-  0:timeline:FeatureFilm_RoughCut/2:track:A1_Dialogue
+<p><strong>Linux / Windows:</strong> Download from <a href="https://github.com/WyattAu/suture/releases">github.com/WyattAu/suture/releases</a>. Unzip and add to your PATH.</p>
+<p><strong>Verify:</strong></p>
+<pre><code class="language-bash">suture --version
+# suture 5.0.1
 </code></pre>
-<p>Changes are mapped to these element addresses. The driver uses <strong>touch-set propagation</strong>: when a track is modified, all its child clips and transitions are included in the patch's touch set. This means changing a track name and changing a clip on that track are correctly detected as overlapping changes.</p>
-<p>Three-way merge operates at the element level. If Editor A trims a clip on <code>V1_Main</code> (address <code>.../0:track:V1_Main/0:clip:Scene1_Take3</code>) and Editor B adds a clip to <code>A1_Dialogue</code> (address <code>.../2:track:A1_Dialogue</code>), the touch sets are disjoint and both changes merge cleanly. Reordering clips within a track changes the positional index, which causes the touch sets to overlap — this is correctly flagged as a conflict because both editors modified the same structural region.</p>
-<h2 id="workflow-editing-with-suture">Workflow: Editing with Suture</h2>
-<h3 id="1-initialize-a-video-aware-repository">1. Initialize a video-aware repository</h3>
-<pre><code class="language-bash">suture init --type video
-suture config user.name "Jane Editor"
-</code></pre>
-<h3 id="2-import-your-timeline">2. Import your timeline</h3>
-<p>Export from your NLE as OTIO and commit:</p>
-<pre><code class="language-bash">cp /path/to/export/timeline.otio .
-suture add timeline.otio &amp;&amp; suture commit "initial assembly"
-</code></pre>
-<h3 id="3-branch-for-parallel-work">3. Branch for parallel work</h3>
-<pre><code class="language-bash">suture branch editor-B &amp;&amp; suture checkout editor-B
-</code></pre>
-<h3 id="4-edit-commit-merge">4. Edit, commit, merge</h3>
-<p>Editor B adjusts audio levels on <code>A1_Dialogue</code>, then commits:</p>
-<pre><code class="language-bash">suture add timeline.otio &amp;&amp; suture commit "raise dialogue 3dB"
-</code></pre>
-<p>Back on main, you trim Act 2 and commit:</p>
-<pre><code class="language-bash">suture checkout main
-# Edit timeline — trim clips on V1_Main
-suture add timeline.otio &amp;&amp; suture commit "tighten Act 2"
-</code></pre>
-<p>Merge cleanly:</p>
-<pre><code class="language-bash">$ suture merge editor-B
-
- merge editor-B into main
-
- track: V1_Main
-   clip "Scene2_Take1" trimmed 00:00:04:00
- track: A1_Dialogue
-   clip "Boom_Scene1" gain raised +3.0 dB
-
- 2 clips changed, 0 conflicts
-</code></pre>
-<p>Both edits land without conflict — different tracks, different touch sets.</p>
-<h3 id="5-inspect-history">5. Inspect history</h3>
-<pre><code class="language-bash">$ suture log --oneline
-e7f2a1  raise dialogue 3dB
-b3c9d4  tighten Act 2
-4f2d0b  initial assembly
-
-$ suture diff HEAD~1 timeline.otio
- track: A1_Dialogue
-   clip "Boom_Scene1"
--    duration.value: 480.0
-+    duration.value: 480.0
-     metadata.gain: -3.0 dB → 0.0 dB
-</code></pre>
-<h2 id="supported-scenarios">Supported Scenarios</h2>
-<thead><tr><th>Scenario</th><th>Result</th></tr></thead>
-<tbody>
-<tr><td>Non-overlapping track edits</td><td>Clean merge — both editors' clips preserved</td></tr>
-<tr><td>Same-track clip edits</td><td>Conflict — editors resolve manually</td></tr>
-<tr><td>New track addition</td><td>Clean merge — existing tracks + new track</td></tr>
-<tr><td>Metadata changes (name, color space)</td><td>Clean merge — independent fields</td></tr>
-<tr><td>Nested stack restructuring</td><td>Detected at depth — child elements tracked individually</td></tr>
-<tr><td>Clip reordering within a track</td><td>Conflict — positional index overlap</td></tr>
-</tbody>
-</table>
-<h2 id="integration-points">Integration Points</h2>
-<p><strong>VS Code extension</strong>: OTIO files get semantic diff coloring. Open a <code>.otio</code> file in VS Code and see clip-level additions, removals, and modifications with track-aware grouping — not raw JSON noise.</p>
-<p><strong>Git merge driver</strong>: Install Suture as a Git merge driver to get OTIO-aware merging in any Git repository:</p>
+<hr>
+<h2 id="step-2-install-the-merge-driver-30-seconds">Step 2: Install the Merge Driver (30 seconds)</h2>
+<p>In your Git repository:</p>
 <pre><code class="language-bash">suture git driver install
 </code></pre>
-<p>This configures <code>.gitattributes</code> to route <code>.otio</code> files through <code>suture merge-file</code>, so <code>git merge</code> produces clean merges instead of conflict markers when two branches modify different parts of the same timeline.</p>
-<p><strong>CI/CD</strong>: The <a href="github-action.html">Suture GitHub Action</a> runs semantic merge on PRs that touch OTIO files. If a PR introduces changes to <code>V2_BRoll</code> while <code>main</code> has changes to <code>A1_Dialogue</code>, the action auto-resolves the merge and posts a comment with the results.</p>
-<h2 id="see-also">See Also</h2>
+<p>This creates two files:</p>
 <ul>
-<li><a href="video-editors.html">Suture for Video Editors</a> — high-level overview</li>
-<li><a href="semantic-merge.html">Semantic Merge</a> — how Suture's merge engine works</li>
-<li><a href="git_merge_driver.html">Git Merge Driver</a> — using Suture inside Git</li>
-<li><a href="cli-reference.html">CLI Reference</a> — full command listing</li>
+<li><code>.gitattributes</code> — tells Git which file types to merge semantically (20 patterns)</li>
+<li><code>.suture/git-merge-driver.sh</code> — the bridge script that Git calls on conflicts</li>
+</ul>
+<p>Commit them:</p>
+<pre><code class="language-bash">git add .gitattributes .suture/git-merge-driver.sh
+git commit -m "Configure suture semantic merge driver"
+</code></pre>
+<p><strong>That's it.</strong> You're done. Every future <code>git merge</code> on supported files will use semantic merge.</p>
+<hr>
+<h2 id="step-3-see-it-work-1-minute">Step 3: See It Work (1 minute)</h2>
+<p>Here's a JSON config that two people edit simultaneously:</p>
+<pre><code class="language-bash"># Create a shared config
+cat &gt; config.json &lt;&lt; 'EOF'
+{
+  "database": {"host": "localhost", "port": 5432},
+  "server": {"port": 3000, "workers": 4},
+  "logging": {"level": "info", "file": "app.log"}
+}
+EOF
+git add config.json &amp;&amp; git commit -m "initial config"
+
+# --- Your coworker's branch ---
+git checkout -b coworker/db-host
+cat &gt; config.json &lt;&lt; 'EOF'
+{
+  "database": {"host": "db.example.com", "port": 5432},
+  "server": {"port": 3000, "workers": 4},
+  "logging": {"level": "info", "file": "app.log"}
+}
+EOF
+git add config.json &amp;&amp; git commit -m "point database to staging"
+
+# --- Your branch (main) ---
+git checkout main
+cat &gt; config.json &lt;&lt; 'EOF'
+{
+  "database": {"host": "localhost", "port": 5432},
+  "server": {"port": 8080, "workers": 8},
+  "logging": {"level": "info", "file": "app.log"}
+}
+EOF
+git add config.json &amp;&amp; git commit -m "update server config"
+</code></pre>
+<p>Now merge:</p>
+<pre><code class="language-bash">git merge coworker/db-host
+</code></pre>
+<p><strong>Without Suture:</strong> Git produces conflict markers because both sides modified the same lines.</p>
+<p><strong>With Suture:</strong> Clean merge. The result contains <em>both</em> changes:</p>
+<pre><code class="language-json">{
+  "database": {"host": "db.example.com", "port": 5432},
+  "server": {"port": 8080, "workers": 8},
+  "logging": {"level": "info", "file": "app.log"}
+}
+</code></pre>
+<hr>
+<h2 id="step-4-try-a-word-document-1-minute">Step 4: Try a Word Document (1 minute)</h2>
+<p>The same thing works for <code>.docx</code> files — Suture merges at the <em>paragraph</em> level:</p>
+<pre><code class="language-bash"># Create a branch, edit paragraph 1, commit
+# Switch back, edit paragraph 3, commit
+# Merge — both changes preserved, no binary conflict
+git merge feature/edits
+</code></pre>
+<hr>
+<h2 id="supported-file-types">Supported File Types</h2>
+<thead><tr><th>Format</th><th>Extension(s)</th><th>Merge Granularity</th></tr></thead>
+<tbody>
+<tr><td>JSON</td><td><code>.json</code> <code>.jsonl</code></td><td>Field-level</td></tr>
+<tr><td>YAML</td><td><code>.yaml</code> <code>.yml</code></td><td>Key-level</td></tr>
+<tr><td>TOML</td><td><code>.toml</code></td><td>Table/key-aware</td></tr>
+<tr><td>CSV/TSV</td><td><code>.csv</code> <code>.tsv</code></td><td>Row-level</td></tr>
+<tr><td>XML</td><td><code>.xml</code> <code>.xsl</code> <code>.svg</code></td><td>Element/attribute</td></tr>
+<tr><td>Markdown</td><td><code>.md</code> <code>.markdown</code></td><td>Section-aware</td></tr>
+<tr><td>Word</td><td><code>.docx</code> <code>.docm</code></td><td>Paragraph-level</td></tr>
+<tr><td>Excel</td><td><code>.xlsx</code> <code>.xlsm</code></td><td>Cell-level</td></tr>
+<tr><td>PowerPoint</td><td><code>.pptx</code> <code>.pptm</code></td><td>Slide-level</td></tr>
+<tr><td>SQL</td><td><code>.sql</code></td><td>DDL schema</td></tr>
+<tr><td>OTIO</td><td><code>.otio</code></td><td>Clip-level</td></tr>
+</tbody>
+</table>
+<p>Files without a driver fall back to Git's default line-based merge.</p>
+<hr>
+<h2 id="global-install-optional">Global Install (Optional)</h2>
+<p>To enable semantic merge across <em>all</em> your repos without per-repo setup:</p>
+<pre><code class="language-bash"># Copy the driver script to a fixed location
+sudo cp $(which suture) /usr/local/bin/suture
+
+# Configure Git globally
+git config --global merge.suture.name "Suture Semantic Merge"
+git config --global merge.suture.driver "suture merge-file %O %A %B %P"
+git config --global merge.suture.recursive "binary"
+
+# Create a global gitattributes
+echo "*.json merge=suture" &gt;&gt; ~/.gitattributes
+echo "*.yaml merge=suture" &gt;&gt; ~/.gitattributes
+echo "*.yml merge=suture" &gt;&gt; ~/.gitattributes
+echo "*.toml merge=suture" &gt;&gt; ~/.gitattributes
+echo "*.csv merge=suture" &gt;&gt; ~/.gitattributes
+echo "*.md merge=suture" &gt;&gt; ~/.gitattributes
+echo "*.docx merge=suture" &gt;&gt; ~/.gitattributes
+echo "*.xlsx merge=suture" &gt;&gt; ~/.gitattributes
+echo "*.pptx merge=suture" &gt;&gt; ~/.gitattributes
+</code></pre>
+<hr>
+<h2 id="uninstall">Uninstall</h2>
+<pre><code class="language-bash">suture git driver uninstall
+git add .gitattributes &amp;&amp; git commit -m "Remove suture merge driver"
+</code></pre>
+<hr>
+<h2 id="whats-next">What's Next?</h2>
+<ul>
+<li><a href="cli-reference.html">Full CLI Reference</a></li>
+<li><a href="semantic-merge.html">Semantic Merge Deep Dive</a></li>
+<li><a href="document-authors.html">Document Authors Guide</a></li>
+<li><a href="getting_started.html">Install without Homebrew</a></li>
 </ul>
     </article>
     <div class="doc-footer">

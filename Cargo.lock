@@ -4284,6 +4284,7 @@ name = "suture-driver-csv"
 version = "5.0.1"
 dependencies = [
  "csv",
+ "proptest",
  "suture-driver",
 ]
 
@@ -4388,6 +4389,7 @@ dependencies = [
 name = "suture-driver-sql"
 version = "5.0.1"
 dependencies = [
+ "proptest",
  "suture-driver",
 ]
 
@@ -4421,6 +4423,7 @@ dependencies = [
 name = "suture-driver-xml"
 version = "5.0.1"
 dependencies = [
+ "proptest",
  "roxmltree",
  "suture-driver",
 ]

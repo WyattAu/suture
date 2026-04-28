@@ -984,6 +984,8 @@ impl SutureDriver for SqlDriver {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::proptest;
+    use proptest::prop_assert;
 
     #[test]
     fn test_sql_driver_name() {
@@ -1230,5 +1232,48 @@ mod tests {
             merged_schema, ours_schema,
             "merge(base, ours, ours) should equal ours"
         );
+    }
+
+    proptest! {
+        #[test]
+        fn test_merge_identity(table in "[a-z][a-z0-9]*", col in "[a-z][a-z0-9]*") {
+            let sql = format!("CREATE TABLE {} ({} INTEGER);", table, col);
+            let driver = SqlDriver::new();
+            let result = driver.merge(&sql, &sql, &sql).unwrap();
+            prop_assert!(result.is_some());
+        }
+
+        #[test]
+        fn test_merge_idempotence(
+            table in "[a-z][a-z0-9]*",
+            col1 in "[a-z][a-z0-9]*",
+            col2 in "[a-z][a-z0-9]*",
+        ) {
+            let base = format!("CREATE TABLE {} ({} INTEGER);", table, col1);
+            let modified = format!("CREATE TABLE {} ({} INTEGER, {} TEXT);", table, col1, col2);
+            let driver = SqlDriver::new();
+            let result = driver.merge(&base, &modified, &modified).unwrap();
+            prop_assert!(result.is_some());
+            let merged = result.unwrap();
+            prop_assert!(merged.contains(&col2), "added column should be present");
+        }
+
+        #[test]
+        fn test_sql_merge_non_overlapping_ddl(
+            table_name in "[a-z][a-z0-9]*",
+            col1 in "[a-z][a-z0-9]*",
+            col2 in "[a-z][a-z0-9]*",
+            col3 in "[a-z][a-z0-9]*",
+            default_val in "[a-z0-9]+",
+        ) {
+            let base = format!("CREATE TABLE {} ({} INTEGER, {} TEXT);", table_name, col1, col2);
+            let ours = format!("CREATE TABLE {} ({} INTEGER, {} TEXT, {} REAL);", table_name, col1, col2, col3);
+            let theirs = format!("CREATE TABLE {} ({} INTEGER DEFAULT {}, {} TEXT);", table_name, col1, default_val, col2);
+
+            let driver = SqlDriver::new();
+            let result = driver.merge(&base, &ours, &theirs);
+            prop_assert!(result.is_ok());
+            prop_assert!(result.unwrap().is_some());
+        }
     }
 }

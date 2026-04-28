@@ -176,6 +176,18 @@ pub enum CommonError {
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 
+    #[error("repo path must not be empty")]
+    EmptyRepoPath,
+
+    #[error("repo path must not contain null bytes")]
+    NullByteInRepoPath,
+
+    #[error("repo path must be relative, not absolute")]
+    AbsoluteRepoPath,
+
+    #[error("repo path must not contain '..' components")]
+    ParentDirInRepoPath,
+
     #[error("{0}")]
     Custom(String),
 }
@@ -192,25 +204,19 @@ impl RepoPath {
     pub fn new(path: impl Into<String>) -> Result<Self, CommonError> {
         let s = path.into();
         if s.is_empty() {
-            return Err(CommonError::Custom("repo path must not be empty".into()));
+            return Err(CommonError::EmptyRepoPath);
         }
         if s.contains('\0') {
-            return Err(CommonError::Custom(
-                "repo path must not contain null bytes".into(),
-            ));
+            return Err(CommonError::NullByteInRepoPath);
         }
         let p = std::path::Path::new(&s);
         if p.is_absolute() {
-            return Err(CommonError::Custom(
-                "repo path must be relative, not absolute".into(),
-            ));
+            return Err(CommonError::AbsoluteRepoPath);
         }
         if p.components()
             .any(|c| matches!(c, std::path::Component::ParentDir))
         {
-            return Err(CommonError::Custom(
-                "repo path must not contain '..' components".into(),
-            ));
+            return Err(CommonError::ParentDirInRepoPath);
         }
         Ok(Self(s))
     }

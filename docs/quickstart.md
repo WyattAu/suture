@@ -9,7 +9,8 @@ You've been there. Two people edit the same Word doc. Someone saves over someone
 Head to [github.com/WyattAu/suture/releases](https://github.com/WyattAu/suture/releases), grab the binary for your OS, and drop it somewhere on your PATH. On a Mac with Homebrew:
 
 ```bash
-brew install suture
+brew tap WyattAu/suture-merge-driver
+brew install suture-merge-driver
 ```
 
 On Linux or Windows, download from GitHub Releases and unzip. That's it. No Rust toolchain needed.
@@ -18,7 +19,7 @@ Verify it works:
 
 ```
 $ suture --version
-suture 0.1.0
+suture 5.0.1
 ```
 
 ---

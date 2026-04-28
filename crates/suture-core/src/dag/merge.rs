@@ -35,7 +35,7 @@ impl PatchDag {
         // Find LCA
         let lca_id = self
             .lca(&target_a, &target_b)
-            .ok_or_else(|| DagError::Custom("no common ancestor found".to_string()))?;
+            .ok_or(DagError::NoCommonAncestor)?;
 
         // DAG-aware: compute patches unique to each branch as
         // (ancestors(tip) ∪ {tip}) - (ancestors(lca) ∪ {lca}).
@@ -76,7 +76,7 @@ impl PatchDag {
             &branch_b_patches,
             &all_patches,
         )
-        .map_err(|e| DagError::Custom(e.to_string()))
+        .map_err(|e| DagError::MergeFailed(e.to_string()))
     }
 }
 

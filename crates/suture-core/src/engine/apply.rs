@@ -25,6 +25,9 @@ pub enum ApplyError {
     #[error("file already exists for create: {0}")]
     FileAlreadyExists(String),
 
+    #[error("move payload must be valid UTF-8 path")]
+    InvalidMovePayload,
+
     #[error("cannot apply patch: {0}")]
     Custom(String),
 }
@@ -203,7 +206,7 @@ where
         }
         OperationType::Move => {
             let new_path = String::from_utf8(payload.to_vec())
-                .map_err(|_| ApplyError::Custom("Move payload must be valid UTF-8 path".into()))?;
+                .map_err(|_| ApplyError::InvalidMovePayload)?;
             tree.rename(target_path, new_path);
         }
         OperationType::Metadata => {}

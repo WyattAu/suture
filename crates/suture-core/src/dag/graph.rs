@@ -52,6 +52,12 @@ pub enum DagError {
     #[error("cannot create root patch with parents")]
     RootWithParents,
 
+    #[error("no common ancestor found")]
+    NoCommonAncestor,
+
+    #[error("DAG merge error: {0}")]
+    MergeFailed(String),
+
     #[error("{0}")]
     Custom(String),
 }

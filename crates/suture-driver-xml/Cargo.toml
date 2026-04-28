@@ -13,3 +13,6 @@ categories.workspace = true
 [dependencies]
 suture-driver = { path = "../suture-driver", version = "5.0.0" }
 roxmltree = "0.21"
+
+[dev-dependencies]
+proptest = "1"
