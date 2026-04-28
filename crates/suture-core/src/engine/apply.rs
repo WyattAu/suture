@@ -521,6 +521,72 @@ mod tests {
         assert!(result.is_empty());
     }
 
+    #[test]
+    fn test_apply_patch_inverse_roundtrip() {
+        let original_content = b"original content";
+        let original_hash = suture_common::Hash::from_data(original_content);
+        let new_content = b"modified content";
+        let new_hash = suture_common::Hash::from_data(new_content);
+        let added_content = b"new file content";
+        let added_hash = suture_common::Hash::from_data(added_content);
+
+        let mut tree = FileTree::empty();
+        tree.insert("hello.txt".to_string(), original_hash);
+        tree.insert(
+            "dir/data.json".to_string(),
+            suture_common::Hash::from_data(br#"{"key": "value"}"#),
+        );
+
+        let forward_changes = vec![
+            FileChange {
+                op: OperationType::Modify,
+                path: "hello.txt".to_string(),
+                payload: blob_hash(new_content),
+            },
+            FileChange {
+                op: OperationType::Create,
+                path: "new_file.txt".to_string(),
+                payload: blob_hash(added_content),
+            },
+        ];
+        let forward_patch = Patch::new_batch(
+            forward_changes,
+            vec![],
+            "test".to_string(),
+            "forward patch".to_string(),
+        );
+
+        let tree_after = apply_patch(&tree, &forward_patch, resolve_payload_to_hash).unwrap();
+        assert_eq!(tree_after.get("hello.txt"), Some(&new_hash));
+        assert_eq!(tree_after.get("new_file.txt"), Some(&added_hash));
+        assert!(tree_after.contains("dir/data.json"));
+
+        let inverse_changes = vec![
+            FileChange {
+                op: OperationType::Modify,
+                path: "hello.txt".to_string(),
+                payload: blob_hash(original_content),
+            },
+            FileChange {
+                op: OperationType::Delete,
+                path: "new_file.txt".to_string(),
+                payload: vec![],
+            },
+        ];
+        let inverse_patch = Patch::new_batch(
+            inverse_changes,
+            vec![],
+            "test".to_string(),
+            "inverse patch".to_string(),
+        );
+
+        let tree_final = apply_patch(&tree_after, &inverse_patch, resolve_payload_to_hash).unwrap();
+        assert_eq!(tree_final, tree, "forward then inverse should equal original");
+        assert_eq!(tree_final.get("hello.txt"), Some(&original_hash));
+        assert!(tree_final.get("new_file.txt").is_none());
+        assert!(tree_final.contains("dir/data.json"));
+    }
+
     mod proptests {
         use super::*;
         use proptest::prelude::*;

@@ -610,7 +610,9 @@ fn merge_trees(
                 // Delete wins
             }
 
-            (false, false, false) => unreachable!(),
+            (false, false, false) => {
+                return None;
+            }
         }
     }
 
@@ -1070,7 +1072,7 @@ impl LegacyOtioDriver {
                         (Some(o), None) => {
                             lines.push(format!("- {child_path}: {o}"));
                         }
-                        (None, None) => unreachable!(),
+                        (None, None) => continue,
                     }
                 }
             }
@@ -1090,7 +1092,7 @@ impl LegacyOtioDriver {
                         (Some(o), None) => {
                             lines.push(format!("- {child_path}: {o}"));
                         }
-                        (None, None) => unreachable!(),
+                        (None, None) => continue,
                     }
                 }
             }

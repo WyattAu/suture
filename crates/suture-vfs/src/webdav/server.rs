@@ -278,9 +278,15 @@ async fn handle_put(
         if let Some(parent) = full_path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
-        let _ = std::fs::write(&full_path, &body);
-        let _ = repo.add(&clean);
-        let _ = repo.commit(&format!("webdav: modify {}", clean));
+        if let Err(e) = std::fs::write(&full_path, &body) {
+            tracing::warn!("WebDAV PUT failed to write file {}: {}", full_path.display(), e);
+        }
+        if let Err(e) = repo.add(&clean) {
+            tracing::warn!("WebDAV PUT failed to git add {}: {}", clean, e);
+        }
+        if let Err(e) = repo.commit(&format!("webdav: modify {}", clean)) {
+            tracing::warn!("WebDAV PUT failed to commit: {}", e);
+        }
     }
 
     StatusCode::NO_CONTENT.into_response()
@@ -317,11 +323,15 @@ async fn handle_delete(
 
     if let Ok(mut repo) = Repository::open(&state.repo_path) {
         let full_path = state.repo_path.join(clean);
-        if full_path.exists() {
-            let _ = std::fs::remove_file(&full_path);
+        if full_path.exists() && let Err(e) = std::fs::remove_file(&full_path) {
+            tracing::warn!("WebDAV DELETE failed to remove file {}: {}", full_path.display(), e);
         }
-        let _ = repo.add(clean);
-        let _ = repo.commit(&format!("webdav: delete {}", clean));
+        if let Err(e) = repo.add(clean) {
+            tracing::warn!("WebDAV DELETE failed to git add: {}", e);
+        }
+        if let Err(e) = repo.commit(&format!("webdav: delete {}", clean)) {
+            tracing::warn!("WebDAV DELETE failed to commit: {}", e);
+        }
     }
 
     StatusCode::NO_CONTENT.into_response()

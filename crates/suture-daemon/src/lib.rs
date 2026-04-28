@@ -927,6 +927,9 @@ fn format_timestamp(ts: u64) -> String {
 }
 
 fn signal_process(pid: u32, sig: libc::c_int) {
+    // SAFETY: libc::kill is safe to call for inter-process signaling. The pid
+    // is obtained from the daemon's PID file and validated before this call.
+    // A non-zero return (e.g. ESRCH) is acceptable — the caller handles errors.
     unsafe {
         libc::kill(pid as libc::pid_t, sig);
     }

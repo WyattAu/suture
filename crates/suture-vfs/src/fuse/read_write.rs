@@ -328,7 +328,11 @@ fn make_file_attr(entry: &InodeEntry, inode: u64, size: u64) -> FileAttr {
         kind,
         perm,
         nlink: 1,
+        // SAFETY: getuid() is a simple read of the calling process's real
+        // user ID. It always succeeds, never fails, and has no side effects.
         uid: unsafe { libc::getuid() },
+        // SAFETY: getgid() is a simple read of the calling process's real
+        // group ID. It always succeeds, never fails, and has no side effects.
         gid: unsafe { libc::getgid() },
         rdev: 0,
         blksize: 4096,
@@ -785,7 +789,13 @@ impl Filesystem for RwFilesystem {
     }
 }
 
+// SAFETY: RwFilesystem wraps Arc<InnerFs> where every field of InnerFs is
+// either a Mutex, AtomicU64, or PathBuf — all of which are Send + Sync.
+// The Arc ensures shared ownership, and Mutex provides interior
+// synchronization for all mutable state.
 unsafe impl Send for RwFilesystem {}
+// SAFETY: Same justification as Send — all shared state behind the Arc
+// is protected by Mutex or is an atomic type, so concurrent access is safe.
 unsafe impl Sync for RwFilesystem {}
 
 pub async fn mount_rw(

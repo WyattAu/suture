@@ -810,4 +810,37 @@ mod tests {
         );
         assert_eq!(merged["database"]["port"], Value::Integer(5433));
     }
+
+    #[test]
+    fn test_correctness_merge_associativity() {
+        let driver = TomlDriver::new();
+        let base = "a = 1\nb = 2\nc = 3\nd = 4\n";
+        let a = "a = 10\nb = 2\nc = 3\nd = 4\n";
+        let b = "a = 1\nb = 20\nc = 3\nd = 4\n";
+        let c = "a = 1\nb = 2\nc = 30\nd = 4\n";
+
+        let ab = driver.merge(base, a, b).unwrap().expect("merge(base, A, B) should succeed");
+        let merge_left = driver
+            .merge(base, &ab, c)
+            .unwrap()
+            .expect("merge(base, merge(A,B), C) should succeed");
+
+        let bc = driver.merge(base, b, c).unwrap().expect("merge(base, B, C) should succeed");
+        let merge_right = driver
+            .merge(base, a, &bc)
+            .unwrap()
+            .expect("merge(base, A, merge(B,C)) should succeed");
+
+        let v_left: Value = merge_left.parse().unwrap();
+        let v_right: Value = merge_right.parse().unwrap();
+
+        assert_eq!(
+            v_left, v_right,
+            "merge(base, merge(A,B), C) must equal merge(base, A, merge(B,C))"
+        );
+        assert_eq!(v_left["a"], Value::Integer(10));
+        assert_eq!(v_left["b"], Value::Integer(20));
+        assert_eq!(v_left["c"], Value::Integer(30));
+        assert_eq!(v_left["d"], Value::Integer(4));
+    }
 }

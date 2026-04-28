@@ -1004,4 +1004,37 @@ mod tests {
         assert_eq!(merged["server"]["ssl"]["enabled"], Value::Bool(true));
         assert_eq!(merged["server"]["port"], Value::Number(8080.into()));
     }
+
+    #[test]
+    fn test_correctness_merge_associativity() {
+        let driver = YamlDriver::new();
+        let base = "a: 1\nb: 2\nc: 3\nd: 4\n";
+        let a = "a: 10\nb: 2\nc: 3\nd: 4\n";
+        let b = "a: 1\nb: 20\nc: 3\nd: 4\n";
+        let c = "a: 1\nb: 2\nc: 30\nd: 4\n";
+
+        let ab = driver.merge(base, a, b).unwrap().expect("merge(base, A, B) should succeed");
+        let merge_left = driver
+            .merge(base, &ab, c)
+            .unwrap()
+            .expect("merge(base, merge(A,B), C) should succeed");
+
+        let bc = driver.merge(base, b, c).unwrap().expect("merge(base, B, C) should succeed");
+        let merge_right = driver
+            .merge(base, a, &bc)
+            .unwrap()
+            .expect("merge(base, A, merge(B,C)) should succeed");
+
+        let v_left: Value = serde_yaml::from_str(&merge_left).unwrap();
+        let v_right: Value = serde_yaml::from_str(&merge_right).unwrap();
+
+        assert_eq!(
+            v_left, v_right,
+            "merge(base, merge(A,B), C) must equal merge(base, A, merge(B,C))"
+        );
+        assert_eq!(v_left["a"], Value::Number(10.into()));
+        assert_eq!(v_left["b"], Value::Number(20.into()));
+        assert_eq!(v_left["c"], Value::Number(30.into()));
+        assert_eq!(v_left["d"], Value::Number(4.into()));
+    }
 }

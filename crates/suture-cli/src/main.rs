@@ -1408,6 +1408,9 @@ async fn main() {
     // On Unix, restore default SIGPIPE handling so broken pipes terminate the
     // process silently instead of panicking with a backtrace. This matches the
     // behavior of standard Unix tools (cat, grep, etc.) when piped to `head`.
+    // SAFETY: Restoring SIGPIPE to SIG_DFL is the standard and safe way to
+    // enable default broken-pipe behavior on Unix. The signal disposition is
+    // a per-process property and does not require synchronization.
     #[cfg(unix)]
     unsafe {
         libc::signal(libc::SIGPIPE, libc::SIG_DFL);

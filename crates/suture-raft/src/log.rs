@@ -115,13 +115,13 @@ impl SqliteRaftLog {
         index
     }
 
-    pub fn append_entry(&mut self, entry: LogEntry) {
+    pub fn append_entry(&mut self, entry: LogEntry) -> Result<(), rusqlite::Error> {
         self.conn
             .execute(
                 "INSERT OR REPLACE INTO raft_log (\"index\", term, command) VALUES (?1, ?2, ?3)",
                 rusqlite::params![entry.index as i64, entry.term as i64, entry.command],
-            )
-            .expect("insert into raft_log must succeed");
+            )?;
+        Ok(())
     }
 
     pub fn get(&self, index: u64) -> Option<LogEntry> {
@@ -163,28 +163,25 @@ impl SqliteRaftLog {
         self.get(index).map(|e| e.term)
     }
 
-    pub fn entries_from(&self, index: u64) -> Vec<LogEntry> {
+    pub fn entries_from(&self, index: u64) -> Result<Vec<LogEntry>, rusqlite::Error> {
         if index == 0 {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         let mut stmt = self
             .conn
-            .prepare("SELECT \"index\", term, command FROM raft_log WHERE \"index\" >= ?1 ORDER BY \"index\"")
-            .expect("prepare entries_from must succeed");
-        let rows = stmt
-            .query_map(rusqlite::params![index as i64], |row| {
-                Ok(LogEntry {
-                    index: row.get::<_, i64>(0)? as u64,
-                    term: row.get::<_, i64>(1)? as u64,
-                    command: row.get(2)?,
-                })
+            .prepare("SELECT \"index\", term, command FROM raft_log WHERE \"index\" >= ?1 ORDER BY \"index\"")?;
+        let rows = stmt.query_map(rusqlite::params![index as i64], |row| {
+            Ok(LogEntry {
+                index: row.get::<_, i64>(0)? as u64,
+                term: row.get::<_, i64>(1)? as u64,
+                command: row.get(2)?,
             })
-            .expect("query_map entries_from must succeed");
+        })?;
         let mut entries = Vec::new();
         for row in rows {
-            entries.push(row.expect("row read must succeed"));
+            entries.push(row?);
         }
-        entries
+        Ok(entries)
     }
 
     pub fn truncate_from(&mut self, index: u64) {
@@ -201,25 +198,22 @@ impl SqliteRaftLog {
         self.last_index() == 0
     }
 
-    pub fn as_slice(&self) -> Vec<LogEntry> {
+    pub fn as_slice(&self) -> Result<Vec<LogEntry>, rusqlite::Error> {
         let mut stmt = self
             .conn
-            .prepare("SELECT \"index\", term, command FROM raft_log ORDER BY \"index\"")
-            .expect("prepare as_slice must succeed");
-        let rows = stmt
-            .query_map([], |row| {
-                Ok(LogEntry {
-                    index: row.get::<_, i64>(0)? as u64,
-                    term: row.get::<_, i64>(1)? as u64,
-                    command: row.get(2)?,
-                })
+            .prepare("SELECT \"index\", term, command FROM raft_log ORDER BY \"index\"")?;
+        let rows = stmt.query_map([], |row| {
+            Ok(LogEntry {
+                index: row.get::<_, i64>(0)? as u64,
+                term: row.get::<_, i64>(1)? as u64,
+                command: row.get(2)?,
             })
-            .expect("query_map as_slice must succeed");
+        })?;
         let mut entries = Vec::new();
         for row in rows {
-            entries.push(row.expect("row read must succeed"));
+            entries.push(row?);
         }
-        entries
+        Ok(entries)
     }
 }
 
@@ -343,7 +337,7 @@ mod persist_tests {
         assert_eq!(log.last_term(), 0);
         assert!(log.get(0).is_none());
         assert!(log.get(1).is_none());
-        assert!(log.entries_from(1).is_empty());
+        assert!(log.entries_from(1).expect("entries_from").is_empty());
         assert!(log.term_for(1).is_none());
 
         let _ = std::fs::remove_file(&path);
@@ -374,15 +368,15 @@ mod persist_tests {
         log.append(2, vec![3]);
         log.append(2, vec![4]);
 
-        let entries = log.entries_from(3);
+        let entries = log.entries_from(3).expect("entries_from");
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].index, 3);
         assert_eq!(entries[1].index, 4);
 
-        let entries = log.entries_from(5);
+        let entries = log.entries_from(5).expect("entries_from");
         assert!(entries.is_empty());
 
-        let entries = log.entries_from(1);
+        let entries = log.entries_from(1).expect("entries_from");
         assert_eq!(entries.len(), 4);
 
         let _ = std::fs::remove_file(&path);
@@ -420,7 +414,7 @@ mod persist_tests {
         assert_eq!(log.last_index(), 2);
         assert!(log.get(3).is_none());
 
-        let entries = log.entries_from(1);
+        let entries = log.entries_from(1).expect("entries_from");
         assert_eq!(entries.len(), 2);
 
         let _ = std::fs::remove_file(&path);
@@ -456,7 +450,7 @@ mod persist_tests {
             term: 5,
             command: vec![99],
         };
-        log.append_entry(entry);
+        log.append_entry(entry).expect("append_entry");
         assert_eq!(log.last_index(), 1);
         assert_eq!(log.last_term(), 5);
 
@@ -471,7 +465,7 @@ mod persist_tests {
         log.append(1, vec![1]);
         log.append(2, vec![2]);
 
-        let slice = log.as_slice();
+        let slice = log.as_slice().expect("as_slice");
         assert_eq!(slice.len(), 2);
         assert_eq!(slice[0].index, 1);
         assert_eq!(slice[1].index, 2);

@@ -405,6 +405,9 @@ pub(crate) fn cmd_sync_stop() -> Result<(), Box<dyn std::error::Error>> {
         Some(pid) => {
             #[cfg(unix)]
             {
+                // SAFETY: Sending SIGTERM to the daemon process is safe for
+                // process management. The pid is read from the PID file and
+                // validated. Return value is checked for errors below.
                 let ret = unsafe { libc::kill(pid as i32, libc::SIGTERM) };
                 if ret != 0 {
                     let errno = std::io::Error::last_os_error();
@@ -630,6 +633,9 @@ fn is_daemon_running() -> bool {
 fn is_process_alive(pid: u32) -> bool {
     #[cfg(unix)]
     {
+        // SAFETY: kill with signal 0 does not actually send a signal — it
+        // only checks for process existence. This is a standard and safe
+        // POSIX idiom. Return value is checked: 0 means the process exists.
         let ret = unsafe { libc::kill(pid as i32, 0) };
         ret == 0
     }

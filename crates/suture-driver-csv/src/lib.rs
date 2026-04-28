@@ -858,6 +858,37 @@ mod tests {
         assert_eq!(rows[1][1], "Robert");
     }
 
+    #[test]
+    fn test_correctness_merge_associativity() {
+        let driver = CsvDriver::new();
+        let base = "id,a,b,c,d\nrow,1,2,3,4\n";
+        let a = "id,a,b,c,d\nrow,10,2,3,4\n";
+        let b = "id,a,b,c,d\nrow,1,20,3,4\n";
+        let c = "id,a,b,c,d\nrow,1,2,30,4\n";
+
+        let ab = driver.merge(base, a, b).unwrap().expect("merge(base, A, B) should succeed");
+        let merge_left = driver
+            .merge(base, &ab, c)
+            .unwrap()
+            .expect("merge(base, merge(A,B), C) should succeed");
+
+        let bc = driver.merge(base, b, c).unwrap().expect("merge(base, B, C) should succeed");
+        let merge_right = driver
+            .merge(base, a, &bc)
+            .unwrap()
+            .expect("merge(base, A, merge(B,C)) should succeed");
+
+        let (h_left, r_left) = CsvDriver::parse_csv(&merge_left).unwrap();
+        let (h_right, r_right) = CsvDriver::parse_csv(&merge_right).unwrap();
+
+        assert_eq!(h_left, h_right, "headers must match");
+        assert_eq!(r_left, r_right, "rows must match");
+        assert!(merge_left.contains("10"));
+        assert!(merge_left.contains("20"));
+        assert!(merge_left.contains("30"));
+        assert!(merge_left.contains(",4\n"));
+    }
+
     proptest! {
         #[test]
         fn test_merge_identity(content in "[a-z0-9]+") {

@@ -60,6 +60,7 @@ proptest! {
             let h2 = Hash::from_data(&data2);
             assert_ne!(h1, Hash::ZERO);
             assert_ne!(h2, Hash::ZERO);
+            assert_ne!(h1, h2, "different inputs must produce different hashes");
         }
     }
 }

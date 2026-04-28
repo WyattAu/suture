@@ -15,7 +15,7 @@
 //! - Metadata (timestamp, author, message)
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 use std::time::{SystemTime, UNIX_EPOCH};
 use suture_common::Hash;
 
@@ -76,20 +76,20 @@ impl std::fmt::Display for OperationType {
 /// two patches commute if and only if their touch sets are disjoint.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TouchSet {
-    inner: HashSet<String>,
+    inner: BTreeSet<String>,
 }
 
 impl TouchSet {
     /// Create an empty touch set (identity patch).
     pub fn empty() -> Self {
         Self {
-            inner: HashSet::new(),
+            inner: BTreeSet::new(),
         }
     }
 
     /// Create a touch set from a single address.
     pub fn single(addr: impl Into<String>) -> Self {
-        let mut set = HashSet::new();
+        let mut set = BTreeSet::new();
         set.insert(addr.into());
         Self { inner: set }
     }
@@ -135,9 +135,7 @@ impl TouchSet {
 
     /// Get all addresses as a sorted Vec.
     pub fn addresses(&self) -> Vec<String> {
-        let mut addrs: Vec<String> = self.inner.iter().cloned().collect();
-        addrs.sort();
-        addrs
+        self.inner.iter().cloned().collect()
     }
 
     #[inline]

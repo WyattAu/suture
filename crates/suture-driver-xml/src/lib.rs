@@ -959,6 +959,41 @@ mod tests {
         assert!(merged.contains(">10<"), "theirs child change");
     }
 
+    #[test]
+    fn test_correctness_merge_associativity() {
+        let driver = XmlDriver::new();
+        let base = r#"<root><a>1</a><b>2</b><c>3</c><d>4</d></root>"#;
+        let a = r#"<root><a>10</a><b>2</b><c>3</c><d>4</d></root>"#;
+        let b = r#"<root><a>1</a><b>20</b><c>3</c><d>4</d></root>"#;
+        let c = r#"<root><a>1</a><b>2</b><c>30</c><d>4</d></root>"#;
+
+        let ab = driver.merge(base, a, b).unwrap().expect("merge(base, A, B) should succeed");
+        let merge_left = driver
+            .merge(base, &ab, c)
+            .unwrap()
+            .expect("merge(base, merge(A,B), C) should succeed");
+
+        let bc = driver.merge(base, b, c).unwrap().expect("merge(base, B, C) should succeed");
+        let merge_right = driver
+            .merge(base, a, &bc)
+            .unwrap()
+            .expect("merge(base, A, merge(B,C)) should succeed");
+
+        let d_left = roxmltree::Document::parse(&merge_left).unwrap();
+        let d_right = roxmltree::Document::parse(&merge_right).unwrap();
+        let s_left = XmlDriver::element_to_string(d_left.root(), 0);
+        let s_right = XmlDriver::element_to_string(d_right.root(), 0);
+
+        assert_eq!(
+            s_left, s_right,
+            "merge(base, merge(A,B), C) must equal merge(base, A, merge(B,C))"
+        );
+        assert!(merge_left.contains(">10<"));
+        assert!(merge_left.contains(">20<"));
+        assert!(merge_left.contains(">30<"));
+        assert!(merge_left.contains(">4<"));
+    }
+
     proptest! {
         #[test]
         fn test_merge_identity(content in "[a-z0-9]+") {
