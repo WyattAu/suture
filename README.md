@@ -124,9 +124,12 @@ cd suture && cargo build --release --bin suture
 ### Package managers
 
 ```bash
-cargo install suture-cli          # crates.io
-brew install wyattau/tap/suture   # macOS / Linux
-paru -S suture-git                # Arch Linux (AUR)
+cargo install suture-cli                        # crates.io
+brew tap WyattAu/suture-merge-driver           # Homebrew tap
+brew install suture-merge-driver               # macOS / Linux
+paru -S suture-git                             # Arch Linux (AUR)
+npm install -g suture-merge-driver             # Node.js
+pip install suture-merge-driver                # Python
 ```
 
 ## Key Commands
@@ -151,16 +154,22 @@ suture doctor --fix                # Auto-remediate common issues
 
 ## Use With Git
 
-Suture works as a [Git merge driver](docs/git_merge_driver.md) — add semantic merging to your existing Git repos:
+Suture works as a [Git merge driver](docs/git_merge_driver.md) — add semantic merging to your existing Git repos in 30 seconds:
 
 ```bash
-git config merge.suture.name "suture"
-git config merge.suture.driver "suture merge-file --driver %s %O %A %B -o %A"
+# In your Git repo:
+suture git driver install
+git add .gitattributes .suture/git-merge-driver.sh
+git commit -m "Configure suture semantic merge driver"
 ```
+
+That's it. Future merges on JSON, YAML, DOCX, XLSX, and 17 other file types will use semantic merge automatically. See the [5-minute quickstart](docs/merge-driver-quickstart.md) for details.
 
 ## Learn More
 
-- [Quick Start Guide](docs/quickstart.md) — 60-second getting started
+- [5-Minute Git Merge Driver Quickstart](docs/merge-driver-quickstart.md) — the fastest way to get started
+- [Quick Start Guide](docs/quickstart.md) — full standalone usage
+- [Blog: Semantic Merge for 17 File Formats](docs/blog/semantic-merge-for-17-file-formats.md)
 - [Why Suture?](docs/why-suture.md) — the problem with binary version control
 - [Suture vs. Git](docs/comparing-with-git.md) — honest comparison
 - [Semantic merge explained](docs/semantic-merge.md) — how it works under the hood
@@ -173,7 +182,7 @@ git config merge.suture.driver "suture merge-file --driver %s %O %A %B -o %A"
 - **17 semantic drivers** for structured file formats
 - **1,400+ tests** across the workspace
 - **50+ CLI commands**
-- **v5.0.1** — unified version across all crates
+- **v5.0.1** — unified version across all packages (crates.io, npm, PyPI, Homebrew)
 
 ## Contributing
 

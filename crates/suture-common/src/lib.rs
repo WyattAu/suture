@@ -188,8 +188,7 @@ pub enum CommonError {
     #[error("repo path must not contain '..' components")]
     ParentDirInRepoPath,
 
-    #[error("{0}")]
-    Custom(String),
+
 }
 
 // =============================================================================

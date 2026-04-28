@@ -31,8 +31,7 @@ pub enum MergeError {
     #[error("empty branch: {0}")]
     EmptyBranch(String),
 
-    #[error("{0}")]
-    Custom(String),
+
 }
 
 /// Result of a merge operation.

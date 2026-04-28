@@ -1,5 +1,43 @@
 # Changelog
 
+## [Unreleased]
+
+### Error Quality — Typed Error Variants
+- **150 → 0 `Custom(String)` usages in production code** — Replaced with 35+ typed variants across `RepoError`, `StorageError`, `MetaError`, `CommonError`, `DagError`, `ApplyError`. Examples: `RepoError::PatchNotFound(id)`, `RepoError::InvalidHeadOffset(n)`, `StorageError::PoisonedLock(msg)`, `MetaError::Serialization(err)`.
+- **7 unused `Custom(String)` definitions removed** from `CommonError`, `MetaError`, `DagError`, `ApplyError`, `SigningError`, `MergeError`, `OtioError`. Kept on `RepoError` and `StorageError` as forward-compatibility escape hatches.
+- **`#[from] rusqlite::Error` and `#[from] serde_json::Error`** added to `RepoError` and `MetaError`, eliminating 30+ boilerplate `.map_err()` calls.
+
+### Distribution — Homebrew Tap
+- **Homebrew tap created** at [github.com/WyattAu/homebrew-suture-merge-driver](https://github.com/WyattAu/homebrew-suture-merge-driver). Install: `brew tap WyattAu/suture-merge-driver && brew install suture-merge-driver`.
+
+### Documentation
+- **5-minute Git merge driver quickstart** (`docs/merge-driver-quickstart.md`) — zero-to-semantic-merge in 4 steps.
+- **Blog post: Semantic Merge for 17 File Formats** (`docs/blog/semantic-merge-for-17-file-formats.md`) — ready for HN/Reddit submission.
+- **Landing page updated** with correct Homebrew install, blog link, and quickstart link.
+
+### Test Coverage
+- **Merge associativity test** — `test_correctness_merge_associativity` in JSON driver verifies `merge(merge(base,A,B),C) == merge(base,A,merge(B,C))`.
+- **New-file-on-both-sides test** — `test_merge_new_file_on_both_sides_keeps_head` in E2E.
+- **9 proptests** added across XML (3), SQL (3), CSV (3) — identity, idempotence, non-overlapping merge.
+- **Total: 1,260+ tests, 0 failures**.
+
+## [5.0.1] - 2026-04-27
+
+### Security Fixes
+- **SHA-256 token hashing** in suture-hub — replaces plaintext token storage.
+- **LFS path traversal validation** — blocks `../` in blob paths.
+- **Signing key name validation** — restricts to alphanumeric + hyphens.
+- **Mutex poison recovery** in suture-vfs — `UnpoisonMutex` trait replaces `.unwrap()` on poisoned locks.
+- **Fetch error propagation** in remote protocol — missing commits no longer silently ignored.
+
+### Bug Fixes
+- **npm package asset names** — `darwin` → `macos`, Windows uses `.zip`, per-asset `.sha256` checksums.
+- **`from_utf8_unchecked` eliminated** from 5 production drivers (docx, xlsx, pptx, image, pdf) — replaced with `bytes_to_string_lossy()`.
+- **Defence onboarding docs** — 20+ command mismatches fixed vs actual CLI.
+
+### Performance
+- **Release binary benchmarks**: 4ms startup, 7ms status, 9ms commit, 14ms log (100 commits).
+
 ## [5.0.0] - 2026-04-25
 
 ### Semantic Merge — Batch Patch File-Level 3-Way Merge

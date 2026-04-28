@@ -58,8 +58,7 @@ pub enum DagError {
     #[error("DAG merge error: {0}")]
     MergeFailed(String),
 
-    #[error("{0}")]
-    Custom(String),
+
 }
 
 /// A node in the Patch-DAG.

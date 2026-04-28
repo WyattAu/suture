@@ -28,8 +28,7 @@ pub enum ApplyError {
     #[error("move payload must be valid UTF-8 path")]
     InvalidMovePayload,
 
-    #[error("cannot apply patch: {0}")]
-    Custom(String),
+
 }
 
 /// Apply a single patch to a FileTree, producing a new FileTree.

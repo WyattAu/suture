@@ -40,8 +40,7 @@ pub enum OtioError {
     #[error("element not found: {0}")]
     ElementNotFound(String),
 
-    #[error("{0}")]
-    Custom(String),
+
 }
 
 pub type Result<T> = std::result::Result<T, OtioError>;

@@ -21,8 +21,7 @@ pub enum SigningError {
     #[error("key error: {0}")]
     KeyError(String),
 
-    #[error("{0}")]
-    Custom(String),
+
 }
 
 #[derive(Clone)]

@@ -51,7 +51,7 @@ impl PatchDag {
         // Find the LCA (the most recent common ancestor)
         let lca_id = self
             .lca(&target_a, &target_b)
-            .ok_or_else(|| DagError::Custom("no common ancestor found".to_string()))?;
+            .ok_or(DagError::NoCommonAncestor)?;
 
         // DAG-aware: unique patches = (ancestors(tip) ∪ {tip}) - (ancestors(lca) ∪ {lca})
         let lca_ancestors = self.ancestors(&lca_id);

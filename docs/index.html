@@ -125,7 +125,7 @@ footer .footer-links a:hover{color:#fff}
       <a href="./quickstart.html" class="btn btn-outline">Documentation</a>
       <a href="https://github.com/WyattAu/suture" target="_blank" rel="noopener" class="btn btn-outline">GitHub &nearr;</a>
     </div>
-    <p class="install-hint">or just run <code>cargo install suture-cli</code></p>
+    <p class="install-hint">or <code>brew tap WyattAu/suture-merge-driver &amp;&amp; brew install suture-merge-driver</code></p>
   </div>
 </section>
 
@@ -239,27 +239,21 @@ footer .footer-links a:hover{color:#fff}
     <h2>Get Started in Seconds</h2>
     <p class="section-desc">Install via your preferred package manager or build from source.</p>
     <div class="install-grid">
-      <div class="install-card">
-        <div class="install-card-header">
-          <span class="platform">macOS</span>
-          <button class="copy-btn" data-copy="brew install suture">Copy</button>
-        </div>
-        <pre><code>brew install suture</code></pre>
-      </div>
-      <div class="install-card">
-        <div class="install-card-header">
-          <span class="platform">Linux</span>
-          <button class="copy-btn" data-copy="curl -fsSL https://suture.dev/install.sh | sh">Copy</button>
-        </div>
-        <pre><code>curl -fsSL https://suture.dev/install.sh | sh</code></pre>
-      </div>
-      <div class="install-card">
-        <div class="install-card-header">
-          <span class="platform">Windows</span>
-          <button class="copy-btn" data-copy="winget install suture">Copy</button>
-        </div>
-        <pre><code>winget install suture</code></pre>
-      </div>
+       <div class="install-card">
+         <div class="install-card-header">
+           <span class="platform">macOS / Linux</span>
+           <button class="copy-btn" data-copy="brew tap WyattAu/suture-merge-driver && brew install suture-merge-driver">Copy</button>
+         </div>
+         <pre><code>brew tap WyattAu/suture-merge-driver
+brew install suture-merge-driver</code></pre>
+       </div>
+       <div class="install-card">
+         <div class="install-card-header">
+           <span class="platform">Prebuilt binary</span>
+           <button class="copy-btn" data-copy="# Download from https://github.com/WyattAu/suture/releases">Copy</button>
+         </div>
+         <pre><code># https://github.com/WyattAu/suture/releases
+# Linux, macOS, Windows — no Rust needed</code></pre>
       <div class="install-card">
         <div class="install-card-header">
           <span class="platform">npm (merge driver)</span>
@@ -289,6 +283,8 @@ footer .footer-links a:hover{color:#fff}
   <div class="container">
     <div class="footer-links">
       <a href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">GitHub</a>
+      <a href="./merge-driver-quickstart.html">5-Minute Quickstart</a>
+      <a href="./blog/semantic-merge-for-17-file-formats.md">Blog</a>
       <a href="./quickstart.html">Quick Start</a>
       <a href="./semantic-merge.html">Semantic Merge</a>
       <a href="./cli-reference.html">CLI Reference</a>
