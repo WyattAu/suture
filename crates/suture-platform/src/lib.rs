@@ -3,8 +3,11 @@ pub mod billing;
 pub mod db;
 pub mod merge_api;
 pub mod middleware;
+pub mod oauth;
 pub mod orgs;
+pub mod rate_limit;
 pub mod server;
+pub mod stripe;
 pub mod web_ui;
 
 use serde::{Deserialize, Serialize};

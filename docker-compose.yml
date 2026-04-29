@@ -1,0 +1,30 @@
+version: "3.9"
+
+services:
+  suture-platform:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - suture-data:/data
+    environment:
+      - RUST_LOG=info,suture_platform=debug
+      - SUTURE_JWT_SECRET=${SUTURE_JWT_SECRET:-change-me-in-production}
+      - SUTURE_ADDR=0.0.0.0:8080
+      # Stripe (optional — enables billing)
+      - SUTURE_STRIPE_KEY=${SUTURE_STRIPE_KEY:-}
+      # Google OAuth (optional)
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      # GitHub OAuth (optional)
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID:-}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  suture-data:

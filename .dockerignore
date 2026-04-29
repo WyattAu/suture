@@ -1,0 +1,8 @@
+target/
+.git/
+node_modules/
+desktop-app/
+*.db
+*.db-wal
+*.db-shm
+.env

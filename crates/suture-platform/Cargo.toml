@@ -15,6 +15,19 @@ suture-driver-yaml = { path = "../suture-driver-yaml" }
 suture-driver-toml = { path = "../suture-driver-toml" }
 suture-driver-xml = { path = "../suture-driver-xml" }
 suture-driver-csv = { path = "../suture-driver-csv" }
+suture-driver-sql = { path = "../suture-driver-sql" }
+suture-driver-html = { path = "../suture-driver-html" }
+suture-driver-markdown = { path = "../suture-driver-markdown" }
+suture-driver-svg = { path = "../suture-driver-svg" }
+suture-driver-docx = { path = "../suture-driver-docx" }
+suture-driver-feed = { path = "../suture-driver-feed" }
+suture-driver-ical = { path = "../suture-driver-ical" }
+suture-driver-image = { path = "../suture-driver-image" }
+suture-driver-otio = { path = "../suture-driver-otio" }
+suture-driver-pdf = { path = "../suture-driver-pdf" }
+suture-driver-pptx = { path = "../suture-driver-pptx" }
+suture-driver-xlsx = { path = "../suture-driver-xlsx" }
+suture-driver-example = { path = "../suture-driver-example" }
 axum = { version = "0.8", features = ["json", "form", "multipart"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "request-id", "trace", "compression-gzip"] }
@@ -32,3 +45,4 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 thiserror = "2"
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }

@@ -10,11 +10,13 @@ use std::sync::Arc;
 use crate::auth::Claims;
 use crate::db::PlatformDb;
 use crate::Config;
+use crate::rate_limit::RateLimiter;
 
 #[derive(Clone)]
 pub struct AppState {
     pub db: Arc<PlatformDb>,
     pub config: Arc<Config>,
+    pub rate_limiter: Arc<RateLimiter>,
 }
 
 impl FromRequestParts<Arc<AppState>> for Claims {
@@ -37,6 +39,7 @@ pub async fn start(config: Config) -> anyhow::Result<()> {
     let state = AppState {
         db: Arc::new(db),
         config: Arc::new(config),
+        rate_limiter: Arc::new(RateLimiter::new()),
     };
 
     let public_routes = Router::new()
@@ -45,6 +48,9 @@ pub async fn start(config: Config) -> anyhow::Result<()> {
         .route("/healthz", get(health_check))
         .route("/auth/register", post(crate::auth::register_handler))
         .route("/auth/login", post(crate::auth::login_handler))
+        .route("/auth/oauth/start", get(crate::oauth::start_oauth))
+        .route("/auth/google/callback", get(crate::oauth::google_callback))
+        .route("/auth/github/callback", get(crate::oauth::github_callback))
         .route("/api/drivers", get(crate::merge_api::list_drivers));
 
     let protected_routes = Router::new()
@@ -52,9 +58,17 @@ pub async fn start(config: Config) -> anyhow::Result<()> {
         .route("/api/merge", post(crate::merge_api::merge_files))
         .route("/api/usage", get(crate::billing::usage_handler))
         .route("/api/orgs", post(crate::orgs::create_org).get(crate::orgs::list_my_orgs))
+        .route("/billing/checkout", post(crate::stripe::create_checkout_session))
+        .route("/billing/portal", post(crate::stripe::create_portal_session))
+        .route("/billing/subscription", get(crate::stripe::get_subscription))
+        .route("/billing/webhook", post(crate::stripe::handle_webhook))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             crate::middleware::optional_auth,
+        ))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            crate::rate_limit::rate_limit,
         ));
 
     let admin_routes = Router::new()
