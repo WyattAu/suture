@@ -23,7 +23,25 @@
       { "command": "suture.checkout", "title": "Suture: Checkout Branch", "category": "Suture" },
       { "command": "suture.blame", "title": "Suture: Blame", "category": "Suture" },
       { "command": "suture.stash", "title": "Suture: Stash", "category": "Suture" },
-      { "command": "suture.tags", "title": "Suture: Tags", "category": "Suture" }
+      { "command": "suture.tags", "title": "Suture: Tags", "category": "Suture" },
+      { "command": "suture.resolveConflict", "title": "Suture: Resolve Current Conflict", "category": "Suture" },
+      { "command": "suture.mergeCurrentFile", "title": "Suture: Merge Current File", "category": "Suture" },
+      { "command": "suture.showMergeStatus", "title": "Suture: Show Merge Status", "category": "Suture" }
+    ],
+    "languages": [
+      {
+        "id": "suture-conflict",
+        "aliases": ["Suture Conflict"],
+        "extensions": [".suture-conflict"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "suture-conflict",
+        "scopeName": "source.suture-conflict",
+        "path": "./syntaxes/suture-conflict.tmLanguage.json"
+      }
     ]
   },
   "scripts": {

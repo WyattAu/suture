@@ -1,0 +1,39 @@
+suture.dev {
+    reverse_proxy localhost:8080
+
+    # Security headers
+    header {
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+    }
+
+    # Compression
+    encode gzip zstd
+
+    # Logging
+    log {
+        output file /var/log/caddy/suture-access.log
+        format json
+    }
+}
+
+api.suture.dev {
+    reverse_proxy localhost:8080
+
+    # CORS for API
+    header Access-Control-Allow-Origin "*"
+    header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+    header Access-Control-Allow-Headers "Authorization, Content-Type"
+
+    # Rate limiting (simple)
+    rate_limit {
+        zone api {
+            key {remote_host}
+            events 100
+            period 1m
+        }
+    }
+}

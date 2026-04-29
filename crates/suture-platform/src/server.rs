@@ -18,12 +18,14 @@ use crate::auth::Claims;
 use crate::db::PlatformDb;
 use crate::Config;
 use crate::rate_limit::RateLimiter;
+use suture_wasm_plugin::PluginManager;
 
 #[derive(Clone)]
 pub struct AppState {
     pub db: Arc<PlatformDb>,
     pub config: Arc<Config>,
     pub rate_limiter: Arc<RateLimiter>,
+    pub plugins: Arc<std::sync::Mutex<PluginManager>>,
 }
 
 impl FromRequestParts<Arc<AppState>> for Claims {
@@ -43,10 +45,25 @@ impl FromRequestParts<Arc<AppState>> for Claims {
 
 pub async fn start(config: Config) -> anyhow::Result<()> {
     let db = PlatformDb::new(&config.db_path)?;
+    let plugins = Arc::new(std::sync::Mutex::new(PluginManager::new()));
+
+    if let Ok(entries) = std::fs::read_dir("plugins") {
+        for entry in entries.flatten() {
+            if entry.path().extension().map(|e| e == "wasm").unwrap_or(false) {
+                let path = entry.path().to_string_lossy().to_string();
+                match plugins.lock().unwrap().load_file(&path) {
+                    Ok(_) => tracing::info!("Loaded plugin: {}", path),
+                    Err(e) => tracing::warn!("Failed to load plugin {}: {}", path, e),
+                }
+            }
+        }
+    }
+
     let state = AppState {
         db: Arc::new(db),
         config: Arc::new(config),
         rate_limiter: Arc::new(RateLimiter::new()),
+        plugins,
     };
 
     let public_routes = Router::new()
@@ -65,6 +82,9 @@ pub async fn start(config: Config) -> anyhow::Result<()> {
         .route("/api/merge", post(crate::merge_api::merge_files))
         .route("/api/usage", get(crate::billing::usage_handler))
         .route("/api/orgs", post(crate::orgs::create_org).get(crate::orgs::list_my_orgs))
+        .route("/api/plugins", get(crate::plugins::list_plugins))
+        .route("/api/plugins/upload", post(crate::plugins::upload_plugin))
+        .route("/api/plugins/merge", post(crate::plugins::merge_with_plugin))
         .route("/billing/checkout", post(crate::stripe::create_checkout_session))
         .route("/billing/portal", post(crate::stripe::create_portal_session))
         .route("/billing/subscription", get(crate::stripe::get_subscription))

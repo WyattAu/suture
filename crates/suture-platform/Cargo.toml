@@ -28,6 +28,7 @@ suture-driver-pdf = { path = "../suture-driver-pdf" }
 suture-driver-pptx = { path = "../suture-driver-pptx" }
 suture-driver-xlsx = { path = "../suture-driver-xlsx" }
 suture-driver-example = { path = "../suture-driver-example" }
+suture-wasm-plugin = { path = "../suture-wasm-plugin" }
 axum = { version = "0.8", features = ["json", "form", "multipart"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "request-id", "trace", "compression-gzip"] }

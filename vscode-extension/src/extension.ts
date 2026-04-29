@@ -62,6 +62,52 @@ class SutureHelper {
   }
 }
 
+interface ConflictBlock {
+  ours: string;
+  theirs: string;
+  header: string;
+  footer: string;
+  startIndex: number;
+  endIndex: number;
+}
+
+const CONFLICT_PATTERN = /^<{7}\s+(.*?)\n([\s\S]*?)^={7}\n([\s\S]*?)^>{7}\s+(.*?)$/gm;
+
+function findConflicts(text: string): ConflictBlock[] {
+  const conflicts: ConflictBlock[] = [];
+  let match: RegExpExecArray | null;
+
+  while ((match = CONFLICT_PATTERN.exec(text)) !== null) {
+    const startIndex = match.index;
+    const endIndex = startIndex + match[0].length;
+    const ours = match[2].replace(/\n$/, '');
+    const theirs = match[3].replace(/\n$/, '');
+    const header = match[0].split('\n')[0];
+    const footer = match[0].split('\n').pop() || '';
+
+    conflicts.push({ ours, theirs, header, footer, startIndex, endIndex });
+  }
+
+  return conflicts;
+}
+
+function resolveConflicts(text: string, conflicts: ConflictBlock[], resolution: 'ours' | 'theirs' | 'both'): string {
+  let result = text;
+  for (let i = conflicts.length - 1; i >= 0; i--) {
+    const conflict = conflicts[i];
+    let replacement: string;
+    if (resolution === 'ours') {
+      replacement = conflict.ours;
+    } else if (resolution === 'theirs') {
+      replacement = conflict.theirs;
+    } else {
+      replacement = conflict.ours + '\n' + conflict.theirs;
+    }
+    result = result.substring(0, conflict.startIndex) + replacement + result.substring(conflict.endIndex);
+  }
+  return result;
+}
+
 export function activate(context: vscode.ExtensionContext) {
   const outputChannel = vscode.window.createOutputChannel('Suture');
   context.subscriptions.push(outputChannel);
@@ -73,6 +119,48 @@ export function activate(context: vscode.ExtensionContext) {
       'Suture binary not found. Please install Suture and ensure it is in your PATH.'
     );
   }
+
+  const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+  statusBarItem.text = '$(git-merge) Suture: checking...';
+  statusBarItem.tooltip = 'Suture merge status';
+  statusBarItem.command = 'suture.showMergeStatus';
+  context.subscriptions.push(statusBarItem);
+  statusBarItem.show();
+
+  async function updateMergeStatus() {
+    const root = suture.getWorkspaceRoot();
+    if (!root) {
+      statusBarItem.text = '$(git-merge) Suture: no workspace';
+      statusBarItem.color = undefined;
+      return;
+    }
+
+    if (!await suture.isSutureRepo(root)) {
+      statusBarItem.text = '$(git-merge) Suture: no repo';
+      statusBarItem.color = undefined;
+      return;
+    }
+
+    try {
+      const output = await suture.exec('status', [], root);
+      const conflictMatch = output.match(/(\d+)\s+conflict/i);
+      if (conflictMatch) {
+        const count = parseInt(conflictMatch[1], 10);
+        statusBarItem.text = `$(git-merge) Suture: ${count} conflict${count !== 1 ? 's' : ''}`;
+        statusBarItem.color = new vscode.ThemeColor('statusBarItem.errorForeground');
+      } else {
+        statusBarItem.text = '$(git-merge) Suture: no conflicts';
+        statusBarItem.color = new vscode.ThemeColor('statusBarItem.warningForeground');
+      }
+    } catch {
+      statusBarItem.text = '$(git-merge) Suture: unknown';
+      statusBarItem.color = undefined;
+    }
+  }
+
+  updateMergeStatus();
+  const statusInterval = setInterval(updateMergeStatus, 30000);
+  context.subscriptions.push({ dispose: () => clearInterval(statusInterval) });
 
   function registerCommand(command: string, callback: (...args: unknown[]) => Promise<void>) {
     context.subscriptions.push(
@@ -359,6 +447,103 @@ export function activate(context: vscode.ExtensionContext) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       vscode.window.showErrorMessage(`Tags failed: ${msg}`);
+    }
+  });
+
+  registerCommand('suture.resolveConflict', async () => {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) {
+      vscode.window.showErrorMessage('No active editor.');
+      return;
+    }
+
+    const document = editor.document;
+    const text = document.getText();
+    const conflicts = findConflicts(text);
+
+    if (conflicts.length === 0) {
+      vscode.window.showInformationMessage('No Suture conflict markers found in the current file.');
+      return;
+    }
+
+    const selected = await vscode.window.showQuickPick(
+      [
+        { label: 'Ours', description: `Keep ${conflicts.length} "ours" section(s)`, value: 'ours' as const },
+        { label: 'Theirs', description: `Keep ${conflicts.length} "theirs" section(s)`, value: 'theirs' as const },
+        { label: 'Both', description: `Keep both sections for all ${conflicts.length} conflict(s)`, value: 'both' as const },
+      ],
+      { placeHolder: `Resolve ${conflicts.length} conflict(s)` }
+    );
+
+    if (!selected) {
+      return;
+    }
+
+    const resolved = resolveConflicts(text, conflicts, selected.value);
+    const edit = new vscode.WorkspaceEdit();
+    const fullRange = new vscode.Range(
+      document.positionAt(0),
+      document.positionAt(text.length)
+    );
+    edit.replace(document.uri, fullRange, resolved);
+    await vscode.workspace.applyEdit(edit);
+    vscode.window.showInformationMessage(`Resolved ${conflicts.length} conflict(s) using "${selected.label}".`);
+    updateMergeStatus();
+  });
+
+  registerCommand('suture.mergeCurrentFile', async () => {
+    const fileUri = suture.getActiveFile();
+    const root = suture.getWorkspaceRoot();
+    if (!fileUri || !root) {
+      vscode.window.showErrorMessage('No active file or workspace.');
+      return;
+    }
+
+    const relativePath = path.relative(root, fileUri.fsPath);
+
+    try {
+      const statusOutput = await suture.exec('status', [], root);
+      const statusLines = statusOutput.split('\n');
+      const fileMentioned = statusLines.some(
+        line => line.toLowerCase().includes('conflict') && line.includes(relativePath)
+      );
+
+      if (!fileMentioned) {
+        const inStatus = statusLines.some(line => line.includes(relativePath));
+        if (!inStatus) {
+          vscode.window.showInformationMessage(`${relativePath} is not listed as an unmerged file.`);
+        } else {
+          vscode.window.showInformationMessage(`${relativePath} does not appear to be in conflict.`);
+        }
+        return;
+      }
+
+      const mergeOutput = await suture.exec('merge', [relativePath], root);
+      const doc = await vscode.workspace.openTextDocument({
+        content: mergeOutput,
+        language: 'suture-conflict',
+      });
+      await vscode.window.showTextDocument(doc, { preview: true });
+      vscode.window.showInformationMessage(`Merge result for ${relativePath} opened.`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      vscode.window.showErrorMessage(`Merge failed: ${msg}`);
+    }
+  });
+
+  registerCommand('suture.showMergeStatus', async () => {
+    const root = suture.getWorkspaceRoot();
+    if (!root) {
+      vscode.window.showErrorMessage('No workspace folder open.');
+      return;
+    }
+
+    try {
+      const output = await suture.exec('status', [], root);
+      suture.showOutput(output || 'Nothing to commit, working tree clean.');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      vscode.window.showErrorMessage(`Status failed: ${msg}`);
     }
   });
 }

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "builder": "NIXPACKS",
+    "buildCommand": "cargo build --release -p suture-platform"
+  },
+  "deploy": {
+    "startCommand": "./target/release/suture-platform --db /data/platform.db --hub-db /data/hub.db --addr 0.0.0.0:$PORT",
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 3
+  }
+}

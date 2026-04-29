@@ -12,6 +12,7 @@ pub mod merge_api;
 pub mod middleware;
 pub mod oauth;
 pub mod orgs;
+pub mod plugins;
 pub mod rate_limit;
 pub mod server;
 pub mod stripe;

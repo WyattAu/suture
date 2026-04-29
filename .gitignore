@@ -30,3 +30,8 @@ build/
 
 # Suture repository data (created by `suture init` in tests)
 .suture/
+
+# Node.js / VS Code extension
+node_modules/
+out/
+*.vsix
