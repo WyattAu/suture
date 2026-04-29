@@ -17,7 +17,7 @@
 
 use crate::patch::types::{Patch, PatchId};
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::rc::Rc;
 use suture_common::BranchName;
 use thiserror::Error;
@@ -97,7 +97,7 @@ pub struct PatchDag {
     /// Cache of ancestor sets, keyed by patch ID.
     /// Populated lazily by `ancestors()`; stable because `add_patch()` only
     /// creates new nodes (existing nodes' ancestor sets never change).
-    ancestor_cache: RefCell<HashMap<PatchId, Rc<HashSet<PatchId>>>>,
+    ancestor_cache: RefCell<HashMap<PatchId, Rc<BTreeSet<PatchId>>>>,
 }
 
 impl Default for PatchDag {
@@ -207,12 +207,12 @@ impl PatchDag {
     /// result in O(1). The cache is safe without invalidation because
     /// `add_patch()` only creates new nodes — existing nodes' ancestor sets
     /// never change.
-    pub fn ancestors(&self, id: &PatchId) -> Rc<HashSet<PatchId>> {
+    pub fn ancestors(&self, id: &PatchId) -> Rc<BTreeSet<PatchId>> {
         if let Some(cached) = self.ancestor_cache.borrow().get(id) {
             return Rc::clone(cached);
         }
 
-        let mut ancestors = HashSet::new();
+        let mut ancestors = BTreeSet::new();
         let mut queue: VecDeque<PatchId> = VecDeque::new();
 
         if let Some(node) = self.nodes.get(id) {
@@ -266,7 +266,7 @@ impl PatchDag {
         }
 
         // Find common ancestors
-        let common: Vec<PatchId> = ancestors_a.intersection(&ancestors_b).copied().collect();
+        let common: Vec<PatchId> = ancestors_a.iter().filter(|id| ancestors_b.contains(id)).copied().collect();
 
         if common.is_empty() {
             return None;
@@ -379,9 +379,9 @@ impl PatchDag {
     /// sequential replay via `apply_patch_chain`.
     pub fn patch_chain_full(&self, id: &PatchId) -> Vec<PatchId> {
         // Collect self + all ancestors
-        let all: HashSet<PatchId> = {
+        let all: BTreeSet<PatchId> = {
             let anc = self.ancestors(id);
-            let mut set = HashSet::with_capacity(anc.len() + 1);
+            let mut set = BTreeSet::new();
             set.insert(*id);
             for a in anc.iter() {
                 set.insert(*a);
@@ -403,7 +403,7 @@ impl PatchDag {
     /// DAG-aware traversal that includes merge parents.
     pub fn patch_chain(&self, id: &PatchId) -> Vec<PatchId> {
         let mut chain = Vec::new();
-        let mut seen = HashSet::new();
+        let mut seen = BTreeSet::new();
         let mut current = Some(*id);
 
         while let Some(curr_id) = current {

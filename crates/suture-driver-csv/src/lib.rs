@@ -143,25 +143,41 @@ impl CsvDriver {
         theirs_headers: &[String],
         theirs_rows: &[Vec<String>],
     ) -> Result<Option<String>, DriverError> {
-        let base_set: HashSet<&str> = base_headers.iter().map(|s| s.as_str()).collect();
-        let ours_set: HashSet<&str> = ours_headers.iter().map(|s| s.as_str()).collect();
-        let theirs_set: HashSet<&str> = theirs_headers.iter().map(|s| s.as_str()).collect();
+        let base_hc: HashMap<&str, usize> = {
+            let mut m = HashMap::new();
+            for h in base_headers.iter() {
+                *m.entry(h.as_str()).or_insert(0) += 1;
+            }
+            m
+        };
+        let ours_hc: HashMap<&str, usize> = {
+            let mut m = HashMap::new();
+            for h in ours_headers.iter() {
+                *m.entry(h.as_str()).or_insert(0) += 1;
+            }
+            m
+        };
+        let theirs_hc: HashMap<&str, usize> = {
+            let mut m = HashMap::new();
+            for h in theirs_headers.iter() {
+                *m.entry(h.as_str()).or_insert(0) += 1;
+            }
+            m
+        };
 
         let mut merged_headers: Vec<String> = Vec::new();
-        let mut header_seen: HashSet<&str> = HashSet::new();
+        let mut processed: HashMap<&str, usize> = HashMap::new();
 
         for headers in [base_headers, ours_headers, theirs_headers] {
             for h in headers.iter() {
-                if header_seen.insert(h.as_str()) {
-                    let in_base = base_set.contains(h.as_str());
-                    let in_ours = ours_set.contains(h.as_str());
-                    let in_theirs = theirs_set.contains(h.as_str());
-                    match (in_base, in_ours, in_theirs) {
-                        (true, false, false) | (false, false, false) => {
-                            header_seen.remove(h.as_str());
-                        }
-                        _ => merged_headers.push(h.clone()),
-                    }
+                let n = *processed.entry(h.as_str()).or_insert(0);
+                processed.insert(h.as_str(), n + 1);
+                let in_base = n < *base_hc.get(h.as_str()).unwrap_or(&0);
+                let in_ours = n < *ours_hc.get(h.as_str()).unwrap_or(&0);
+                let in_theirs = n < *theirs_hc.get(h.as_str()).unwrap_or(&0);
+                match (in_base, in_ours, in_theirs) {
+                    (true, false, false) | (false, false, false) => {}
+                    _ => merged_headers.push(h.clone()),
                 }
             }
         }
