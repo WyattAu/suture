@@ -8,6 +8,7 @@
 pub mod error;
 pub mod plugin;
 pub mod registry;
+pub mod structured_merge;
 pub mod types;
 
 pub use error::DriverError;
