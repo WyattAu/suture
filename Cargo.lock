@@ -4739,6 +4739,7 @@ dependencies = [
  "suture-driver-yaml",
  "suture-hub",
  "suture-protocol",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "tower 0.5.3",

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 #![allow(clippy::collapsible_match)]
 //! PDF semantic driver — page-level diff and merge for PDF documents.
 //!

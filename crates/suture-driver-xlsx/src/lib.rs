@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 #![allow(clippy::collapsible_match)]
 //! XLSX semantic driver — cell-level diff and merge for Excel spreadsheets.
 //!

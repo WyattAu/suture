@@ -1,3 +1,10 @@
+// Copyright 2025 Suture Pty Ltd
+// SPDX-License-Identifier: AGPL-3.0-or-later OR (AGPL-3.0-or-later WITH Suture-Commercial-1.0)
+//
+// Licensed under the AGPL-3.0-or-later license OR the
+// Suture Commercial License (for enterprise features).
+// See LICENSE-AGPL and LICENSE-COMMERCIAL in the repo root.
+
 use axum::{
     extract::{Query, State},
     http::StatusCode,

@@ -1,0 +1,63 @@
+SUTURE COMMERCIAL LICENSE
+
+Version 1.0
+
+This license governs the use of Suture Platform enterprise features
+that are marked with the "Suture Enterprise" or "Suture Commercial"
+designation in the source code.
+
+GRANT OF LICENSE
+================
+Subject to payment of applicable fees and compliance with the terms
+below, Suture Pty Ltd ("Licensor") grants you a non-exclusive,
+non-transferable, limited license to:
+
+1. Use the Suture Platform software for its intended purpose
+2. Install and operate the software on your infrastructure
+3. Access enterprise features (SSO, audit logs, advanced billing)
+4. Create derivative works for internal use only
+
+RESTRICTIONS
+============
+You may not:
+1. Distribute the software to third parties
+2. Remove or alter any license notices
+3. Use the software to provide competing services
+4. Reverse-engineer the software for competitive purposes
+5. Exceed the licensed capacity (users, merges, storage)
+
+ENTERPRISE FEATURES
+==================
+The following features are available only under this commercial license:
+- SAML/OIDC Single Sign-On (suture-platform/src/oauth.rs — SAML paths)
+- Unlimited audit log retention
+- 99.99% SLA guarantees
+- Priority support
+- Custom branding
+- Dedicated deployment assistance
+
+OPEN SOURCE COMPONENTS
+======================
+All components NOT marked as enterprise features remain under their
+original open-source license (AGPL-3.0-or-later or MIT/Apache-2.0
+as specified in each crate's Cargo.toml).
+
+The self-hosted suture-hub component is always available under
+AGPL-3.0-or-later at no cost.
+
+SUPPORT
+=======
+Enterprise license holders receive:
+- Email support with 24-hour response time
+- Security advisories
+- Bug fix priority
+- Upgrade assistance
+
+TERMINATION
+===========
+This license terminates automatically upon failure to pay fees or
+material breach of terms.
+
+CONTACT
+=======
+For commercial licensing inquiries: license@suture.dev

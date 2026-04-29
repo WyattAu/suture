@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc faf0998ee9fb39c31cda56863e685867459732c98fa4d7422eba29351de71c10 # shrinks to header = "a,a", row1 = "a,a", row2 = "a,a", row3 = "a,a", row1_mod = "a,0", row3_mod = "a,0"
+cc 1471f6eba89f4e94d6725ec8de83998c8697dcc7a53c0ba3d0978be481aea48f # shrinks to col1 = "d", col2 = "d", row1_key = "a", row2_key = "a", row3_key = "a", row1_val = "a", row1_mod_val = "a", row3_val = "a", row3_mod_val = "a"

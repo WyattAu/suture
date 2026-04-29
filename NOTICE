@@ -1,0 +1,38 @@
+Suture — Semantic Merge Platform
+Copyright 2025 Suture Pty Ltd
+
+This product includes software developed by the Suture project
+(https://github.com/WyattAu/suture) and its contributors.
+
+LICENSES
+========
+
+Core Engine (suture-core, suture-driver, suture-common, suture-protocol):
+  MIT OR Apache-2.0
+
+Self-Hosted Hub (suture-hub):
+  AGPL-3.0-or-later
+
+Platform (suture-platform):
+  Dual-licensed under AGPL-3.0-or-later (open source) and
+  Suture Commercial License (enterprise features)
+
+All other crates:
+  See individual crate Cargo.toml for license information.
+
+THIRD-PARTY DEPENDENCIES
+========================
+This software depends on the following open-source packages:
+- serde, serde_json, toml, serde_yaml (MIT/Apache-2.0)
+- axum, tower, tokio (MIT)
+- rusqlite (MIT)
+- blake3 (Apache-2.0 OR MIT)
+- jsonwebtoken (MIT)
+- argon2 (MIT/Apache-2.0)
+- reqwest (MIT/Apache-2.0)
+- clap (MIT/Apache-2.0)
+- chrono (Apache-2.0 OR MIT)
+- uuid (Apache-2.0 OR MIT)
+- tracing (MIT)
+
+See Cargo.lock for complete dependency list with versions.

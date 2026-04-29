@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // Allow collapsible_match: Rust 1.94 warns about single-arm matches (single_match),
 // Rust 1.95 warns about if-inside-match (collapsible_match). These conflict.
 // Both are style-only lints. We intentionally use if-inside-match for readability.
