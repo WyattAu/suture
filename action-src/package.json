@@ -3,7 +3,13 @@
   "version": "1.0.0",
   "description": "GitHub Action for Suture semantic merge",
   "main": "index.js",
+  "scripts": {
+    "build": "ncc build index.js -o ../dist --source-map"
+  },
   "dependencies": {
     "@actions/core": "^1.10.0"
+  },
+  "devDependencies": {
+    "@vercel/ncc": "^0.38.0"
   }
 }

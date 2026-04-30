@@ -1,7 +1,7 @@
 {
   "name": "suture-merge-driver",
-  "version": "5.0.1",
-  "description": "Git merge driver that semantically merges JSON, YAML, TOML, CSV, XML, Markdown, DOCX, XLSX, PPTX, and more",
+  "version": "5.1.0",
+  "description": "Semantic merge for JSON, YAML, TOML, XML, CSV and 12+ more structured file formats. Install as a Git merge driver — zero config.",
   "bin": {
     "suture-merge-driver": "bin/suture-merge-driver"
   },
@@ -24,9 +24,17 @@
     "docx",
     "xlsx",
     "conflict",
-    "merge-driver"
+    "merge-driver",
+    "merge-conflict",
+    "config-merge",
+    "ci-cd",
+    "automation"
   ],
-  "license": "Apache-2.0",
+  "license": "AGPL-3.0",
+  "homepage": "https://suture.dev",
+  "bugs": {
+    "url": "https://github.com/WyattAu/suture/issues"
+  },
   "engines": {
     "node": ">=18"
   }

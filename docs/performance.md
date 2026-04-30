@@ -170,6 +170,33 @@ diffing, or switch to Myers' algorithm for files above a threshold.
 
 ---
 
+## Binary Size
+
+| Build | Size | Notes |
+|-------|------|-------|
+| Debug | 243 MB | Default (`dev` profile) |
+| Release (pre-optimization) | 15 MB | `opt-level = 3` only |
+| Release (stripped) | 14 MB | Manual `strip` after pre-optimization build |
+| Release + LTO + strip | 14 MB | Our default (`opt-level = 3, lto = true, codegen-units = 1, panic = "abort", strip = true`) |
+| Compressed (UPX) | — | UPX not available; skipped |
+
+### Optimizations Applied
+
+- **LTO (Link-Time Optimization):** `lto = true` — enables cross-crate inlining and dead code elimination
+- **Single codegen unit:** `codegen-units = 1` — better optimization at the cost of slower compilation
+- **Panic = abort:** `panic = "abort"` — removes unwinding machinery, saves ~50-100 KB
+- **Strip:** `strip = true` — removes debug info and symbol tables
+
+## Build Times
+
+| Target | Time |
+|--------|------|
+| suture-cli (debug) | ~25 s |
+| suture-cli (release, pre-optimization) | ~3 m 26 s |
+| suture-cli (release, LTO + codegen-units = 1) | ~6 m 57 s |
+
+---
+
 ## Benchmark Files
 
 | File | Contents |
