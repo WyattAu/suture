@@ -134,18 +134,17 @@ impl RaftNode {
                 if self.ticks_since_reset >= interval {
                     self.ticks_since_reset = 0;
                     let mut messages = self.replicate_log();
-                    if let Some(target) = self.pending_transfer {
-                        if self.match_index.get(&target).copied().unwrap_or(0)
+                    if let Some(target) = self.pending_transfer
+                        && self.match_index.get(&target).copied().unwrap_or(0)
                             >= self.log.last_index()
-                        {
-                            messages.push((
-                                target,
-                                RaftMessage::TimeoutNow {
-                                    term: self.current_term,
-                                },
-                            ));
-                            self.pending_transfer = None;
-                        }
+                    {
+                        messages.push((
+                            target,
+                            RaftMessage::TimeoutNow {
+                                term: self.current_term,
+                            },
+                        ));
+                        self.pending_transfer = None;
                     }
                     return messages;
                 }
@@ -580,14 +579,14 @@ impl RaftNode {
             });
         }
 
-        if !is_pre_vote {
-            if term > self.current_term {
-                self.current_term = term;
-                self.voted_for = None;
-                self.state = NodeState::Follower;
-                self.leader_id = None;
-                self.pre_vote = None;
-            }
+        if !is_pre_vote
+            && term > self.current_term
+        {
+            self.current_term = term;
+            self.voted_for = None;
+            self.state = NodeState::Follower;
+            self.leader_id = None;
+            self.pre_vote = None;
         }
 
         let can_vote = if is_pre_vote {

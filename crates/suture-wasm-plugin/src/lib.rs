@@ -442,7 +442,7 @@ impl WasmPluginHost {
 
     /// Check whether this plugin handles the given extension.
     pub fn can_handle(&self, extension: &str) -> bool {
-        let ext = if extension.starts_with('.') { &extension[1..] } else { extension };
+        let ext = extension.strip_prefix('.').unwrap_or(extension);
         self.metadata.extensions.iter().any(|e| e == ext)
     }
 }
@@ -454,8 +454,7 @@ fn extract_metadata_host(
     store: &mut Store<PluginState>,
 ) -> Result<PluginMetadata, PluginError> {
     let memory = instance
-        .get_memory(&mut *store, "memory")
-        .map(|m| m.clone());
+        .get_memory(&mut *store, "memory");
 
     let read_string = |store: &mut Store<PluginState>,
                        ptr_func: &str,
@@ -522,7 +521,7 @@ impl SutureWasmPlugin for WasmPlugin {
     }
 
     fn can_handle(&self, _content: &str, extension: &str) -> bool {
-        let ext = if extension.starts_with('.') { &extension[1..] } else { extension };
+        let ext = extension.strip_prefix('.').unwrap_or(extension);
         self.extensions.iter().any(|e| e == ext)
     }
 
@@ -671,7 +670,7 @@ impl PluginRegistry {
 
     /// Find the first plugin that handles the given extension.
     pub fn find_plugin_for_extension(&self, ext: &str) -> Option<&WasmPluginHost> {
-        let normalized = if ext.starts_with('.') { &ext[1..] } else { ext };
+        let normalized = ext.strip_prefix('.').unwrap_or(ext);
         self.plugins.values().find(|p| {
             p.metadata().extensions.iter().any(|e| e == normalized)
         })
