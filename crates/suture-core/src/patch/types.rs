@@ -286,7 +286,6 @@ impl Patch {
             touch_set: &self.touch_set,
             target_path: &self.target_path,
             payload: &self.payload,
-            timestamp: self.timestamp,
             author: &self.author,
             message: &self.message,
         })
@@ -301,11 +300,14 @@ impl Patch {
 
     /// Create a batched commit patch that groups multiple file changes.
     pub fn new_batch(
-        file_changes: Vec<FileChange>,
+        mut file_changes: Vec<FileChange>,
         parent_ids: Vec<PatchId>,
         author: String,
         message: String,
     ) -> Self {
+        // Sort for deterministic hashing regardless of caller order.
+        // The payload is part of the patch ID hash, so ordering must be stable.
+        file_changes.sort_by(|a, b| a.path.cmp(&b.path));
         let touch_set = TouchSet::from_addrs(file_changes.iter().map(|fc| fc.path.clone()));
         let payload = serde_json::to_vec(&file_changes).unwrap_or_default();
         Self::new(
@@ -335,6 +337,10 @@ impl Patch {
 }
 
 /// Helper struct for serializing a patch for hashing (excludes the ID field).
+///
+/// NOTE: `timestamp` is intentionally excluded from the hash so that the same
+/// logical patch created at different wall-clock times produces the same PatchId.
+/// This is critical for reproducibility and deterministic merge behavior.
 #[derive(Serialize)]
 struct PatchForHash<'a> {
     parent_ids: &'a Vec<PatchId>,
@@ -342,7 +348,6 @@ struct PatchForHash<'a> {
     touch_set: &'a TouchSet,
     target_path: &'a Option<String>,
     payload: &'a Vec<u8>,
-    timestamp: u64,
     author: &'a String,
     message: &'a String,
 }
@@ -484,6 +489,24 @@ mod tests {
     mod proptests {
         use super::*;
         use proptest::prelude::*;
+
+        #[test]
+        fn test_batch_patch_deterministic_regardless_of_order() {
+            let changes_a = vec![
+                FileChange { path: "z.txt".into(), op: OperationType::Create, payload: b"z".to_vec() },
+                FileChange { path: "a.txt".into(), op: OperationType::Create, payload: b"a".to_vec() },
+            ];
+            let changes_b = vec![
+                FileChange { path: "a.txt".into(), op: OperationType::Create, payload: b"a".to_vec() },
+                FileChange { path: "z.txt".into(), op: OperationType::Create, payload: b"z".to_vec() },
+            ];
+            let p1 = Patch::new_batch(changes_a, vec![], "alice".into(), "batch".into());
+            let p2 = Patch::new_batch(changes_b, vec![], "alice".into(), "batch".into());
+            assert_eq!(
+                p1.id, p2.id,
+                "batch patches with same changes in different order must have same ID"
+            );
+        }
 
         proptest! {
             #[test]

@@ -377,6 +377,7 @@ impl App {
         self.conflict_files.clear();
         let root = self.repo.root().to_path_buf();
         Self::scan_conflicts(&root, &root, &mut self.conflict_files);
+        self.conflict_files.sort_by(|a, b| a.path.cmp(&b.path)); // Deterministic display order
     }
 
     fn scan_conflicts(

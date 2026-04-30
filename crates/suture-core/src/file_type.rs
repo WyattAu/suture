@@ -177,20 +177,29 @@ pub fn auto_detect_repo_type(dir: &Path) -> Option<RepoType> {
         (RepoType::Data, 0),
     ];
 
-    fn walk(dir: &Path, scores: &mut [(RepoType, usize); 3]) {
+    const MAX_WALK_DEPTH: usize = 10;
+
+    fn walk(dir: &Path, scores: &mut [(RepoType, usize); 3], depth: usize) {
+        if depth > MAX_WALK_DEPTH {
+            return;
+        }
         let Ok(entries) = std::fs::read_dir(dir) else {
             return;
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.is_dir() {
+            // Use symlink_metadata to avoid following symlinks (prevents loops)
+            let Ok(meta) = std::fs::symlink_metadata(&path) else {
+                continue;
+            };
+            if meta.is_dir() {
                 let name = entry.file_name();
                 if name == ".suture" || name == ".git" || name == "target" || name == "node_modules"
                 {
                     continue;
                 }
-                walk(&path, scores);
-            } else if path.is_file() {
+                walk(&path, scores, depth + 1);
+            } else if meta.is_file() {
                 let ft = detect_file_type(&path);
                 if ft != FileType::Unknown {
                     for (rt, count) in scores.iter_mut() {
@@ -203,7 +212,7 @@ pub fn auto_detect_repo_type(dir: &Path) -> Option<RepoType> {
         }
     }
 
-    walk(dir, &mut scores);
+    walk(dir, &mut scores, 0);
 
     scores.sort_by_key(|(_, c)| std::cmp::Reverse(*c));
     if scores[0].1 > 0 {

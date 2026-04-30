@@ -177,7 +177,9 @@ impl SutureHubServer {
     }
 
     pub fn with_lfs_dir(mut self, path: std::path::PathBuf) -> Self {
-        let _ = std::fs::create_dir_all(&path);
+        if let Err(e) = std::fs::create_dir_all(&path) {
+            tracing::warn!("Failed to create directory {}: {}", path.display(), e);
+        }
         self.lfs_data_dir = Some(path);
         self
     }
@@ -458,7 +460,9 @@ impl SutureHubServer {
         }
 
         for patch in &req.patches {
-            let _ = store.log_operation("insert", "patches", &hash_to_hex(&patch.id), None);
+            if let Err(e) = store.log_operation("insert", "patches", &hash_to_hex(&patch.id), None) {
+                tracing::warn!("Failed to log operation: {}", e);
+            }
         }
 
         for branch in &req.branches {
@@ -527,12 +531,14 @@ impl SutureHubServer {
 
         for branch in &req.branches {
             let target_hex = hash_to_hex(&branch.target_id);
-            let _ = store.log_operation(
+            if let Err(e) = store.log_operation(
                 "set",
                 "branches",
                 &format!("{}:{}", req.repo_id, branch.name),
                 Some(&target_hex),
-            );
+            ) {
+                tracing::warn!("Failed to log operation: {}", e);
+            }
         }
 
         let repo_id = req.repo_id.clone();
@@ -549,7 +555,10 @@ impl SutureHubServer {
                 store.list_webhooks(&repo_id).unwrap_or_default()
             };
             if !hooks.is_empty() {
-                let _ = manager.trigger(&hooks, "push", &repo_id, patch_data).await;
+                let result = manager.trigger(&hooks, "push", &repo_id, patch_data).await;
+                if result.failed > 0 {
+                    tracing::warn!("Hook trigger failed: {} of {} webhooks failed", result.failed, result.triggered);
+                }
             }
         });
 
@@ -764,7 +773,9 @@ impl SutureHubServer {
             Ok(resp) => resp,
             Err(e) => {
                 let store = self.storage.write().await;
-                let _ = store.update_mirror_status(req.mirror_id, "error", None);
+                if let Err(e) = store.update_mirror_status(req.mirror_id, "error", None) {
+                    tracing::warn!("Failed to update mirror status: {}", e);
+                }
                 return crate::types::MirrorSyncResponse {
                     success: false,
                     error: Some(format!("failed to reach upstream: {e}")),
@@ -778,7 +789,9 @@ impl SutureHubServer {
             Ok(r) => r,
             Err(e) => {
                 let store = self.storage.write().await;
-                let _ = store.update_mirror_status(req.mirror_id, "error", None);
+                if let Err(e) = store.update_mirror_status(req.mirror_id, "error", None) {
+                    tracing::warn!("Failed to update mirror status: {}", e);
+                }
                 return crate::types::MirrorSyncResponse {
                     success: false,
                     error: Some(format!("failed to parse upstream response: {e}")),
@@ -790,7 +803,9 @@ impl SutureHubServer {
 
         if !pull_result.success {
             let store = self.storage.write().await;
-            let _ = store.update_mirror_status(req.mirror_id, "error", None);
+            if let Err(e) = store.update_mirror_status(req.mirror_id, "error", None) {
+                tracing::warn!("Failed to update mirror status: {}", e);
+            }
             return crate::types::MirrorSyncResponse {
                 success: false,
                 error: pull_result.error,
@@ -808,7 +823,9 @@ impl SutureHubServer {
                 Ok(d) => d,
                 Err(_) => continue,
             };
-            let _ = self.blob_store(&store, &local_repo, &hex, &data);
+            if let Err(e) = self.blob_store(&store, &local_repo, &hex, &data) {
+                tracing::warn!("Failed to store blob during mirror sync: {}", e);
+            }
         }
 
         for patch in &pull_result.patches {
@@ -821,14 +838,18 @@ impl SutureHubServer {
         let branches_synced = pull_result.branches.len() as u64;
         for branch in &pull_result.branches {
             let target_hex = hash_to_hex(&branch.target_id);
-            let _ = store.set_branch(&local_repo, &branch.name, &target_hex);
+            if let Err(e) = store.set_branch(&local_repo, &branch.name, &target_hex) {
+                tracing::warn!("Failed to update branch during mirror sync: {}", e);
+            }
         }
 
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs() as i64;
-        let _ = store.update_mirror_status(req.mirror_id, "idle", Some(now));
+        if let Err(e) = store.update_mirror_status(req.mirror_id, "idle", Some(now)) {
+            tracing::warn!("Failed to update mirror status: {}", e);
+        }
 
         crate::types::MirrorSyncResponse {
             success: true,
@@ -1186,7 +1207,9 @@ impl SutureHubServer {
         }
 
         for patch in &req.patches {
-            let _ = store.log_operation("insert", "patches", &hash_to_hex(&patch.id), None);
+            if let Err(e) = store.log_operation("insert", "patches", &hash_to_hex(&patch.id), None) {
+                tracing::warn!("Failed to log operation: {}", e);
+            }
         }
 
         for branch in &req.branches {
@@ -1255,12 +1278,14 @@ impl SutureHubServer {
 
         for branch in &req.branches {
             let target_hex = hash_to_hex(&branch.target_id);
-            let _ = store.log_operation(
+            if let Err(e) = store.log_operation(
                 "set",
                 "branches",
                 &format!("{}:{}", req.repo_id, branch.name),
                 Some(&target_hex),
-            );
+            ) {
+                tracing::warn!("Failed to log operation: {}", e);
+            }
         }
 
         let repo_id = req.repo_id.clone();
@@ -1277,7 +1302,10 @@ impl SutureHubServer {
                 store.list_webhooks(&repo_id).unwrap_or_default()
             };
             if !hooks.is_empty() {
-                let _ = manager.trigger(&hooks, "push", &repo_id, patch_data).await;
+                let result = manager.trigger(&hooks, "push", &repo_id, patch_data).await;
+                if result.failed > 0 {
+                    tracing::warn!("Hook trigger failed: {} of {} webhooks failed", result.failed, result.triggered);
+                }
             }
         });
 
@@ -1357,7 +1385,9 @@ impl SutureHubServer {
         }
 
         for patch in &req.patches {
-            let _ = store.log_operation("insert", "patches", &hash_to_hex(&patch.id), None);
+            if let Err(e) = store.log_operation("insert", "patches", &hash_to_hex(&patch.id), None) {
+                tracing::warn!("Failed to log operation: {}", e);
+            }
         }
 
         for branch in &req.branches {
@@ -1402,12 +1432,14 @@ impl SutureHubServer {
 
         for branch in &req.branches {
             let target_hex = hash_to_hex(&branch.target_id);
-            let _ = store.log_operation(
+            if let Err(e) = store.log_operation(
                 "set",
                 "branches",
                 &format!("{}:{}", req.repo_id, branch.name),
                 Some(&target_hex),
-            );
+            ) {
+                tracing::warn!("Failed to log operation: {}", e);
+            }
         }
 
         let repo_id = req.repo_id.clone();
@@ -1424,7 +1456,10 @@ impl SutureHubServer {
                 store.list_webhooks(&repo_id).unwrap_or_default()
             };
             if !hooks.is_empty() {
-                let _ = manager.trigger(&hooks, "push", &repo_id, patch_data).await;
+                let result = manager.trigger(&hooks, "push", &repo_id, patch_data).await;
+                if result.failed > 0 {
+                    tracing::warn!("Hook trigger failed: {} of {} webhooks failed", result.failed, result.triggered);
+                }
             }
         });
 
@@ -1453,7 +1488,9 @@ impl SutureHubServer {
                 .store_blob("_raft_default", &hash, &data)
                 .map_err(|e| e.to_string()),
             HubCommand::DeleteBlob { hash } => {
-                let _ = store.delete_blob("_raft_default", &hash);
+                if let Err(e) = store.delete_blob("_raft_default", &hash) {
+                    tracing::warn!("Failed to delete blob: {}", e);
+                }
                 Ok(())
             }
             HubCommand::CreateBranch {
@@ -2043,7 +2080,14 @@ pub async fn create_token_handler(
             .as_secs();
         let expires_at = (created_at + (30 * 24 * 60 * 60)) as i64;
         let store = hub.storage.write().await;
-        let _ = store.store_token(&token, created_at, "cli-generated", expires_at);
+        if let Err(e) = store.store_token(&token, created_at, "cli-generated", expires_at) {
+            tracing::error!("Failed to store auth token: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                HeaderMap::new(),
+                Json(TokenResponse { token: String::new(), created_at: 0 }),
+            );
+        }
         return (
             StatusCode::OK,
             HeaderMap::new(),
@@ -2065,7 +2109,14 @@ pub async fn create_token_handler(
             .as_secs();
         let expires_at = (created_at + (30 * 24 * 60 * 60)) as i64;
         let store = hub.storage.write().await;
-        let _ = store.store_token(&token, created_at, "cli-generated", expires_at);
+        if let Err(e) = store.store_token(&token, created_at, "cli-generated", expires_at) {
+            tracing::error!("Failed to store auth token: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                HeaderMap::new(),
+                Json(TokenResponse { token: String::new(), created_at: 0 }),
+            );
+        }
         return (
             StatusCode::OK,
             HeaderMap::new(),
@@ -2403,9 +2454,12 @@ pub async fn create_branch_handler(
                     store.list_webhooks(&rid).unwrap_or_default()
                 };
                 if !hooks.is_empty() {
-                    let _ = manager
+                    let result = manager
                         .trigger(&hooks, "branch.create", &rid, branch_data)
                         .await;
+                    if result.failed > 0 {
+                        tracing::warn!("Hook trigger failed: {} of {} webhooks failed", result.failed, result.triggered);
+                    }
                 }
             });
             (
@@ -2445,9 +2499,12 @@ pub async fn delete_branch_handler(
                     store.list_webhooks(&rid).unwrap_or_default()
                 };
                 if !hooks.is_empty() {
-                    let _ = manager
+                    let result = manager
                         .trigger(&hooks, "branch.delete", &rid, branch_data)
                         .await;
+                    if result.failed > 0 {
+                        tracing::warn!("Hook trigger failed: {} of {} webhooks failed", result.failed, result.triggered);
+                    }
                 }
             });
             (StatusCode::OK, Json(serde_json::json!({"success": true})))
@@ -2512,7 +2569,9 @@ pub async fn lfs_batch_handler(
 
     let repo_dir = lfs_dir.join(&req.repo_id);
     let obj_dir = repo_dir.join("objects");
-    let _ = std::fs::create_dir_all(&obj_dir);
+    if let Err(e) = std::fs::create_dir_all(&obj_dir) {
+        tracing::warn!("Failed to create directory {}: {}", obj_dir.display(), e);
+    }
 
     let mut actions = Vec::new();
     for obj in &req.objects {
@@ -2616,8 +2675,10 @@ pub async fn lfs_upload_handler(
         .join("objects")
         .join(prefix)
         .join(&oid);
-    if let Some(parent) = obj_path.parent() {
-        let _ = std::fs::create_dir_all(parent);
+    if let Some(parent) = obj_path.parent()
+        && let Err(e) = std::fs::create_dir_all(parent)
+    {
+        tracing::warn!("Failed to create directory {}: {}", parent.display(), e);
     }
     match std::fs::write(&obj_path, &body) {
         Ok(()) => (
@@ -3421,7 +3482,9 @@ async fn replication_background_task(hub: Arc<SutureHubServer>) {
                         last_seq
                     );
                     let store = hub.storage.write().await;
-                    let _ = store.update_peer_sync_seq(peer.id, last_seq);
+                    if let Err(e) = store.update_peer_sync_seq(peer.id, last_seq) {
+                        tracing::warn!("Failed to update peer sync sequence: {}", e);
+                    }
                 }
                 Ok(resp) => {
                     tracing::warn!(

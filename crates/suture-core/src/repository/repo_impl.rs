@@ -528,11 +528,13 @@ impl Repository {
         const SNAPSHOT_ENGINE_VERSION: &str = "3";
         let stored_version = meta.get_config("snapshot_engine_version").unwrap_or(None);
         if stored_version.as_deref() != Some(SNAPSHOT_ENGINE_VERSION) {
-            let _ = meta.conn().execute("DELETE FROM file_trees", []);
-            let _ = meta
-                .conn()
-                .execute("DELETE FROM config WHERE key = 'head_tree_hash'", []);
-            let _ = meta.set_config("snapshot_engine_version", SNAPSHOT_ENGINE_VERSION);
+            meta.conn()
+                .execute("DELETE FROM file_trees", [])
+                .map_err(|e| RepoError::Meta(crate::metadata::MetaError::Database(e)))?;
+            meta.conn()
+                .execute("DELETE FROM config WHERE key = 'head_tree_hash'", [])
+                .map_err(|e| RepoError::Meta(crate::metadata::MetaError::Database(e)))?;
+            meta.set_config("snapshot_engine_version", SNAPSHOT_ENGINE_VERSION)?;
         }
 
         // Reconstruct DAG from metadata — load ALL patches
@@ -573,11 +575,18 @@ impl Repository {
             }
         }
 
-        let mut queue: VecDeque<PatchId> = in_degree
-            .iter()
-            .filter(|&(_, &deg)| deg == 0)
-            .map(|(&id, _)| id)
-            .collect();
+        // Sort initial zero-degree nodes for deterministic topological order.
+        // HashMap iteration order is non-deterministic, so without sorting,
+        // repo open → push may serialize patches in different orders across runs.
+        let mut queue: VecDeque<PatchId> = {
+            let mut roots: Vec<PatchId> = in_degree
+                .iter()
+                .filter(|&(_, &deg)| deg == 0)
+                .map(|(&id, _)| id)
+                .collect();
+            roots.sort();
+            roots.into_iter().collect()
+        };
 
         let mut processed: HashSet<PatchId> = HashSet::new();
 
@@ -589,7 +598,9 @@ impl Repository {
                     .filter(|pid| processed.contains(pid))
                     .copied()
                     .collect();
-                let _ = dag.add_patch(patch, valid_parents);
+                if let Err(e) = dag.add_patch(patch, valid_parents) {
+                    tracing::warn!("Skipping patch {}: {}", id, e);
+                }
                 processed.insert(id);
                 if let Some(kids) = children.get(&id) {
                     for &child_id in kids {
@@ -606,7 +617,10 @@ impl Repository {
 
         // Insert any remaining patches (cycles or missing parents)
         for (_, patch) in patch_map {
-            let _ = dag.add_patch(patch, Vec::new());
+            let patch_id = patch.id;
+            if let Err(e) = dag.add_patch(patch, Vec::new()) {
+                tracing::warn!("Skipping orphan patch {}: {}", patch_id, e);
+            }
         }
 
         // Recreate branches
@@ -616,8 +630,10 @@ impl Repository {
                 Ok(b) => b,
                 Err(_) => continue,
             };
-            if !dag.branch_exists(&branch_name) {
-                let _ = dag.create_branch(branch_name, *target_id);
+            if !dag.branch_exists(&branch_name)
+                && let Err(e) = dag.create_branch(branch_name, *target_id)
+            {
+                tracing::warn!("Skipping branch {}: {}", name, e);
             }
         }
 
@@ -1055,11 +1071,16 @@ impl Repository {
             }
         }
 
-        let mut queue: VecDeque<PatchId> = in_degree
-            .iter()
-            .filter(|&(_, deg)| *deg == 0)
-            .map(|(&id, _)| id)
-            .collect();
+        // Sort initial zero-degree nodes for deterministic push ordering.
+        let mut queue: VecDeque<PatchId> = {
+            let mut roots: Vec<PatchId> = in_degree
+                .iter()
+                .filter(|&(_, deg)| *deg == 0)
+                .map(|(&id, _)| id)
+                .collect();
+            roots.sort();
+            roots.into_iter().collect()
+        };
         let mut sorted_ids: Vec<PatchId> = Vec::with_capacity(patches.len());
 
         while let Some(id) = queue.pop_front() {
@@ -1236,10 +1257,13 @@ impl Repository {
         };
 
         // Clear persisted merge state on commit
-        let _ = self
+        if let Err(e) = self
             .meta
             .conn()
-            .execute("DELETE FROM config WHERE key = 'pending_merge_parents'", []);
+            .execute("DELETE FROM config WHERE key = 'pending_merge_parents'", [])
+        {
+            tracing::warn!("Failed to clear persisted merge state: {}", e);
+        }
 
         // Build batched file changes
         let mut file_changes = Vec::new();
@@ -1302,7 +1326,9 @@ impl Repository {
             match self.snapshot(&head_id) {
                 Ok(parent_tree) => {
                     let mut tree = parent_tree;
-                    let _ = apply_patch_mut(&mut tree, &batch_patch, resolve_payload_to_hash);
+                    if let Err(e) = apply_patch_mut(&mut tree, &batch_patch, resolve_payload_to_hash) {
+                        tracing::warn!("Incremental apply failed, tree may be stale: {}", e);
+                    }
                     tree
                 }
                 Err(_) => self.snapshot_uncached(&patch_id).unwrap_or_default(),
@@ -1313,8 +1339,8 @@ impl Repository {
         };
         {
             let tree_hash = tree.content_hash();
-            let _ = self.meta.set_config("head_tree_hash", &tree_hash.to_hex());
-            let _ = self.meta.store_file_tree(&patch_id, &tree);
+            self.meta.set_config("head_tree_hash", &tree_hash.to_hex())?;
+            self.meta.store_file_tree(&patch_id, &tree)?;
         }
 
         // Update in-memory cache directly instead of invalidating.
@@ -1323,7 +1349,7 @@ impl Repository {
         *self.cached_head_id.borrow_mut() = Some(patch_id);
         *self.cached_head_branch.borrow_mut() = Some(branch_name.clone());
 
-        let _ = self.record_reflog(&old_head, &patch_id, &format!("commit: {}", message));
+        self.record_reflog(&old_head, &patch_id, &format!("commit: {}", message))?;
 
         // If this was a merge resolution, update merge commit's parent_ids
         if is_merge_resolution {
@@ -1443,11 +1469,15 @@ impl Repository {
             }
             for (path, hash) in current_tree.iter() {
                 let full_path = self.root.join(path);
-                if let Some(parent) = full_path.parent() {
-                    let _ = fs::create_dir_all(parent);
+                if let Some(parent) = full_path.parent()
+                    && let Err(e) = fs::create_dir_all(parent)
+                {
+                    tracing::warn!("Failed to create directory {}: {}", parent.display(), e);
                 }
-                if let Ok(blob) = self.cas.get_blob(hash) {
-                    let _ = fs::write(&full_path, &blob);
+                if let Ok(blob) = self.cas.get_blob(hash)
+                    && let Err(e) = fs::write(&full_path, &blob)
+                {
+                    tracing::warn!("Failed to write file {}: {}", full_path.display(), e);
                 }
             }
         }
@@ -1623,8 +1653,10 @@ impl Repository {
 
             if stored_hash.is_none_or(|h| h == tree_hash) {
                 // Update stored hash if needed
-                if stored_hash.is_none() {
-                    let _ = self.meta.set_config("head_tree_hash", &tree_hash.to_hex());
+                if stored_hash.is_none()
+                    && let Err(e) = self.meta.set_config("head_tree_hash", &tree_hash.to_hex())
+                {
+                    tracing::warn!("Failed to cache head tree hash: {}", e);
                 }
 
                 *self.cached_head_snapshot.borrow_mut() = Some(tree.clone());
@@ -1637,10 +1669,14 @@ impl Repository {
         let tree = self.snapshot_uncached(&head_id)?;
         let tree_hash = tree.content_hash();
 
-        let _ = self.meta.set_config("head_tree_hash", &tree_hash.to_hex());
+        if let Err(e) = self.meta.set_config("head_tree_hash", &tree_hash.to_hex()) {
+            tracing::warn!("Failed to cache head tree hash: {}", e);
+        }
 
         // Persist the tree for next cold start
-        let _ = self.meta.store_file_tree(&head_id, &tree);
+        if let Err(e) = self.meta.store_file_tree(&head_id, &tree) {
+            tracing::warn!("Failed to persist file tree for snapshot_head: {}", e);
+        }
 
         *self.cached_head_snapshot.borrow_mut() = Some(tree.clone());
         Ok(tree)
@@ -1654,10 +1690,13 @@ impl Repository {
         *self.cached_head_snapshot.borrow_mut() = None;
         *self.cached_head_id.borrow_mut() = None;
         *self.cached_head_branch.borrow_mut() = None;
-        let _ = self
+        if let Err(e) = self
             .meta
             .conn()
-            .execute("DELETE FROM config WHERE key = 'head_tree_hash'", []);
+            .execute("DELETE FROM config WHERE key = 'head_tree_hash'", [])
+        {
+            tracing::warn!("Failed to invalidate head tree hash cache: {}", e);
+        }
     }
 
     /// Build a FileTree snapshot for a specific patch (uncached).
@@ -1691,7 +1730,9 @@ impl Repository {
         }
         // Fall back to patch replay, then persist
         let tree = self.snapshot_uncached(patch_id)?;
-        let _ = self.meta.store_file_tree(patch_id, &tree);
+        if let Err(e) = self.meta.store_file_tree(patch_id, &tree) {
+            tracing::warn!("Failed to persist file tree for snapshot: {}", e);
+        }
         Ok(tree)
     }
 
@@ -1735,8 +1776,8 @@ impl Repository {
         }
 
         let tree_hash = tree.content_hash();
-        let _ = self.meta.set_config("head_tree_hash", &tree_hash.to_hex());
-        let _ = self.meta.store_file_tree(&head_id, &tree);
+        self.meta.set_config("head_tree_hash", &tree_hash.to_hex())?;
+        self.meta.store_file_tree(&head_id, &tree)?;
 
         // Clear the working set so checkout/status sees the tree as clean
         let staged_paths: Vec<&str> = working_set
@@ -1933,14 +1974,20 @@ impl Repository {
             self.set_config("core.detached", "true")?;
             self.set_config("core.detachedHead", &target_id.to_hex())?;
         } else {
-            let _ = self
+            if let Err(e) = self
                 .meta()
                 .conn()
-                .execute("DELETE FROM config WHERE key = 'core.detached'", []);
-            let _ = self
+                .execute("DELETE FROM config WHERE key = 'core.detached'", [])
+            {
+                tracing::warn!("Failed to clear core.detached config: {}", e);
+            }
+            if let Err(e) = self
                 .meta()
                 .conn()
-                .execute("DELETE FROM config WHERE key = 'core.detachedHead'", []);
+                .execute("DELETE FROM config WHERE key = 'core.detachedHead'", [])
+            {
+                tracing::warn!("Failed to clear core.detachedHead config: {}", e);
+            }
             self.write_head_branch(branch_name)?;
         }
 
@@ -1951,7 +1998,7 @@ impl Repository {
         } else {
             branch_name.to_string()
         };
-        let _ = self.record_reflog(
+        self.record_reflog(
             &old_head,
             &target_id,
             &format!(
@@ -1959,7 +2006,7 @@ impl Repository {
                 old_branch.as_deref().unwrap_or("HEAD"),
                 ref_label
             ),
-        );
+        )?;
 
         if has_changes && let Err(e) = self.stash_pop() {
             tracing::warn!("Warning: could not restore stashed changes: {}", e);
@@ -2124,11 +2171,11 @@ impl Repository {
             }
         }
 
-        let _ = self.record_reflog(
+        self.record_reflog(
             &old_head,
             &target_id,
             &format!("reset: moving to {}", target),
-        );
+        )?;
 
         Ok(target_id)
     }
@@ -2860,7 +2907,7 @@ impl Repository {
 
         // Persist merge state so it survives repo reopen
         let parents_json = serde_json::to_string(&self.pending_merge_parents).unwrap_or_default();
-        let _ = self.meta.set_config("pending_merge_parents", &parents_json);
+        self.meta.set_config("pending_merge_parents", &parents_json)?;
 
         Ok(MergeExecutionResult {
             is_clean: false,
@@ -3013,7 +3060,7 @@ impl Repository {
 
         self.invalidate_head_cache();
 
-        let _ = self.record_reflog(&old_head, &new_id, &format!("cherry-pick: {}", patch_id));
+        self.record_reflog(&old_head, &new_id, &format!("cherry-pick: {}", patch_id))?;
 
         self.sync_working_tree(&old_tree)?;
 
@@ -3144,11 +3191,11 @@ impl Repository {
 
         self.sync_working_tree(&old_tree)?;
 
-        let _ = self.record_reflog(
+        self.record_reflog(
             &old_head,
             &last_new_id,
             &format!("rebase onto {}", target_branch),
-        );
+        )?;
 
         Ok(RebaseResult {
             patches_replayed: replayed,
@@ -3455,7 +3502,7 @@ impl Repository {
                             squash_message: None,
                             plan: Vec::new(), // Will be set by caller
                         };
-                        let _ = self.save_rebase_state(&state);
+                        self.save_rebase_state(&state)?;
                         // Point branch to current state so user can amend
                         self.dag.update_branch(&branch, last_new_id)?;
                         self.meta.set_branch(&branch, &last_new_id)?;
@@ -3476,10 +3523,12 @@ impl Repository {
         self.invalidate_head_cache();
         self.sync_working_tree(&old_tree)?;
 
-        let _ = self.record_reflog(&old_head, &last_new_id, "interactive rebase");
+        self.record_reflog(&old_head, &last_new_id, "interactive rebase")?;
 
         // Clean up rebase state
-        let _ = self.clear_rebase_state();
+        if let Err(e) = self.clear_rebase_state() {
+            tracing::warn!("Failed to clear rebase state after interactive rebase: {}", e);
+        }
 
         Ok(last_new_id)
     }
@@ -3513,10 +3562,10 @@ impl Repository {
 
     /// Clear interactive rebase state.
     fn clear_rebase_state(&self) -> Result<(), RepoError> {
-        let _ = self
-            .meta
+        self.meta
             .conn()
-            .execute("DELETE FROM config WHERE key = 'rebase_state'", []);
+            .execute("DELETE FROM config WHERE key = 'rebase_state'", [])
+            .map_err(|e| RepoError::Meta(crate::metadata::MetaError::Database(e)))?;
         Ok(())
     }
 
@@ -3535,11 +3584,11 @@ impl Repository {
         self.invalidate_head_cache();
         self.sync_working_tree(&old_tree)?;
 
-        let _ = self.record_reflog(
+        self.record_reflog(
             &state.current_parent,
             &state.original_head,
             "rebase --abort",
-        );
+        )?;
 
         self.clear_rebase_state()?;
         Ok(())
@@ -4408,12 +4457,15 @@ impl Repository {
                         let msg = parts[2];
                         if let (Ok(old), Ok(new)) =
                             (Hash::from_hex(old_head), Hash::from_hex(new_head))
+                            && let Err(e) = self.meta.reflog_push(&old, &new, msg)
                         {
-                            let _ = self.meta.reflog_push(&old, &new, msg);
+                            tracing::warn!("Failed to migrate reflog entry: {}", e);
                         }
                     }
                 }
-                let _ = self.meta.delete_config("reflog");
+                if let Err(e) = self.meta.delete_config("reflog") {
+                    tracing::warn!("Failed to delete legacy reflog config: {}", e);
+                }
                 let sqlite_entries = self.meta.reflog_list().map_err(RepoError::Meta)?;
                 let entries: Vec<ReflogEntry> = sqlite_entries
                     .into_iter()

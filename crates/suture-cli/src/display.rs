@@ -3,6 +3,7 @@ use crate::style::{ANSI_BOLD_CYAN, ANSI_GREEN, ANSI_RED, ANSI_RESET};
 pub(crate) fn walk_repo_files(dir: &std::path::Path) -> Vec<String> {
     let mut files = Vec::new();
     walk_repo_files_inner(dir, dir, &mut files);
+    files.sort(); // Deterministic display order
     files
 }
 

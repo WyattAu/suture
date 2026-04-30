@@ -109,7 +109,9 @@ impl PluginRegistry {
         }
 
         if let Ok(entries) = std::fs::read_dir(plugin_dir) {
-            for entry in entries.flatten() {
+            let mut sorted_entries: Vec<_> = entries.flatten().collect();
+            sorted_entries.sort_by_key(|e| e.file_name());
+            for entry in sorted_entries {
                 let path = entry.path();
                 if path
                     .extension()
