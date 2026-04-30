@@ -142,8 +142,6 @@ pub async fn create_checkout_session(
     Ok(Json(CheckoutResponse { url }))
 }
 
-/// Create a Stripe Billing Portal session for managing subscriptions.
-/// Called by the wrapper handler in server.rs which handles auth extraction.
 pub async fn create_portal_session_inner(
     state: &AppState,
     claims: &Claims,
@@ -158,13 +156,13 @@ pub async fn create_portal_session_inner(
         }
     };
 
-    let conn = state
-        .db
-        .conn()
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))))?;
+    let customer_id: String = {
+        let conn = state
+            .db
+            .conn()
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))))?;
 
-    let customer_id: String = conn
-        .query_row(
+        conn.query_row(
             "SELECT stripe_customer_id FROM accounts WHERE user_id = ?1 AND stripe_customer_id IS NOT NULL",
             rusqlite::params![claims.sub],
             |row| row.get(0),
@@ -174,7 +172,8 @@ pub async fn create_portal_session_inner(
                 StatusCode::BAD_REQUEST,
                 Json(serde_json::json!({"error": "no Stripe customer on file — complete a checkout first"})),
             )
-        })?;
+        })?
+    };
 
     let return_url = "http://localhost:8080/billing".to_string();
 

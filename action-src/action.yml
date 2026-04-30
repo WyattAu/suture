@@ -1,0 +1,47 @@
+name: 'Suture Semantic Merge (dev)'
+description: 'Test version — points to local dev server'
+inputs:
+  files:
+    description: 'Newline-separated list of files to merge'
+    required: true
+  driver:
+    description: 'Override auto-detected driver'
+    required: false
+  base-ref:
+    description: 'Git ref for base version'
+    required: false
+    default: 'HEAD~1'
+  ours-ref:
+    description: 'Git ref for our version'
+    required: false
+    default: 'HEAD'
+  theirs-ref:
+    description: 'Git ref for their version'
+    required: false
+  api-url:
+    description: 'API URL'
+    required: false
+    default: 'http://localhost:3000/api'
+  api-token:
+    description: 'API token'
+    required: false
+  fail-on-conflict:
+    description: 'Fail on conflict'
+    required: false
+    default: 'true'
+  create-comment:
+    description: 'Create PR comment'
+    required: false
+    default: 'false'
+outputs:
+  merged-files:
+    description: 'Newline-separated list of successfully merged files'
+  conflict-files:
+    description: 'Newline-separated list of files with conflicts'
+  has-conflicts:
+    description: 'true if any conflicts detected'
+  conflict-count:
+    description: 'Number of files with conflicts'
+runs:
+  using: 'node20'
+  main: 'index.js'

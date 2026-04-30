@@ -1,0 +1,9 @@
+{
+  "name": "suture-merge-action",
+  "version": "1.0.0",
+  "description": "GitHub Action for Suture semantic merge",
+  "main": "index.js",
+  "dependencies": {
+    "@actions/core": "^1.10.0"
+  }
+}

@@ -1,0 +1,44 @@
+name: 'Suture Merge Example'
+on:
+  pull_request:
+    paths:
+      - '*.json'
+      - '*.yaml'
+      - '*.yml'
+      - '*.toml'
+
+jobs:
+  auto-merge-configs:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find merge base
+        id: merge-base
+        run: echo "base=$(git merge-base HEAD ${{ github.event.pull_request.base.sha }})" >> $GITHUB_OUTPUT
+
+      - name: Merge structured files
+        id: merge
+        uses: ./.github/actions/merge
+        with:
+          files: |
+            package.json
+            tsconfig.json
+          base-ref: ${{ steps.merge-base.outputs.base }}
+          api-url: https://merge.suture.dev/api
+          api-token: ${{ secrets.SUTURE_API_TOKEN }}
+          fail-on-conflict: 'false'
+
+      - name: Commit merged files
+        if: steps.merge.outputs.has-conflicts == 'false'
+        run: |
+          git config user.name "suture-action[bot]"
+          git config user.email "suture-action[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "resolve: semantic merge via Suture"
+          git push

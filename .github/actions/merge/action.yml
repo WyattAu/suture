@@ -1,0 +1,47 @@
+name: 'Suture Semantic Merge'
+description: 'Automatically merge structured files using Suture semantic merge API'
+inputs:
+  files:
+    description: 'Newline-separated list of files to merge'
+    required: true
+  driver:
+    description: 'Override auto-detected driver (json, yaml, toml, xml, csv, sql, html, markdown, svg, properties)'
+    required: false
+  base-ref:
+    description: 'Git ref for base version (default: HEAD~1)'
+    required: false
+    default: 'HEAD~1'
+  ours-ref:
+    description: 'Git ref for our version (default: HEAD)'
+    required: false
+    default: 'HEAD'
+  theirs-ref:
+    description: 'Git ref for their version (for merge commits)'
+    required: false
+  api-url:
+    description: 'Suture API URL'
+    required: false
+    default: 'https://merge.suture.dev/api'
+  api-token:
+    description: 'API token for higher rate limits'
+    required: false
+  fail-on-conflict:
+    description: 'Fail the step if conflicts detected (default: true)'
+    required: false
+    default: 'true'
+  create-comment:
+    description: 'Create a PR comment with merge results (default: false)'
+    required: false
+    default: 'false'
+outputs:
+  merged-files:
+    description: 'Newline-separated list of successfully merged files'
+  conflict-files:
+    description: 'Newline-separated list of files with conflicts'
+  has-conflicts:
+    description: 'true if any conflicts detected'
+  conflict-count:
+    description: 'Number of files with conflicts'
+runs:
+  using: 'node20'
+  main: 'index.js'

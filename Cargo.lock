@@ -4436,6 +4436,7 @@ dependencies = [
  "suture-driver-csv",
  "suture-driver-json",
  "suture-driver-toml",
+ "suture-driver-xml",
  "suture-driver-yaml",
  "suture-hub",
  "suture-protocol",

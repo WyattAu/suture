@@ -12,6 +12,7 @@ use axum::{
     routing::{get, post},
     Extension, Json, Router,
 };
+use axum::http::StatusCode;
 use std::sync::Arc;
 
 use crate::auth::Claims;
@@ -88,10 +89,7 @@ pub async fn start(config: Config) -> anyhow::Result<()> {
         .route("/api/plugins/merge", post(crate::plugins::merge_with_plugin))
         .route("/billing/checkout", post(crate::stripe::create_checkout_session))
         .route("/billing/subscription", get(crate::stripe::get_subscription))
-        // NOTE: Portal endpoint temporarily disabled due to Axum 0.8 Handler trait
-        // resolution issue with Extension<Claims> + Json body extractors.
-        // TODO: Re-enable after upgrading Axum or restructuring the handler.
-        // .route("/billing/portal", post(crate::stripe::create_portal_session))
+        .route("/billing/portal", post(portal_handler))
         .route("/billing/webhook", post(crate::stripe::handle_webhook))
         .layer(middleware::from_fn_with_state(
             state.clone(),
@@ -139,4 +137,11 @@ async fn shutdown_signal() {
         .await
         .expect("failed to install ctrl-c handler");
     tracing::info!("shutdown signal received");
+}
+
+async fn portal_handler(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<crate::stripe::PortalResponse>, (StatusCode, Json<serde_json::Value>)> {
+    crate::stripe::create_portal_session_inner(&state, &claims).await
 }

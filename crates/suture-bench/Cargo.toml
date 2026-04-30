@@ -13,6 +13,7 @@ suture-driver-json = { path = "../suture-driver-json" }
 suture-driver-yaml = { path = "../suture-driver-yaml" }
 suture-driver-toml = { path = "../suture-driver-toml" }
 suture-driver-csv = { path = "../suture-driver-csv" }
+suture-driver-xml = { path = "../suture-driver-xml" }
 suture-hub = { path = "../suture-hub" }
 criterion = { version = "0.5", features = ["html_reports"] }
 tempfile = "3"
@@ -44,4 +45,8 @@ harness = false
 
 [[bench]]
 name = "merge_bench"
+harness = false
+
+[[bench]]
+name = "comprehensive_merge"
 harness = false
