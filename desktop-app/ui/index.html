@@ -156,6 +156,14 @@ input[type=text]:focus{outline:none;border-color:var(--accent)}
       <div class="sb-section-head">Stash</div>
       <div class="sb-list" id="sbStash"><div class="sb-item" style="color:var(--dim)">No stash</div></div>
     </div>
+    <div class="sb-section">
+      <div class="sb-section-head">Settings</div>
+      <div class="sb-actions">
+        <button onclick="doCheckUpdates()">Check for Updates</button>
+        <button onclick="doSetupMergeDriver()">Setup Merge Driver</button>
+        <button onclick="doRemoveMergeDriver()">Remove Merge Driver</button>
+      </div>
+    </div>
   </aside>
 
   <div class="main-area">
@@ -547,6 +555,35 @@ if (T?.event) {
 }
 
 document.addEventListener('DOMContentLoaded', () => { switchTab('changes'); });
+
+async function doCheckUpdates() {
+  try {
+    const info = await invoke('check_for_updates');
+    if (info.error) {
+      showToast('Update check: ' + info.error, 'error');
+      return;
+    }
+    if (info.update_available) {
+      showToast('Update available: v' + info.latest_version + ' (current: v' + info.current_version + ')', 'info');
+    } else {
+      showToast('Suture is up to date (v' + info.current_version + ')', 'success');
+    }
+  } catch (e) { showToast('Update check failed: ' + (e.message || e), 'error'); }
+}
+
+async function doSetupMergeDriver() {
+  try {
+    const r = await invoke('set_merge_driver_config');
+    showToast(r, 'success');
+  } catch (e) { showToast('Merge driver setup: ' + (e.message || e), 'error'); }
+}
+
+async function doRemoveMergeDriver() {
+  try {
+    const r = await invoke('unset_merge_driver_config');
+    showToast(r, 'success');
+  } catch (e) { showToast('Merge driver removal: ' + (e.message || e), 'error'); }
+}
 </script>
 </body>
 </html>

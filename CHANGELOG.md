@@ -1,5 +1,46 @@
 # Changelog
 
+## [5.1.0] - 2026-04-30
+
+### Added
+- **Security hardening**: Stripe webhook HMAC-SHA256 verification, OAuth CSRF protection, JWT token revocation, 7-day payment grace period
+- **Interactive merge demo**: Client-side 3-way merge (JSON, YAML, TOML, CSV) with no backend required, auto-merge on load, conflict highlighting, URL sharing
+- **Landing page**: Social proof, animated merge preview, how-it-works section, 17+ format grid, use cases, FAQ
+- **Git merge driver**: One-liner install script (`curl | bash`), 9 `.gitattributes` templates for every ecosystem (Node.js, Rust, Python, K8s, Java, CI/CD, Web, Go)
+- **GitHub Action**: `suture/merge-action` for CI/CD pipelines, reads files at git refs, calls merge API
+- **CI/CD integration**: Portable bash script for GitLab CI, CircleCI, Jenkins
+- **Stripe checkout E2E**: Full subscription lifecycle (checkout → webhook → tier activation → portal management)
+- **Usage analytics**: Merge logging, 30-day bar chart, donut chart, driver distribution, gated to pro/enterprise
+- **Team/org management**: Member invite/remove/role, invitation acceptance, org listing
+- **WASM plugin system**: Plugin trait, wasmtime v28 host with fuel-based timeout, memory limits, plugin registry, example plugin
+- **Raft consensus**: Pre-vote mechanism, log compaction, snapshot install, leadership transfer, read-only queries, joint consensus membership changes
+- **Performance**: Merge cache (LRU), key interner, size-based merge strategy selection
+- **Benchmarks**: criterion-based, 5 formats × 4 sizes × 4 scenarios
+- **Deploy configs**: Fly.io, Docker (multi-stage), systemd services, Caddy, nginx, Helm chart
+- **Self-hosting docs**: Complete guide (Docker, binary, backup, reverse proxy, monitoring, security)
+- **VS Code extension**: Conflict highlighting, status bar, auto-resolve on save, bulk resolve, Quick Pick
+- **SEO**: Blog posts, sitemap, robots.txt, meta tags
+- **SIGTERM handling** in daemon for graceful shutdown
+
+### Changed
+- **Error handling**: 16 production `.unwrap()` calls replaced with graceful fallbacks
+- **Foundation**: 46 `let _ =` sites fixed — all data mutations now propagate errors
+- **Determinism**: Patch ID excludes timestamp, `new_batch()` sorts file_changes, Kahn's sort stable, read_dir sorted
+- **Auto-detect repo type**: Depth limit (10 levels) + symlink protection
+
+### Fixed
+- Axum 0.8 billing portal: MutexGuard held across `.await` caused `!Send` future — scoped DB operations
+- Webhook signing: `sign_payload` returns `Option<String>` instead of panicking on oversized HMAC keys
+- Topo sort: Graceful handling of missing in-degree entries instead of `.expect()`
+- Rate limit headers: `parse().unwrap()` → `if-let Ok` for header value parsing
+
+### Security
+- Stripe webhook signature verification (HMAC-SHA256, 5-min timestamp freshness)
+- OAuth state parameter CSRF protection (UUID, 10-min expiry, one-time use)
+- JWT token revocation (blacklist table + middleware checks)
+- Password change endpoint with old password verification
+- Account deletion with email confirmation
+
 ## [Unreleased]
 
 ### Error Quality — Typed Error Variants

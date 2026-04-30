@@ -2,11 +2,14 @@
 
 mod branches;
 mod checkout;
+mod dashboard;
 mod diff_view;
 mod help;
 mod log_graph;
 mod log_view;
 mod merge_conflict;
+mod merge_view;
+mod patch_browser;
 mod remote;
 mod staging;
 mod status;
@@ -65,6 +68,7 @@ pub fn draw(f: &mut Frame, app: &App) {
     };
 
     match app.current_tab() {
+        Tab::Dashboard => dashboard::draw(f, app, content_area),
         Tab::Status => {
             if app.conflict_mode() {
                 merge_conflict::draw(f, app, content_area);
@@ -75,6 +79,8 @@ pub fn draw(f: &mut Frame, app: &App) {
         Tab::Log => log_view::draw(f, app, content_area),
         Tab::Staging => staging::draw(f, app, content_area),
         Tab::Diff => diff_view::draw(f, app, content_area),
+        Tab::PatchBrowser => patch_browser::draw(f, app, content_area),
+        Tab::MergeView => merge_view::draw(f, app, content_area),
         Tab::Branches => branches::draw(f, app, content_area),
         Tab::Remote => remote::draw(f, app, content_area),
         Tab::Help => help::draw(f, app, content_area),
@@ -139,6 +145,12 @@ pub fn draw(f: &mut Frame, app: &App) {
         ))
     } else {
         let branch = app.head_branch().unwrap_or("HEAD");
+        let repo_name = app
+            .repo()
+            .root()
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "?".to_string());
         let staged = app.staged_files().len();
         let unstaged = app.unstaged_files().len();
         let msg = app.status_message();
@@ -147,13 +159,41 @@ pub fn draw(f: &mut Frame, app: &App) {
         } else {
             format!(" | {msg}")
         };
+        let has_conflicts = !app.conflict_files().is_empty();
+        let working_set_label = if has_conflicts {
+            "conflict"
+        } else if unstaged > 0 || staged > 0 {
+            "dirty"
+        } else {
+            "clean"
+        };
+        let working_set_color = if has_conflicts {
+            Color::Red
+        } else if unstaged > 0 || staged > 0 {
+            Color::Yellow
+        } else {
+            Color::Green
+        };
         Line::from(vec![
+            Span::styled(
+                format!(" {repo_name} "),
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Blue)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(
                 format!(" {branch} "),
                 Style::default()
                     .fg(Color::Black)
                     .bg(Color::Cyan)
                     .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!(" {working_set_label} "),
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(working_set_color),
             ),
             Span::raw(format!(
                 " staged:{} unstaged:{} patches:{} branches:{}{suffix} ",

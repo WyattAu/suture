@@ -1,10 +1,10 @@
 # Suture Version
 
-- **Current Version:** 5.0.0
+- **Current Version:** 5.1.0
 - **Crates.io:** 37 crates ready to publish
 - **Current Phase:** GA — Production Ready
-- **Status:** Shipping v5.0.0 (CI green, publishing)
-- **Last Updated:** 2026-04-26
+- **Status:** Shipping v5.1.0
+- **Last Updated:** 2026-04-30
 - **Rust Edition:** 2024
 - **Tests:** 1,438 passed, 0 failed, 3 ignored (1,231 unit + 21 raft + 186 E2E)
 - **Lean 4:** v4.29.1 (23 theorems proved)

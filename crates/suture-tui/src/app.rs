@@ -9,10 +9,13 @@ use crate::event::key_matches;
 /// Which tab/panel is currently focused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tab {
+    Dashboard,
     Status,
     Log,
     Staging,
     Diff,
+    PatchBrowser,
+    MergeView,
     Branches,
     Remote,
     Help,
@@ -20,11 +23,14 @@ pub enum Tab {
 
 impl Tab {
     /// All tabs in order for tab cycling.
-    pub const ALL: [Tab; 7] = [
+    pub const ALL: [Tab; 10] = [
+        Tab::Dashboard,
         Tab::Status,
         Tab::Log,
         Tab::Staging,
         Tab::Diff,
+        Tab::PatchBrowser,
+        Tab::MergeView,
         Tab::Branches,
         Tab::Remote,
         Tab::Help,
@@ -42,10 +48,13 @@ impl Tab {
 
     pub fn title(self) -> &'static str {
         match self {
+            Tab::Dashboard => "Dashboard",
             Tab::Status => "Status",
             Tab::Log => "Log",
             Tab::Staging => "Staging",
             Tab::Diff => "Diff",
+            Tab::PatchBrowser => "Patches",
+            Tab::MergeView => "Merge",
             Tab::Branches => "Branches",
             Tab::Remote => "Remote",
             Tab::Help => "Help",
@@ -192,6 +201,12 @@ pub struct App {
     conflict_files: Vec<ConflictFileState>,
     conflict_cursor: usize,
 
+    // Patch browser
+    patch_browser_cursor: usize,
+    patch_browser_filter: String,
+    patch_browser_sort_desc: bool,
+    patch_browser_search_mode: bool,
+
     /// Whether the app should quit.
     should_quit: bool,
 }
@@ -200,7 +215,7 @@ impl App {
     pub fn new(repo: Repository) -> Self {
         Self {
             repo,
-            current_tab: Tab::Status,
+            current_tab: Tab::Dashboard,
             head_branch: None,
             head_patch: None,
             branch_count: 0,
@@ -238,6 +253,10 @@ impl App {
             conflict_mode: false,
             conflict_files: Vec::new(),
             conflict_cursor: 0,
+            patch_browser_cursor: 0,
+            patch_browser_filter: String::new(),
+            patch_browser_sort_desc: true,
+            patch_browser_search_mode: false,
             should_quit: false,
         }
     }
@@ -476,13 +495,16 @@ impl App {
             && key.modifiers.contains(KeyModifiers::ALT)
         {
             match c {
-                '1' => self.current_tab = Tab::Status,
-                '2' => self.current_tab = Tab::Log,
-                '3' => self.current_tab = Tab::Staging,
-                '4' => self.current_tab = Tab::Diff,
-                '5' => self.current_tab = Tab::Branches,
-                '6' => self.current_tab = Tab::Remote,
-                '7' => self.current_tab = Tab::Help,
+                '1' => self.current_tab = Tab::Dashboard,
+                '2' => self.current_tab = Tab::Status,
+                '3' => self.current_tab = Tab::Log,
+                '4' => self.current_tab = Tab::Staging,
+                '5' => self.current_tab = Tab::Diff,
+                '6' => self.current_tab = Tab::PatchBrowser,
+                '7' => self.current_tab = Tab::MergeView,
+                '8' => self.current_tab = Tab::Branches,
+                '9' => self.current_tab = Tab::Remote,
+                '0' => self.current_tab = Tab::Help,
                 _ => {}
             }
             self.status_message = format!("Switched to {}", self.current_tab.title());
@@ -500,14 +522,69 @@ impl App {
 
         // Tab-specific keys
         match self.current_tab {
+            Tab::Dashboard => self.handle_dashboard_key(key),
             Tab::Status => self.handle_status_key(key),
             Tab::Log => self.handle_log_key(key),
             Tab::Staging => self.handle_staging_key(key),
             Tab::Diff => self.handle_diff_key(key),
+            Tab::PatchBrowser => self.handle_patch_browser_key(key),
+            Tab::MergeView => self.handle_merge_view_key(key),
             Tab::Branches => self.handle_branches_key(key),
             Tab::Remote => self.handle_remote_key(key),
             Tab::Help => self.handle_help_key(key),
         }
+    }
+
+    fn handle_dashboard_key(&mut self, key: KeyEvent) -> bool {
+        match key.code {
+            KeyCode::Char('s') => {
+                self.current_tab = Tab::Staging;
+                self.status_message = "Switched to Staging".to_string();
+            }
+            KeyCode::Char('l') => {
+                self.current_tab = Tab::Log;
+                self.status_message = "Switched to Log".to_string();
+            }
+            KeyCode::Char('b') => {
+                self.current_tab = Tab::Branches;
+                self.status_message = "Switched to Branches".to_string();
+            }
+            KeyCode::Char('c') => {
+                if !self.staged_files.is_empty() {
+                    self.commit_mode = true;
+                    self.commit_message.clear();
+                    self.status_message =
+                        "Enter commit message (Enter to commit, Esc to cancel)".to_string();
+                } else {
+                    self.error_message = Some("Nothing staged to commit".to_string());
+                }
+            }
+            KeyCode::Char('n') => {
+                self.commit_mode = true;
+                self.commit_message.clear();
+                self.status_message =
+                    "Enter commit message for new patch (Enter to commit, Esc to cancel)"
+                        .to_string();
+            }
+            KeyCode::Char('r') => {
+                self.current_tab = Tab::Remote;
+                self.status_message = "Switched to Remote".to_string();
+            }
+            KeyCode::Char('p') => {
+                self.current_tab = Tab::PatchBrowser;
+                self.status_message = "Switched to Patch Browser".to_string();
+            }
+            KeyCode::Char('m') => {
+                if !self.conflict_files.is_empty() {
+                    self.current_tab = Tab::MergeView;
+                    self.status_message = "Switched to Merge View".to_string();
+                } else {
+                    self.error_message = Some("No conflicts to visualize".to_string());
+                }
+            }
+            _ => {}
+        }
+        false
     }
 
     fn handle_status_key(&mut self, key: KeyEvent) -> bool {
@@ -945,6 +1022,139 @@ impl App {
         false
     }
 
+    fn handle_patch_browser_key(&mut self, key: KeyEvent) -> bool {
+        if self.patch_browser_search_mode {
+            match key.code {
+                KeyCode::Esc => {
+                    self.patch_browser_search_mode = false;
+                    self.patch_browser_filter.clear();
+                    self.patch_browser_cursor = 0;
+                    self.status_message = "Filter cleared".to_string();
+                }
+                KeyCode::Enter => {
+                    self.patch_browser_search_mode = false;
+                    self.patch_browser_cursor = 0;
+                    self.status_message = format!("Filter applied: {}", self.patch_browser_filter);
+                }
+                KeyCode::Char(c) => {
+                    self.patch_browser_filter.push(c);
+                }
+                KeyCode::Backspace => {
+                    self.patch_browser_filter.pop();
+                    self.patch_browser_cursor = 0;
+                }
+                _ => {}
+            }
+            return false;
+        }
+
+        let filtered_count = self.filtered_patch_count();
+
+        match key.code {
+            KeyCode::Up | KeyCode::Char('k') => {
+                if self.patch_browser_cursor > 0 {
+                    self.patch_browser_cursor -= 1;
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if self.patch_browser_cursor < filtered_count.saturating_sub(1) {
+                    self.patch_browser_cursor += 1;
+                }
+            }
+            KeyCode::Char('g') => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    self.patch_browser_cursor = 0;
+                }
+            }
+            KeyCode::Char('G') => {
+                self.patch_browser_cursor = filtered_count.saturating_sub(1);
+            }
+            KeyCode::Char('d') | KeyCode::Enter => {
+                let patch_id = self.filtered_patch_at_cursor().map(|e| e.id.clone());
+                if let Some(id) = patch_id {
+                    self.show_patch_diff(&id);
+                    self.current_tab = Tab::Diff;
+                }
+            }
+            KeyCode::Char('s') => {
+                self.patch_browser_sort_desc = !self.patch_browser_sort_desc;
+                self.patch_browser_cursor = 0;
+                self.status_message = if self.patch_browser_sort_desc {
+                    "Sort: newest first".to_string()
+                } else {
+                    "Sort: oldest first".to_string()
+                };
+            }
+            KeyCode::Char('/') => {
+                self.patch_browser_search_mode = true;
+                self.patch_browser_filter.clear();
+                self.patch_browser_cursor = 0;
+                self.status_message = "Type to filter patches (Esc to cancel, Enter to apply)".to_string();
+            }
+            KeyCode::PageUp => {
+                self.patch_browser_cursor = self.patch_browser_cursor.saturating_sub(10);
+            }
+            KeyCode::PageDown => {
+                self.patch_browser_cursor =
+                    (self.patch_browser_cursor + 10).min(filtered_count.saturating_sub(1));
+            }
+            _ => {}
+        }
+        false
+    }
+
+    fn handle_merge_view_key(&mut self, key: KeyEvent) -> bool {
+        match key.code {
+            KeyCode::Esc => {
+                self.current_tab = Tab::Status;
+                self.status_message = "Switched to Status".to_string();
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                if self.conflict_cursor < self.conflict_files.len().saturating_sub(1) {
+                    self.conflict_cursor += 1;
+                }
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                if self.conflict_cursor > 0 {
+                    self.conflict_cursor -= 1;
+                }
+            }
+            KeyCode::Char('e') | KeyCode::Enter => {
+                if let Some(conflict) = self.conflict_files.get(self.conflict_cursor) {
+                    let root = self.repo.root().to_path_buf();
+                    let full_path = root.join(&conflict.path);
+                    let editor = std::env::var("EDITOR").unwrap_or_else(|_| "nvim".to_string());
+                    self.status_message = format!("Opening {} in {} ...", conflict.path, editor);
+                    self.should_quit = true;
+                    let editor = std::env::var("EDITOR").unwrap_or_else(|_| "nvim".to_string());
+                    eprintln!(
+                        "\n\n  Open in editor: {} \"{}\"",
+                        editor,
+                        full_path.display()
+                    );
+                    eprintln!(
+                        "  After resolving conflicts, run `suture add .` then `suture tui`\n"
+                    );
+                }
+            }
+            KeyCode::Char('r') => {
+                self.detect_conflicts();
+                if self.conflict_files.is_empty() {
+                    self.status_message =
+                        "All conflicts resolved! Run `suture commit` to finalize.".to_string();
+                } else {
+                    self.status_message =
+                        format!("{} conflict file(s) remaining", self.conflict_files.len());
+                }
+                if self.conflict_cursor >= self.conflict_files.len() {
+                    self.conflict_cursor = self.conflict_files.len().saturating_sub(1);
+                }
+            }
+            _ => {}
+        }
+        false
+    }
+
     fn handle_branches_key(&mut self, key: KeyEvent) -> bool {
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => {
@@ -1291,6 +1501,41 @@ impl App {
         }
     }
 
+    // --- Patch browser helpers ---
+
+    fn filtered_patch_count(&self) -> usize {
+        if self.patch_browser_filter.is_empty() {
+            self.log_entries.len()
+        } else {
+            let filter_lower = self.patch_browser_filter.to_lowercase();
+            self.log_entries
+                .iter()
+                .filter(|e| {
+                    e.message.to_lowercase().contains(&filter_lower)
+                        || e.author.to_lowercase().contains(&filter_lower)
+                        || e.id.to_lowercase().contains(&filter_lower)
+                })
+                .count()
+        }
+    }
+
+    fn filtered_patch_at_cursor(&self) -> Option<&LogEntry> {
+        let filtered: Vec<&LogEntry> = if self.patch_browser_filter.is_empty() {
+            self.log_entries.iter().collect()
+        } else {
+            let filter_lower = self.patch_browser_filter.to_lowercase();
+            self.log_entries
+                .iter()
+                .filter(|e| {
+                    e.message.to_lowercase().contains(&filter_lower)
+                        || e.author.to_lowercase().contains(&filter_lower)
+                        || e.id.to_lowercase().contains(&filter_lower)
+                })
+                .collect()
+        };
+        filtered.get(self.patch_browser_cursor).copied()
+    }
+
     // --- Getters for the UI ---
 
     pub fn current_tab(&self) -> Tab {
@@ -1407,6 +1652,16 @@ impl App {
 
     pub fn repo(&self) -> &Repository {
         &self.repo
+    }
+
+    pub fn patch_browser_cursor(&self) -> usize {
+        self.patch_browser_cursor
+    }
+    pub fn patch_browser_filter(&self) -> &str {
+        &self.patch_browser_filter
+    }
+    pub fn patch_browser_sort_desc(&self) -> bool {
+        self.patch_browser_sort_desc
     }
 }
 
@@ -1654,17 +1909,21 @@ mod tests {
 
     #[test]
     fn test_tab_cycling() {
-        let tab = Tab::Status;
-        assert_eq!(tab.next(), Tab::Log);
+        let tab = Tab::Dashboard;
+        assert_eq!(tab.next(), Tab::Status);
+        assert_eq!(Tab::Status.next(), Tab::Log);
         assert_eq!(Tab::Log.next(), Tab::Staging);
-        assert_eq!(Tab::Help.next(), Tab::Status);
-        assert_eq!(Tab::Status.prev(), Tab::Help);
+        assert_eq!(Tab::Help.next(), Tab::Dashboard);
+        assert_eq!(Tab::Dashboard.prev(), Tab::Help);
     }
 
     #[test]
     fn test_tab_title() {
+        assert_eq!(Tab::Dashboard.title(), "Dashboard");
         assert_eq!(Tab::Status.title(), "Status");
         assert_eq!(Tab::Log.title(), "Log");
+        assert_eq!(Tab::PatchBrowser.title(), "Patches");
+        assert_eq!(Tab::MergeView.title(), "Merge");
         assert_eq!(Tab::Help.title(), "Help");
     }
 
@@ -1686,12 +1945,13 @@ mod tests {
     #[test]
     fn test_handle_key_tab_cycle() {
         let mut app = make_test_app();
+        assert_eq!(app.current_tab(), Tab::Dashboard);
+        app.handle_key(key(KeyCode::Tab, KeyModifiers::NONE));
         assert_eq!(app.current_tab(), Tab::Status);
         app.handle_key(key(KeyCode::Tab, KeyModifiers::NONE));
         assert_eq!(app.current_tab(), Tab::Log);
-        app.handle_key(key(KeyCode::Tab, KeyModifiers::NONE));
-        assert_eq!(app.current_tab(), Tab::Staging);
         // Tab on Staging toggles pane focus, not tab cycling
+        app.current_tab = Tab::Staging;
         app.handle_key(key(KeyCode::Tab, KeyModifiers::NONE));
         assert_eq!(app.current_tab(), Tab::Staging);
         // Shift+Tab still cycles tabs from Staging
@@ -1700,26 +1960,32 @@ mod tests {
         app.handle_key(key(KeyCode::BackTab, KeyModifiers::SHIFT));
         assert_eq!(app.current_tab(), Tab::Status);
         app.handle_key(key(KeyCode::BackTab, KeyModifiers::SHIFT));
-        assert_eq!(app.current_tab(), Tab::Help);
+        assert_eq!(app.current_tab(), Tab::Dashboard);
     }
 
     #[test]
     fn test_handle_key_alt_number() {
         let mut app = make_test_app();
-        app.handle_key(key(KeyCode::Char('3'), KeyModifiers::ALT));
-        assert_eq!(app.current_tab(), Tab::Staging);
         app.handle_key(key(KeyCode::Char('1'), KeyModifiers::ALT));
-        assert_eq!(app.current_tab(), Tab::Status);
-        app.handle_key(key(KeyCode::Char('5'), KeyModifiers::ALT));
-        assert_eq!(app.current_tab(), Tab::Branches);
-        app.handle_key(key(KeyCode::Char('7'), KeyModifiers::ALT));
-        assert_eq!(app.current_tab(), Tab::Help);
-        app.handle_key(key(KeyCode::Char('6'), KeyModifiers::ALT));
-        assert_eq!(app.current_tab(), Tab::Remote);
+        assert_eq!(app.current_tab(), Tab::Dashboard);
         app.handle_key(key(KeyCode::Char('2'), KeyModifiers::ALT));
+        assert_eq!(app.current_tab(), Tab::Status);
+        app.handle_key(key(KeyCode::Char('3'), KeyModifiers::ALT));
         assert_eq!(app.current_tab(), Tab::Log);
         app.handle_key(key(KeyCode::Char('4'), KeyModifiers::ALT));
+        assert_eq!(app.current_tab(), Tab::Staging);
+        app.handle_key(key(KeyCode::Char('5'), KeyModifiers::ALT));
         assert_eq!(app.current_tab(), Tab::Diff);
+        app.handle_key(key(KeyCode::Char('6'), KeyModifiers::ALT));
+        assert_eq!(app.current_tab(), Tab::PatchBrowser);
+        app.handle_key(key(KeyCode::Char('7'), KeyModifiers::ALT));
+        assert_eq!(app.current_tab(), Tab::MergeView);
+        app.handle_key(key(KeyCode::Char('8'), KeyModifiers::ALT));
+        assert_eq!(app.current_tab(), Tab::Branches);
+        app.handle_key(key(KeyCode::Char('9'), KeyModifiers::ALT));
+        assert_eq!(app.current_tab(), Tab::Remote);
+        app.handle_key(key(KeyCode::Char('0'), KeyModifiers::ALT));
+        assert_eq!(app.current_tab(), Tab::Help);
     }
 
     #[test]
@@ -1812,5 +2078,129 @@ mod tests {
         app.handle_key(key(KeyCode::Enter, KeyModifiers::NONE));
         assert!(app.commit_mode());
         assert_eq!(app.error_message(), Some("Empty commit message"));
+    }
+
+    #[test]
+    fn test_patch_browser_navigation() {
+        let mut app = make_test_app();
+        app.current_tab = Tab::PatchBrowser;
+        app.log_entries = (0..5)
+            .map(|i| LogEntry {
+                id: format!("{i:040x}"),
+                short_id: format!("{i:08x}"),
+                author: "test".to_string(),
+                message: format!("patch {i}"),
+                timestamp: "2024-01-01 00:00".to_string(),
+                parents: Vec::new(),
+                branch_heads: Vec::new(),
+                is_merge: false,
+            })
+            .collect();
+        assert_eq!(app.patch_browser_cursor(), 0);
+        app.handle_key(key(KeyCode::Down, KeyModifiers::NONE));
+        assert_eq!(app.patch_browser_cursor(), 1);
+        app.handle_key(key(KeyCode::Char('j'), KeyModifiers::NONE));
+        assert_eq!(app.patch_browser_cursor(), 2);
+        app.handle_key(key(KeyCode::Up, KeyModifiers::NONE));
+        assert_eq!(app.patch_browser_cursor(), 1);
+        app.handle_key(key(KeyCode::Char('G'), KeyModifiers::NONE));
+        assert_eq!(app.patch_browser_cursor(), 4);
+        app.handle_key(key(KeyCode::Char('g'), KeyModifiers::CONTROL));
+        assert_eq!(app.patch_browser_cursor(), 0);
+    }
+
+    #[test]
+    fn test_patch_browser_filter() {
+        let mut app = make_test_app();
+        app.current_tab = Tab::PatchBrowser;
+        app.log_entries = vec![
+            LogEntry {
+                id: "a".repeat(64),
+                short_id: "aaaa".to_string(),
+                author: "alice".to_string(),
+                message: "fix bug".to_string(),
+                timestamp: "2024-01-01 00:00".to_string(),
+                parents: Vec::new(),
+                branch_heads: Vec::new(),
+                is_merge: false,
+            },
+            LogEntry {
+                id: "b".repeat(64),
+                short_id: "bbbb".to_string(),
+                author: "bob".to_string(),
+                message: "add feature".to_string(),
+                timestamp: "2024-01-02 00:00".to_string(),
+                parents: Vec::new(),
+                branch_heads: Vec::new(),
+                is_merge: false,
+            },
+        ];
+        assert_eq!(app.filtered_patch_count(), 2);
+        app.handle_key(key(KeyCode::Char('/'), KeyModifiers::NONE));
+        assert!(app.patch_browser_filter.is_empty());
+        app.handle_key(key(KeyCode::Char('f'), KeyModifiers::NONE));
+        app.handle_key(key(KeyCode::Char('i'), KeyModifiers::NONE));
+        app.handle_key(key(KeyCode::Char('x'), KeyModifiers::NONE));
+        assert_eq!(app.patch_browser_filter(), "fix");
+        app.handle_key(key(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(app.filtered_patch_count(), 1);
+    }
+
+    #[test]
+    fn test_patch_browser_sort_toggle() {
+        let mut app = make_test_app();
+        app.current_tab = Tab::PatchBrowser;
+        assert!(app.patch_browser_sort_desc());
+        app.handle_key(key(KeyCode::Char('s'), KeyModifiers::NONE));
+        assert!(!app.patch_browser_sort_desc());
+        app.handle_key(key(KeyCode::Char('s'), KeyModifiers::NONE));
+        assert!(app.patch_browser_sort_desc());
+    }
+
+    #[test]
+    fn test_merge_view_navigation() {
+        let mut app = make_test_app();
+        app.current_tab = Tab::MergeView;
+        app.conflict_files = vec![ConflictFileState {
+            path: "a.txt".to_string(),
+            hunks: Vec::new(),
+            current_hunk: 0,
+            raw_content: String::new(),
+        }, ConflictFileState {
+            path: "b.txt".to_string(),
+            hunks: Vec::new(),
+            current_hunk: 0,
+            raw_content: String::new(),
+        }];
+        assert_eq!(app.conflict_cursor(), 0);
+        app.handle_key(key(KeyCode::Down, KeyModifiers::NONE));
+        assert_eq!(app.conflict_cursor(), 1);
+        app.handle_key(key(KeyCode::Up, KeyModifiers::NONE));
+        assert_eq!(app.conflict_cursor(), 0);
+    }
+
+    #[test]
+    fn test_merge_view_esc_returns_status() {
+        let mut app = make_test_app();
+        app.current_tab = Tab::MergeView;
+        app.handle_key(key(KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!(app.current_tab(), Tab::Status);
+    }
+
+    #[test]
+    fn test_dashboard_actions() {
+        let mut app = make_test_app();
+        app.current_tab = Tab::Dashboard;
+        app.handle_key(key(KeyCode::Char('l'), KeyModifiers::NONE));
+        assert_eq!(app.current_tab(), Tab::Log);
+        app.current_tab = Tab::Dashboard;
+        app.handle_key(key(KeyCode::Char('b'), KeyModifiers::NONE));
+        assert_eq!(app.current_tab(), Tab::Branches);
+        app.current_tab = Tab::Dashboard;
+        app.handle_key(key(KeyCode::Char('s'), KeyModifiers::NONE));
+        assert_eq!(app.current_tab(), Tab::Staging);
+        app.current_tab = Tab::Dashboard;
+        app.handle_key(key(KeyCode::Char('p'), KeyModifiers::NONE));
+        assert_eq!(app.current_tab(), Tab::PatchBrowser);
     }
 }

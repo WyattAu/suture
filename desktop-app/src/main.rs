@@ -67,6 +67,21 @@ pub struct StashEntry {
     pub timestamp: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MergeDriverConfig {
+    pub is_configured: bool,
+    pub name: String,
+    pub driver: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateInfo {
+    pub current_version: String,
+    pub latest_version: String,
+    pub update_available: bool,
+    pub error: Option<String>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct CmdResult<T: Serialize> {
     pub success: bool,
@@ -100,6 +115,40 @@ pub struct AppState {
 
 // --- Library-based Tauri Commands ---
 // These use suture-core directly for maximum performance.
+
+fn which_suture() -> Option<String> {
+    let output = std::process::Command::new("which")
+        .arg("suture")
+        .output()
+        .ok()?;
+    if output.status.success() {
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !path.is_empty() {
+            return Some(path);
+        }
+    }
+    None
+}
+
+fn compare_versions(a: &str, b: &str) -> Option<std::cmp::Ordering> {
+    let parse = |v: &str| -> Vec<u32> {
+        v.split('.')
+            .filter_map(|s| s.parse::<u32>().ok())
+            .collect()
+    };
+    let va = parse(a);
+    let vb = parse(b);
+    let max_len = va.len().max(vb.len());
+    for i in 0..max_len {
+        let ca = va.get(i).copied().unwrap_or(0);
+        let cb = vb.get(i).copied().unwrap_or(0);
+        match ca.cmp(&cb) {
+            std::cmp::Ordering::Equal => continue,
+            ord => return Some(ord),
+        }
+    }
+    Some(std::cmp::Ordering::Equal)
+}
 
 #[cfg(feature = "tauri")]
 mod tauri_commands {
@@ -644,7 +693,7 @@ mod tauri_commands {
         }
     }
 
-    pub fn stash_pop(state: State<'_, AppState>) -> CmdResult<String> {
+    pub async fn stash_pop(state: State<'_, AppState>) -> CmdResult<String> {
         let mut guard = state.repo.lock().unwrap();
         let Some(repo) = guard.as_mut() else {
             return CmdResult::err("No repository open");
@@ -656,6 +705,167 @@ mod tauri_commands {
                 let msg = format!("Failed to pop stash: {e}");
                 CmdResult::err(msg)
             }
+        }
+    }
+
+    pub fn get_merge_driver_config() -> CmdResult<MergeDriverConfig> {
+        let current = std::process::Command::new("git")
+            .args(["config", "--global", "merge.suture-driver.name"])
+            .output()
+            .ok()
+            .and_then(|o| {
+                if o.status.success() {
+                    Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+                } else {
+                    None
+                }
+            });
+
+        let driver_cmd = std::process::Command::new("git")
+            .args(["config", "--global", "merge.suture-driver.driver"])
+            .output()
+            .ok()
+            .and_then(|o| {
+                if o.status.success() {
+                    Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+                } else {
+                    None
+                }
+            });
+
+        CmdResult::ok(MergeDriverConfig {
+            is_configured: current.is_some() && driver_cmd.is_some(),
+            name: current.unwrap_or_default(),
+            driver: driver_cmd.unwrap_or_default(),
+        })
+    }
+
+    pub fn set_merge_driver_config(state: State<'_, AppState>) -> CmdResult<String> {
+        let guard = state.repo_path.lock().unwrap();
+        let _ = guard.as_ref().ok_or_else(|| "No repository open".to_string());
+
+        let suture_path = which_suture();
+        if suture_path.is_none() {
+            return CmdResult::err("suture binary not found in PATH".to_string());
+        }
+
+        let name_result = std::process::Command::new("git")
+            .args([
+                "config",
+                "--global",
+                "merge.suture-driver.name",
+                "Suture merge driver",
+            ])
+            .output();
+
+        let driver_result = std::process::Command::new("git")
+            .args([
+                "config",
+                "--global",
+                r#"merge.suture-driver.driver"%O" "%A" "%B""#,
+            ])
+            .output();
+
+        match (name_result, driver_result) {
+            (Ok(n), Ok(d)) if n.status.success() && d.status.success() => {
+                CmdResult::ok("Merge driver configured globally".to_string())
+            }
+            (Ok(_), Ok(d)) if !d.status.success() => {
+                let stderr = String::from_utf8_lossy(&d.stderr);
+                CmdResult::err(format!("Failed to set driver: {stderr}"))
+            }
+            (Ok(n), Ok(_)) if !n.status.success() => {
+                CmdResult::err("Failed to set merge driver name".to_string())
+            }
+            (Err(e), _) => CmdResult::err(format!("Failed to run git config: {e}")),
+            _ => CmdResult::err("Unknown error configuring merge driver".to_string()),
+        }
+    }
+
+    pub fn unset_merge_driver_config() -> CmdResult<String> {
+        let _ = std::process::Command::new("git")
+            .args(["config", "--global", "--unset", "merge.suture-driver.name"])
+            .output();
+
+        let result = std::process::Command::new("git")
+            .args(["config", "--global", "--unset", "merge.suture-driver.driver"])
+            .output();
+
+        match result {
+            Ok(o) if o.status.success() || String::from_utf8_lossy(&o.stderr).contains("not found") => {
+                CmdResult::ok("Merge driver removed".to_string())
+            }
+            Ok(o) => {
+                let stderr = String::from_utf8_lossy(&o.stderr);
+                CmdResult::err(format!("Failed to unset: {stderr}"))
+            }
+            Err(e) => CmdResult::err(format!("Failed to run git config: {e}")),
+        }
+    }
+
+    pub async fn check_for_updates() -> CmdResult<UpdateInfo> {
+        let current_version = env!("CARGO_PKG_VERSION").to_string();
+
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build();
+
+        let client = match client {
+            Ok(c) => c,
+            Err(e) => return CmdResult::ok(UpdateInfo {
+                current_version: current_version.clone(),
+                latest_version: current_version,
+                update_available: false,
+                error: Some(format!("Failed to create HTTP client: {e}")),
+            }),
+        };
+
+        let url = "https://api.github.com/repos/WyattAu/suture/releases/latest";
+        let resp = match client.get(url).send().await {
+            Ok(r) => r,
+            Err(e) => return CmdResult::ok(UpdateInfo {
+                current_version: current_version.clone(),
+                latest_version: current_version.clone(),
+                update_available: false,
+                error: Some(format!("Network error: {e}")),
+            }),
+        };
+
+        if !resp.status().is_success() {
+            return CmdResult::ok(UpdateInfo {
+                current_version: current_version.clone(),
+                latest_version: current_version.clone(),
+                update_available: false,
+                error: Some(format!("GitHub API returned status {}", resp.status())),
+            });
+        }
+
+        match resp.json::<serde_json::Value>().await {
+            Ok(release) => {
+                let latest = release
+                    .get("tag_name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .trim_start_matches('v')
+                    .to_string();
+
+                let update_available = compare_versions(&latest, &current_version)
+                    .map(|ord| ord == std::cmp::Ordering::Greater)
+                    .unwrap_or(false);
+
+                CmdResult::ok(UpdateInfo {
+                    current_version: current_version.clone(),
+                    latest_version: latest,
+                    update_available,
+                    error: None,
+                })
+            }
+            Err(e) => CmdResult::ok(UpdateInfo {
+                current_version: current_version.clone(),
+                latest_version: current_version.clone(),
+                update_available: false,
+                error: Some(format!("Failed to parse response: {e}")),
+            }),
         }
     }
 }
@@ -1038,6 +1248,10 @@ fn main() {
             lib::get_stash_list,
             lib::stash_push,
             lib::stash_pop,
+            lib::get_merge_driver_config,
+            lib::set_merge_driver_config,
+            lib::unset_merge_driver_config,
+            lib::check_for_updates,
             cli::cli_init_repo,
             cli::cli_get_status,
             cli::cli_create_branch,
