@@ -1,0 +1,41 @@
+{
+  "site": {
+    "title": "Suture — Semantic Merge for Every Format",
+    "description": "Automatically resolve merge conflicts in JSON, YAML, TOML, XML, CSV, and 12+ more structured file formats. Works as a Git merge driver — zero config after install.",
+    "url": "https://suture.dev",
+    "image": "https://suture.dev/og-image.png"
+  },
+  "pages": [
+    {
+      "path": "/",
+      "title": "Suture — Semantic Merge Platform",
+      "description": "Stop fighting merge conflicts in config files. Suture understands JSON, YAML, TOML, XML, and 12+ more formats. Install in 5 seconds."
+    },
+    {
+      "path": "/merge",
+      "title": "Try Semantic Merge — Suture",
+      "description": "Interactive demo: paste two versions of a JSON, YAML, TOML, or CSV file and see them merge automatically. No signup required."
+    },
+    {
+      "path": "/api",
+      "title": "Merge API — Suture",
+      "description": "REST API for semantic merge. Integrate structured file merging into your CI/CD pipeline, editor, or application."
+    },
+    {
+      "path": "/billing",
+      "title": "Pricing — Suture",
+      "description": "Free for individuals. $9/user/month for teams. $29/user/month for enterprise with SSO, audit log, and 99.99% SLA."
+    },
+    {
+      "path": "/docs/git-merge-driver",
+      "title": "Git Merge Driver Setup — Suture",
+      "description": "Install Suture as a Git merge driver in one command. Automatically resolves conflicts in JSON, YAML, TOML, XML, CSV files."
+    }
+  ],
+  "keywords": [
+    "semantic merge", "git merge driver", "json merge", "yaml merge",
+    "toml merge", "merge conflict resolver", "structured merge",
+    "config merge", "git conflict", "automatic merge",
+    "three-way merge", "json conflict", "yaml conflict"
+  ]
+}

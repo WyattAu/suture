@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as http from 'http';
+import * as https from 'https';
 import { execFile, ExecFileException } from 'child_process';
 
 class SutureHelper {
@@ -62,6 +64,15 @@ class SutureHelper {
   }
 }
 
+const DRIVER_MAP: Record<string, string> = {
+  '.json': 'json',
+  '.yaml': 'yaml',
+  '.yml': 'yaml',
+  '.toml': 'toml',
+  '.xml': 'xml',
+  '.csv': 'csv',
+};
+
 interface ConflictBlock {
   ours: string;
   theirs: string;
@@ -75,6 +86,7 @@ const CONFLICT_PATTERN = /^<{7}\s+(.*?)\n([\s\S]*?)^={7}\n([\s\S]*?)^>{7}\s+(.*?
 
 function findConflicts(text: string): ConflictBlock[] {
   const conflicts: ConflictBlock[] = [];
+  CONFLICT_PATTERN.lastIndex = 0;
   let match: RegExpExecArray | null;
 
   while ((match = CONFLICT_PATTERN.exec(text)) !== null) {
@@ -106,6 +118,86 @@ function resolveConflicts(text: string, conflicts: ConflictBlock[], resolution: 
     result = result.substring(0, conflict.startIndex) + replacement + result.substring(conflict.endIndex);
   }
   return result;
+}
+
+class ConflictDecorationProvider implements vscode.Disposable {
+  private oursDecoration: vscode.TextEditorDecorationType;
+  private theirsDecoration: vscode.TextEditorDecorationType;
+  private separatorDecoration: vscode.TextEditorDecorationType;
+  private lastEditor: vscode.TextEditor | undefined;
+
+  constructor() {
+    this.oursDecoration = vscode.window.createTextEditorDecorationType({
+      backgroundColor: new vscode.ThemeColor('suture.conflictOursBackground'),
+      isWholeLine: true,
+      overviewRulerColor: new vscode.ThemeColor('suture.conflictOursOverviewRuler'),
+      overviewRulerLane: vscode.OverviewRulerLane.Left,
+    });
+    this.theirsDecoration = vscode.window.createTextEditorDecorationType({
+      backgroundColor: new vscode.ThemeColor('suture.conflictTheirsBackground'),
+      isWholeLine: true,
+      overviewRulerColor: new vscode.ThemeColor('suture.conflictTheirsOverviewRuler'),
+      overviewRulerLane: vscode.OverviewRulerLane.Left,
+    });
+    this.separatorDecoration = vscode.window.createTextEditorDecorationType({
+      backgroundColor: new vscode.ThemeColor('suture.conflictSeparatorBackground'),
+      isWholeLine: true,
+    });
+  }
+
+  update(editor: vscode.TextEditor) {
+    this.clear();
+    this.lastEditor = editor;
+
+    const document = editor.document;
+    const oursRanges: vscode.Range[] = [];
+    const theirsRanges: vscode.Range[] = [];
+    const separatorRanges: vscode.Range[] = [];
+    let inConflict = false;
+    let inOurs = false;
+
+    for (let i = 0; i < document.lineCount; i++) {
+      const line = document.lineAt(i);
+      if (line.text.startsWith('<<<<<<<')) {
+        oursRanges.push(new vscode.Range(i, 0, i, line.text.length));
+        inConflict = true;
+        inOurs = true;
+      } else if (line.text.startsWith('=======')) {
+        separatorRanges.push(new vscode.Range(i, 0, i, line.text.length));
+        inOurs = false;
+      } else if (line.text.startsWith('>>>>>>>')) {
+        theirsRanges.push(new vscode.Range(i, 0, i, line.text.length));
+        inConflict = false;
+      } else if (inConflict) {
+        if (inOurs) {
+          oursRanges.push(new vscode.Range(i, 0, i, line.text.length));
+        } else {
+          theirsRanges.push(new vscode.Range(i, 0, i, line.text.length));
+        }
+      }
+    }
+
+    editor.setDecorations(this.oursDecoration, oursRanges);
+    editor.setDecorations(this.theirsDecoration, theirsRanges);
+    editor.setDecorations(this.separatorDecoration, separatorRanges);
+  }
+
+  clear() {
+    if (this.lastEditor) {
+      const empty: vscode.Range[] = [];
+      this.lastEditor.setDecorations(this.oursDecoration, empty);
+      this.lastEditor.setDecorations(this.theirsDecoration, empty);
+      this.lastEditor.setDecorations(this.separatorDecoration, empty);
+      this.lastEditor = undefined;
+    }
+  }
+
+  dispose() {
+    this.clear();
+    this.oursDecoration.dispose();
+    this.theirsDecoration.dispose();
+    this.separatorDecoration.dispose();
+  }
 }
 
 export function activate(context: vscode.ExtensionContext) {
@@ -162,10 +254,222 @@ export function activate(context: vscode.ExtensionContext) {
   const statusInterval = setInterval(updateMergeStatus, 30000);
   context.subscriptions.push({ dispose: () => clearInterval(statusInterval) });
 
+  const conflictStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+  conflictStatusBarItem.text = '$(git-merge) Suture';
+  conflictStatusBarItem.command = 'suture.resolveConflict';
+  conflictStatusBarItem.tooltip = 'Resolve merge conflicts with Suture';
+  context.subscriptions.push(conflictStatusBarItem);
+  conflictStatusBarItem.show();
+
+  const decorationProvider = new ConflictDecorationProvider();
+  context.subscriptions.push(decorationProvider);
+
+  function updateEditorConflicts(editor?: vscode.TextEditor) {
+    if (editor) {
+      const text = editor.document.getText();
+      const hasConflicts = /<<<<<<< /.test(text);
+      const config = vscode.workspace.getConfiguration('suture');
+
+      if (hasConflicts) {
+        conflictStatusBarItem.text = '$(git-merge) Suture: $(alert) Conflicts';
+        conflictStatusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
+        if (config.get<boolean>('highlightConflicts') !== false) {
+          decorationProvider.update(editor);
+        }
+      } else {
+        conflictStatusBarItem.text = '$(git-merge) Suture';
+        conflictStatusBarItem.backgroundColor = undefined;
+        decorationProvider.clear();
+      }
+    } else {
+      conflictStatusBarItem.text = '$(git-merge) Suture';
+      conflictStatusBarItem.backgroundColor = undefined;
+      decorationProvider.clear();
+    }
+  }
+
+  context.subscriptions.push(
+    vscode.window.onDidChangeActiveTextEditor(editor => {
+      updateEditorConflicts(editor);
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeTextDocument(event => {
+      if (vscode.window.activeTextEditor && event.document === vscode.window.activeTextEditor.document) {
+        updateEditorConflicts(vscode.window.activeTextEditor);
+      }
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.workspace.onWillSaveTextDocument(event => {
+      const config = vscode.workspace.getConfiguration('suture');
+      if (!config.get<boolean>('autoResolveOnSave')) return;
+
+      const document = event.document;
+      const text = document.getText();
+      const conflicts = findConflicts(text);
+      if (conflicts.length === 0) return;
+
+      const ext = path.extname(document.fileName).toLowerCase();
+      const driver = DRIVER_MAP[ext];
+      if (!driver) return;
+
+      const drivers = config.get<string[]>('autoResolveDrivers', ['json', 'yaml', 'toml']);
+      if (!drivers.includes(driver)) return;
+
+      const resolution = config.get<string>('autoResolveStrategy', 'ours') as 'ours' | 'theirs' | 'both';
+      const resolved = resolveConflicts(text, conflicts, resolution);
+
+      const fullRange = new vscode.Range(
+        document.positionAt(0),
+        document.positionAt(text.length)
+      );
+
+      event.waitUntil(Promise.resolve([vscode.TextEdit.replace(fullRange, resolved)]));
+    })
+  );
+
+  if (vscode.window.activeTextEditor) {
+    updateEditorConflicts(vscode.window.activeTextEditor);
+  }
+
   function registerCommand(command: string, callback: (...args: unknown[]) => Promise<void>) {
     context.subscriptions.push(
       vscode.commands.registerCommand(command, callback)
     );
+  }
+
+  async function showConflictResolutionPicker(): Promise<string | undefined> {
+    const options: Array<{ label: string; description: string; action: string }> = [
+      { label: '$(check) Auto-merge (Suture)', description: 'Use semantic merge to resolve', action: 'auto' },
+      { label: '$(arrow-right) Keep Ours', description: 'Accept current branch changes', action: 'ours' },
+      { label: '$(arrow-left) Keep Theirs', description: 'Accept incoming branch changes', action: 'theirs' },
+      { label: '$(diff) Keep Both', description: 'Concatenate both versions', action: 'both' },
+      { label: '$(eye) Open Merge Demo', description: 'Open Suture web merge tool', action: 'demo' },
+    ];
+
+    const pick = await vscode.window.showQuickPick(options, {
+      placeHolder: 'How would you like to resolve this merge conflict?',
+    });
+
+    return pick?.action;
+  }
+
+  function mergeViaApi(apiUrl: string, conflicts: ConflictBlock[], driver: string): Promise<string[]> {
+    return new Promise((resolve, reject) => {
+      const body = JSON.stringify({
+        driver,
+        conflicts: conflicts.map(c => ({ ours: c.ours, theirs: c.theirs })),
+      });
+
+      const url = new URL(apiUrl);
+      const transport = url.protocol === 'https:' ? https : http;
+      const reqOptions = {
+        hostname: url.hostname,
+        port: url.port || (url.protocol === 'https:' ? 443 : 80),
+        path: url.pathname + url.search,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body),
+        },
+        timeout: 10000,
+      };
+
+      const req = transport.request(reqOptions, (res) => {
+        let data = '';
+        res.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+        res.on('end', () => {
+          if (res.statusCode === 200) {
+            try {
+              const parsed = JSON.parse(data);
+              if (Array.isArray(parsed.results)) {
+                resolve(parsed.results);
+              } else if (Array.isArray(parsed.merged)) {
+                resolve(parsed.merged);
+              } else if (typeof parsed.result === 'string') {
+                resolve([parsed.result]);
+              } else {
+                reject(new Error('Unexpected API response format'));
+              }
+            } catch {
+              reject(new Error('Invalid JSON response from API'));
+            }
+          } else {
+            reject(new Error(`API returned status ${res.statusCode}`));
+          }
+        });
+      });
+
+      req.on('error', reject);
+      req.on('timeout', () => {
+        req.destroy();
+        reject(new Error('API request timed out'));
+      });
+      req.write(body);
+      req.end();
+    });
+  }
+
+  async function resolveWithSutureAuto(fileUri: vscode.Uri, conflicts: ConflictBlock[]): Promise<boolean> {
+    const root = suture.getWorkspaceRoot();
+    const relativePath = root ? path.relative(root, fileUri.fsPath) : null;
+
+    if (root && relativePath && suture.findSutureBinary()) {
+      try {
+        const output = await suture.exec('merge', [relativePath], root);
+        if (output && !/<<<<<<< /.test(output)) {
+          const doc = vscode.workspace.textDocuments.find(d => d.uri.toString() === fileUri.toString());
+          if (doc && !doc.isClosed) {
+            const text = doc.getText();
+            const edit = new vscode.WorkspaceEdit();
+            edit.replace(fileUri, new vscode.Range(doc.positionAt(0), doc.positionAt(text.length)), output);
+            await vscode.workspace.applyEdit(edit);
+          } else {
+            fs.writeFileSync(fileUri.fsPath, output, 'utf-8');
+          }
+          return true;
+        }
+      } catch {
+        // fallthrough to API
+      }
+    }
+
+    const config = vscode.workspace.getConfiguration('suture');
+    const apiUrl = config.get<string>('apiUrl');
+    if (apiUrl) {
+      try {
+        const ext = path.extname(fileUri.fsPath).toLowerCase();
+        const driver = DRIVER_MAP[ext];
+        if (!driver) return false;
+
+        const merged = await mergeViaApi(apiUrl, conflicts, driver);
+        if (merged && merged.length > 0) {
+          const doc = vscode.workspace.textDocuments.find(d => d.uri.toString() === fileUri.toString());
+          const text = doc ? doc.getText() : fs.readFileSync(fileUri.fsPath, 'utf-8');
+          let result = text;
+          for (let i = conflicts.length - 1; i >= 0; i--) {
+            if (i < merged.length) {
+              result = result.substring(0, conflicts[i].startIndex) + merged[i] + result.substring(conflicts[i].endIndex);
+            }
+          }
+          if (doc && !doc.isClosed) {
+            const edit = new vscode.WorkspaceEdit();
+            edit.replace(fileUri, new vscode.Range(doc.positionAt(0), doc.positionAt(text.length)), result);
+            await vscode.workspace.applyEdit(edit);
+          } else {
+            fs.writeFileSync(fileUri.fsPath, result, 'utf-8');
+          }
+          return true;
+        }
+      } catch {
+        // fallthrough
+      }
+    }
+
+    return false;
   }
 
   registerCommand('suture.init', async () => {
@@ -462,24 +766,33 @@ export function activate(context: vscode.ExtensionContext) {
     const conflicts = findConflicts(text);
 
     if (conflicts.length === 0) {
-      vscode.window.showInformationMessage('No Suture conflict markers found in the current file.');
+      vscode.window.showInformationMessage('No merge conflicts found in this file.');
       return;
     }
 
-    const selected = await vscode.window.showQuickPick(
-      [
-        { label: 'Ours', description: `Keep ${conflicts.length} "ours" section(s)`, value: 'ours' as const },
-        { label: 'Theirs', description: `Keep ${conflicts.length} "theirs" section(s)`, value: 'theirs' as const },
-        { label: 'Both', description: `Keep both sections for all ${conflicts.length} conflict(s)`, value: 'both' as const },
-      ],
-      { placeHolder: `Resolve ${conflicts.length} conflict(s)` }
-    );
+    const action = await showConflictResolutionPicker();
+    if (!action) return;
 
-    if (!selected) {
+    if (action === 'demo') {
+      vscode.env.openExternal(vscode.Uri.parse('https://suture.dev/#/merge'));
       return;
     }
 
-    const resolved = resolveConflicts(text, conflicts, selected.value);
+    if (action === 'auto') {
+      const success = await resolveWithSutureAuto(document.uri, conflicts);
+      if (success) {
+        if (vscode.workspace.getConfiguration('suture').get<boolean>('showNotifications') !== false) {
+          vscode.window.showInformationMessage(`Auto-merged ${conflicts.length} conflict(s) in ${path.basename(document.fileName)}.`);
+        }
+        updateEditorConflicts(editor);
+        updateMergeStatus();
+      } else {
+        vscode.window.showErrorMessage('Auto-merge failed. Try a different resolution strategy or configure suture.apiUrl.');
+      }
+      return;
+    }
+
+    const resolved = resolveConflicts(text, conflicts, action as 'ours' | 'theirs' | 'both');
     const edit = new vscode.WorkspaceEdit();
     const fullRange = new vscode.Range(
       document.positionAt(0),
@@ -487,8 +800,110 @@ export function activate(context: vscode.ExtensionContext) {
     );
     edit.replace(document.uri, fullRange, resolved);
     await vscode.workspace.applyEdit(edit);
-    vscode.window.showInformationMessage(`Resolved ${conflicts.length} conflict(s) using "${selected.label}".`);
+
+    if (vscode.workspace.getConfiguration('suture').get<boolean>('showNotifications') !== false) {
+      vscode.window.showInformationMessage(`Resolved ${conflicts.length} conflict(s) using "${action}".`);
+    }
+    updateEditorConflicts(editor);
     updateMergeStatus();
+  });
+
+  registerCommand('suture.resolveAll', async () => {
+    const root = suture.getWorkspaceRoot();
+    if (!root) {
+      vscode.window.showErrorMessage('No workspace folder open.');
+      return;
+    }
+
+    const conflictUris: vscode.Uri[] = [];
+    const conflictMarkerPattern = /^<{7}\s+/m;
+    const supportedExts = Object.keys(DRIVER_MAP);
+
+    for (const folder of vscode.workspace.workspaceFolders || []) {
+      const files = await vscode.workspace.findFiles('**/*', '**/node_modules/**');
+      for (const fileUri of files) {
+        const ext = path.extname(fileUri.fsPath).toLowerCase();
+        if (!supportedExts.includes(ext)) continue;
+
+        try {
+          const content = fs.readFileSync(fileUri.fsPath, 'utf-8');
+          if (conflictMarkerPattern.test(content)) {
+            conflictUris.push(fileUri);
+          }
+        } catch {
+          // skip unreadable files
+        }
+      }
+    }
+
+    if (conflictUris.length === 0) {
+      vscode.window.showInformationMessage('No files with merge conflicts found in workspace.');
+      return;
+    }
+
+    const action = await showConflictResolutionPicker();
+    if (!action) return;
+
+    if (action === 'demo') {
+      vscode.env.openExternal(vscode.Uri.parse('https://suture.dev/#/merge'));
+      return;
+    }
+
+    let resolved = 0;
+    let failed = 0;
+
+    for (const uri of conflictUris) {
+      const uriStr = uri.toString();
+      try {
+        let text: string;
+        const doc = vscode.workspace.textDocuments.find(d => d.uri.toString() === uriStr);
+        if (doc && !doc.isClosed) {
+          text = doc.getText();
+        } else {
+          text = fs.readFileSync(uri.fsPath, 'utf-8');
+        }
+
+        const fileConflicts = findConflicts(text);
+        if (fileConflicts.length === 0) continue;
+
+        if (action === 'auto') {
+          const success = await resolveWithSutureAuto(uri, fileConflicts);
+          if (success) {
+            resolved++;
+          } else {
+            failed++;
+          }
+          continue;
+        }
+
+        const merged = resolveConflicts(text, fileConflicts, action as 'ours' | 'theirs' | 'both');
+
+        if (doc && !doc.isClosed) {
+          const edit = new vscode.WorkspaceEdit();
+          edit.replace(uri, new vscode.Range(doc.positionAt(0), doc.positionAt(text.length)), merged);
+          await vscode.workspace.applyEdit(edit);
+          await doc.save();
+        } else {
+          fs.writeFileSync(uri.fsPath, merged, 'utf-8');
+        }
+
+        resolved++;
+      } catch {
+        failed++;
+      }
+    }
+
+    if (vscode.workspace.getConfiguration('suture').get<boolean>('showNotifications') !== false) {
+      vscode.window.showInformationMessage(`Resolved ${resolved} file(s), ${failed} failed.`);
+    }
+    if (vscode.window.activeTextEditor) {
+      updateEditorConflicts(vscode.window.activeTextEditor);
+    }
+    updateMergeStatus();
+  });
+
+  registerCommand('suture.openDemo', async () => {
+    vscode.env.openExternal(vscode.Uri.parse('https://suture.dev/#/merge'));
   });
 
   registerCommand('suture.mergeCurrentFile', async () => {

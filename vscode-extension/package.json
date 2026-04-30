@@ -6,7 +6,15 @@
   "publisher": "suture",
   "engines": { "vscode": "^1.85.0" },
   "categories": ["SCM Providers", "Other"],
-  "activationEvents": ["workspaceContains:.suture"],
+  "activationEvents": [
+    "workspaceContains:.suture",
+    "onCommand:suture.resolveConflict",
+    "onCommand:suture.resolveAll",
+    "onCommand:suture.openDemo",
+    "onLanguage:json",
+    "onLanguage:yaml",
+    "onLanguage:toml"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
@@ -25,8 +33,10 @@
       { "command": "suture.stash", "title": "Suture: Stash", "category": "Suture" },
       { "command": "suture.tags", "title": "Suture: Tags", "category": "Suture" },
       { "command": "suture.resolveConflict", "title": "Suture: Resolve Current Conflict", "category": "Suture" },
+      { "command": "suture.resolveAll", "title": "Suture: Resolve All Conflicts", "category": "Suture" },
       { "command": "suture.mergeCurrentFile", "title": "Suture: Merge Current File", "category": "Suture" },
-      { "command": "suture.showMergeStatus", "title": "Suture: Show Merge Status", "category": "Suture" }
+      { "command": "suture.showMergeStatus", "title": "Suture: Show Merge Status", "category": "Suture" },
+      { "command": "suture.openDemo", "title": "Suture: Open Web Merge Tool", "category": "Suture" }
     ],
     "languages": [
       {
@@ -41,6 +51,98 @@
         "language": "suture-conflict",
         "scopeName": "source.suture-conflict",
         "path": "./syntaxes/suture-conflict.tmLanguage.json"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "suture.resolveConflict",
+        "key": "ctrl+shift+m",
+        "mac": "cmd+shift+m",
+        "when": "editorTextFocus"
+      }
+    ],
+    "configuration": {
+      "title": "Suture",
+      "properties": {
+        "suture.autoResolveOnSave": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically resolve merge conflicts when saving files."
+        },
+        "suture.autoResolveDrivers": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["json", "yaml", "toml"],
+          "description": "File types (drivers) to auto-resolve on save."
+        },
+        "suture.autoResolveStrategy": {
+          "type": "string",
+          "enum": ["ours", "theirs", "both"],
+          "default": "ours",
+          "description": "Resolution strategy for auto-resolve on save."
+        },
+        "suture.apiUrl": {
+          "type": "string",
+          "default": "https://merge.suture.dev/api",
+          "description": "Suture merge API URL for semantic merge."
+        },
+        "suture.showNotifications": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show notifications for merge conflict operations."
+        },
+        "suture.highlightConflicts": {
+          "type": "boolean",
+          "default": true,
+          "description": "Highlight conflict markers with colored backgrounds."
+        }
+      }
+    },
+    "colors": [
+      {
+        "id": "suture.conflictOursBackground",
+        "description": "Background color for 'ours' conflict sections",
+        "defaults": {
+          "dark": "#6366f126",
+          "light": "#6366f115",
+          "highContrast": "#6366f140"
+        }
+      },
+      {
+        "id": "suture.conflictTheirsBackground",
+        "description": "Background color for 'theirs' conflict sections",
+        "defaults": {
+          "dark": "#22c55e26",
+          "light": "#22c55e15",
+          "highContrast": "#22c55e40"
+        }
+      },
+      {
+        "id": "suture.conflictSeparatorBackground",
+        "description": "Background color for conflict separator lines",
+        "defaults": {
+          "dark": "#f59e0b33",
+          "light": "#f59e0b20",
+          "highContrast": "#f59e0b40"
+        }
+      },
+      {
+        "id": "suture.conflictOursOverviewRuler",
+        "description": "Overview ruler color for 'ours' conflict sections",
+        "defaults": {
+          "dark": "#6366f180",
+          "light": "#6366f180",
+          "highContrast": "#6366f1ff"
+        }
+      },
+      {
+        "id": "suture.conflictTheirsOverviewRuler",
+        "description": "Overview ruler color for 'theirs' conflict sections",
+        "defaults": {
+          "dark": "#22c55e80",
+          "light": "#22c55e80",
+          "highContrast": "#22c55eff"
+        }
       }
     ]
   },

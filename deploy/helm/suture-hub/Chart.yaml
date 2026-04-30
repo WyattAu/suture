@@ -1,0 +1,16 @@
+apiVersion: v2
+name: suture-hub
+description: Suture Hub — Semantic merge coordination server
+type: application
+version: 0.1.0
+appVersion: "5.0.1"
+maintainers:
+  - name: WyattAu
+    email: wyatt@suture.dev
+home: https://github.com/WyattAu/suture
+keywords:
+  - semantic-merge
+  - git
+  - version-control
+  - structured-data
+license: AGPL-3.0

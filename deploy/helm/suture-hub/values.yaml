@@ -1,0 +1,81 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/wyattau/suture-hub
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  type: ClusterIP
+  port: 8080
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: hub.suture.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+autoscaling:
+  enabled: false
+
+volumes:
+  - name: data
+    emptyDir: {}
+
+volumeMounts:
+  - name: data
+    mountPath: /data
+
+persistence:
+  enabled: false
+  size: 10Gi
+  accessMode: ReadWriteOnce
+  storageClass: ""
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+config:
+  addr: "0.0.0.0:8080"
+  dataDir: "/data"
+  lfsDir: "/data/lfs"
+  maxRepoSize: "104857600"
+  logLevel: "info"

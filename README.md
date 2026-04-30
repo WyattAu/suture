@@ -165,11 +165,18 @@ git commit -m "Configure suture semantic merge driver"
 
 That's it. Future merges on JSON, YAML, DOCX, XLSX, and 17 other file types will use semantic merge automatically. See the [5-minute quickstart](docs/merge-driver-quickstart.md) for details.
 
+## Blog
+
+- [Why Git Merge Fails on JSON](docs/blog/why-git-merge-fails-on-json.md) — line-based vs semantic merging, with before/after examples
+- [Semantic Merge Explained](docs/blog/semantic-merge-explained.md) — key-path diffing, array strategies, three-way merge theory
+- [Semantic Merge for 17 File Formats](docs/blog/semantic-merge-for-17-file-formats.md)
+- [Semantic Merge for Binary Documents](docs/blog/semantic-merge-for-binary-documents.md)
+- [Stop Having Merge Conflicts in JSON](docs/blog/stop-having-merge-conflicts-in-json.md)
+
 ## Learn More
 
 - [5-Minute Git Merge Driver Quickstart](docs/merge-driver-quickstart.md) — the fastest way to get started
 - [Quick Start Guide](docs/quickstart.md) — full standalone usage
-- [Blog: Semantic Merge for 17 File Formats](docs/blog/semantic-merge-for-17-file-formats.md)
 - [Why Suture?](docs/why-suture.md) — the problem with binary version control
 - [Suture vs. Git](docs/comparing-with-git.md) — honest comparison
 - [Semantic merge explained](docs/semantic-merge.md) — how it works under the hood

@@ -1,0 +1,70 @@
+# .gitlab-ci.yml — Example Suture merge integration
+# Add this to your project's .gitlab-ci.yml
+
+stages:
+  - merge-check
+  - test
+
+variables:
+  SUTURE_API_URL: "https://merge.suture.dev/api"
+  # Or self-hosted:
+  # SUTURE_API_URL: "https://suture.example.com/api"
+
+# Auto-merge structured files on merge requests
+suture:merge:
+  stage: merge-check
+  image: node:20-alpine
+  rules:
+    - if: $CI_MERGE_REQUEST_IID
+  before_script:
+    - apk add --no-cache git jq
+  script:
+    - |
+      # Get the merge base
+      BASE_SHA=$(git merge-base origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME HEAD)
+
+      # Files to check for semantic merge
+      FILES="package.json tsconfig.json .eslintrc.json"
+
+      for FILE in $FILES; do
+        if [ -f "$FILE" ]; then
+          echo "Checking $FILE for merge conflicts..."
+
+          # Get file content at each ref
+          BASE_CONTENT=$(git show "$BASE_SHA:$FILE" 2>/dev/null || echo "")
+          HEAD_CONTENT=$(cat "$FILE")
+          MR_CONTENT=$(git show "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME:$FILE" 2>/dev/null || echo "")
+
+          # Call Suture API
+          RESULT=$(curl -s -X POST "$SUTURE_API_URL/merge" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"driver\": \"${FILE##*.}\",
+              \"base\": $(echo "$BASE_CONTENT" | jq -Rs .),
+              \"ours\": $(echo "$HEAD_CONTENT" | jq -Rs .),
+              \"theirs\": $(echo "$MR_CONTENT" | jq -Rs .)
+            }")
+
+          # Check for conflicts
+          HAS_CONFLICTS=$(echo "$RESULT" | jq -r '.conflicts // false')
+          if [ "$HAS_CONFLICTS" = "true" ]; then
+            echo "WARNING: Merge conflicts detected in $FILE"
+            echo "$RESULT" | jq '.conflict_details'
+          else
+            MERGED=$(echo "$RESULT" | jq -r '.result // empty')
+            if [ -n "$MERGED" ]; then
+              echo "$MERGED" > "$FILE"
+              echo "Successfully merged $FILE"
+            fi
+          fi
+        fi
+      done
+
+      # Commit if any files changed
+      git diff --quiet || {
+        git config user.name "Suture Bot"
+        git config user.email "suture-bot@example.com"
+        git commit -am "Auto-merge structured files via Suture"
+        git push origin HEAD:$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME
+      }
+  allow_failure: false

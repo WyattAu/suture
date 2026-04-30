@@ -1,0 +1,12 @@
+Suture Hub is running!
+
+To connect:
+  suture remote add origin https://{{ .Values.ingress.hosts[0].host }}/{{ .Release.Name }}
+  suture push origin
+
+To check status:
+  kubectl get pods -l app.kubernetes.io/name={{ include "suture-hub.name" . }}
+
+{{- if .Values.ingress.enabled }}
+Ingress URL: https://{{ .Values.ingress.hosts[0].host }}
+{{- end }}
