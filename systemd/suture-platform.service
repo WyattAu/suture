@@ -1,0 +1,23 @@
+[Unit]
+Description=Suture Platform
+After=network.target
+
+[Service]
+Type=simple
+User=suture
+Group=suture
+WorkingDirectory=/opt/suture
+ExecStart=/usr/local/bin/suture-platform --addr 0.0.0.0:3000
+Restart=always
+RestartSec=5
+Environment=DATABASE_URL=/opt/suture/data/platform.db
+Environment=JWT_SECRET=CHANGE_ME
+Environment=RUST_LOG=info
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/suture/data
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

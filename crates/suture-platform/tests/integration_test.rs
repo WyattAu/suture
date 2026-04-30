@@ -24,6 +24,7 @@ fn test_config(
         hub_db_path: hub_db_file.path().to_str().unwrap().to_string(),
         jwt_secret: "test-secret".to_string(),
         stripe_key: None,
+        platform_url: String::new(),
     };
     (config, port, db_file, hub_db_file)
 }

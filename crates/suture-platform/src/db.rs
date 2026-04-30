@@ -94,11 +94,47 @@ impl PlatformDb {
                 revoked_at TEXT DEFAULT (datetime('now')),
                 expires_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS org_invitations (
+                invite_id TEXT PRIMARY KEY,
+                org_id TEXT NOT NULL,
+                email TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'member',
+                invited_by TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                accepted_at TEXT,
+                expires_at TEXT NOT NULL,
+                FOREIGN KEY (org_id) REFERENCES orgs(org_id),
+                FOREIGN KEY (invited_by) REFERENCES accounts(user_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_org_invitations_email ON org_invitations(email);
+            CREATE INDEX IF NOT EXISTS idx_org_invitations_org ON org_invitations(org_id);
             "
         )?;
 
         if let Err(e) = conn.execute(
             "ALTER TABLE accounts ADD COLUMN payment_grace_until TEXT",
+            [],
+        ) {
+            let msg = e.to_string();
+            if !msg.contains("duplicate column") {
+                return Err(e.into());
+            }
+        }
+
+        if let Err(e) = conn.execute(
+            "ALTER TABLE org_members ADD COLUMN invited_by TEXT REFERENCES accounts(user_id)",
+            [],
+        ) {
+            let msg = e.to_string();
+            if !msg.contains("duplicate column") {
+                return Err(e.into());
+            }
+        }
+
+        if let Err(e) = conn.execute(
+            "ALTER TABLE org_members ADD COLUMN joined_at TEXT DEFAULT (datetime('now'))",
             [],
         ) {
             let msg = e.to_string();

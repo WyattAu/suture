@@ -1,0 +1,21 @@
+[Unit]
+Description=Suture Hub
+After=network.target
+
+[Service]
+Type=simple
+User=suture
+Group=suture
+WorkingDirectory=/opt/suture
+ExecStart=/usr/local/bin/suture-hub --addr 0.0.0.0:8080 --data-dir /opt/suture/data/hub
+Restart=always
+RestartSec=5
+Environment=RUST_LOG=info
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/suture/data
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

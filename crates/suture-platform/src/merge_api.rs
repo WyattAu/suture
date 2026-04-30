@@ -12,6 +12,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::analytics;
 use crate::auth::Claims;
 use crate::billing;
 use crate::server::AppState;
@@ -165,6 +166,8 @@ pub async fn merge_files(
         }
     }
 
+    let merge_start = std::time::Instant::now();
+
     let result = match req.driver.to_lowercase().as_str() {
         "json" => merge_with::<JsonDriver>(&req),
         "yaml" | "yml" => merge_with::<YamlDriver>(&req),
@@ -194,9 +197,26 @@ pub async fn merge_files(
         }
     };
 
+    let merge_time_ms = merge_start.elapsed().as_millis() as i64;
+
     match result {
         Ok(merged) => {
             let conflicts = merged.is_none();
+            let result_len = merged.as_ref().map(|s| s.len()).unwrap_or(0);
+            if let Err(e) = analytics::log_merge(
+                &state,
+                &claims.sub,
+                &req.driver,
+                req.base.len(),
+                req.ours.len(),
+                req.theirs.len(),
+                result_len,
+                conflicts,
+                if conflicts { 1 } else { 0 },
+                merge_time_ms,
+            ) {
+                tracing::warn!("failed to log merge: {}", e);
+            }
             Ok(Json(MergeResponse {
                 result: merged,
                 driver: req.driver,

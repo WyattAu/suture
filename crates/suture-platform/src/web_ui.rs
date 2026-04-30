@@ -310,6 +310,48 @@ const INDEX_HTML: &str = r##"<!DOCTYPE html>
         .merge-preview pre { margin: 0; white-space: pre-wrap; line-height: 1.5; }
         .merge-preview .diff-add { color: var(--success); }
         .merge-preview .diff-keep { color: var(--text-muted); }
+        .analytics-bar-chart {
+            display: flex; align-items: flex-end; gap: 2px;
+            height: 150px; padding: 1rem 0;
+        }
+        .analytics-bar {
+            flex: 1; min-width: 4px; max-width: 20px;
+            background: var(--primary); border-radius: 2px 2px 0 0;
+            position: relative; cursor: pointer; transition: background 0.15s;
+        }
+        .analytics-bar:hover { background: var(--primary-hover); }
+        .analytics-bar-tooltip {
+            display: none; position: absolute; bottom: 100%; left: 50%;
+            transform: translateX(-50%); background: var(--surface-3);
+            padding: 0.25rem 0.5rem; border-radius: 4px;
+            font-size: 0.7rem; white-space: nowrap; z-index: 10;
+        }
+        .analytics-bar:hover .analytics-bar-tooltip { display: block; }
+        .analytics-donut {
+            width: 200px; height: 200px; border-radius: 50%;
+            position: relative;
+        }
+        .analytics-donut-center {
+            position: absolute; inset: 30%;
+            background: var(--surface); border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            flex-direction: column;
+        }
+        .analytics-donut-legend {
+            display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem;
+        }
+        .analytics-legend-item {
+            display: flex; align-items: center; gap: 0.35rem;
+            font-size: 0.8rem; color: var(--text-muted);
+        }
+        .analytics-legend-dot {
+            width: 10px; height: 10px; border-radius: 50%;
+        }
+        .analytics-upgrade {
+            text-align: center; padding: 4rem 2rem;
+        }
+        .analytics-upgrade h2 { margin-bottom: 1rem; }
+        .analytics-upgrade p { color: var(--text-muted); margin-bottom: 2rem; }
     </style>
 </head>
 <body>
@@ -386,6 +428,7 @@ const INDEX_HTML: &str = r##"<!DOCTYPE html>
         if (APP.user) {
             links.innerHTML =
                 '<a href="#/dashboard" data-nav="dashboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span class="nav-label">Dashboard</span></a>' +
+                '<a href="#/analytics" data-nav="analytics"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10M12 20V4M6 20v-6"/></svg><span class="nav-label">Analytics</span></a>' +
                 '<a href="#/merge" data-nav="merge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6L21 6M8 12L21 12M8 18L21 18M3 6h.01M3 12h.01M3 18h.01"/></svg><span class="nav-label">Merge</span></a>' +
                 '<a href="#/api" data-nav="api"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg><span class="nav-label">API</span></a>' +
                 '<a href="#/billing" data-nav="billing"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg><span class="nav-label">Billing</span></a>' +
@@ -484,6 +527,7 @@ const INDEX_HTML: &str = r##"<!DOCTYPE html>
         highlightNav(route);
 
         if (route === 'dashboard') { if (!checkAuth()) { location.hash = '/'; return; } renderDashboard(content); }
+        else if (route === 'analytics') { if (!checkAuth()) { location.hash = '/'; return; } renderAnalytics(content); }
         else if (route === 'merge') { renderMerge(content); }
         else if (route === 'billing') { renderBilling(content); }
         else if (route === 'api') { renderAPI(content); }
@@ -683,6 +727,132 @@ const INDEX_HTML: &str = r##"<!DOCTYPE html>
             var data = await fetchJSON('/api/usage');
             if (!data.error) APP.usage = data;
         } catch(e) {}
+    }
+
+    async function renderAnalytics(el) {
+        if (!APP.user || APP.user.tier === 'free') {
+            el.innerHTML =
+            '<div class="container">' +
+                '<div class="analytics-upgrade">' +
+                    '<h2>Usage Analytics</h2>' +
+                    '<p>Unlock detailed merge analytics, charts, and insights with a Pro plan.</p>' +
+                    '<a href="#/billing" class="btn btn-primary">Upgrade to Pro</a>' +
+                '</div>' +
+            '</div>';
+            return;
+        }
+
+        el.innerHTML =
+        '<div class="container">' +
+            '<div class="page-header"><h2>Analytics</h2><span class="badge badge-warning">' + tierBadge(APP.user.tier) + '</span></div>' +
+            '<div class="stats-grid" id="analytics-summary">' +
+                '<div class="stat-card"><div class="stat-card-label">Total Merges</div><div class="stat-card-value" id="a-total">-</div></div>' +
+                '<div class="stat-card"><div class="stat-card-label">Today</div><div class="stat-card-value" id="a-today">-</div></div>' +
+                '<div class="stat-card"><div class="stat-card-label">This Week</div><div class="stat-card-value" id="a-week">-</div></div>' +
+                '<div class="stat-card"><div class="stat-card-label">Avg Merge Time</div><div class="stat-card-value" id="a-avgtime">-</div></div>' +
+            '</div>' +
+            '<div class="stats-grid" style="margin-bottom:2rem">' +
+                '<div class="stat-card"><div class="stat-card-label">Conflicts Auto-resolved</div><div class="stat-card-value" id="a-resolved">-</div></div>' +
+                '<div class="stat-card"><div class="stat-card-label">Conflicts Detected</div><div class="stat-card-value" id="a-detected">-</div></div>' +
+                '<div class="stat-card"><div class="stat-card-label">Active Users Today</div><div class="stat-card-value" id="a-users">-</div></div>' +
+                '<div class="stat-card"><div class="stat-card-label">Most Used Driver</div><div class="stat-card-value" id="a-topdriver">-</div></div>' +
+            '</div>' +
+            '<div class="grid grid-2">' +
+                '<div class="card"><h3>Merges by Day (Last 30 Days)</h3><div class="analytics-bar-chart" id="analytics-bars"></div></div>' +
+                '<div class="card"><h3>Merges by Driver</h3><div style="display:flex;align-items:center;gap:2rem;flex-wrap:wrap;justify-content:center"><div class="analytics-donut" id="analytics-donut"><div class="analytics-donut-center" id="analytics-donut-center"></div></div><div class="analytics-donut-legend" id="analytics-legend"></div></div></div>' +
+            '</div>' +
+        '</div>';
+
+        try {
+            var data = await fetchJSON('/api/analytics');
+            if (data.error) {
+                if (data._status === 403) {
+                    el.innerHTML =
+                    '<div class="container"><div class="analytics-upgrade"><h2>Usage Analytics</h2><p>Unlock detailed merge analytics with a Pro plan.</p><a href="#/billing" class="btn btn-primary">Upgrade to Pro</a></div></div>';
+                }
+                return;
+            }
+            renderAnalyticsData(data);
+        } catch(e) {
+            document.getElementById('analytics-summary').innerHTML = '<div class="stat-card" style="grid-column:1/-1"><div class="stat-card-label">Error</div><div class="stat-card-value" style="color:var(--danger)">Failed to load analytics</div></div>';
+        }
+    }
+
+    function renderAnalyticsData(data) {
+        var te = document.getElementById('a-total');
+        var td = document.getElementById('a-today');
+        var tw = document.getElementById('a-week');
+        var at = document.getElementById('a-avgtime');
+        var ar = document.getElementById('a-resolved');
+        var ad = document.getElementById('a-detected');
+        var au = document.getElementById('a-users');
+        var atop = document.getElementById('a-topdriver');
+
+        if (te) te.textContent = data.total_merges || 0;
+        if (td) td.textContent = data.merges_today || 0;
+        if (tw) tw.textContent = data.merges_this_week || 0;
+        if (at) at.textContent = (data.avg_merge_time_ms || 0).toFixed(1) + 'ms';
+        if (ar) ar.textContent = data.conflicts_resolved || 0;
+        if (ad) ad.textContent = data.conflicts_detected || 0;
+        if (au) au.textContent = data.active_users_today || 0;
+
+        var drivers = data.merges_by_driver || {};
+        var topDriver = '-';
+        var topCount = 0;
+        var driverKeys = Object.keys(drivers);
+        for (var i = 0; i < driverKeys.length; i++) {
+            if (drivers[driverKeys[i]] > topCount) {
+                topCount = drivers[driverKeys[i]];
+                topDriver = driverKeys[i].toUpperCase();
+            }
+        }
+        if (atop) atop.textContent = topDriver;
+
+        var barsEl = document.getElementById('analytics-bars');
+        if (barsEl && data.merges_by_day && data.merges_by_day.length > 0) {
+            var maxCount = 0;
+            for (var j = 0; j < data.merges_by_day.length; j++) {
+                if (data.merges_by_day[j].count > maxCount) maxCount = data.merges_by_day[j].count;
+            }
+            var barsHtml = '';
+            for (var k = 0; k < data.merges_by_day.length; k++) {
+                var d = data.merges_by_day[k];
+                var pct = maxCount > 0 ? (d.count / maxCount) * 100 : 0;
+                var color = d.count === 0 ? 'var(--border)' : d.count > maxCount * 0.7 ? 'var(--warning)' : d.count > maxCount * 0.3 ? 'var(--success)' : 'var(--primary)';
+                barsHtml += '<div class="analytics-bar" style="height:' + pct + '%;background:' + color + '"><div class="analytics-bar-tooltip">' + d.date + ': ' + d.count + '</div></div>';
+            }
+            barsEl.innerHTML = barsHtml;
+        } else if (barsEl) {
+            barsEl.innerHTML = '<div style="color:var(--text-muted);font-size:0.85rem;margin:auto">No merge data yet</div>';
+        }
+
+        var donutEl = document.getElementById('analytics-donut');
+        var legendEl = document.getElementById('analytics-legend');
+        var centerEl = document.getElementById('analytics-donut-center');
+        if (donutEl && driverKeys.length > 0) {
+            var donutColors = ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#06b6d4', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#64748b'];
+            var total = 0;
+            for (var m = 0; m < driverKeys.length; m++) total += drivers[driverKeys[m]];
+            var gradient = '';
+            var offset = 0;
+            var legendHtml = '';
+            for (var n = 0; n < driverKeys.length; n++) {
+                var drv = driverKeys[n];
+                var cnt = drivers[drv];
+                var pctVal = total > 0 ? (cnt / total) * 100 : 0;
+                var color = donutColors[n % donutColors.length];
+                gradient += color + ' ' + offset + '% ' + (offset + pctVal) + '%';
+                if (n < driverKeys.length - 1) gradient += ', ';
+                offset += pctVal;
+                legendHtml += '<div class="analytics-legend-item"><div class="analytics-legend-dot" style="background:' + color + '"></div>' + drv.toUpperCase() + ' (' + pctVal.toFixed(1) + '%)</div>';
+            }
+            donutEl.style.background = 'conic-gradient(' + gradient + ')';
+            if (centerEl) centerEl.innerHTML = '<div style="font-weight:700;font-size:1.25rem">' + total + '</div><div style="font-size:0.7rem;color:var(--text-muted)">total</div>';
+            if (legendEl) legendEl.innerHTML = legendHtml;
+        } else if (donutEl) {
+            donutEl.style.background = 'var(--border)';
+            if (centerEl) centerEl.innerHTML = '<div style="font-size:0.8rem;color:var(--text-muted)">No data</div>';
+        }
     }
 
     function renderMerge(el) {

@@ -6,7 +6,7 @@
 // See LICENSE-AGPL and LICENSE-COMMERCIAL in the repo root.
 
 use axum::{
-    extract::{Extension, State},
+    extract::{Extension, Path, State},
     http::StatusCode,
     Json,
 };
@@ -155,4 +155,438 @@ pub async fn list_my_orgs(
         })?;
 
     Ok(Json(orgs))
+}
+
+#[derive(Debug, Serialize)]
+pub struct InviteResponse {
+    pub status: String,
+    pub user_id: Option<String>,
+    pub email: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MemberInfo {
+    pub user_id: String,
+    pub role: String,
+    pub joined_at: Option<String>,
+    pub email: Option<String>,
+    pub display_name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct InviteMemberRequest {
+    pub email: String,
+    pub role: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateRoleRequest {
+    pub role: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct InvitationInfo {
+    pub invite_id: String,
+    pub org_id: String,
+    pub org_name: Option<String>,
+    pub email: String,
+    pub role: String,
+    pub invited_by: String,
+    pub created_at: String,
+    pub expires_at: String,
+    pub accepted_at: Option<String>,
+}
+
+#[derive(Debug)]
+pub enum OrgError {
+    NotFound(String),
+    NotAdmin,
+    NotMember,
+    LastAdmin,
+    InvitationNotFound,
+    EmailMismatch,
+    AlreadyMember,
+    InvalidRole(String),
+    Db(String),
+}
+
+impl std::fmt::Display for OrgError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OrgError::NotFound(id) => write!(f, "Organization not found: {}", id),
+            OrgError::NotAdmin => write!(f, "Not an admin of this organization"),
+            OrgError::NotMember => write!(f, "Not a member of this organization"),
+            OrgError::LastAdmin => write!(f, "Cannot remove the last admin"),
+            OrgError::InvitationNotFound => write!(f, "Invitation not found or expired"),
+            OrgError::EmailMismatch => write!(f, "Email does not match invitation"),
+            OrgError::AlreadyMember => write!(f, "Already a member of this organization"),
+            OrgError::InvalidRole(r) => write!(f, "Invalid role: {}", r),
+            OrgError::Db(e) => write!(f, "Database error: {}", e),
+        }
+    }
+}
+
+fn db_err(e: rusqlite::Error) -> OrgError {
+    OrgError::Db(e.to_string())
+}
+
+fn org_error_response(e: OrgError) -> (StatusCode, Json<serde_json::Value>) {
+    let status = match &e {
+        OrgError::NotFound(_) => StatusCode::NOT_FOUND,
+        OrgError::NotAdmin => StatusCode::FORBIDDEN,
+        OrgError::NotMember => StatusCode::FORBIDDEN,
+        OrgError::LastAdmin => StatusCode::CONFLICT,
+        OrgError::InvitationNotFound => StatusCode::NOT_FOUND,
+        OrgError::EmailMismatch => StatusCode::BAD_REQUEST,
+        OrgError::AlreadyMember => StatusCode::CONFLICT,
+        OrgError::InvalidRole(_) => StatusCode::BAD_REQUEST,
+        OrgError::Db(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    };
+    (status, Json(serde_json::json!({"error": e.to_string()})))
+}
+
+const VALID_ROLES: &[&str] = &["owner", "admin", "member", "viewer"];
+
+fn validate_role(role: &str) -> Result<(), OrgError> {
+    if VALID_ROLES.contains(&role) {
+        Ok(())
+    } else {
+        Err(OrgError::InvalidRole(role.to_string()))
+    }
+}
+
+fn check_org_admin(state: &AppState, claims: &Claims, org_id: &str) -> Result<(), OrgError> {
+    let conn = state.db.conn().map_err(OrgError::Db)?;
+    let role: Option<String> = conn
+        .query_row(
+            "SELECT role FROM org_members WHERE org_id = ?1 AND user_id = ?2",
+            rusqlite::params![org_id, claims.sub],
+            |row| row.get(0),
+        )
+        .ok()
+        .flatten();
+
+    match role.as_deref() {
+        Some("admin") | Some("owner") => Ok(()),
+        _ => Err(OrgError::NotAdmin),
+    }
+}
+
+fn check_org_member(state: &AppState, claims: &Claims, org_id: &str) -> Result<(), OrgError> {
+    let conn = state.db.conn().map_err(OrgError::Db)?;
+    let exists: bool = conn
+        .query_row(
+            "SELECT COUNT(*) > 0 FROM org_members WHERE org_id = ?1 AND user_id = ?2",
+            rusqlite::params![org_id, claims.sub],
+            |row| row.get(0),
+        )
+        .unwrap_or(false);
+
+    if exists {
+        Ok(())
+    } else {
+        Err(OrgError::NotMember)
+    }
+}
+
+pub fn invite_member(
+    state: &AppState,
+    claims: &Claims,
+    org_id: &str,
+    email: &str,
+    role: &str,
+) -> Result<InviteResponse, OrgError> {
+    check_org_admin(state, claims, org_id)?;
+    validate_role(role)?;
+
+    let conn = state.db.conn().map_err(OrgError::Db)?;
+
+    let user_id: Option<String> = conn
+        .query_row(
+            "SELECT user_id FROM accounts WHERE email = ?1",
+            rusqlite::params![email],
+            |row| row.get(0),
+        )
+        .ok()
+        .flatten();
+
+    if let Some(user_id) = user_id {
+        let already: bool = conn
+            .query_row(
+                "SELECT COUNT(*) > 0 FROM org_members WHERE org_id = ?1 AND user_id = ?2",
+                rusqlite::params![org_id, user_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(false);
+
+        if already {
+            return Err(OrgError::AlreadyMember);
+        }
+
+        conn.execute(
+            "INSERT OR IGNORE INTO org_members (org_id, user_id, role, invited_by, joined_at) VALUES (?1, ?2, ?3, ?4, datetime('now'))",
+            rusqlite::params![org_id, user_id, role, claims.sub],
+        )
+        .map_err(db_err)?;
+
+        Ok(InviteResponse {
+            status: "added".to_string(),
+            user_id: Some(user_id),
+            email: email.to_string(),
+        })
+    } else {
+        let invite_id = format!("inv_{}", uuid::Uuid::new_v4());
+        conn.execute(
+            "INSERT INTO org_invitations (invite_id, org_id, email, role, invited_by, expires_at) VALUES (?1, ?2, ?3, ?4, ?5, datetime('now', '+7 days'))",
+            rusqlite::params![invite_id, org_id, email, role, claims.sub],
+        )
+        .map_err(db_err)?;
+
+        Ok(InviteResponse {
+            status: "invited".to_string(),
+            user_id: None,
+            email: email.to_string(),
+        })
+    }
+}
+
+pub fn remove_member(
+    state: &AppState,
+    claims: &Claims,
+    org_id: &str,
+    user_id: &str,
+) -> Result<(), OrgError> {
+    check_org_admin(state, claims, org_id)?;
+
+    let conn = state.db.conn().map_err(OrgError::Db)?;
+
+    let admin_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM org_members WHERE org_id = ?1 AND role IN ('admin', 'owner')",
+            rusqlite::params![org_id],
+            |row| row.get(0),
+        )
+        .map_err(db_err)?;
+
+    let target_role: Option<String> = conn
+        .query_row(
+            "SELECT role FROM org_members WHERE org_id = ?1 AND user_id = ?2",
+            rusqlite::params![org_id, user_id],
+            |row| row.get(0),
+        )
+        .ok()
+        .flatten();
+
+    let is_privileged = match target_role.as_deref() {
+        Some("admin") | Some("owner") => true,
+        _ => false,
+    };
+
+    if is_privileged && admin_count <= 1 {
+        return Err(OrgError::LastAdmin);
+    }
+
+    conn.execute(
+        "DELETE FROM org_members WHERE org_id = ?1 AND user_id = ?2",
+        rusqlite::params![org_id, user_id],
+    )
+    .map_err(db_err)?;
+
+    Ok(())
+}
+
+pub fn update_member_role(
+    state: &AppState,
+    claims: &Claims,
+    org_id: &str,
+    user_id: &str,
+    new_role: &str,
+) -> Result<(), OrgError> {
+    check_org_admin(state, claims, org_id)?;
+    validate_role(new_role)?;
+
+    let conn = state.db.conn().map_err(OrgError::Db)?;
+
+    let rows = conn
+        .execute(
+            "UPDATE org_members SET role = ?1 WHERE org_id = ?2 AND user_id = ?3",
+            rusqlite::params![new_role, org_id, user_id],
+        )
+        .map_err(db_err)?;
+
+    if rows == 0 {
+        return Err(OrgError::NotFound(format!(
+            "member {} not found in org {}",
+            user_id, org_id
+        )));
+    }
+
+    Ok(())
+}
+
+pub fn list_members(
+    state: &AppState,
+    claims: &Claims,
+    org_id: &str,
+) -> Result<Vec<MemberInfo>, OrgError> {
+    check_org_member(state, claims, org_id)?;
+
+    let conn = state.db.conn().map_err(OrgError::Db)?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT om.user_id, om.role, om.joined_at, a.email, a.display_name
+             FROM org_members om
+             LEFT JOIN accounts a ON om.user_id = a.user_id
+             WHERE om.org_id = ?1
+             ORDER BY om.joined_at",
+        )
+        .map_err(db_err)?;
+
+    let members = stmt
+        .query_map(rusqlite::params![org_id], |row| {
+            Ok(MemberInfo {
+                user_id: row.get(0)?,
+                role: row.get(1)?,
+                joined_at: row.get(2)?,
+                email: row.get(3)?,
+                display_name: row.get(4)?,
+            })
+        })
+        .map_err(db_err)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(db_err)?;
+
+    Ok(members)
+}
+
+pub fn accept_invitation(
+    state: &AppState,
+    claims: &Claims,
+    invite_id: &str,
+) -> Result<(), OrgError> {
+    let conn = state.db.conn().map_err(OrgError::Db)?;
+
+    let (org_id, role, email): (String, String, String) = conn
+        .query_row(
+            "SELECT org_id, role, email FROM org_invitations WHERE invite_id = ?1 AND accepted_at IS NULL AND expires_at > datetime('now')",
+            rusqlite::params![invite_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .map_err(|_| OrgError::InvitationNotFound)?;
+
+    if email != claims.email {
+        return Err(OrgError::EmailMismatch);
+    }
+
+    conn.execute(
+        "INSERT OR IGNORE INTO org_members (org_id, user_id, role, joined_at) VALUES (?1, ?2, ?3, datetime('now'))",
+        rusqlite::params![org_id, claims.sub, role],
+    )
+    .map_err(db_err)?;
+
+    conn.execute(
+        "UPDATE org_invitations SET accepted_at = datetime('now') WHERE invite_id = ?1",
+        rusqlite::params![invite_id],
+    )
+    .map_err(db_err)?;
+
+    Ok(())
+}
+
+pub fn list_invitations(
+    state: &AppState,
+    claims: &Claims,
+) -> Result<Vec<InvitationInfo>, OrgError> {
+    let conn = state.db.conn().map_err(OrgError::Db)?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT i.invite_id, i.org_id, o.display_name, i.email, i.role, i.invited_by, i.created_at, i.expires_at, i.accepted_at
+             FROM org_invitations i
+             LEFT JOIN orgs o ON i.org_id = o.org_id
+             WHERE i.org_id IN (SELECT org_id FROM org_members WHERE user_id = ?1 AND role IN ('admin', 'owner'))
+                OR i.email = ?2
+             ORDER BY i.created_at DESC",
+        )
+        .map_err(db_err)?;
+
+    let invitations = stmt
+        .query_map(rusqlite::params![claims.sub, claims.email], |row| {
+            Ok(InvitationInfo {
+                invite_id: row.get(0)?,
+                org_id: row.get(1)?,
+                org_name: row.get(2)?,
+                email: row.get(3)?,
+                role: row.get(4)?,
+                invited_by: row.get(5)?,
+                created_at: row.get(6)?,
+                expires_at: row.get(7)?,
+                accepted_at: row.get(8)?,
+            })
+        })
+        .map_err(db_err)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(db_err)?;
+
+    Ok(invitations)
+}
+
+pub async fn invite_member_handler(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(org_id): Path<String>,
+    Json(req): Json<InviteMemberRequest>,
+) -> Result<(StatusCode, Json<InviteResponse>), (StatusCode, Json<serde_json::Value>)> {
+    invite_member(&state, &claims, &org_id, &req.email, &req.role)
+        .map(|r| (StatusCode::OK, Json(r)))
+        .map_err(org_error_response)
+}
+
+pub async fn remove_member_handler(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path((org_id, user_id)): Path<(String, String)>,
+) -> Result<StatusCode, (StatusCode, Json<serde_json::Value>)> {
+    remove_member(&state, &claims, &org_id, &user_id)
+        .map(|_| StatusCode::NO_CONTENT)
+        .map_err(org_error_response)
+}
+
+pub async fn update_member_role_handler(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path((org_id, user_id)): Path<(String, String)>,
+    Json(req): Json<UpdateRoleRequest>,
+) -> Result<StatusCode, (StatusCode, Json<serde_json::Value>)> {
+    update_member_role(&state, &claims, &org_id, &user_id, &req.role)
+        .map(|_| StatusCode::NO_CONTENT)
+        .map_err(org_error_response)
+}
+
+pub async fn list_members_handler(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(org_id): Path<String>,
+) -> Result<Json<Vec<MemberInfo>>, (StatusCode, Json<serde_json::Value>)> {
+    list_members(&state, &claims, &org_id)
+        .map(Json)
+        .map_err(org_error_response)
+}
+
+pub async fn accept_invitation_handler(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(invite_id): Path<String>,
+) -> Result<StatusCode, (StatusCode, Json<serde_json::Value>)> {
+    accept_invitation(&state, &claims, &invite_id)
+        .map(|_| StatusCode::NO_CONTENT)
+        .map_err(org_error_response)
+}
+
+pub async fn list_invitations_handler(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<Vec<InvitationInfo>>, (StatusCode, Json<serde_json::Value>)> {
+    list_invitations(&state, &claims)
+        .map(Json)
+        .map_err(org_error_response)
 }

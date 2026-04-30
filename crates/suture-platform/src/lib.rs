@@ -5,6 +5,7 @@
 // Suture Commercial License (for enterprise features).
 // See LICENSE-AGPL and LICENSE-COMMERCIAL in the repo root.
 
+pub mod analytics;
 pub mod auth;
 pub mod billing;
 pub mod db;
@@ -27,6 +28,8 @@ pub struct Config {
     pub hub_db_path: String,
     pub jwt_secret: String,
     pub stripe_key: Option<String>,
+    #[serde(default)]
+    pub platform_url: String,
 }
 
 pub async fn run(config: Config) -> anyhow::Result<()> {

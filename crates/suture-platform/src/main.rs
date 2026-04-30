@@ -30,6 +30,10 @@ struct Args {
     /// Stripe secret key (enables billing)
     #[arg(long)]
     stripe_key: Option<String>,
+
+    /// Public platform URL (used for Stripe redirect URLs)
+    #[arg(long)]
+    platform_url: Option<String>,
 }
 
 #[tokio::main]
@@ -50,6 +54,7 @@ async fn main() -> anyhow::Result<()> {
         hub_db_path: args.hub_db,
         jwt_secret: args.jwt_secret.unwrap_or_else(|| "dev-secret-change-me".into()),
         stripe_key: args.stripe_key,
+        platform_url: args.platform_url.unwrap_or_default(),
     })
     .await?;
 

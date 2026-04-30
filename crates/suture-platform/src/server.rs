@@ -9,7 +9,7 @@ use axum::{
     extract::{FromRequestParts, State},
     http::request::Parts,
     middleware,
-    routing::{get, post},
+    routing::{delete, get, post, put},
     Extension, Json, Router,
 };
 use axum::http::StatusCode;
@@ -83,7 +83,14 @@ pub async fn start(config: Config) -> anyhow::Result<()> {
         .route("/auth/logout", post(crate::auth::logout_handler))
         .route("/api/merge", post(crate::merge_api::merge_files))
         .route("/api/usage", get(crate::billing::usage_handler))
+        .route("/api/analytics", get(crate::analytics::analytics_handler))
         .route("/api/orgs", post(crate::orgs::create_org).get(crate::orgs::list_my_orgs))
+        .route("/api/orgs/{org_id}/invite", post(crate::orgs::invite_member_handler))
+        .route("/api/orgs/{org_id}/members", get(crate::orgs::list_members_handler))
+        .route("/api/orgs/{org_id}/members/{user_id}", delete(crate::orgs::remove_member_handler))
+        .route("/api/orgs/{org_id}/members/{user_id}/role", put(crate::orgs::update_member_role_handler))
+        .route("/api/invitations", get(crate::orgs::list_invitations_handler))
+        .route("/api/invitations/{invite_id}/accept", post(crate::orgs::accept_invitation_handler))
         .route("/api/plugins", get(crate::plugins::list_plugins))
         .route("/api/plugins/upload", post(crate::plugins::upload_plugin))
         .route("/api/plugins/merge", post(crate::plugins::merge_with_plugin))
