@@ -45,12 +45,13 @@ COPY crates/suture-py/Cargo.toml crates/suture-py/
 
 # Create dummy source files for dependency caching
 RUN mkdir -p crates/suture-platform/src && echo "fn main() {}" > crates/suture-platform/src/main.rs
-RUN for crate in suture-hub suture-driver suture-driver-json suture-driver-yaml suture-driver-toml suture-driver-xml suture-driver-csv suture-driver-sql suture-driver-html suture-driver-markdown suture-driver-properties suture-driver-ini suture-driver-svg suture-driver-env suture-driver-dotenv suture-driver-json5 suture-driver-hcl suture-driver-protobuf suture-driver-graphql suture-common suture-protocol suture-core suture-raft suture-s3 suture-daemon suture-tui suture-cli suture-merge suture-bench suture-vfs suture-fuzz suture-otio suture-e2e; do
+RUN mkdir -p crates/suture-hub/src && echo "fn main() {}" > crates/suture-hub/src/main.rs
+RUN for crate in suture-driver suture-driver-json suture-driver-yaml suture-driver-toml suture-driver-xml suture-driver-csv suture-driver-sql suture-driver-html suture-driver-markdown suture-driver-properties suture-driver-ini suture-driver-svg suture-driver-env suture-driver-dotenv suture-driver-json5 suture-driver-hcl suture-driver-protobuf suture-driver-graphql suture-common suture-protocol suture-core suture-raft suture-s3 suture-daemon suture-tui suture-cli suture-merge suture-bench suture-vfs suture-fuzz suture-otio suture-e2e; do
     mkdir -p crates/$crate/src && echo "" > crates/$crate/src/lib.rs;
 done
 
 # Build dependencies only (cached layer)
-RUN cargo build --release -p suture-platform 2>/dev/null || true
+RUN cargo build --release -p suture-platform -p suture-hub 2>/dev/null || true
 
 # Copy actual source code
 COPY . .
@@ -58,15 +59,16 @@ COPY . .
 # Touch source files to invalidate cache for this layer only
 RUN find crates -name "*.rs" -exec touch {} +
 
-# Build the platform binary
-RUN cargo build --release -p suture-platform
+# Build both binaries
+RUN cargo build --release -p suture-platform -p suture-hub
 
 # Runtime stage
 FROM debian:bookworm-slim
 
-RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y ca-certificates curl && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/target/release/suture-platform /usr/local/bin/suture-platform
+COPY --from=builder /app/target/release/suture-hub /usr/local/bin/suture-hub
 COPY --from=builder /app/target/release/suture /usr/local/bin/suture
 
 RUN groupadd -r suture && useradd -r -g suture -d /data suture
@@ -75,12 +77,6 @@ RUN mkdir -p /data && chown suture:suture /data
 USER suture
 WORKDIR /data
 
-EXPOSE 8080
+EXPOSE 3000 8080
 
-ENV SUTURE_DB=/data/platform.db
-ENV SUTURE_HUB_DB=/data/hub.db
-ENV SUTURE_ADDR=0.0.0.0:8080
 ENV RUST_LOG=info
-
-ENTRYPOINT ["suture-platform"]
-CMD ["--db", "/data/platform.db", "--hub-db", "/data/hub.db", "--addr", "0.0.0.0:8080"]

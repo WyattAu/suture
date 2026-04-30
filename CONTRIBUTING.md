@@ -5,8 +5,56 @@ Thank you for your interest in contributing to Suture! This guide covers everyth
 ## Prerequisites
 
 - **Rust 1.85+** (edition 2024) — managed via `rust-toolchain.toml`
+- **protoc** — for `suture-hub` (protobuf compilation)
+- **SQLite development headers** — for `suture-hub` and `suture-platform`
 - **Git** — for version control
 - **libfuse3-dev** (Linux, optional) — only needed for `suture-vfs` FUSE integration tests
+
+## Local Development
+
+### Quick Start
+
+1. Build all crates:
+   ```bash
+   cargo build --release
+   ```
+
+2. Run the hub (coordination server):
+   ```bash
+   cargo run -p suture-hub -- --addr 127.0.0.1:8080 --db ./hub-data/hub.db
+   ```
+
+3. Run the platform (hosted SaaS):
+   ```bash
+   export SUTURE_JWT_SECRET=dev-secret
+   cargo run -p suture-platform -- --addr 127.0.0.1:3000 --jwt-secret "$SUTURE_JWT_SECRET"
+   ```
+
+4. Open http://localhost:3000
+
+### Docker Compose
+
+```bash
+cp .env.example .env  # Edit with your values
+docker compose up --build
+```
+
+Services:
+- **suture-hub** — http://localhost:8080
+- **suture-platform** — http://localhost:3000
+
+### Running Tests
+
+```bash
+cargo test --workspace --exclude suture-py --exclude suture-e2e --exclude suture-wasm-plugin
+```
+
+### E2E Tests (require compiled binary)
+
+```bash
+cargo build -p suture-cli
+cargo test -p suture-e2e -- --test-threads=1
+```
 
 ## Getting Started
 

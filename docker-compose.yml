@@ -1,27 +1,48 @@
-version: "3.9"
-
 services:
-  suture-platform:
-    build: .
+  # Suture Hub (coordination server — gRPC + HTTP)
+  suture-hub:
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
       - "8080:8080"
     volumes:
       - suture-data:/data
     environment:
+      - RUST_LOG=info,suture_hub=debug
+    command: ["suture-hub", "--addr", "0.0.0.0:8080", "--db", "/data/hub.db"]
+    restart: unless-stopped
+
+  # Suture Platform (hosted SaaS — web UI + API)
+  suture-platform:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      - suture-data:/data
+    environment:
       - RUST_LOG=info,suture_platform=debug
-      - SUTURE_JWT_SECRET=${SUTURE_JWT_SECRET:-change-me-in-production}
-      - SUTURE_ADDR=0.0.0.0:8080
-      # Stripe (optional — enables billing)
+      - SUTURE_JWT_SECRET=${SUTURE_JWT_SECRET:-dev-secret-change-in-production}
       - SUTURE_STRIPE_KEY=${SUTURE_STRIPE_KEY:-}
-      # Google OAuth (optional)
-      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
-      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
-      # GitHub OAuth (optional)
       - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID:-}
       - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-}
+      - GITHUB_REDIRECT_URL=http://localhost:3000/auth/github/callback
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+    command:
+      [
+        "suture-platform",
+        "--addr", "0.0.0.0:3000",
+        "--db", "/data/platform.db",
+        "--hub-db", "/data/hub.db",
+        "--jwt-secret", "${SUTURE_JWT_SECRET:-dev-secret-change-in-production}",
+      ]
+    depends_on: []
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
+      test: ["CMD", "curl", "-f", "http://localhost:3000/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3

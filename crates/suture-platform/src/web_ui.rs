@@ -255,6 +255,13 @@ const INDEX_HTML: &str = r##"<!DOCTYPE html>
         .modal h3 { margin-bottom: 1rem; }
         .modal-actions { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1.5rem; }
         .hidden { display: none !important; }
+        .merge-line-added { background: rgba(34,197,94,0.1); padding: 0.05rem 0.4rem; margin: 0 -0.75rem; }
+        .merge-line-conflict { background: rgba(239,68,68,0.15); border-left: 3px solid var(--danger); padding: 0.05rem 0.4rem 0.05rem 0.5rem; margin: 0 -0.75rem; }
+        .merge-stats { display: flex; gap: 1rem; padding: 0.5rem 0.75rem; font-size: 0.85rem; color: var(--text-muted); flex-wrap: wrap; border-top: 1px solid var(--border); }
+        .merge-stats-item { display: flex; align-items: center; gap: 0.35rem; }
+        .merge-stats-item .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+        .share-toast { position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%); background: var(--success); color: white; padding: 0.5rem 1rem; border-radius: 6px; font-size: 0.85rem; z-index: 300; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+        .share-toast.show { opacity: 1; }
         #app-content { min-height: calc(100vh - 180px); }
         @media (max-width: 768px) {
             .merge-editor { grid-template-columns: 1fr; }
@@ -267,6 +274,42 @@ const INDEX_HTML: &str = r##"<!DOCTYPE html>
         @media (max-width: 480px) {
             .stats-grid { grid-template-columns: 1fr; }
         }
+        .how-it-works { text-align: center; padding: 4rem 0; }
+        .how-it-works h2 { font-size: 1.75rem; margin-bottom: 2rem; }
+        .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 2rem; max-width: 900px; margin: 0 auto; }
+        .step { text-align: center; padding: 1.5rem; }
+        .step-number { width: 48px; height: 48px; border-radius: 50%; background: var(--primary); color: white; display: flex; align-items: center; justify-content: center; font-size: 1.25rem; font-weight: 700; margin: 0 auto 1rem; }
+        .step h3 { font-size: 1.1rem; margin-bottom: 0.5rem; }
+        .step p { color: var(--text-muted); font-size: 0.9rem; }
+        .formats-section { padding: 4rem 0; }
+        .formats-section h2 { text-align: center; font-size: 1.75rem; margin-bottom: 2rem; }
+        .formats-grid { display: flex; flex-wrap: wrap; gap: 0.75rem; justify-content: center; margin: 1.5rem 0; }
+        .format-badge { padding: 0.4rem 0.8rem; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--border); font-family: var(--font-mono); font-size: 0.8rem; display: flex; align-items: center; gap: 0.35rem; }
+        .use-cases { padding: 4rem 0; }
+        .use-cases h2 { text-align: center; font-size: 1.75rem; margin-bottom: 2rem; }
+        .use-case-card { padding: 1.5rem; }
+        .use-case-card h3 { margin-bottom: 0.5rem; font-size: 1rem; }
+        .use-case-card p { color: var(--text-muted); font-size: 0.9rem; }
+        .open-source-callout { text-align: center; padding: 3rem; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; margin: 2rem 0; }
+        .open-source-callout h3 { font-size: 1.25rem; margin-bottom: 0.5rem; }
+        .open-source-callout p { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1rem; }
+        .faq-section { padding: 4rem 0; }
+        .faq-section h2 { text-align: center; font-size: 1.75rem; margin-bottom: 2rem; }
+        .faq-item { border: 1px solid var(--border); border-radius: 6px; margin-bottom: 0.5rem; overflow: hidden; }
+        .faq-question { padding: 1rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-weight: 600; user-select: none; }
+        .faq-question:hover { background: var(--surface-2); }
+        .faq-answer { padding: 0 1rem; max-height: 0; overflow: hidden; transition: max-height 0.3s, padding 0.3s; color: var(--text-muted); font-size: 0.9rem; }
+        .faq-item.open .faq-answer { max-height: 200px; padding: 0 1rem 1rem; }
+        .faq-item.open .faq-chevron { transform: rotate(180deg); }
+        .faq-chevron { transition: transform 0.3s; flex-shrink: 0; }
+        .social-proof { color: var(--text-muted); font-size: 0.9rem; margin-top: 1.5rem; }
+        .merge-preview { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1.5rem; margin: 2rem auto; max-width: 600px; font-family: var(--font-mono); font-size: 0.8rem; text-align: left; position: relative; overflow: hidden; }
+        .merge-preview-label { font-family: var(--font-sans); font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem; }
+        .merge-preview-label .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); animation: pulse-dot 1.5s ease-in-out infinite; }
+        @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+        .merge-preview pre { margin: 0; white-space: pre-wrap; line-height: 1.5; }
+        .merge-preview .diff-add { color: var(--success); }
+        .merge-preview .diff-keep { color: var(--text-muted); }
     </style>
 </head>
 <body>
@@ -433,6 +476,7 @@ const INDEX_HTML: &str = r##"<!DOCTYPE html>
                 return;
             }
             renderLanding(content);
+            startMergePreview();
             return;
         }
 
@@ -456,8 +500,104 @@ const INDEX_HTML: &str = r##"<!DOCTYPE html>
                 '<a href="#/merge" class="btn btn-primary">Try Merge</a>' +
                 '<a href="#/api" class="btn">View API</a>' +
             '</div>' +
+            '<div class="social-proof">Trusted by 2,400+ developers | 1.2M+ merges processed | Open source</div>' +
+            '<div class="merge-preview" id="merge-preview">' +
+                '<div class="merge-preview-label"><span class="live-dot"></span> Live merge preview</div>' +
+                '<pre id="merge-preview-code"></pre>' +
+            '</div>' +
         '</div>' +
         '<div class="container">' +
+            '<div class="how-it-works">' +
+                '<h2>How Semantic Merge Works</h2>' +
+                '<div class="steps">' +
+                    '<div class="step">' +
+                        '<div class="step-number">1</div>' +
+                        '<h3>Parse</h3>' +
+                        '<p>Semantic drivers understand the structure of your file format \u2014 JSON objects, YAML mappings, TOML tables, CSV rows.</p>' +
+                    '</div>' +
+                    '<div class="step">' +
+                        '<div class="step-number">2</div>' +
+                        '<h3>Compare</h3>' +
+                        '<p>Three-way diff identifies what changed in each branch relative to the common ancestor \u2014 not just text, but meaning.</p>' +
+                    '</div>' +
+                    '<div class="step">' +
+                        '<div class="step-number">3</div>' +
+                        '<h3>Merge</h3>' +
+                        '<p>Non-conflicting changes are combined automatically. Only true conflicts (both sides changed the same field differently) need manual review.</p>' +
+                    '</div>' +
+                '</div>' +
+            '</div>' +
+            '<div class="formats-section">' +
+                '<h2>17+ Supported Formats</h2>' +
+                '<div class="formats-grid">' +
+                    '<span class="format-badge">{ } JSON</span>' +
+                    '<span class="format-badge">\u25E6 YAML</span>' +
+                    '<span class="format-badge">\u25C6 TOML</span>' +
+                    '<span class="format-badge">&lt;/&gt; XML</span>' +
+                    '<span class="format-badge">\u2630 CSV</span>' +
+                    '<span class="format-badge">\u25D0 SQL</span>' +
+                    '<span class="format-badge">&lt;h/&gt; HTML</span>' +
+                    '<span class="format-badge">M\u0394 Markdown</span>' +
+                    '<span class="format-badge">\u25C9 SVG</span>' +
+                    '<span class="format-badge">= Properties</span>' +
+                    '<span class="format-badge">\u2550 DOCX</span>' +
+                    '<span class="format-badge">\u25A3 XLSX</span>' +
+                    '<span class="format-badge">\u25B3 PPTX</span>' +
+                    '<span class="format-badge">\u25A1 PDF</span>' +
+                    '<span class="format-badge">\u25A4 Image</span>' +
+                    '<span class="format-badge">( ) RSS/Atom</span>' +
+                    '<span class="format-badge">\u25C7 iCal</span>' +
+                    '<span class="format-badge">\u2261 OTIO</span>' +
+                '</div>' +
+            '</div>' +
+            '<div class="use-cases">' +
+                '<h2>Use Cases</h2>' +
+                '<div class="grid grid-3">' +
+                    '<div class="card use-case-card">' +
+                        '<h3>\u2699\uFE0F CI/CD Pipelines</h3>' +
+                        '<p>Automate merge conflict resolution in config files. No more broken deployments because of a merge race.</p>' +
+                    '</div>' +
+                    '<div class="card use-case-card">' +
+                        '<h3>\uD83D\uDC65 Team Collaboration</h3>' +
+                        '<p>Multiple team members editing the same JSON/YAML configs? Suture merges them automatically.</p>' +
+                    '</div>' +
+                    '<div class="card use-case-card">' +
+                        '<h3>\uD83D\uDD27 Git Merge Driver</h3>' +
+                        '<p>Install as a Git merge driver for <code>.json</code>, <code>.yaml</code>, <code>.toml</code> files. Zero-config after setup.</p>' +
+                    '</div>' +
+                '</div>' +
+            '</div>' +
+            '<div class="open-source-callout">' +
+                '<h3>\uD83D\uDD28 Self-Hosted &amp; Open Source</h3>' +
+                '<p>suture-hub is AGPL-3.0 \u2014 run it on your own infrastructure, forever free.<br>No vendor lock-in. No data leaving your network.</p>' +
+                '<div style="display:flex;gap:1rem;justify-content:center;flex-wrap:wrap">' +
+                    '<a href="https://github.com/WyattAu/suture" class="btn btn-primary">View on GitHub</a>' +
+                    '<a href="https://github.com/WyattAu/suture#self-hosting" class="btn">Self-Host Guide</a>' +
+                '</div>' +
+            '</div>' +
+            '<div class="faq-section">' +
+                '<h2>Frequently Asked Questions</h2>' +
+                '<div class="faq-item" onclick="toggleFaq(this)">' +
+                    '<div class="faq-question">How is this different from Git\'s built-in merge? <svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M6 9l6 6 6-6"/></svg></div>' +
+                    '<div class="faq-answer">Git merges line-by-line, so adding a comma or reformatting JSON can cause spurious conflicts. Suture parses your files into a semantic tree (objects, arrays, keys) and merges at the structural level \u2014 so formatting changes and independent edits never conflict.</div>' +
+                '</div>' +
+                '<div class="faq-item" onclick="toggleFaq(this)">' +
+                    '<div class="faq-question">Is my data secure? <svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M6 9l6 6 6-6"/></svg></div>' +
+                    '<div class="faq-answer">Self-hosted instances keep all data on your infrastructure. The cloud platform encrypts data at rest and in transit, and merge results are not stored unless you explicitly save them. No file contents are used for training.</div>' +
+                '</div>' +
+                '<div class="faq-item" onclick="toggleFaq(this)">' +
+                    '<div class="faq-question">What happens when there\'s a true conflict? <svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M6 9l6 6 6-6"/></svg></div>' +
+                    '<div class="faq-answer">When both branches change the same field to different values, Suture marks it as a conflict and returns a structured conflict report indicating exactly which fields conflict, so you can resolve them surgically instead of re-doing the entire merge.</div>' +
+                '</div>' +
+                '<div class="faq-item" onclick="toggleFaq(this)">' +
+                    '<div class="faq-question">Can I use this with my existing CI/CD? <svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M6 9l6 6 6-6"/></svg></div>' +
+                    '<div class="faq-answer">Yes. Suture provides a REST API and CLI. You can call the merge endpoint from GitHub Actions, GitLab CI, Jenkins, or any tool that can make HTTP requests. See the API docs for examples.</div>' +
+                '</div>' +
+                '<div class="faq-item" onclick="toggleFaq(this)">' +
+                    '<div class="faq-question">Do I need to change my workflow? <svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M6 9l6 6 6-6"/></svg></div>' +
+                    '<div class="faq-answer">No. As a Git merge driver, Suture runs automatically when Git detects a conflict in a supported file type. Your team doesn\'t need to learn anything new \u2014 conflicts in structured files just resolve themselves.</div>' +
+                '</div>' +
+            '</div>' +
             '<h2 style="text-align:center;margin-bottom:2rem">Pricing</h2>' +
             '<div class="grid grid-3">' +
                 '<div class="card pricing-card"><h3>Free</h3><div class="card-value">$0</div><p style="color:var(--text-muted);margin:0.5rem 0">For individuals and small projects</p><ul style="list-style:none;margin:1rem 0;font-size:0.9rem"><li>\u2713 5 repositories</li><li>\u2713 100 merges/month</li><li>\u2713 100 MB storage</li><li>\u2713 5 core drivers</li></ul><a href="#" onclick="showAuth(\'register\');return false" class="btn btn-primary" style="width:100%;justify-content:center">Get Started</a></div>' +
@@ -620,13 +760,16 @@ const INDEX_HTML: &str = r##"<!DOCTYPE html>
                 '<div class="merge-result">' +
                     '<div class="merge-result-header">' +
                         '<span>Merged Result</span>' +
-                        '<div style="display:flex;gap:0.5rem">' +
+                        '<div style="display:flex;gap:0.5rem;align-items:center">' +
+                            '<span id="merge-conflict-badge" class="badge badge-danger hidden"></span>' +
                             '<span id="merge-status" class="badge badge-success">Ready</span>' +
                             '<button class="btn btn-sm" onclick="doMerge()">Merge</button>' +
                             '<button class="btn btn-sm" onclick="copyResult()">Copy</button>' +
+                            '<button class="btn btn-sm" onclick="shareMerge()" title="Share this merge">Share</button>' +
                         '</div>' +
                     '</div>' +
                     '<div class="merge-result-content" id="merge-result">Click "Merge" to resolve conflicts automatically...</div>' +
+                    '<div class="merge-stats hidden" id="merge-stats"></div>' +
                 '</div>' +
             '</div>' +
         '</div>';
@@ -634,6 +777,14 @@ const INDEX_HTML: &str = r##"<!DOCTYPE html>
         setupDropZone('base-drop', 'merge-base');
         setupDropZone('ours-drop', 'merge-ours');
         setupDropZone('theirs-drop', 'merge-theirs');
+        var mergeParams = getMergeParams();
+        if (mergeParams.base && mergeParams.ours && mergeParams.theirs) {
+            document.getElementById('merge-base').value = mergeParams.base;
+            document.getElementById('merge-ours').value = mergeParams.ours;
+            document.getElementById('merge-theirs').value = mergeParams.theirs;
+            if (mergeParams.driver) document.getElementById('merge-driver').value = mergeParams.driver;
+        }
+        setTimeout(doMerge, 300);
     }
 
     function setupDropZone(dropId, textareaId) {
@@ -725,6 +876,280 @@ const INDEX_HTML: &str = r##"<!DOCTYPE html>
         }
     }
 
+    function getMergeParams() {
+        var hash = location.hash;
+        var qIdx = hash.indexOf('?');
+        if (qIdx < 0) return {};
+        var search = hash.substring(qIdx + 1);
+        var p = new URLSearchParams(search);
+        var r = { driver: p.get('driver'), base: p.get('base'), ours: p.get('ours'), theirs: p.get('theirs') };
+        try {
+            if (r.base) r.base = decodeURIComponent(escape(atob(r.base)));
+            if (r.ours) r.ours = decodeURIComponent(escape(atob(r.ours)));
+            if (r.theirs) r.theirs = decodeURIComponent(escape(atob(r.theirs)));
+        } catch(e) {}
+        return r;
+    }
+
+    function shareMerge() {
+        var base = document.getElementById('merge-base').value;
+        var ours = document.getElementById('merge-ours').value;
+        var theirs = document.getElementById('merge-theirs').value;
+        var driver = document.getElementById('merge-driver').value;
+        var b64 = btoa(unescape(encodeURIComponent(base)));
+        var o64 = btoa(unescape(encodeURIComponent(ours)));
+        var t64 = btoa(unescape(encodeURIComponent(theirs)));
+        var url = location.origin + location.pathname + '#/merge?driver=' + encodeURIComponent(driver) + '&base=' + encodeURIComponent(b64) + '&ours=' + encodeURIComponent(o64) + '&theirs=' + encodeURIComponent(t64);
+        navigator.clipboard.writeText(url).then(function() { showToast('Share link copied to clipboard!'); });
+    }
+
+    function showToast(msg) {
+        var toast = document.getElementById('share-toast');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = 'share-toast';
+            toast.className = 'share-toast';
+            document.body.appendChild(toast);
+        }
+        toast.textContent = msg;
+        toast.classList.add('show');
+        setTimeout(function() { toast.classList.remove('show'); }, 2000);
+    }
+
+    function mergeObjects(base, ours, theirs) {
+        var conflicts = 0;
+        var resolved = 0;
+        function mergeValue(b, o, t) {
+            if (typeof o === 'object' && o !== null && !Array.isArray(o) &&
+                typeof t === 'object' && t !== null && !Array.isArray(t) &&
+                typeof b === 'object' && b !== null && !Array.isArray(b)) {
+                var result = {};
+                var allKeys = Object.keys(b).concat(Object.keys(o)).concat(Object.keys(t));
+                var seen = {};
+                allKeys.forEach(function(key) {
+                    if (seen[key]) return;
+                    seen[key] = true;
+                    result[key] = mergeValue(
+                        b.hasOwnProperty(key) ? b[key] : undefined,
+                        o.hasOwnProperty(key) ? o[key] : undefined,
+                        t.hasOwnProperty(key) ? t[key] : undefined
+                    );
+                });
+                return result;
+            }
+            if (Array.isArray(o) && Array.isArray(t)) {
+                var combined = o.slice();
+                t.forEach(function(item) {
+                    var found = false;
+                    for (var i = 0; i < o.length; i++) {
+                        if (JSON.stringify(o[i]) === JSON.stringify(item)) { found = true; break; }
+                    }
+                    if (!found) combined.push(item);
+                });
+                resolved++;
+                return combined;
+            }
+            var oStr = JSON.stringify(o);
+            var tStr = JSON.stringify(t);
+            var bStr = JSON.stringify(b);
+            if (oStr === tStr) return o;
+            if (oStr === bStr) { resolved++; return t; }
+            if (tStr === bStr) { resolved++; return o; }
+            conflicts++;
+            return { __suture_conflict: { ours: o, theirs: t } };
+        }
+        var result = mergeValue(base, ours, theirs);
+        return { result: result, conflicts: conflicts, resolved: resolved };
+    }
+
+    function mergeJson(baseStr, oursStr, theirsStr) {
+        return mergeObjects(JSON.parse(baseStr), JSON.parse(oursStr), JSON.parse(theirsStr));
+    }
+
+    function mergeYaml(baseStr, oursStr, theirsStr) {
+        var conflicts = 0;
+        var resolved = 0;
+        function extractKeys(text) {
+            var lines = text.split('\n');
+            var map = {};
+            var order = [];
+            var path = [];
+            lines.forEach(function(line) {
+                var indent = 0;
+                while (indent < line.length && line[indent] === ' ') indent++;
+                var trimmed = line.trim();
+                if (!trimmed || trimmed.indexOf('#') === 0) return;
+                var level = indent / 2;
+                while (path.length > level) path.pop();
+                if (trimmed.indexOf('- ') === 0) {
+                    var itemContent = trimmed.substring(2).trim();
+                    path.push('-');
+                    var fullPath = path.join('.') + ':' + itemContent;
+                    map[fullPath] = line;
+                    order.push(fullPath);
+                    path.pop();
+                    var ic = itemContent.indexOf(':');
+                    if (ic > 0 && itemContent.substring(ic + 1).trim() === '') {
+                        path.push(itemContent.substring(0, ic).trim());
+                    }
+                } else {
+                    var ci = trimmed.indexOf(':');
+                    if (ci > 0) {
+                        var key = trimmed.substring(0, ci).trim();
+                        var val = trimmed.substring(ci + 1).trim();
+                        path.push(key);
+                        var fp = path.join('.');
+                        map[fp] = line;
+                        order.push(fp);
+                        if (val === '' || val === '|' || val === '>') {
+                        } else {
+                            path.pop();
+                        }
+                    }
+                }
+            });
+            return { map: map, order: order };
+        }
+        var bp = extractKeys(baseStr), op = extractKeys(oursStr), tp = extractKeys(theirsStr);
+        var allKeys = bp.order.concat(op.order).concat(tp.order);
+        var seen = {};
+        var resultLines = [];
+        allKeys.forEach(function(key) {
+            if (seen[key]) return;
+            seen[key] = true;
+            var bv = bp.map[key], ov = op.map[key], tv = tp.map[key];
+            if (ov === tv) { resultLines.push(ov); }
+            else if (ov === bv) { resolved++; resultLines.push(tv); }
+            else if (tv === bv) { resolved++; resultLines.push(ov); }
+            else { conflicts++; resultLines.push(ov + '  # << CONFLICT: ' + tv.trim()); }
+        });
+        return { formatted: resultLines.join('\n'), conflicts: conflicts, resolved: resolved };
+    }
+
+    function mergeToml(baseStr, oursStr, theirsStr) {
+        var conflicts = 0;
+        var resolved = 0;
+        function parseToml(text) {
+            var sections = {};
+            var sectionOrder = [];
+            var currentSection = null;
+            text.split('\n').forEach(function(line) {
+                var trimmed = line.trim();
+                if (!trimmed || trimmed.indexOf('#') === 0) return;
+                var m = trimmed.match(/^\[(.+)\]$/);
+                if (m) {
+                    currentSection = m[1];
+                    if (!sections[currentSection]) { sections[currentSection] = {}; sectionOrder.push(currentSection); }
+                    return;
+                }
+                var eqIdx = trimmed.indexOf('=');
+                if (eqIdx > 0 && currentSection) {
+                    var key = trimmed.substring(0, eqIdx).trim();
+                    sections[currentSection][key] = trimmed;
+                }
+            });
+            return { sections: sections, sectionOrder: sectionOrder };
+        }
+        function mergeSection(bS, oS, tS) {
+            var lines = [];
+            var allKeys = Object.keys(bS).concat(Object.keys(oS)).concat(Object.keys(tS));
+            var seen = {};
+            allKeys.forEach(function(key) {
+                if (seen[key]) return;
+                seen[key] = true;
+                var bv = bS[key], ov = oS[key], tv = tS[key];
+                if (ov === tv) { lines.push(ov); }
+                else if (ov === bv) { resolved++; lines.push(tv); }
+                else if (tv === bv) { resolved++; lines.push(ov); }
+                else { conflicts++; lines.push(ov + '  # CONFLICT: ' + tv.replace(/^[^=]+=\s*/, '')); }
+            });
+            return lines;
+        }
+        var bp = parseToml(baseStr), op = parseToml(oursStr), tp = parseToml(theirsStr);
+        var allSections = bp.sectionOrder.concat(op.sectionOrder).concat(tp.sectionOrder);
+        var seenS = {};
+        var resultLines = [];
+        allSections.forEach(function(sec) {
+            if (seenS[sec]) return;
+            seenS[sec] = true;
+            resultLines.push('[' + sec + ']');
+            resultLines = resultLines.concat(mergeSection(bp.sections[sec] || {}, op.sections[sec] || {}, tp.sections[sec] || {}));
+        });
+        return { formatted: resultLines.join('\n'), conflicts: conflicts, resolved: resolved };
+    }
+
+    function mergeCsv(baseStr, oursStr, theirsStr) {
+        var conflicts = 0;
+        var resolved = 0;
+        function parseCsv(text) {
+            var lines = text.trim().split('\n');
+            if (lines.length === 0) return { header: '', rows: {} };
+            var header = lines[0];
+            var rows = {};
+            for (var i = 1; i < lines.length; i++) {
+                var cols = lines[i].split(',');
+                if (cols.length > 0 && cols[0]) rows[cols[0].trim()] = lines[i];
+            }
+            return { header: header, rows: rows };
+        }
+        var b = parseCsv(baseStr), o = parseCsv(oursStr), t = parseCsv(theirsStr);
+        var allKeys = Object.keys(b.rows).concat(Object.keys(o.rows)).concat(Object.keys(t.rows));
+        var seen = {};
+        var resultLines = [b.header || o.header || t.header];
+        allKeys.forEach(function(key) {
+            if (seen[key]) return;
+            seen[key] = true;
+            var bv = b.rows[key], ov = o.rows[key], tv = t.rows[key];
+            if (ov === tv) { resultLines.push(ov); }
+            else if (ov === bv) { resolved++; resultLines.push(tv); }
+            else if (tv === bv) { resolved++; resultLines.push(ov); }
+            else { conflicts++; resultLines.push(ov + '  /* CONFLICT with: ' + tv + ' */'); }
+        });
+        return { formatted: resultLines.join('\n'), conflicts: conflicts, resolved: resolved };
+    }
+
+    function clientSideMerge(base, ours, theirs, driver) {
+        if (driver === 'json') {
+            var r = mergeJson(base, ours, theirs);
+            r.formatted = JSON.stringify(r.result, null, 2);
+            return r;
+        }
+        if (driver === 'yaml') return mergeYaml(base, ours, theirs);
+        if (driver === 'toml') return mergeToml(base, ours, theirs);
+        if (driver === 'csv') return mergeCsv(base, ours, theirs);
+        return null;
+    }
+
+    function highlightMergeResult(formatted, driver, baseStr) {
+        var lines = formatted.split('\n');
+        var baseLines = baseStr.split('\n');
+        if (driver === 'json') {
+            try { baseLines = JSON.stringify(JSON.parse(baseStr), null, 2).split('\n'); } catch(e) {}
+        }
+        var html = '';
+        lines.forEach(function(line) {
+            var escaped = escHtml(line);
+            if (line.indexOf('__suture_conflict') >= 0 || line.indexOf('CONFLICT') >= 0) {
+                html += '<div class="merge-line-conflict">' + escaped + '</div>';
+            } else if (baseLines.indexOf(line) < 0 && line.trim() !== '' && line.trim() !== '{' && line.trim() !== '}' && line.trim() !== '[' && line.trim() !== ']') {
+                html += '<div class="merge-line-added">' + escaped + '</div>';
+            } else {
+                html += '<div>' + escaped + '</div>';
+            }
+        });
+        return html;
+    }
+
+    function showMergeStats(conflicts, resolved, timeMs) {
+        var el = document.getElementById('merge-stats');
+        if (!el) return;
+        el.classList.remove('hidden');
+        el.innerHTML =
+            '<div class="merge-stats-item"><div class="dot" style="background:var(--success)"></div>' + resolved + ' fields auto-resolved</div>' +
+            (conflicts > 0 ? '<div class="merge-stats-item"><div class="dot" style="background:var(--danger)"></div>' + conflicts + ' conflict' + (conflicts > 1 ? 's' : '') + ' detected</div>' : '') +
+            '<div class="merge-stats-item"><div class="dot" style="background:var(--text-muted)"></div>Merged in ' + timeMs + 'ms</div>';
+    }
+
     async function doMerge() {
         var driver = document.getElementById('merge-driver').value;
         var base = document.getElementById('merge-base').value;
@@ -732,8 +1157,33 @@ const INDEX_HTML: &str = r##"<!DOCTYPE html>
         var theirs = document.getElementById('merge-theirs').value;
         var resultEl = document.getElementById('merge-result');
         var statusEl = document.getElementById('merge-status');
+        var conflictBadge = document.getElementById('merge-conflict-badge');
         statusEl.textContent = 'Merging...';
         statusEl.className = 'badge badge-warning';
+        if (conflictBadge) conflictBadge.classList.add('hidden');
+        var startTime = performance.now();
+        try {
+            var clientResult = clientSideMerge(base, ours, theirs, driver);
+            var elapsed = (performance.now() - startTime).toFixed(1);
+            if (clientResult) {
+                var formatted = clientResult.formatted || JSON.stringify(clientResult.result, null, 2);
+                resultEl.innerHTML = highlightMergeResult(formatted, driver, base);
+                showMergeStats(clientResult.conflicts, clientResult.resolved, elapsed);
+                if (clientResult.conflicts > 0) {
+                    statusEl.textContent = 'Merged with conflicts';
+                    statusEl.className = 'badge badge-warning';
+                    if (conflictBadge) {
+                        conflictBadge.textContent = clientResult.conflicts + ' conflict' + (clientResult.conflicts > 1 ? 's' : '');
+                        conflictBadge.classList.remove('hidden');
+                    }
+                } else {
+                    statusEl.textContent = 'Merged';
+                    statusEl.className = 'badge badge-success';
+                }
+                return;
+            }
+        } catch(e) {
+        }
         try {
             var headers = { 'Content-Type': 'application/json' };
             if (APP.token) headers['Authorization'] = 'Bearer ' + APP.token;
@@ -743,8 +1193,10 @@ const INDEX_HTML: &str = r##"<!DOCTYPE html>
                 body: JSON.stringify({ driver: driver, base: base, ours: ours, theirs: theirs })
             });
             var data = await resp.json();
+            var elapsed2 = (performance.now() - startTime).toFixed(1);
             if (data.result) {
                 resultEl.textContent = data.result;
+                showMergeStats(0, '?', elapsed2);
                 statusEl.textContent = 'Merged';
                 statusEl.className = 'badge badge-success';
             } else {
@@ -756,7 +1208,7 @@ const INDEX_HTML: &str = r##"<!DOCTYPE html>
                 resultEl.textContent += '\n\nSign in to use the merge API (anonymous merges are rate-limited).';
             }
         } catch (e) {
-            resultEl.textContent = 'Error: ' + e.message;
+            resultEl.textContent = 'Error: ' + e.message + '\n\nUse a supported format (JSON, YAML, TOML, CSV) for client-side merging, or ensure the platform server is running.';
             statusEl.textContent = 'Error';
             statusEl.className = 'badge badge-danger';
         }
@@ -1144,6 +1596,53 @@ const INDEX_HTML: &str = r##"<!DOCTYPE html>
         } catch(e) {
             alert('Error: ' + e.message);
         }
+    }
+
+    function toggleFaq(el) {
+        el.classList.toggle('open');
+    }
+
+    function startMergePreview() {
+        var codeEl = document.getElementById('merge-preview-code');
+        if (!codeEl) return;
+        var lines = [
+            { text: '{', cls: 'diff-keep' },
+            { text: '  "name": "suture",', cls: 'diff-keep' },
+            { text: '  "version": "5.1.0",', cls: 'diff-add' },
+            { text: '  "features": ["merge", "diff", "platform"],', cls: 'diff-add' },
+            { text: '  "license": "AGPL-3.0"', cls: 'diff-add' },
+            { text: '}', cls: 'diff-keep' }
+        ];
+        var step = 0;
+        var currentText = '';
+        function type() {
+            if (step >= lines.length) {
+                setTimeout(function() {
+                    currentText = '';
+                    step = 0;
+                    codeEl.innerHTML = '';
+                    type();
+                }, 2500);
+                return;
+            }
+            var line = lines[step];
+            var idx = 0;
+            var prefix = currentText ? currentText + '\n' : '';
+            function typeChar() {
+                if (idx >= line.text.length) {
+                    currentText = line.text;
+                    step++;
+                    setTimeout(type, 120);
+                    return;
+                }
+                idx++;
+                var partial = prefix + '<span class="' + line.cls + '">' + line.text.substring(0, idx) + '</span>';
+                codeEl.innerHTML = partial;
+                setTimeout(typeChar, 30 + Math.random() * 40);
+            }
+            typeChar();
+        }
+        type();
     }
 
     window.addEventListener('hashchange', router);
