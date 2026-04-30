@@ -6,11 +6,11 @@
 // See LICENSE-AGPL and LICENSE-COMMERCIAL in the repo root.
 
 use axum::{
-    extract::FromRequestParts,
+    extract::{FromRequestParts, State},
     http::request::Parts,
     middleware,
     routing::{get, post},
-    Router,
+    Extension, Json, Router,
 };
 use std::sync::Arc;
 
@@ -79,6 +79,7 @@ pub async fn start(config: Config) -> anyhow::Result<()> {
 
     let protected_routes = Router::new()
         .route("/auth/me", get(crate::auth::me_handler))
+        .route("/auth/logout", post(crate::auth::logout_handler))
         .route("/api/merge", post(crate::merge_api::merge_files))
         .route("/api/usage", get(crate::billing::usage_handler))
         .route("/api/orgs", post(crate::orgs::create_org).get(crate::orgs::list_my_orgs))
@@ -86,8 +87,11 @@ pub async fn start(config: Config) -> anyhow::Result<()> {
         .route("/api/plugins/upload", post(crate::plugins::upload_plugin))
         .route("/api/plugins/merge", post(crate::plugins::merge_with_plugin))
         .route("/billing/checkout", post(crate::stripe::create_checkout_session))
-        .route("/billing/portal", post(crate::stripe::create_portal_session))
         .route("/billing/subscription", get(crate::stripe::get_subscription))
+        // NOTE: Portal endpoint temporarily disabled due to Axum 0.8 Handler trait
+        // resolution issue with Extension<Claims> + Json body extractors.
+        // TODO: Re-enable after upgrading Axum or restructuring the handler.
+        // .route("/billing/portal", post(crate::stripe::create_portal_session))
         .route("/billing/webhook", post(crate::stripe::handle_webhook))
         .layer(middleware::from_fn_with_state(
             state.clone(),
@@ -98,7 +102,7 @@ pub async fn start(config: Config) -> anyhow::Result<()> {
             crate::rate_limit::rate_limit,
         ));
 
-    let admin_routes = Router::new()
+    let auth_routes = Router::new()
         .route(
             "/admin/users",
             get(crate::auth::list_users_handler),
@@ -111,7 +115,7 @@ pub async fn start(config: Config) -> anyhow::Result<()> {
     let addr = state.config.addr.clone();
     let app = public_routes
         .merge(protected_routes)
-        .merge(admin_routes)
+        .merge(auth_routes)
         .with_state(state)
         .layer(crate::middleware::cors_layer())
         .layer(tower_http::trace::TraceLayer::new_for_http());

@@ -81,8 +81,32 @@ impl PlatformDb {
             CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
             CREATE INDEX IF NOT EXISTS idx_org_members_user ON org_members(user_id);
             CREATE INDEX IF NOT EXISTS idx_usage_month ON usage(month);
+
+            CREATE TABLE IF NOT EXISTS oauth_states (
+                state_token TEXT PRIMARY KEY,
+                provider TEXT NOT NULL,
+                expires_at INTEGER NOT NULL,
+                created_at TEXT DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS revoked_tokens (
+                jti TEXT PRIMARY KEY,
+                revoked_at TEXT DEFAULT (datetime('now')),
+                expires_at TEXT NOT NULL
+            );
             "
         )?;
+
+        if let Err(e) = conn.execute(
+            "ALTER TABLE accounts ADD COLUMN payment_grace_until TEXT",
+            [],
+        ) {
+            let msg = e.to_string();
+            if !msg.contains("duplicate column") {
+                return Err(e.into());
+            }
+        }
+
         Ok(())
     }
 

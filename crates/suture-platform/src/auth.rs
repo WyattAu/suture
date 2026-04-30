@@ -192,6 +192,34 @@ pub fn get_user_by_id(db: &PlatformDb, user_id: &str) -> anyhow::Result<UserInfo
 use axum::{extract::State, http::StatusCode, Extension, Json};
 use crate::server::AppState;
 
+pub fn revoke_jwt(db: &PlatformDb, token: &str, secret: &str) -> anyhow::Result<()> {
+    let claims = verify_jwt(token, secret)?;
+    let conn = db.conn().map_err(|e| anyhow::anyhow!("{e}"))?;
+    conn.execute(
+        "INSERT OR IGNORE INTO revoked_tokens (jti, expires_at) VALUES (?1, ?2)",
+        rusqlite::params![claims.sub, chrono::DateTime::from_timestamp(claims.exp as i64, 0)
+            .unwrap_or_else(chrono::Utc::now)
+            .to_rfc3339()],
+    )?;
+    Ok(())
+}
+
+pub fn is_token_revoked(db: &PlatformDb, user_id: &str) -> bool {
+    if let Ok(conn) = db.conn() {
+        let _ = conn.execute(
+            "DELETE FROM revoked_tokens WHERE expires_at < datetime('now')",
+            [],
+        );
+        let result: Result<bool, _> = conn.query_row(
+            "SELECT 1 FROM revoked_tokens WHERE jti = ?1 LIMIT 1",
+            rusqlite::params![user_id],
+            |_| Ok(true),
+        );
+        return result.is_ok();
+    }
+    false
+}
+
 pub async fn register_handler(
     State(state): State<AppState>,
     Json(req): Json<RegisterRequest>,
@@ -313,4 +341,10 @@ pub async fn list_users_handler(
             )
         })?;
     Ok(Json(users))
+}
+
+pub async fn logout_handler(
+    State(_state): State<AppState>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    Ok(Json(serde_json::json!({"logged_out": true})))
 }

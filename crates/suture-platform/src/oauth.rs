@@ -76,7 +76,18 @@ pub async fn start_oauth(
     State(state): State<AppState>,
     Query(query): Query<OAuthStartQuery>,
 ) -> Result<Json<OAuthURLResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let _ = &state;
+    let csrf_state = uuid::Uuid::new_v4().to_string();
+    let state_expiry = chrono::Utc::now().timestamp() + 600;
+
+    if let Ok(conn) = state.db.conn()
+        && let Err(e) = conn.execute(
+            "INSERT INTO oauth_states (state_token, provider, expires_at) VALUES (?1, ?2, ?3)",
+            rusqlite::params![csrf_state, query.provider.to_lowercase(), state_expiry],
+        )
+    {
+        tracing::warn!("Failed to store OAuth state: {}", e);
+    }
+
     let url = match query.provider.to_lowercase().as_str() {
         "google" => {
             let client_id = std::env::var("GOOGLE_CLIENT_ID").unwrap_or_else(|_| GOOGLE_CLIENT_ID.to_string());
@@ -88,8 +99,8 @@ pub async fn start_oauth(
             }
             let redirect = std::env::var("GOOGLE_REDIRECT_URI").unwrap_or_else(|_| GOOGLE_REDIRECT_URI.to_string());
             format!(
-                "https://accounts.google.com/o/oauth2/v2/auth?client_id={}&redirect_uri={}&response_type=code&scope=openid%20email%20profile&access_type=offline",
-                client_id, redirect
+                "https://accounts.google.com/o/oauth2/v2/auth?client_id={}&redirect_uri={}&response_type=code&scope=openid%20email%20profile&access_type=offline&state={}",
+                client_id, redirect, csrf_state
             )
         }
         "github" => {
@@ -102,8 +113,8 @@ pub async fn start_oauth(
             }
             let redirect = std::env::var("GITHUB_REDIRECT_URI").unwrap_or_else(|_| GITHUB_REDIRECT_URI.to_string());
             format!(
-                "https://github.com/login/oauth/authorize?client_id={}&redirect_uri={}&scope=user:email",
-                client_id, redirect
+                "https://github.com/login/oauth/authorize?client_id={}&redirect_uri={}&scope=user:email&state={}",
+                client_id, redirect, csrf_state
             )
         }
         _ => {
@@ -121,6 +132,8 @@ pub async fn google_callback(
     State(state): State<AppState>,
     Query(query): Query<OAuthCallbackQuery>,
 ) -> Result<Json<AuthResponse>, (StatusCode, Json<serde_json::Value>)> {
+    validate_oauth_state(&state, query.state.as_deref())?;
+
     let client_id = std::env::var("GOOGLE_CLIENT_ID").unwrap_or_else(|_| GOOGLE_CLIENT_ID.to_string());
     let client_secret = std::env::var("GOOGLE_CLIENT_SECRET").unwrap_or_else(|_| GOOGLE_CLIENT_SECRET.to_string());
     let redirect_uri = std::env::var("GOOGLE_REDIRECT_URI").unwrap_or_else(|_| GOOGLE_REDIRECT_URI.to_string());
@@ -184,6 +197,8 @@ pub async fn github_callback(
     State(state): State<AppState>,
     Query(query): Query<OAuthCallbackQuery>,
 ) -> Result<Json<AuthResponse>, (StatusCode, Json<serde_json::Value>)> {
+    validate_oauth_state(&state, query.state.as_deref())?;
+
     let client_id = std::env::var("GITHUB_CLIENT_ID").unwrap_or_else(|_| GITHUB_CLIENT_ID.to_string());
     let client_secret = std::env::var("GITHUB_CLIENT_SECRET").unwrap_or_else(|_| GITHUB_CLIENT_SECRET.to_string());
     let redirect_uri = std::env::var("GITHUB_REDIRECT_URI").unwrap_or_else(|_| GITHUB_REDIRECT_URI.to_string());
@@ -226,7 +241,7 @@ pub async fn github_callback(
 
     let email = match github_user.email {
         Some(e) if !e.is_empty() => e,
-        _ => format!("{}@github.placeholder", github_user.login),
+        _ => format!("github-{}@suture.internal", github_user.id),
     };
 
     let user = find_or_create_oauth_user(
@@ -273,10 +288,15 @@ fn find_or_create_oauth_user(
             let user_id = uuid::Uuid::new_v4().to_string();
             let display_name = display_name.unwrap_or("").to_string();
 
-            let _ = conn.execute(
+            conn.execute(
                 "INSERT INTO accounts (user_id, email, password_hash, display_name) VALUES (?1, ?2, ?3, ?4)",
                 rusqlite::params![user_id, email, oauth_marker, display_name],
-            );
+            ).map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({"error": format!("failed to create account: {}", e)})),
+                )
+            })?;
 
             let month = chrono::Utc::now().format("%Y-%m").to_string();
             let _ = conn.execute(
@@ -291,6 +311,59 @@ fn find_or_create_oauth_user(
                 tier: "free".to_string(),
                 created_at: chrono::Utc::now().to_rfc3339(),
             })
+        }
+    }
+}
+
+fn validate_oauth_state(
+    state: &AppState,
+    provided_state: Option<&str>,
+) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
+    let provided_state = provided_state.unwrap_or("");
+    if provided_state.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "missing state parameter"})),
+        ));
+    }
+
+    let conn = state.db.conn().map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": format!("database error: {}", e)})),
+        )
+    })?;
+
+    let result: Result<(String, i64), _> = conn.query_row(
+        "SELECT provider, expires_at FROM oauth_states WHERE state_token = ?1",
+        rusqlite::params![provided_state],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    );
+
+    match result {
+        Ok((_stored_provider, expires_at)) => {
+            let now = chrono::Utc::now().timestamp();
+            if now > expires_at {
+                let _ = conn.execute(
+                    "DELETE FROM oauth_states WHERE state_token = ?1",
+                    rusqlite::params![provided_state],
+                );
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({"error": "OAuth state expired — try again"})),
+                ));
+            }
+            let _ = conn.execute(
+                "DELETE FROM oauth_states WHERE state_token = ?1",
+                rusqlite::params![provided_state],
+            );
+            Ok(())
+        }
+        Err(_) => {
+            Err((
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "invalid OAuth state — possible CSRF attack"})),
+            ))
         }
     }
 }

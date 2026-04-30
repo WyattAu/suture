@@ -104,10 +104,9 @@ pub async fn upload_plugin(
 
 pub async fn merge_with_plugin(
     State(state): State<AppState>,
-    Extension(claims): Extension<Claims>,
+    Extension(_claims): Extension<Claims>,
     Json(req): Json<crate::merge_api::MergeRequest>,
 ) -> Result<Json<crate::merge_api::MergeResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let _ = &claims;
     let plugins = state.plugins.lock().unwrap();
     let plugin = plugins.get(&req.driver).ok_or_else(|| {
         (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": format!("plugin '{}' not loaded", req.driver)})))
