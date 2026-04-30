@@ -64,8 +64,9 @@ impl Cluster {
             for (from, to, msg) in batch {
                 if let Some(recipient) = self.nodes.get_mut(&to) {
                     let state_before = *recipient.state();
-                    if let Some(response) = recipient.handle_message(from, msg) {
-                        queue.push((to, from, response));
+                    let responses = recipient.handle_message(from, msg);
+                    for (resp_target, resp_msg) in responses {
+                        queue.push((to, resp_target, resp_msg));
                         result.messages_sent += 1;
                     }
                     if *recipient.state() != state_before {

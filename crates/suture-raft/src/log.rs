@@ -7,20 +7,32 @@ pub struct LogEntry {
     pub command: Vec<u8>,
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Snapshot {
+    pub data: Vec<u8>,
+    pub last_included_index: u64,
+    pub last_included_term: u64,
+    pub created_at: u64,
+}
+
 #[derive(Clone, Debug)]
 pub struct RaftLog {
     entries: Vec<LogEntry>,
+    snapshot_index: u64,
+    snapshot_term: u64,
 }
 
 impl RaftLog {
     pub fn new() -> Self {
         Self {
             entries: Vec::new(),
+            snapshot_index: 0,
+            snapshot_term: 0,
         }
     }
 
     pub fn append(&mut self, term: u64, command: Vec<u8>) -> u64 {
-        let index = self.entries.len() as u64 + 1;
+        let index = self.snapshot_index + self.entries.len() as u64 + 1;
         self.entries.push(LogEntry {
             index,
             term,
@@ -34,21 +46,28 @@ impl RaftLog {
     }
 
     pub fn get(&self, index: u64) -> Option<&LogEntry> {
-        if index == 0 || index as usize > self.entries.len() {
+        if index == 0 || index <= self.snapshot_index {
             return None;
         }
-        Some(&self.entries[(index - 1) as usize])
+        let local = (index - self.snapshot_index - 1) as usize;
+        self.entries.get(local)
     }
 
     pub fn last_index(&self) -> u64 {
-        self.entries.len() as u64
+        self.snapshot_index + self.entries.len() as u64
     }
 
     pub fn last_term(&self) -> u64 {
+        if self.entries.is_empty() {
+            return self.snapshot_term;
+        }
         self.entries.last().map(|e| e.term).unwrap_or(0)
     }
 
     pub fn term_for(&self, index: u64) -> Option<u64> {
+        if index == self.snapshot_index && self.snapshot_index > 0 {
+            return Some(self.snapshot_term);
+        }
         self.get(index).map(|e| e.term)
     }
 
@@ -56,26 +75,66 @@ impl RaftLog {
         if index == 0 || self.entries.is_empty() {
             return &[];
         }
-        let start = (index - 1) as usize;
-        if start >= self.entries.len() {
+        let local = (index - self.snapshot_index - 1) as usize;
+        if local >= self.entries.len() {
             return &[];
         }
-        &self.entries[start..]
+        &self.entries[local..]
     }
 
     pub fn truncate_from(&mut self, index: u64) {
-        if index == 0 || index as usize > self.entries.len() {
+        if index == 0 || index <= self.snapshot_index {
             return;
         }
-        self.entries.truncate((index - 1) as usize);
+        let local = (index - self.snapshot_index - 1) as usize;
+        if local >= self.entries.len() {
+            return;
+        }
+        self.entries.truncate(local);
     }
 
     pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
+        self.entries.is_empty() && self.snapshot_index == 0
     }
 
     pub fn as_slice(&self) -> &[LogEntry] {
         &self.entries
+    }
+
+    pub fn compact(&mut self, last_index: u64) {
+        if last_index <= self.snapshot_index || self.entries.is_empty() {
+            return;
+        }
+        if last_index >= self.last_index() {
+            let last_entry = self.entries.last().unwrap();
+            self.snapshot_index = last_entry.index;
+            self.snapshot_term = last_entry.term;
+            self.entries.clear();
+            return;
+        }
+        let keep_local = (last_index - self.snapshot_index) as usize;
+        if keep_local >= self.entries.len() {
+            return;
+        }
+        self.snapshot_index = last_index;
+        self.snapshot_term = self.entries[keep_local - 1].term;
+        self.entries = self.entries.split_off(keep_local);
+    }
+
+    pub fn set_snapshot(&mut self, index: u64, term: u64) {
+        if index > self.snapshot_index {
+            self.snapshot_index = index;
+            self.snapshot_term = term;
+            self.entries.clear();
+        }
+    }
+
+    pub fn snapshot_index(&self) -> u64 {
+        self.snapshot_index
+    }
+
+    pub fn snapshot_term(&self) -> u64 {
+        self.snapshot_term
     }
 }
 
@@ -292,6 +351,69 @@ mod tests {
         assert_eq!(log.term_for(3), Some(3));
         assert_eq!(log.term_for(4), None);
         assert_eq!(log.term_for(0), None);
+    }
+
+    #[test]
+    fn test_log_compact_partial() {
+        let mut log = RaftLog::new();
+        log.append(1, vec![1]);
+        log.append(1, vec![2]);
+        log.append(2, vec![3]);
+        log.append(2, vec![4]);
+        log.append(3, vec![5]);
+
+        log.compact(2);
+        assert_eq!(log.snapshot_index(), 2);
+        assert_eq!(log.snapshot_term(), 1);
+        assert_eq!(log.last_index(), 5);
+        assert!(log.get(1).is_none());
+        assert!(log.get(2).is_none());
+        assert_eq!(log.get(3).unwrap().command, vec![3]);
+        assert_eq!(log.last_term(), 3);
+        assert_eq!(log.term_for(2), Some(1));
+    }
+
+    #[test]
+    fn test_log_compact_full() {
+        let mut log = RaftLog::new();
+        log.append(1, vec![1]);
+        log.append(2, vec![2]);
+
+        log.compact(2);
+        assert_eq!(log.snapshot_index(), 2);
+        assert_eq!(log.snapshot_term(), 2);
+        assert!(log.as_slice().is_empty());
+        assert_eq!(log.last_index(), 2);
+        assert_eq!(log.last_term(), 2);
+        assert!(log.get(2).is_none());
+    }
+
+    #[test]
+    fn test_log_append_after_compact() {
+        let mut log = RaftLog::new();
+        log.append(1, vec![1]);
+        log.append(1, vec![2]);
+        log.append(2, vec![3]);
+
+        log.compact(2);
+        let idx = log.append(3, vec![4]);
+        assert_eq!(idx, 4);
+        assert_eq!(log.last_index(), 4);
+        assert_eq!(log.get(4).unwrap().command, vec![4]);
+    }
+
+    #[test]
+    fn test_log_compact_no_op() {
+        let mut log = RaftLog::new();
+        log.append(1, vec![1]);
+        log.append(2, vec![2]);
+
+        log.compact(0);
+        assert_eq!(log.snapshot_index(), 0);
+
+        log.compact(5);
+        assert_eq!(log.snapshot_index(), 2);
+        assert_eq!(log.snapshot_term(), 2);
     }
 }
 

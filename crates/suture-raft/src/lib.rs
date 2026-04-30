@@ -8,7 +8,7 @@ pub mod node;
 pub mod transport;
 
 pub use error::RaftError;
-pub use log::{LogEntry, RaftLog};
+pub use log::{LogEntry, RaftLog, Snapshot};
 pub use message::RaftMessage;
-pub use node::{NodeState, RaftNode};
+pub use node::{ClusterConfig, NodeId, NodeState, PreVote, RaftNode, ReadIndex};
 pub use transport::RaftTransport;

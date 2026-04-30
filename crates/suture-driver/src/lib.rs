@@ -6,15 +6,21 @@
 //! enabling Suture to understand *what changed* rather than just
 //! *which bytes changed*.
 
+pub mod cache;
 pub mod error;
+pub mod interner;
 pub mod plugin;
 pub mod registry;
+pub mod strategy;
 pub mod structured_merge;
 pub mod types;
 
+pub use cache::MergeCache;
 pub use error::DriverError;
+pub use interner::KeyInterner;
 pub use plugin::{BuiltinDriverPlugin, DriverPlugin, PluginError, PluginRegistry};
 pub use registry::DriverRegistry;
+pub use strategy::{optimal_merge_strategy, MergeStrategy};
 pub use types::{DiffHunk, DiffHunkType, DiffSummary, VisualDiff};
 
 /// Format-specific driver for translating between file formats and Suture patches.
