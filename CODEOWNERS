@@ -1,0 +1,69 @@
+# CODEOWNERS — code ownership for PR reviews
+
+# Core merge engine
+/crates/suture-core/ @WyattAu
+/crates/suture-common/ @WyattAu
+
+# Driver system
+/crates/suture-driver/ @WyattAu
+/crates/suture-driver-json/ @WyattAu
+/crates/suture-driver-yaml/ @WyattAu
+/crates/suture-driver-toml/ @WyattAu
+/crates/suture-driver-xml/ @WyattAu
+/crates/suture-driver-csv/ @WyattAu
+/crates/suture-driver-markdown/ @WyattAu
+/crates/suture-driver-html/ @WyattAu
+/crates/suture-driver-sql/ @WyattAu
+/crates/suture-driver-docx/ @WyattAu
+/crates/suture-driver-xlsx/ @WyattAu
+/crates/suture-driver-pptx/ @WyattAu
+/crates/suture-driver-svg/ @WyattAu
+/crates/suture-driver-image/ @WyattAu
+/crates/suture-driver-pdf/ @WyattAu
+/crates/suture-driver-ical/ @WyattAu
+/crates/suture-driver-feed/ @WyattAu
+/crates/suture-driver-otio/ @WyattAu
+/crates/suture-driver-example/ @WyattAu
+
+# Infrastructure
+/crates/suture-hub/ @WyattAu
+/crates/suture-platform/ @WyattAu
+/crates/suture-raft/ @WyattAu
+/crates/suture-daemon/ @WyattAu
+/crates/suture-vfs/ @WyattAu
+/crates/suture-s3/ @WyattAu
+
+# Protocol & merge
+/crates/suture-protocol/ @WyattAu
+/crates/suture-merge/ @WyattAu
+/crates/suture-ooxml/ @WyattAu
+
+# CLI/TUI
+/crates/suture-cli/ @WyattAu
+/crates/suture-tui/ @WyattAu
+
+# Extensions
+/vscode-extension/ @WyattAu
+/vscode-suture/ @WyattAu
+/desktop-app/ @WyattAu
+/crates/suture-lsp/ @WyattAu
+/crates/suture-node/ @WyattAu
+
+# CI/CD
+.github/workflows/ @WyattAu
+.gitlab-ci.yml.example @WyattAu
+deploy/ @WyattAu
+scripts/ @WyattAu
+
+# Documentation
+docs/ @WyattAu
+README.md @WyattAu
+CONTRIBUTING.md @WyattAu
+ARCHITECTURE.md @WyattAu
+
+# Root configuration
+Cargo.toml @WyattAu
+rust-toolchain.toml @WyattAu
+justfile @WyattAu
+Dockerfile @WyattAu
+docker-compose.yml @WyattAu

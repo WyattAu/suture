@@ -160,6 +160,17 @@ just run       # cargo run --bin suture-cli
 
 ## Development Workflow
 
+### Branch Naming
+
+- `feature/description` — new features
+- `fix/description` — bug fixes
+- `refactor/description` — code improvements
+- `docs/description` — documentation changes
+
+Always branch from `main`.
+
+### Workflow
+
 1. **Create a branch** from `main`
 2. **Make changes** following the code style below
 3. **Run tests**: `cargo test -p <crate>` or the full workspace command
@@ -217,11 +228,24 @@ Drivers are format-specific plugins that implement the `SutureDriver` trait from
        fn format_diff(&self, base: Option<&str>, new: &str) -> Result<String, DriverError> { /* ... */ }
        fn merge(&self, base: &str, ours: &str, theirs: &str) -> Result<Option<String>, DriverError> { /* ... */ }
    }
+    ```
+
+   Alternatively, for structured formats (JSON, YAML, TOML, etc.), use the `impl_structured_driver!` macro instead of implementing the trait manually. See `suture-driver-json` for an example:
+
+   ```rust
+   use suture_driver::impl_structured_driver;
+
+   impl_structured_driver! {
+       name: "MyFormat",
+       extensions: &[".myext"],
+       parse_fn: my_parse,
+       merge_fn: my_merge,
+   }
    ```
 
    See `crates/suture-driver-example/` for a complete reference implementation.
 
-3. **Add tests** — unit tests in `src/lib.rs`, integration tests in `tests/`
+3. **Add tests** — minimum 10 tests per driver. Unit tests in `src/lib.rs`, integration tests in `tests/`
 
 4. **Add to workspace** — the glob `crates/*` in the root `Cargo.toml` picks it up automatically
 
@@ -229,6 +253,11 @@ Drivers are format-specific plugins that implement the `SutureDriver` trait from
 
    ```rust
    registry.register(Box::new(suture_driver_myext::MyDriver));
+   ```
+
+   If using the `impl_structured_driver!` macro, the generated `register` function can be called directly:
+   ```rust
+   suture_driver_myext::register(&mut registry);
    ```
 
 6. **Optionally add to `suture-merge`** — add as an optional dependency with a feature flag, following the pattern of existing drivers in `suture-merge/Cargo.toml`
@@ -240,8 +269,9 @@ Drivers are format-specific plugins that implement the `SutureDriver` trait from
 - Follow `rustfmt` defaults (`cargo fmt`)
 - Clippy must pass with `-D warnings`
 - Use `thiserror` for error types (see `DriverError`, `RepoError`, `CasError` for patterns)
-- Prefer `Result<T, Error>` with `?` over `unwrap()` in library code
+- No `.unwrap()` or `.expect()` in library/production code — use `?` or proper error handling
 - All public functions must have `///` doc comments
+- Test coverage >80% for new code
 - Rust edition 2024 — note that `std::env::set_var` requires an `unsafe` block
 - New features must include tests
 
@@ -309,6 +339,12 @@ Open a GitHub issue with:
 
 ## Release Process
 
+1. **Version bump** — update the version in all `Cargo.toml` files (`workspace.package.version` and individual crate versions)
+2. **Update CHANGELOG.md** — add entries under the new version
+3. **Run full test suite** — `cargo test --workspace --exclude suture-py --exclude suture-e2e --exclude suture-wasm-plugin`
+4. **Run quality gates** — `cargo clippy`, `cargo fmt --check`
+5. **Push tag** — pushing a `v*` tag triggers the CI release workflow
+
 ```bash
 # Dry run (no actual publishing)
 scripts/publish.sh
@@ -317,7 +353,7 @@ scripts/publish.sh
 scripts/publish.sh --real
 ```
 
-The script publishes all 30 crates to crates.io in dependency order.
+The script publishes all 39 crates to crates.io in dependency order.
 
 ## License
 
