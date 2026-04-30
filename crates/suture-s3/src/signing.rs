@@ -120,7 +120,7 @@ fn derive_signing_key(
 }
 
 fn compute_hmac(key: &[u8], data: &[u8]) -> Vec<u8> {
-    let mut mac = HmacSha256::new_from_slice(key).expect("HMAC can take key of any size");
+    let mut mac = HmacSha256::new_from_slice(key).expect("HMAC accepts any key size");
     mac.update(data);
     mac.finalize().into_bytes().to_vec()
 }

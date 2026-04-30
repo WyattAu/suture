@@ -37,16 +37,21 @@ impl WebhookManager {
         }
     }
 
-    pub fn sign_payload(&self, payload: &str, secret: &str) -> String {
+    pub fn sign_payload(&self, payload: &str, secret: &str) -> Option<String> {
         use hmac::{Hmac, Mac};
         use sha2::Sha256;
 
         type HmacSha256 = Hmac<Sha256>;
-        let mut mac =
-            HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC can take key of any size");
+        let mut mac = match HmacSha256::new_from_slice(secret.as_bytes()) {
+            Ok(m) => m,
+            Err(e) => {
+                tracing::warn!("HMAC key rejected ({} bytes): {}", secret.len(), e);
+                return None;
+            }
+        };
         mac.update(payload.as_bytes());
         let result = mac.finalize();
-        hex::encode(result.into_bytes())
+        Some(hex::encode(result.into_bytes()))
     }
 
     pub async fn trigger(
@@ -98,8 +103,9 @@ impl WebhookManager {
                 .body(payload_json.clone());
 
             if let Some(ref secret) = webhook.secret {
-                let signature = self.sign_payload(&payload_json, secret);
-                req = req.header("X-Suture-Signature", format!("sha256={signature}"));
+                if let Some(signature) = self.sign_payload(&payload_json, secret) {
+                    req = req.header("X-Suture-Signature", format!("sha256={signature}"));
+                }
             }
 
             match req.send().await {
@@ -169,13 +175,13 @@ mod tests {
         let manager = WebhookManager::new();
         let payload = r#"{"event":"push"}"#;
         let secret = "test-secret";
-        let sig1 = manager.sign_payload(payload, secret);
-        let sig2 = manager.sign_payload(payload, secret);
+        let sig1 = manager.sign_payload(payload, secret).expect("valid HMAC key");
+        let sig2 = manager.sign_payload(payload, secret).expect("valid HMAC key");
         assert_eq!(sig1, sig2);
         assert!(!sig1.is_empty());
         assert!(sig1.len() > 32);
 
-        let different_sig = manager.sign_payload(r#"{"event":"pull"}"#, secret);
+        let different_sig = manager.sign_payload(r#"{"event":"pull"}"#, secret).expect("valid HMAC key");
         assert_ne!(sig1, different_sig);
     }
 

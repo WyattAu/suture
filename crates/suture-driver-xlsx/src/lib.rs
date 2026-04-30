@@ -135,13 +135,7 @@ impl XlsxDriver {
                     let remaining = &trimmed[search_from..];
                     remaining
                         .find("<c ")
-                        .or_else(|| {
-                            if remaining.contains("<c>") {
-                                Some(remaining.find("<c>").unwrap())
-                            } else {
-                                None
-                            }
-                        })
+                        .or_else(|| remaining.find("<c>"))
                         .map(|pos| search_from + pos)
                 };
 

@@ -106,7 +106,10 @@ impl HubStorage {
     }
 
     fn migrate(&mut self) -> Result<(), StorageError> {
-        let conn = self.conn.get_mut().expect("not shared yet");
+        let conn = self
+            .conn
+            .get_mut()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS repos (
                 repo_id TEXT PRIMARY KEY,

@@ -1908,10 +1908,9 @@ pub async fn push_handler(
     let ip = addr.ip().to_string();
     if let Err(retry_after) = hub.check_rate_limit(&ip, "push") {
         let mut hdrs = HeaderMap::new();
-        hdrs.insert(
-            axum::http::header::RETRY_AFTER,
-            retry_after.to_string().parse().unwrap(),
-        );
+        if let Ok(val) = retry_after.to_string().parse() {
+            hdrs.insert(axum::http::header::RETRY_AFTER, val);
+        }
         return (
             StatusCode::TOO_MANY_REQUESTS,
             hdrs,
@@ -1965,10 +1964,9 @@ pub async fn pull_handler(
     let ip = addr.ip().to_string();
     if let Err(retry_after) = hub.check_rate_limit(&ip, "pull") {
         let mut hdrs = HeaderMap::new();
-        hdrs.insert(
-            axum::http::header::RETRY_AFTER,
-            retry_after.to_string().parse().unwrap(),
-        );
+        if let Ok(val) = retry_after.to_string().parse() {
+            hdrs.insert(axum::http::header::RETRY_AFTER, val);
+        }
         return (
             StatusCode::TOO_MANY_REQUESTS,
             hdrs,
@@ -2058,10 +2056,9 @@ pub async fn create_token_handler(
     let ip = addr.ip().to_string();
     if let Err(retry_after) = hub.check_rate_limit(&ip, "token_create") {
         let mut hdrs = HeaderMap::new();
-        hdrs.insert(
-            axum::http::header::RETRY_AFTER,
-            retry_after.to_string().parse().unwrap(),
-        );
+        if let Ok(val) = retry_after.to_string().parse() {
+            hdrs.insert(axum::http::header::RETRY_AFTER, val);
+        }
         return (
             StatusCode::TOO_MANY_REQUESTS,
             hdrs,
@@ -2705,13 +2702,13 @@ pub async fn lfs_download_handler(
     // Validate repo_id and oid to prevent path traversal
     let is_safe = |s: &str| s.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.');
     if !is_safe(&repo_id) || !is_safe(&oid) {
-        return (
-            StatusCode::BAD_REQUEST,
-            axum::response::Response::builder()
-                .body(axum::body::Body::from("{\"message\":\"invalid repo_id or oid\"}"))
-                .unwrap()
-                .into_response(),
-        );
+        let body = axum::body::Body::from("{\"message\":\"invalid repo_id or oid\"}");
+        let response = if let Ok(r) = axum::response::Response::builder().body(body) {
+            r
+        } else {
+            axum::response::Response::new(axum::body::Body::from("{\"message\":\"invalid repo_id or oid\"}"))
+        };
+        return (StatusCode::BAD_REQUEST, response.into_response());
     }
 
     let lfs_dir = match &hub.lfs_data_dir {
@@ -2735,12 +2732,17 @@ pub async fn lfs_download_handler(
 
     match std::fs::read(&obj_path) {
         Ok(data) => {
+            let len = data.len();
+            let body = axum::body::Body::from(data);
             let response = axum::response::Response::builder()
                 .status(StatusCode::OK)
                 .header("Content-Type", "application/octet-stream")
-                .header("Content-Length", data.len().to_string())
-                .body(axum::body::Body::from(data))
-                .unwrap();
+                .header("Content-Length", len.to_string())
+                .body(body)
+                .unwrap_or_else(|e| {
+                    tracing::error!("failed to build response: {}", e);
+                    axum::response::Response::new(axum::body::Body::from("internal error"))
+                });
             (StatusCode::OK, response)
         }
         Err(_) => (
@@ -3186,10 +3188,9 @@ pub async fn v2_pull_handler(
     let ip = addr.ip().to_string();
     if let Err(retry_after) = hub.check_rate_limit(&ip, "pull") {
         let mut hdrs = HeaderMap::new();
-        hdrs.insert(
-            axum::http::header::RETRY_AFTER,
-            retry_after.to_string().parse().unwrap(),
-        );
+        if let Ok(val) = retry_after.to_string().parse() {
+            hdrs.insert(axum::http::header::RETRY_AFTER, val);
+        }
         return (
             StatusCode::TOO_MANY_REQUESTS,
             hdrs,
@@ -3239,10 +3240,9 @@ pub async fn v2_push_handler(
     let ip = addr.ip().to_string();
     if let Err(retry_after) = hub.check_rate_limit(&ip, "push") {
         let mut hdrs = HeaderMap::new();
-        hdrs.insert(
-            axum::http::header::RETRY_AFTER,
-            retry_after.to_string().parse().unwrap(),
-        );
+        if let Ok(val) = retry_after.to_string().parse() {
+            hdrs.insert(axum::http::header::RETRY_AFTER, val);
+        }
         return (
             StatusCode::TOO_MANY_REQUESTS,
             hdrs,
@@ -3381,10 +3381,9 @@ pub async fn batch_push_handler(
     let ip = addr.ip().to_string();
     if let Err(retry_after) = hub.check_rate_limit(&ip, "push") {
         let mut hdrs = HeaderMap::new();
-        hdrs.insert(
-            axum::http::header::RETRY_AFTER,
-            retry_after.to_string().parse().unwrap(),
-        );
+        if let Ok(val) = retry_after.to_string().parse() {
+            hdrs.insert(axum::http::header::RETRY_AFTER, val);
+        }
         return (
             StatusCode::TOO_MANY_REQUESTS,
             hdrs,

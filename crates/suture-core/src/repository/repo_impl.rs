@@ -1087,12 +1087,16 @@ impl Repository {
             sorted_ids.push(id);
             if let Some(kids) = children.get(&id) {
                 for &child in kids {
-                    let deg = in_degree
-                        .get_mut(&child)
-                        .expect("in-degree entry exists for child in topo sort");
-                    *deg -= 1;
-                    if *deg == 0 {
-                        queue.push_back(child);
+                    if let Some(deg) = in_degree.get_mut(&child) {
+                        *deg -= 1;
+                        if *deg == 0 {
+                            queue.push_back(child);
+                        }
+                    } else {
+                        tracing::warn!(
+                            "topo sort: missing in-degree entry for child {}, skipping",
+                            child
+                        );
                     }
                 }
             }

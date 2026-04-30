@@ -31,7 +31,7 @@ impl PathTranslator {
                     dirs.insert(prefix.clone());
                 }
             }
-            let file_name = parts.last().unwrap().to_string();
+            let file_name = parts.last().map(|s| s.to_string()).unwrap_or_default();
             files.insert(path.to_string(), file_name);
         }
 
@@ -47,7 +47,7 @@ impl PathTranslator {
             }
             let parent = parent_of(d).unwrap_or_default();
             if parent == dir_path {
-                let name = d.rsplit('/').next().unwrap().to_string();
+                let name = d.rsplit('/').next().map(|s| s.to_string()).unwrap_or_default();
                 entries.push(DirEntry {
                     name,
                     path: d.clone(),
@@ -59,7 +59,7 @@ impl PathTranslator {
         for path in self.files.keys() {
             let parent = parent_of(path).unwrap_or_default();
             if parent == dir_path {
-                let name = path.rsplit('/').next().unwrap().to_string();
+                let name = path.rsplit('/').next().map(|s| s.to_string()).unwrap_or_default();
                 entries.push(DirEntry {
                     name,
                     path: path.clone(),
