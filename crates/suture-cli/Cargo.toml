@@ -55,10 +55,9 @@ toml = "0.8"
 libc = "0.2"
 regex = "1"
 chrono = "0.4"
-suture-node = { path = "../suture-node", version = "5.0.0", optional = true }
-# NOTE: suture-node is excluded from publish (requires Node.js/napi-rs).
-# For publishing, the 'node' feature is not included in the default features.
-# The dependency above will cause a publish warning but is optional.
+# suture-node is excluded from publish (requires Node.js/napi-rs).
+# Uncomment the line below and the 'node' feature to build with Node.js support:
+# suture-node = { path = "../suture-node", optional = true }
 
 flate2 = "1"
 tar = "0.4"
@@ -66,7 +65,8 @@ difflib = "0.4"
 walkdir = "2"
 
 [features]
-node = ["dep:suture-node"]
+# 'node' feature temporarily removed for crates.io publish (suture-node is publish=false)
+# node = ["dep:suture-node"]
 
 [dev-dependencies]
 tempfile = "3"

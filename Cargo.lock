@@ -4484,7 +4484,6 @@ dependencies = [
  "suture-driver-xlsx",
  "suture-driver-xml",
  "suture-driver-yaml",
- "suture-node",
  "suture-ooxml",
  "suture-protocol",
  "suture-tui",
