@@ -20,6 +20,8 @@ suture-driver-pptx = { path = "../suture-driver-pptx" }
 suture-driver-otio = { path = "../suture-driver-otio" }
 suture-driver-image = { path = "../suture-driver-image" }
 suture-driver-pdf = { path = "../suture-driver-pdf" }
+suture-driver-yaml = { path = "../suture-driver-yaml" }
+suture-driver-json = { path = "../suture-driver-json" }
 tokio = { version = "1", features = ["full"] }
 axum = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }

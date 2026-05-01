@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Suture — Semantic Merge for Every Format</title>
+    <meta name="description" content="Automatically resolve merge conflicts in JSON, YAML, TOML, XML, CSV, and 12+ more structured file formats.">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧵</text></svg>">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0f; color: #e0e0e8; line-height: 1.6; }
+        a { color: #6366f1; text-decoration: none; }
+        a:hover { color: #818cf8; }
+        .container { max-width: 800px; margin: 0 auto; padding: 2rem; }
+        h1 { font-size: 2.5rem; font-weight: 800; margin-bottom: 1rem; }
+        h1 span { color: #6366f1; }
+        .hero { text-align: center; padding: 6rem 0 4rem; }
+        .hero p { color: #8888a0; font-size: 1.1rem; max-width: 600px; margin: 1rem auto; }
+        .hero .buttons { display: flex; gap: 1rem; justify-content: center; margin-top: 2rem; flex-wrap: wrap; }
+        .btn { display: inline-flex; padding: 0.6rem 1.2rem; border-radius: 6px; border: 1px solid #2a2a3a; background: #12121a; color: #e0e0e8; font-size: 0.9rem; }
+        .btn:hover { border-color: #6366f1; background: #6366f1; color: white; }
+        .btn-primary { background: #6366f1; border-color: #6366f1; color: white; }
+        .btn-primary:hover { background: #818cf8; }
+        .demo { background: #12121a; border: 1px solid #2a2a3a; border-radius: 12px; padding: 2rem; margin: 2rem 0; }
+        .demo h2 { font-size: 1.25rem; margin-bottom: 1rem; }
+        .demo textarea { width: 100%; min-height: 100px; background: #0a0a0f; border: 1px solid #2a2a3a; border-radius: 6px; color: #e0e0e8; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; padding: 0.75rem; resize: vertical; }
+        .demo .demo-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin-top: 1rem; }
+        .demo .demo-label { font-size: 0.75rem; color: #8888a0; margin-bottom: 0.25rem; text-transform: uppercase; letter-spacing: 0.05em; }
+        .demo .result { grid-column: 1/-1; margin-top: 1rem; padding: 1rem; background: #0a0a0f; border: 1px solid #6366f1; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; min-height: 60px; white-space: pre-wrap; }
+        .demo .merge-btn { margin-top: 1rem; }
+        .formats { display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: center; margin: 2rem 0; }
+        .format { padding: 0.35rem 0.7rem; background: #12121a; border: 1px solid #2a2a3a; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; }
+        .install { background: #12121a; border: 1px solid #2a2a3a; border-radius: 8px; padding: 1.5rem; margin: 2rem 0; text-align: center; }
+        .install h2 { font-size: 1.25rem; margin-bottom: 1rem; }
+        .install code { display: block; background: #0a0a0f; border: 1px solid #2a2a3a; border-radius: 6px; padding: 1rem; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; text-align: left; overflow-x: auto; margin-top: 0.5rem; color: #22c55e; }
+        .install p { color: #8888a0; font-size: 0.85rem; margin-top: 0.5rem; }
+        .links { display: flex; gap: 1.5rem; justify-content: center; margin: 2rem 0; flex-wrap: wrap; }
+        .links a { color: #8888a0; font-size: 0.9rem; }
+        .links a:hover { color: #e0e0e8; }
+        footer { text-align: center; padding: 2rem 0; border-top: 1px solid #2a2a3a; margin-top: 2rem; color: #8888a0; font-size: 0.85rem; }
+        @media (max-width: 600px) {
+            .demo .demo-grid { grid-template-columns: 1fr; }
+            h1 { font-size: 1.75rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="hero">
+            <h1>Suture</h1>
+            <p>Semantic merge for <span>every format</span></p>
+            <p style="color: #555">Automatically resolve merge conflicts in JSON, YAML, TOML, XML, CSV, and 12+ more structured file formats.</p>
+            <div class="buttons">
+                <a href="#demo" class="btn btn-primary">Try Demo</a>
+                <a href="#install" class="btn">Install</a>
+                <a href="https://github.com/WyattAu/suture" class="btn">GitHub</a>
+            </div>
+        </div>
+
+        <div class="formats">
+            <span class="format">JSON</span>
+            <span class="format">YAML</span>
+            <span class="format">TOML</span>
+            <span class="format">XML</span>
+            <span class="format">CSV</span>
+            <span class="format">SQL</span>
+            <span class="format">HTML</span>
+            <span class="format">Markdown</span>
+            <span class="format">SVG</span>
+            <span class="format">Properties</span>
+            <span class="format">DOCX</span>
+            <span class="format">XLSX</span>
+            <span class="format">PPTX</span>
+            <span class="format">PDF</span>
+            <span class="format">Image</span>
+            <span class="format">RSS</span>
+            <span class="format">iCal</span>
+        </div>
+
+        <div class="demo" id="demo">
+            <h2>Interactive Demo</h2>
+            <div class="demo-grid">
+                <div>
+                    <div class="demo-label">Base</div>
+                    <textarea id="demo-base">{
+  "name": "suture",
+  "version": "5.0.1",
+  "features": ["merge", "diff"]
+}</textarea>
+                </div>
+                <div>
+                    <div class="demo-label" style="color: #6366f1">Ours</div>
+                    <textarea id="demo-ours">{
+  "name": "suture",
+  "version": "5.1.0",
+  "features": ["merge", "diff", "platform"]
+}</textarea>
+                </div>
+                <div>
+                    <div class="demo-label" style="color: #22c55e">Theirs</div>
+                    <textarea id="demo-theirs">{
+  "name": "suture",
+  "version": "5.0.1",
+  "features": ["merge", "diff"],
+  "license": "AGPL-3.0"
+}</textarea>
+                </div>
+            </div>
+            <div class="merge-btn">
+                <button class="btn btn-primary" onclick="doMerge()">Merge</button>
+            </div>
+            <div class="result" id="demo-result">Click "Merge" to see the result...</div>
+        </div>
+
+        <div class="install" id="install">
+            <h2>Install as Git Merge Driver</h2>
+            <code>curl -fsSL https://raw.githubusercontent.com/WyattAu/suture/main/scripts/install-merge-driver.sh | bash</code>
+            <p>After install, Git automatically merges *.json, *.yaml, *.yml, *.toml, *.xml, *.csv files.</p>
+        </div>
+
+        <div class="links">
+            <a href="https://github.com/WyattAu/suture">GitHub</a>
+            <a href="https://crates.io/crates/suture-merge-driver">crates.io</a>
+            <a href="https://www.npmjs.com/package/suture-merge-driver">npm</a>
+            <a href="https://pypi.org/project/suture-merge-driver/">PyPI</a>
+            <a href="https://github.com/WyattAu/suture/blob/main/CHANGELOG.md">Changelog</a>
+            <a href="https://github.com/WyattAu/suture/blob/main/docs/self-hosting.md">Self-Host</a>
+            <a href="https://github.com/WyattAu/suture/blob/main/docs/ci-integration.md">CI/CD Guide</a>
+        </div>
+    </div>
+
+    <footer>
+        <p>Suture — Semantic Merge Platform</p>
+        <p>AGPL-3.0 · <a href="https://github.com/WyattAu/suture">Source</a></p>
+    </footer>
+
+    <script>
+    function mergeJson(base, ours, theirs) {
+        function mergeValue(b, o, t) {
+            if (typeof o === 'object' && o !== null && !Array.isArray(o) && typeof t === 'object' && t !== null && !Array.isArray(t)) {
+                var result = {};
+                var allKeys = new Set([...Object.keys(b || {}), ...Object.keys(o || {}), ...Object.keys(t || {})]);
+                allKeys.forEach(function(key) {
+                    result[key] = mergeValue(
+                        (b || {})[key], (o || {})[key], (t || {})[key]
+                    );
+                });
+                return result;
+            }
+            if (Array.isArray(o) && Array.isArray(t)) {
+                var combined = [...(o || [])];
+                (t || []).forEach(function(item) { if (!(o || []).includes(item) && !(b || []).includes(item)) combined.push(item); });
+                return combined;
+            }
+            var oStr = JSON.stringify(o), tStr = JSON.stringify(t), bStr = JSON.stringify(b);
+            if (oStr === tStr) return o;
+            if (oStr === bStr) return t;
+            if (tStr === bStr) return o;
+            return { __suture_conflict: { ours: o, theirs: t } };
+        }
+        try {
+            var result = mergeValue(JSON.parse(base), JSON.parse(ours), JSON.parse(theirs));
+            return { result: result, conflicts: (JSON.stringify(result) || '').includes('__suture_conflict') };
+        } catch(e) {
+            return { result: 'Error: ' + e.message, conflicts: true };
+        }
+    }
+
+    function doMerge() {
+        var base = document.getElementById('demo-base').value;
+        var ours = document.getElementById('demo-ours').value;
+        var theirs = document.getElementById('demo-theirs').value;
+        var resultEl = document.getElementById('demo-result');
+        try {
+            var result = mergeJson(base, ours, theirs);
+            if (result.conflicts) {
+                resultEl.textContent = JSON.stringify(result.result, null, 2);
+                resultEl.style.borderColor = '#ef4444';
+            } else {
+                resultEl.textContent = JSON.stringify(result.result, null, 2);
+                resultEl.style.borderColor = '#6366f1';
+            }
+        } catch(e) {
+            resultEl.textContent = 'Error: ' + e.message;
+            resultEl.style.borderColor = '#ef4444';
+        }
+    }
+
+    // Auto-merge on load
+    setTimeout(doMerge, 300);
+    </script>
+</body>
+</html>

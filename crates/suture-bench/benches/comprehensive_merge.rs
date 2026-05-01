@@ -315,11 +315,6 @@ fn bench_csv_merge(c: &mut Criterion) {
         let ours_one_side = base.replacen("val_0_1", "MODIFIED", 1);
         let theirs_unchanged = base.clone();
 
-        let ours_extra_row = format!(
-            "{}999,extra_row,{}\n",
-            &base,
-            (0..cols - 1).map(|c| format!("extra_{}", c)).collect::<Vec<_>>().join(",")
-        );
         let theirs_diff_row = base.replacen("val_1_1", "THEIRS_MODIFIED", 1);
 
         let ours_conflict = base.replacen("val_0_1", "OURS", 1);
@@ -341,7 +336,7 @@ fn bench_csv_merge(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::new("different_keys", &label), &label, |b, _| {
             b.iter(|| {
-                black_box(driver.merge(&base, &ours_extra_row, &theirs_diff_row).unwrap());
+                black_box(driver.merge(&base, &theirs_diff_row, &base.replacen("val_2_1", "THEIRS", 1)).unwrap());
             });
         });
 
