@@ -102,10 +102,10 @@ impl WebhookManager {
                 .header("X-Suture-Delivery", &webhook.id)
                 .body(payload_json.clone());
 
-            if let Some(ref secret) = webhook.secret {
-                if let Some(signature) = self.sign_payload(&payload_json, secret) {
-                    req = req.header("X-Suture-Signature", format!("sha256={signature}"));
-                }
+            if let Some(ref secret) = webhook.secret
+                && let Some(signature) = self.sign_payload(&payload_json, secret)
+            {
+                req = req.header("X-Suture-Signature", format!("sha256={signature}"));
             }
 
             match req.send().await {

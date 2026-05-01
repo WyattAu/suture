@@ -2572,8 +2572,12 @@ pub async fn lfs_batch_handler(
 
     let mut actions = Vec::new();
     for obj in &req.objects {
-        let prefix = &obj.oid[..2.min(obj.oid.len())];
-        let obj_path = obj_dir.join(prefix).join(&obj.oid);
+        let oid = &obj.oid;
+        if !oid.chars().all(|c| c.is_ascii_hexdigit()) || oid.len() > 128 {
+            continue;
+        }
+        let prefix = &oid[..2.min(oid.len())];
+        let obj_path = obj_dir.join(prefix).join(oid);
 
         let action = match req.operation {
             suture_protocol::LfsOperation::Upload => {

@@ -27,8 +27,8 @@ pub struct PreVote {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ClusterConfig {
-    pub nodes: Vec<NodeId>,
-    pub transition: Option<Vec<NodeId>>,
+    pub nodes: HashSet<NodeId>,
+    pub transition: Option<HashSet<NodeId>>,
 }
 
 pub struct ReadIndex {
@@ -68,7 +68,7 @@ impl RaftNode {
         } else {
             0
         };
-        let all_nodes: Vec<NodeId> = std::iter::once(id).chain(peers.iter().copied()).collect();
+        let all_nodes: HashSet<NodeId> = std::iter::once(id).chain(peers.iter().copied()).collect();
         Self {
             id,
             state: NodeState::Follower,
@@ -420,7 +420,7 @@ impl RaftNode {
     }
 
     fn replicate_log(&mut self) -> Vec<(NodeId, RaftMessage)> {
-        let mut messages = Vec::new();
+        let mut messages = Vec::with_capacity(self.peers.len());
 
         for &peer in &self.peers {
             let next_idx = self.next_index.get(&peer).copied().unwrap_or(1);
@@ -809,15 +809,10 @@ impl RaftNode {
 
         let current_nodes = self.config.nodes.clone();
 
-        let joint: Vec<NodeId> = current_nodes
-            .iter()
-            .chain(new_nodes.iter())
-            .copied()
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .collect();
+        let mut joint: HashSet<NodeId> = current_nodes.clone();
+        joint.extend(new_nodes.iter().copied());
 
-        self.config.transition = Some(new_nodes.clone());
+        self.config.transition = Some(new_nodes.into_iter().collect());
         self.config.nodes = joint.clone();
 
         let _messages: Vec<(NodeId, RaftMessage)> = self
@@ -829,7 +824,7 @@ impl RaftNode {
                     RaftMessage::ConfigChangeRequest {
                         term: self.current_term,
                         leader_id: self.id,
-                        new_nodes: joint.clone(),
+                        new_nodes: joint.iter().copied().collect(),
                     },
                 )
             })
@@ -1780,7 +1775,7 @@ mod tests {
 
         let config = leader.config();
         assert!(config.transition.is_none());
-        assert_eq!(config.nodes, vec![2, 3, 4]);
+        assert_eq!(config.nodes, HashSet::from([2, 3, 4]));
     }
 
     #[test]

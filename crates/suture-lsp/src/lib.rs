@@ -514,10 +514,11 @@ fn current_toml_section(content: &str, target_line: usize) -> String {
             break;
         }
         let trimmed = line.trim();
-        if trimmed.starts_with('[') && !trimmed.starts_with("[[") {
-            if let Some(inner) = trimmed.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
-                current = inner.trim().to_string();
-            }
+        if trimmed.starts_with('[')
+            && !trimmed.starts_with("[[")
+            && let Some(inner) = trimmed.strip_prefix('[').and_then(|s| s.strip_suffix(']'))
+        {
+            current = inner.trim().to_string();
         }
     }
     current
@@ -568,7 +569,7 @@ fn find_key_range_in_content(content: &str, key: &str) -> Range {
 }
 
 fn find_toml_key_range(content: &str, full_key: &str) -> Range {
-    let leaf = full_key.split('.').last().unwrap_or(full_key);
+    let leaf = full_key.split('.').next_back().unwrap_or(full_key);
     let search = format!("{} =", leaf);
     if let Some(byte_offset) = content.find(&search) {
         let before = &content[..byte_offset];
@@ -685,10 +686,10 @@ impl LanguageServer for SutureLsp {
         let uri = &params.text_document_position_params.text_document.uri;
         let position = params.text_document_position_params.position;
 
-        if let Some(content) = self.documents.read().await.get(uri) {
-            if let Some(hover) = Self::hover_structured(uri, position, content) {
-                return Ok(Some(hover));
-            }
+        if let Some(content) = self.documents.read().await.get(uri)
+            && let Some(hover) = Self::hover_structured(uri, position, content)
+        {
+            return Ok(Some(hover));
         }
 
         let Some((repo, relative_str, _)) = self.get_repo_and_relative(uri).await else {

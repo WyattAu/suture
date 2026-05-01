@@ -24,7 +24,7 @@ pub struct PluginListResponse {
 pub async fn list_plugins(
     State(state): State<AppState>,
 ) -> Json<PluginListResponse> {
-    let plugins = state.plugins.lock().unwrap();
+    let plugins = state.plugins.lock().unwrap_or_else(|e| e.into_inner());
     let list = plugins.list();
     Json(PluginListResponse {
         count: list.len(),
@@ -55,7 +55,9 @@ pub async fn upload_plugin(
         }
     };
 
-    let name = field.file_name().unwrap_or("unknown").to_string();
+    let name = field.file_name()
+        .map(|s| s.replace(['/', '\\', '\0'], "_").replace("..", "_"))
+        .unwrap_or_else(|| "unknown".into());
     let data = field.bytes().await.map_err(|e| {
         (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e.to_string()})))
     })?;
@@ -76,22 +78,25 @@ pub async fn upload_plugin(
         }
     }
 
-    match state.plugins.lock().unwrap().load(&name, &data) {
+    match state.plugins.lock().unwrap_or_else(|e| e.into_inner()).load(&name, &data) {
         Ok(_) => {
-            if let Err(e) = std::fs::create_dir_all("plugins") {
-                tracing::warn!("Failed to create plugins directory: {}", e);
-            }
             let plugin_path = format!("plugins/{}.wasm", name.replace(".wasm", ""));
-            if let Err(e) = std::fs::write(&plugin_path, &data) {
-                tracing::warn!("Failed to persist plugin: {}", e);
-            }
+            let data_ref = &data;
+            tokio::task::block_in_place(|| {
+                if let Err(e) = std::fs::create_dir_all("plugins") {
+                    tracing::warn!("Failed to create plugins directory: {e}");
+                }
+                if let Err(e) = std::fs::write(&plugin_path, data_ref) {
+                    tracing::warn!("Failed to persist plugin: {e}");
+                }
+            });
 
             Ok((
                 StatusCode::CREATED,
                 Json(serde_json::json!({
                     "name": name,
                     "status": "loaded",
-                    "driver": state.plugins.lock().unwrap().get(&format!("plugin-{}", name.replace(".wasm", ""))).map(|p| p.driver_name())
+                    "driver": state.plugins.lock().unwrap_or_else(|e| e.into_inner()).get(&format!("plugin-{}", name.replace(".wasm", ""))).map(|p| p.driver_name())
                 })),
             ))
         }
@@ -107,7 +112,7 @@ pub async fn merge_with_plugin(
     Extension(_claims): Extension<Claims>,
     Json(req): Json<crate::merge_api::MergeRequest>,
 ) -> Result<Json<crate::merge_api::MergeResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let plugins = state.plugins.lock().unwrap();
+    let plugins = state.plugins.lock().unwrap_or_else(|e| e.into_inner());
     let plugin = plugins.get(&req.driver).ok_or_else(|| {
         (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": format!("plugin '{}' not loaded", req.driver)})))
     })?;

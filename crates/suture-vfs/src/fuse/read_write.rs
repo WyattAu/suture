@@ -196,44 +196,54 @@ impl RwFilesystem {
             .snapshot_head()
             .map_err(|e| anyhow::anyhow!("snapshot: {e}"))?;
 
-        let pending_files = self.inner.pending_files.unpoison_lock();
-        let mut file_contents = self.inner.file_contents.unpoison_lock();
+        {
+            let pending_files = self.inner.pending_files.unpoison_lock();
+            let mut file_contents = self.inner.file_contents.unpoison_lock();
 
-        for (path, hash) in file_tree.iter() {
-            if let Ok(data) = repo.cas().get_blob(hash) {
-                file_contents.insert(path.clone(), data);
+            for (path, hash) in file_tree.iter() {
+                if let Ok(data) = repo.cas().get_blob(hash) {
+                    file_contents.insert(path.clone(), data);
+                }
             }
+
+            file_contents.retain(|path, _| file_tree.contains(path) || pending_files.contains(path));
         }
 
-        file_contents.retain(|path, _| file_tree.contains(path) || pending_files.contains(path));
+        let (path_translator, inode_map) = {
+            let file_contents = self.inner.file_contents.unpoison_lock();
+            let mut all_paths: Vec<String> = file_contents.keys().cloned().collect();
+            drop(file_contents);
 
-        drop(pending_files);
-
-        let pending_dirs = self.inner.pending_dirs.unpoison_lock();
-        let mut all_paths: Vec<String> = file_contents.keys().cloned().collect();
-        for dir in pending_dirs.iter() {
-            all_paths.push(format!("{}.d", dir));
-        }
-        let all_paths_ref: Vec<&str> = all_paths.iter().map(|s| s.as_str()).collect();
-        let path_translator = PathTranslator::build(&all_paths_ref);
-
-        let mut inode_map = InodeGenerator::new();
-        inode_map.alloc_dir("");
-        for dir in path_translator.all_dirs() {
-            let clean = dir.strip_suffix(".d").unwrap_or(dir);
-            if !clean.is_empty() {
-                inode_map.alloc_dir(clean);
+            let pending_dirs = self.inner.pending_dirs.unpoison_lock();
+            for dir in pending_dirs.iter() {
+                all_paths.push(format!("{}.d", dir));
             }
-        }
-        for path in path_translator.all_files().keys() {
-            let clean = path.strip_suffix(".d").unwrap_or(path);
-            if !clean.ends_with(".d") {
-                inode_map.alloc_file(clean);
+            let pending_dirs_list: Vec<String> = pending_dirs.iter().cloned().collect();
+            drop(pending_dirs);
+
+            let all_paths_ref: Vec<&str> = all_paths.iter().map(|s| s.as_str()).collect();
+            let path_translator = PathTranslator::build(&all_paths_ref);
+
+            let mut inode_map = InodeGenerator::new();
+            inode_map.alloc_dir("");
+            for dir in path_translator.all_dirs() {
+                let clean = dir.strip_suffix(".d").unwrap_or(dir);
+                if !clean.is_empty() {
+                    inode_map.alloc_dir(clean);
+                }
             }
-        }
-        for dir in pending_dirs.iter() {
-            inode_map.alloc_dir(dir);
-        }
+            for path in path_translator.all_files().keys() {
+                let clean = path.strip_suffix(".d").unwrap_or(path);
+                if !clean.ends_with(".d") {
+                    inode_map.alloc_file(clean);
+                }
+            }
+            for dir in &pending_dirs_list {
+                inode_map.alloc_dir(dir);
+            }
+
+            (path_translator, inode_map)
+        };
 
         *self.inner.inode_map.unpoison_lock() = inode_map;
         *self.inner.path_translator.unpoison_lock() = path_translator;
@@ -242,22 +252,25 @@ impl RwFilesystem {
     }
 
     fn list_dir_entries(&self, dir_path: &str) -> Vec<(String, String, bool)> {
-        let path_translator = self.inner.path_translator.unpoison_lock();
-        let pending_dirs = self.inner.pending_dirs.unpoison_lock();
+        let mut entries: Vec<(String, String, bool)> = {
+            let path_translator = self.inner.path_translator.unpoison_lock();
+            path_translator
+                .list_dir(dir_path)
+                .into_iter()
+                .filter(|e| !e.path.ends_with(".d"))
+                .map(|e| (e.name, e.path, e.is_dir))
+                .collect()
+        };
 
-        let mut entries: Vec<(String, String, bool)> = path_translator
-            .list_dir(dir_path)
-            .into_iter()
-            .filter(|e| !e.path.ends_with(".d"))
-            .map(|e| (e.name, e.path, e.is_dir))
-            .collect();
-
-        for dir in pending_dirs.iter() {
-            let parent = parent_of(dir).unwrap_or_default();
-            if parent == dir_path {
-                let name = dir.rsplit('/').next().unwrap_or(dir).to_string();
-                if !entries.iter().any(|(n, _, _)| n == &name) {
-                    entries.push((name, dir.clone(), true));
+        {
+            let pending_dirs = self.inner.pending_dirs.unpoison_lock();
+            for dir in pending_dirs.iter() {
+                let parent = parent_of(dir).unwrap_or_default();
+                if parent == dir_path {
+                    let name = dir.rsplit('/').next().unwrap_or(dir).to_string();
+                    if !entries.iter().any(|(n, _, _)| n == &name) {
+                        entries.push((name, dir.clone(), true));
+                    }
                 }
             }
         }
@@ -361,7 +374,7 @@ impl Filesystem for RwFilesystem {
         let inode = inode_map
             .lookup(&child_path)
             .ok_or_else(Errno::new_not_exist)?;
-        let entry = inode_map.get(inode).unwrap();
+        let entry = inode_map.get(inode).ok_or_else(Errno::new_not_exist)?;
 
         let size = if entry.kind == InodeKind::File {
             let file_contents = self.inner.file_contents.unpoison_lock();
@@ -546,7 +559,7 @@ impl Filesystem for RwFilesystem {
         self.inner
             .pending_files
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .insert(path.clone());
         self.rebuild_path_translator();
 
@@ -668,8 +681,8 @@ impl Filesystem for RwFilesystem {
         let entries = self.list_dir_entries(&parent_path);
 
         let precomputed: Vec<(u64, FileAttr, std::ffi::OsString, i64)> = {
-            let inode_map = self.inner.inode_map.unpoison_lock();
             let file_contents = self.inner.file_contents.unpoison_lock();
+            let inode_map = self.inner.inode_map.unpoison_lock();
 
             let mut result = Vec::new();
             for (i, (name, path, is_dir)) in entries.iter().enumerate() {
@@ -742,7 +755,7 @@ impl Filesystem for RwFilesystem {
                 self.inner
                     .file_contents
                     .lock()
-                    .unwrap()
+                    .unwrap_or_else(|e| e.into_inner())
                     .get(&path)
                     .cloned()
                     .unwrap_or_default()

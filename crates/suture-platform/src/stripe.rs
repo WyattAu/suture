@@ -216,13 +216,13 @@ pub async fn create_checkout_session(
         ));
     }
 
-    if let Ok(conn) = state.db.conn() {
-        if let Err(e) = conn.execute(
+    if let Ok(conn) = state.db.conn()
+        && let Err(e) = conn.execute(
             "INSERT INTO checkout_sessions (session_id, user_id, tier, status, created_at) VALUES (?1, ?2, ?3, 'created', datetime('now'))",
             rusqlite::params![session_id, claims.sub, tier],
-        ) {
-            tracing::error!("Failed to track checkout session: {}", e);
-        }
+        )
+    {
+        tracing::error!("Failed to track checkout session: {}", e);
     }
 
     Ok(Json(CheckoutResponse { url }))
@@ -310,7 +310,10 @@ pub async fn handle_webhook(
             ));
         }
     } else {
-        tracing::warn!("STRIPE_WEBHOOK_SECRET not set — skipping signature verification (INSECURE)");
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({"error": "STRIPE_WEBHOOK_SECRET not configured"})),
+        ));
     }
 
     let event: Result<StripeWebhookEvent, _> = serde_json::from_str(&body);
@@ -388,18 +391,19 @@ fn verify_stripe_signature(payload: &str, sig_header: &str, secret: &str) -> Res
     mac.update(signed_payload.as_bytes());
     let expected = hex::encode(mac.finalize().into_bytes());
 
+    fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+        if a.len() != b.len() {
+            return false;
+        }
+        let result = a.iter().zip(b.iter()).fold(0u8, |acc, (x, y)| acc | (x ^ y));
+        result == 0
+    }
+
     let expected_bytes = expected.as_bytes();
     for sig in &signatures {
         let sig_bytes = sig.as_bytes();
-        if expected_bytes.len() == sig_bytes.len() {
-            let match_count = expected_bytes
-                .iter()
-                .zip(sig_bytes.iter())
-                .filter(|(a, b)| a == b)
-                .count();
-            if match_count == expected_bytes.len() {
-                return Ok(());
-            }
+        if constant_time_eq(expected_bytes, sig_bytes) {
+            return Ok(());
         }
     }
 
@@ -438,13 +442,13 @@ async fn handle_checkout_completed(state: &AppState, object: &serde_json::Value)
             }
         }
 
-        if !session_id.is_empty() {
-            if let Err(e) = conn.execute(
+        if !session_id.is_empty()
+            && let Err(e) = conn.execute(
                 "UPDATE checkout_sessions SET status = 'completed' WHERE session_id = ?1",
                 rusqlite::params![session_id],
-            ) {
-                tracing::error!("Failed to update checkout session status: {}", e);
-            }
+            )
+        {
+            tracing::error!("Failed to update checkout session status: {}", e);
         }
     }
 }
@@ -515,13 +519,13 @@ async fn handle_payment_failed(state: &AppState, object: &serde_json::Value) {
             tracing::error!("Failed to set payment grace period: {}", e);
         }
 
-        if !subscription_id.is_empty() {
-            if let Err(e) = conn.execute(
+        if !subscription_id.is_empty()
+            && let Err(e) = conn.execute(
                 "UPDATE subscriptions SET status = 'past_due', updated_at = datetime('now') WHERE stripe_subscription_id = ?1",
                 rusqlite::params![subscription_id],
-            ) {
-                tracing::error!("Failed to update subscription to past_due: {}", e);
-            }
+            )
+        {
+            tracing::error!("Failed to update subscription to past_due: {}", e);
         }
     }
 }

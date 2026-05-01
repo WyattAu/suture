@@ -16,6 +16,7 @@ use std::collections::HashMap;
 use crate::auth::Claims;
 use crate::server::AppState;
 
+#[allow(clippy::too_many_arguments)]
 pub fn log_merge(
     state: &AppState,
     user_id: &str,

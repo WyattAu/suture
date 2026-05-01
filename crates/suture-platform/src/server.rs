@@ -140,10 +140,14 @@ async fn health_check() -> &'static str {
 }
 
 async fn shutdown_signal() {
-    tokio::signal::ctrl_c()
-        .await
-        .expect("failed to install ctrl-c handler");
-    tracing::info!("shutdown signal received");
+    match tokio::signal::ctrl_c().await {
+        Ok(()) => {
+            tracing::info!("shutdown signal received");
+        }
+        Err(e) => {
+            tracing::error!("failed to install ctrl-c handler: {e}");
+        }
+    }
 }
 
 async fn portal_handler(

@@ -52,7 +52,9 @@ pub struct MergeResult {
 impl MergeResult {
     /// Get all patch IDs that should be in the merged result.
     pub fn all_patch_ids(&self) -> Vec<PatchId> {
-        let mut ids = Vec::new();
+        let mut ids = Vec::with_capacity(
+            self.common_patches.len() + self.patches_a_only.len() + self.patches_b_only.len(),
+        );
         ids.extend(self.common_patches.iter());
         ids.extend(self.patches_a_only.iter());
         ids.extend(self.patches_b_only.iter());

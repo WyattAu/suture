@@ -206,10 +206,12 @@ pub fn revoke_jwt(db: &PlatformDb, token: &str, secret: &str) -> anyhow::Result<
 
 pub fn is_token_revoked(db: &PlatformDb, user_id: &str) -> bool {
     if let Ok(conn) = db.conn() {
-        let _ = conn.execute(
+        if let Err(e) = conn.execute(
             "DELETE FROM revoked_tokens WHERE expires_at < datetime('now')",
             [],
-        );
+        ) {
+            tracing::warn!("token cleanup failed: {e}");
+        }
         let result: Result<bool, _> = conn.query_row(
             "SELECT 1 FROM revoked_tokens WHERE jti = ?1 LIMIT 1",
             rusqlite::params![user_id],

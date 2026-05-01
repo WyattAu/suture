@@ -140,7 +140,7 @@ impl Filesystem for SutureFilesystem {
             .lookup(&child_path)
             .ok_or_else(Errno::new_not_exist)?;
 
-        let entry = self.inner.inode_map.get(inode).unwrap();
+        let entry = self.inner.inode_map.get(inode).ok_or_else(Errno::new_not_exist)?;
         let size = if entry.kind == InodeKind::File {
             self.inner
                 .file_contents
@@ -258,7 +258,7 @@ impl Filesystem for SutureFilesystem {
                     .lookup(&dir_entry.path)
                     .ok_or_else(Errno::new_not_exist)?;
 
-                let entry = inode_map.get(inode).unwrap();
+                let entry = inode_map.get(inode).ok_or_else(Errno::new_not_exist)?;
                 let size = if dir_entry.is_dir {
                     0u64
                 } else {

@@ -268,7 +268,7 @@ async fn handle_put(
     state
         .file_contents
         .lock()
-        .unwrap()
+        .unwrap_or_else(|e| e.into_inner())
         .insert(clean.clone(), body.to_vec());
 
     tracing::info!("PUT {} ({} bytes)", clean, body.len());

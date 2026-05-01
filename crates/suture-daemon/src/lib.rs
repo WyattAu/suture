@@ -424,10 +424,13 @@ impl AutoSync {
                         .filter(|pid| repo.dag().has_patch(pid))
                         .copied()
                         .collect();
-                    let _ = repo
+                    if let Err(e) = repo
                         .dag_mut()
                         .add_patch(patch, valid_parents)
-                        .map_err(|e| format!("failed to add patch to DAG: {e}"))?;
+                        .map_err(|e| format!("failed to add patch to DAG: {e}")) {
+                        tracing::warn!("failed to add patch to DAG: {e}");
+                        continue;
+                    }
                     count += 1;
                 }
             }
@@ -438,9 +441,13 @@ impl AutoSync {
                 let branch_name = suture_common::BranchName::new(&branch.name)
                     .map_err(|e| format!("invalid branch name: {e}"))?;
                 if !repo.dag().branch_exists(&branch_name) {
-                    let _ = repo.dag_mut().create_branch(branch_name.clone(), target_id);
+                    if let Err(e) = repo.dag_mut().create_branch(branch_name.clone(), target_id) {
+                        tracing::warn!("create_branch failed: {e}");
+                    }
                 } else {
-                    let _ = repo.dag_mut().update_branch(&branch_name, target_id);
+                    if let Err(e) = repo.dag_mut().update_branch(&branch_name, target_id) {
+                        tracing::warn!("update_branch failed: {e}");
+                    }
                 }
                 repo.meta()
                     .set_branch(&branch_name, &target_id)
@@ -669,7 +676,9 @@ impl Daemon {
                             if let Ok(mut status) = shm::read_shm_status(&shm_path_ref) {
                                 status.total_patches += 1;
                                 status.last_commit_ts = last_commit_ts;
-                                let _ = shm::update_shm_status(&shm_path_ref, &status);
+                                if let Err(e) = shm::update_shm_status(&shm_path_ref, &status) {
+                                    tracing::warn!("SHM status update failed: {e}");
+                                }
                             }
                         }
                         Ok(None) => {
@@ -696,7 +705,9 @@ impl Daemon {
         if let Ok(mut status) = shm::read_shm_status(&shm_path_ref) {
             status.last_commit_ts = last_commit_ts;
             status.last_sync_ts = last_sync_ts;
-            let _ = shm::update_shm_status(&shm_path_ref, &status);
+            if let Err(e) = shm::update_shm_status(&shm_path_ref, &status) {
+                tracing::warn!("SHM status update failed: {e}");
+            }
         }
 
         let _ = shutdown_tx.send(());

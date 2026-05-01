@@ -603,14 +603,20 @@ impl Repository {
                 }
                 processed.insert(id);
                 if let Some(kids) = children.get(&id) {
-                    for &child_id in kids {
-                        if let Some(deg) = in_degree.get_mut(&child_id) {
+                    let mut new_ready: Vec<PatchId> = kids
+                        .iter()
+                        .filter_map(|&child_id| {
+                            let deg = in_degree.get_mut(&child_id)?;
                             *deg -= 1;
                             if *deg == 0 {
-                                queue.push_back(child_id);
+                                Some(child_id)
+                            } else {
+                                None
                             }
-                        }
-                    }
+                        })
+                        .collect();
+                    new_ready.sort();
+                    queue.extend(new_ready);
                 }
             }
         }
@@ -1086,19 +1092,20 @@ impl Repository {
         while let Some(id) = queue.pop_front() {
             sorted_ids.push(id);
             if let Some(kids) = children.get(&id) {
-                for &child in kids {
-                    if let Some(deg) = in_degree.get_mut(&child) {
+                let mut new_ready: Vec<PatchId> = kids
+                    .iter()
+                    .filter_map(|&child| {
+                        let deg = in_degree.get_mut(&child)?;
                         *deg -= 1;
                         if *deg == 0 {
-                            queue.push_back(child);
+                            Some(child)
+                        } else {
+                            None
                         }
-                    } else {
-                        tracing::warn!(
-                            "topo sort: missing in-degree entry for child {}, skipping",
-                            child
-                        );
-                    }
-                }
+                    })
+                    .collect();
+                new_ready.sort();
+                queue.extend(new_ready);
             }
         }
 

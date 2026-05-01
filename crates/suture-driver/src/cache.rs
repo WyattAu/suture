@@ -36,10 +36,10 @@ impl MergeCache {
     }
 
     pub fn insert(&mut self, base: &str, ours: &str, theirs: &str, result: String) {
-        if self.entries.len() >= self.max_entries {
-            if let Some(first_key) = self.entries.keys().next().copied() {
-                self.entries.remove(&first_key);
-            }
+        if self.entries.len() >= self.max_entries
+            && let Some(first_key) = self.entries.keys().next().copied()
+        {
+            self.entries.remove(&first_key);
         }
         let key = (hash(base), hash(ours), hash(theirs));
         self.entries.insert(key, result);

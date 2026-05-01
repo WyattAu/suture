@@ -5,6 +5,7 @@ edition = "2024"
 description = "Hosted Suture platform — semantic merge as a service"
 license = "AGPL-3.0-or-later"
 license-file = "LICENSE"
+repository = "https://github.com/WyattAu/suture"
 
 [dependencies]
 suture-hub = { path = "../suture-hub", version = "5.1.0" }

@@ -52,7 +52,7 @@ async fn main() -> anyhow::Result<()> {
         addr: args.addr,
         db_path: args.db,
         hub_db_path: args.hub_db,
-        jwt_secret: args.jwt_secret.unwrap_or_else(|| "dev-secret-change-me".into()),
+        jwt_secret: args.jwt_secret.ok_or_else(|| anyhow::anyhow!("--jwt-secret is required (cannot use default for security)"))?,
         stripe_key: args.stripe_key,
         platform_url: args.platform_url.unwrap_or_default(),
     })

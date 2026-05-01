@@ -33,6 +33,15 @@ pub struct MountHandle {
     cancel: tokio::sync::oneshot::Sender<()>,
 }
 
+impl std::fmt::Debug for MountHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MountHandle")
+            .field("info", &self.info)
+            .field("cancel", &"(oneshot::Sender)")
+            .finish()
+    }
+}
+
 impl MountHandle {
     pub fn info(&self) -> &MountInfo {
         &self.info
@@ -129,6 +138,7 @@ impl Default for MountManager {
     }
 }
 
+#[cfg(test)]
 fn errno_to_message(errno: i32) -> String {
     match errno {
         libc::EACCES | libc::EPERM => "Permission denied (try running as root)".to_string(),

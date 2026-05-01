@@ -247,10 +247,12 @@ impl SqliteRaftLog {
         if index == 0 {
             return;
         }
-        let _ = self.conn.execute(
+        if let Err(e) = self.conn.execute(
             "DELETE FROM raft_log WHERE \"index\" >= ?1",
             rusqlite::params![index as i64],
-        );
+        ) {
+            tracing::error!("raft log truncation failed: {e}");
+        }
     }
 
     pub fn is_empty(&self) -> bool {

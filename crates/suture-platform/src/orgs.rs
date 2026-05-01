@@ -377,10 +377,7 @@ pub fn remove_member(
         .ok()
         .flatten();
 
-    let is_privileged = match target_role.as_deref() {
-        Some("admin") | Some("owner") => true,
-        _ => false,
-    };
+    let is_privileged = matches!(target_role.as_deref(), Some("admin") | Some("owner"));
 
     if is_privileged && admin_count <= 1 {
         return Err(OrgError::LastAdmin);

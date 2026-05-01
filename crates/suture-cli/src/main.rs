@@ -1914,13 +1914,19 @@ fn clean_error_message(msg: &str) -> String {
 }
 
 fn strip_rust_type_paths(s: &str) -> String {
-    let re =
-        regex::Regex::new(r"[a-z_][a-z0-9_]*(?:::[a-z_][a-z0-9_]*)+::[A-Z][a-zA-Z0-9]*").unwrap();
+    use std::sync::OnceLock;
+    static RE: OnceLock<regex::Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| {
+        regex::Regex::new(r"[a-z_][a-z0-9_]*(?:::[a-z_][a-z0-9_]*)+::[A-Z][a-zA-Z0-9]*")
+            .unwrap()
+    });
     re.replace_all(s, "…").to_string()
 }
 
 fn strip_rust_backtrace(s: &str) -> String {
-    let re = regex::Regex::new(r"\s*at [^\n]+\.(rs|rlib):?\d*").unwrap();
+    use std::sync::OnceLock;
+    static RE: OnceLock<regex::Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| regex::Regex::new(r"\s*at [^\n]+\.(rs|rlib):?\d*").unwrap());
     re.replace_all(s, "").to_string()
 }
 

@@ -17,7 +17,7 @@
 //! 2. Resolves cell references from A1 notation to (row, col) coordinates
 //! 3. Performs cell-level diff and three-way merge
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use suture_driver::{DriverError, SemanticChange, SutureDriver};
 use suture_ooxml::OoxmlDocument;
@@ -267,7 +267,7 @@ impl XlsxDriver {
             new_cells.iter().map(|(r, c, v)| ((*r, *c), v)).collect();
 
         let mut changes = Vec::new();
-        let all_keys: HashSet<_> = base_map.keys().chain(new_map.keys()).collect();
+        let all_keys: BTreeSet<_> = base_map.keys().chain(new_map.keys()).collect();
 
         for (row, col) in all_keys {
             let col_letter = col_to_letter(*col);
@@ -302,7 +302,7 @@ impl XlsxDriver {
         let theirs_map: HashMap<(usize, usize), &String> =
             theirs.iter().map(|(r, c, v)| ((*r, *c), v)).collect();
 
-        let all_keys: HashSet<_> = base_map
+        let all_keys: BTreeSet<_> = base_map
             .keys()
             .chain(ours_map.keys())
             .chain(theirs_map.keys())
@@ -458,7 +458,7 @@ impl SutureDriver for XlsxDriver {
         let ours_sheets = Self::parse_sheets(&ours_doc)?;
         let theirs_sheets = Self::parse_sheets(&theirs_doc)?;
 
-        let all_names: HashSet<&str> = base_sheets
+        let all_names: BTreeSet<&str> = base_sheets
             .iter()
             .chain(ours_sheets.iter())
             .chain(theirs_sheets.iter())
