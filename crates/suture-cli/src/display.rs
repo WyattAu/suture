@@ -1,6 +1,6 @@
 use crate::style::{ANSI_BOLD_CYAN, ANSI_GREEN, ANSI_RED, ANSI_RESET};
 
-pub(crate) fn walk_repo_files(dir: &std::path::Path) -> Vec<String> {
+pub fn walk_repo_files(dir: &std::path::Path) -> Vec<String> {
     let mut files = Vec::new();
     walk_repo_files_inner(dir, dir, &mut files);
     files.sort(); // Deterministic display order
@@ -15,7 +15,7 @@ fn walk_repo_files_inner(
     let Ok(entries) = std::fs::read_dir(current) else {
         return;
     };
-    for entry in entries.filter_map(|e| e.ok()) {
+    for entry in entries.filter_map(std::result::Result::ok) {
         let path = entry.path();
         let name = entry.file_name();
         if name == ".suture" {
@@ -34,7 +34,7 @@ fn walk_repo_files_inner(
     }
 }
 
-pub(crate) fn format_line_diff(path: &str, changes: &[suture_core::engine::merge::LineChange]) {
+pub fn format_line_diff(path: &str, changes: &[suture_core::engine::merge::LineChange]) {
     use suture_core::engine::merge::LineChange;
 
     let has_changes = changes
@@ -103,13 +103,12 @@ pub(crate) fn format_line_diff(path: &str, changes: &[suture_core::engine::merge
     }
 }
 
-pub(crate) fn format_timestamp(ts: u64) -> String {
+pub fn format_timestamp(ts: u64) -> String {
     let days = ts / 86400;
     let hours = (ts % 86400) / 3600;
     let minutes = (ts % 3600) / 60;
     let remaining_secs = ts % 60;
     format!(
-        "{}d {:02}:{:02}:{:02} (unix: {})",
-        days, hours, minutes, remaining_secs, ts
+        "{days}d {hours:02}:{minutes:02}:{remaining_secs:02} (unix: {ts})"
     )
 }

@@ -173,14 +173,14 @@ where
             let tmp_patch = Patch::new(
                 OperationType::Create,
                 TouchSet::single(target_path),
-                Some(target_path.to_string()),
+                Some(target_path.to_owned()),
                 payload.to_vec(),
                 vec![],
                 String::new(),
                 String::new(),
             );
             if let Some(blob_hash) = get_payload_blob(&tmp_patch) {
-                tree.insert(target_path.to_string(), blob_hash);
+                tree.insert(target_path.to_owned(), blob_hash);
             }
         }
         OperationType::Modify => {
@@ -190,14 +190,14 @@ where
             let tmp_patch = Patch::new(
                 OperationType::Modify,
                 TouchSet::single(target_path),
-                Some(target_path.to_string()),
+                Some(target_path.to_owned()),
                 payload.to_vec(),
                 vec![],
                 String::new(),
                 String::new(),
             );
             if let Some(blob_hash) = get_payload_blob(&tmp_patch) {
-                tree.insert(target_path.to_string(), blob_hash);
+                tree.insert(target_path.to_owned(), blob_hash);
             }
         }
         OperationType::Delete => {
@@ -208,8 +208,7 @@ where
                 .map_err(|_| ApplyError::InvalidMovePayload)?;
             tree.rename(target_path, new_path);
         }
-        OperationType::Metadata => {}
-        OperationType::Merge | OperationType::Identity | OperationType::Batch => {}
+        OperationType::Metadata | OperationType::Merge | OperationType::Identity | OperationType::Batch => {}
     }
 
     Ok(())
@@ -230,7 +229,7 @@ fn apply_single_op_mut(tree: &mut FileTree, op: &OperationType, target_path: &st
                 return;
             }
             if let Some(blob_hash) = resolve_hex_to_hash(payload) {
-                tree.insert(target_path.to_string(), blob_hash);
+                tree.insert(target_path.to_owned(), blob_hash);
             }
         }
         OperationType::Modify => {
@@ -238,7 +237,7 @@ fn apply_single_op_mut(tree: &mut FileTree, op: &OperationType, target_path: &st
                 return;
             }
             if let Some(blob_hash) = resolve_hex_to_hash(payload) {
-                tree.insert(target_path.to_string(), blob_hash);
+                tree.insert(target_path.to_owned(), blob_hash);
             }
         }
         OperationType::Delete => {
@@ -249,8 +248,7 @@ fn apply_single_op_mut(tree: &mut FileTree, op: &OperationType, target_path: &st
                 tree.rename(target_path, new_path);
             }
         }
-        OperationType::Metadata => {}
-        OperationType::Merge | OperationType::Identity | OperationType::Batch => {}
+        OperationType::Metadata | OperationType::Merge | OperationType::Identity | OperationType::Batch => {}
     }
 }
 
@@ -258,6 +256,7 @@ fn apply_single_op_mut(tree: &mut FileTree, op: &OperationType, target_path: &st
 ///
 /// The payload in suture-core patches stores the hex-encoded BLAKE3 hash
 /// of the blob in the CAS. This function parses it back into a Hash.
+#[must_use] 
 pub fn resolve_payload_to_hash(patch: &Patch) -> Option<suture_common::Hash> {
     resolve_hex_to_hash(&patch.payload)
 }

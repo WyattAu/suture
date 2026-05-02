@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-#![allow(clippy::collapsible_match)]
 //! Fuzz smoke harnesses for suture-core.
 //!
 //! These use proptest for property-based testing since cargo-fuzz is not available.

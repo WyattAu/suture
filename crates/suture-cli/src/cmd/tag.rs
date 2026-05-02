@@ -1,6 +1,6 @@
 use crate::cmd::user_error;
 
-pub(crate) async fn cmd_tag(
+pub async fn cmd_tag(
     name: Option<&str>,
     target: Option<&str>,
     delete: bool,
@@ -22,8 +22,8 @@ pub(crate) async fn cmd_tag(
         match sort {
             Some("date") => {
                 tags.sort_by(|a, b| {
-                    let ts_a = repo.dag().get_patch(&a.1).map(|p| p.timestamp).unwrap_or(0);
-                    let ts_b = repo.dag().get_patch(&b.1).map(|p| p.timestamp).unwrap_or(0);
+                    let ts_a = repo.dag().get_patch(&a.1).map_or(0, |p| p.timestamp);
+                    let ts_b = repo.dag().get_patch(&b.1).map_or(0, |p| p.timestamp);
                     ts_b.cmp(&ts_a)
                 });
             }
@@ -40,17 +40,17 @@ pub(crate) async fn cmd_tag(
             println!("No tags.");
         } else {
             for (tname, target_id) in &tags {
-                if let Some(msg) = repo.get_config(&format!("tag.{}.message", tname))? {
-                    println!("{} (annotated)  {}  {}", tname, target_id, msg);
+                if let Some(msg) = repo.get_config(&format!("tag.{tname}.message"))? {
+                    println!("{tname} (annotated)  {target_id}  {msg}");
                 } else {
-                    println!("{}  {}", tname, target_id);
+                    println!("{tname}  {target_id}");
                 }
             }
         }
         return Ok(());
     }
 
-    let name = name.ok_or_else(|| "tag name required (use --list to show tags)".to_string())?;
+    let name = name.ok_or_else(|| "tag name required (use --list to show tags)".to_owned())?;
     if delete {
         let tags = repo
             .list_tags()
@@ -63,9 +63,9 @@ pub(crate) async fn cmd_tag(
         }
         repo.delete_tag(name)
             .map_err(|e| user_error(&format!("failed to delete tag '{name}'"), e))?;
-        let msg_key = format!("tag.{}.message", name);
+        let msg_key = format!("tag.{name}.message");
         let _ = repo.meta().delete_config(&msg_key);
-        println!("Deleted tag '{}'", name);
+        println!("Deleted tag '{name}'");
     } else {
         let tags = repo
             .list_tags()
@@ -80,16 +80,16 @@ pub(crate) async fn cmd_tag(
             .map_err(|e| user_error(&format!("failed to create tag '{name}'"), e))?;
         let target_id = repo
             .resolve_tag(name)?
-            .ok_or_else(|| format!("created tag '{}', but could not resolve it", name))?;
+            .ok_or_else(|| format!("created tag '{name}', but could not resolve it"))?;
         if annotate {
             let msg = message.ok_or_else(|| {
                 eprintln!("error: --annotate requires a message (-m)");
                 std::process::exit(1);
             })?;
-            repo.set_config(&format!("tag.{}.message", name), msg)?;
-            println!("Tag '{}' (annotated) -> {}", name, target_id);
+            repo.set_config(&format!("tag.{name}.message"), msg)?;
+            println!("Tag '{name}' (annotated) -> {target_id}");
         } else {
-            println!("Tag '{}' -> {}", name, target_id);
+            println!("Tag '{name}' -> {target_id}");
         }
     }
     Ok(())

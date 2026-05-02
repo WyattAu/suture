@@ -14,6 +14,7 @@ use suture_common::Hash;
 /// This is the primary hashing function used throughout Suture.
 /// It uses the default BLAKE3 settings (no key, no context).
 #[inline]
+#[must_use] 
 pub fn hash_bytes(data: &[u8]) -> Hash {
     Hash::from_data(data)
 }
@@ -46,8 +47,9 @@ pub fn hash_file(path: &std::path::Path) -> Result<Hash, std::io::Error> {
 /// Context strings prevent cross-domain hash collisions. For example,
 /// a patch hash and a blob hash should never collide even if they
 /// contain identical data. We use keyed hashing with a context-derived key.
+#[must_use] 
 pub fn hash_with_context(context: &str, data: &[u8]) -> Hash {
-    let context_key = blake3::derive_key(context, "suture-context-v1".as_bytes());
+    let context_key = blake3::derive_key(context, b"suture-context-v1");
     let mut hasher = blake3::Hasher::new_keyed(&context_key);
     hasher.update(data);
     Hash::from(*hasher.finalize().as_bytes())

@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-#![allow(clippy::collapsible_match)]
 //! XLSX semantic driver — cell-level diff and merge for Excel spreadsheets.
 //!
 //! ## Architecture
@@ -22,6 +21,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use suture_driver::{DriverError, SemanticChange, SutureDriver};
 use suture_ooxml::OoxmlDocument;
 
+use std::fmt::Write;
 /// Convert bytes to String, replacing invalid UTF-8 sequences with the Unicode replacement character.
 /// This is safe for binary formats like OOXML (ZIP/XML) where the content should be valid UTF-8
 /// per specification (ECMA-376, ISO 29500), but we defensively handle edge cases.
@@ -35,6 +35,7 @@ type SheetData = (String, Vec<Cell>);
 pub struct XlsxDriver;
 
 impl XlsxDriver {
+    #[must_use] 
     pub fn new() -> Self {
         Self
     }
@@ -68,7 +69,7 @@ impl XlsxDriver {
 
     /// Extract an XML attribute value from a line of XML.
     fn extract_attr(xml_line: &str, attr_name: &str) -> Option<String> {
-        let pattern = format!("{}=\"", attr_name);
+        let pattern = format!("{attr_name}=\"");
         let start = xml_line.find(&pattern)?;
         let start = start + pattern.len();
         let rest = &xml_line[start..];
@@ -198,19 +199,11 @@ impl XlsxDriver {
                         if let Some((row, col)) = Self::parse_a1(&cell_ref) {
                             let display_value = match cell_type.as_str() {
                                 "s" => {
-                                    if let Ok(idx) = cell_value.parse::<usize>() {
-                                        shared_strings
-                                            .get(idx)
-                                            .cloned()
-                                            .unwrap_or_else(|| cell_value.clone())
-                                    } else {
-                                        cell_value.clone()
-                                    }
+                                    cell_value.parse::<usize>().ok().and_then(|idx| shared_strings.get(idx).cloned()).unwrap_or_else(|| cell_value.clone())
                                 }
-                                "inlineStr" | "str" => cell_value.clone(),
                                 "b" => match cell_value.as_str() {
-                                    "1" | "true" => "TRUE".to_string(),
-                                    _ => "FALSE".to_string(),
+                                    "1" | "true" => "TRUE".to_owned(),
+                                    _ => "FALSE".to_owned(),
                                 },
                                 _ => cell_value.clone(),
                             };
@@ -246,11 +239,11 @@ impl XlsxDriver {
         for path in &sheet_files {
             let part = doc
                 .get_part(path)
-                .ok_or_else(|| DriverError::ParseError(format!("sheet part {} missing", path)))?;
+                .ok_or_else(|| DriverError::ParseError(format!("sheet part {path} missing")))?;
             let name = path.rsplit('/').next().unwrap_or("sheet");
             let name = name.strip_suffix(".xml").unwrap_or(name);
             let cells = Self::parse_sheet_xml(&part.content, &shared_strings);
-            sheets.push((name.to_string(), cells));
+            sheets.push((name.to_owned(), cells));
         }
 
         Ok(sheets)
@@ -271,7 +264,7 @@ impl XlsxDriver {
 
         for (row, col) in all_keys {
             let col_letter = col_to_letter(*col);
-            let path = format!("/{}/{}/{}", sheet_name, col_letter, row);
+            let path = format!("/{sheet_name}/{col_letter}/{row}");
             match (base_map.get(&(*row, *col)), new_map.get(&(*row, *col))) {
                 (None, Some(val)) => changes.push(SemanticChange::Added {
                     path,
@@ -315,30 +308,27 @@ impl XlsxDriver {
             let t = theirs_map.get(&(row, col)).map(|s| s.as_str());
 
             match (b, o, t) {
-                (None, Some(o), None) => merged.push((row, col, o.to_string())),
-                (None, None, Some(t)) => merged.push((row, col, t.to_string())),
+                (None | Some(_), None, Some(t)) => merged.push((row, col, t.to_owned())),
                 (None, Some(o), Some(t)) => {
                     if o == t {
-                        merged.push((row, col, o.to_string()));
+                        merged.push((row, col, o.to_owned()));
                     } else {
                         return None;
                     }
                 }
-                (Some(_), Some(o), None) => merged.push((row, col, o.to_string())),
-                (Some(_), None, Some(t)) => merged.push((row, col, t.to_string())),
-                (Some(_), None, None) => {}
+                (None | Some(_), Some(o), None) => merged.push((row, col, o.to_owned())),
+                (Some(_) | None, None, None) => {}
                 (Some(b), Some(o), Some(t)) => {
                     if o == t {
-                        merged.push((row, col, o.to_string()));
+                        merged.push((row, col, o.to_owned()));
                     } else if o == b {
-                        merged.push((row, col, t.to_string()));
+                        merged.push((row, col, t.to_owned()));
                     } else if t == b {
-                        merged.push((row, col, o.to_string()));
+                        merged.push((row, col, o.to_owned()));
                     } else {
                         return None;
                     }
                 }
-                (None, None, None) => {}
             }
         }
         Some(merged)
@@ -364,7 +354,7 @@ impl Default for XlsxDriver {
 }
 
 impl SutureDriver for XlsxDriver {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "XLSX"
     }
     fn supported_extensions(&self) -> &[&str] {
@@ -395,8 +385,7 @@ impl SutureDriver for XlsxDriver {
             let base_cells = base_sheets
                 .iter()
                 .find(|(n, _)| n == name)
-                .map(|(_, c)| c.as_slice())
-                .unwrap_or(&[]);
+                .map_or(&[][..], |(_, c)| c.as_slice());
             changes.extend(Self::diff_cells(base_cells, cells, name));
         }
         Ok(changes)
@@ -409,25 +398,25 @@ impl SutureDriver for XlsxDriver {
     ) -> Result<String, DriverError> {
         let changes = self.diff(base_content, new_content)?;
         if changes.is_empty() {
-            return Ok("no changes".to_string());
+            return Ok("no changes".to_owned());
         }
         let lines: Vec<String> = changes
             .iter()
             .map(|c| match c {
-                SemanticChange::Added { path, value } => format!("  ADDED     {}: {}", path, value),
+                SemanticChange::Added { path, value } => format!("  ADDED     {path}: {value}"),
                 SemanticChange::Removed { path, old_value } => {
-                    format!("  REMOVED   {}: {}", path, old_value)
+                    format!("  REMOVED   {path}: {old_value}")
                 }
                 SemanticChange::Modified {
                     path,
                     old_value,
                     new_value,
-                } => format!("  MODIFIED  {}: {} -> {}", path, old_value, new_value),
+                } => format!("  MODIFIED  {path}: {old_value} -> {new_value}"),
                 SemanticChange::Moved {
                     old_path,
                     new_path,
                     value,
-                } => format!("  MOVED     {} -> {}: {}", old_path, new_path, value),
+                } => format!("  MOVED     {old_path} -> {new_path}: {value}"),
             })
             .collect();
         Ok(lines.join("\n"))
@@ -435,10 +424,7 @@ impl SutureDriver for XlsxDriver {
 
     fn merge(&self, base: &str, ours: &str, theirs: &str) -> Result<Option<String>, DriverError> {
         let bytes = self.merge_raw(base.as_bytes(), ours.as_bytes(), theirs.as_bytes())?;
-        match bytes {
-            Some(b) => Ok(Some(bytes_to_string_lossy(b))),
-            None => Ok(None),
-        }
+        Ok(bytes.map(bytes_to_string_lossy))
     }
 
     fn merge_raw(
@@ -470,21 +456,18 @@ impl SutureDriver for XlsxDriver {
             let base_cells = base_sheets
                 .iter()
                 .find(|(n, _)| n == name)
-                .map(|(_, c)| c.as_slice())
-                .unwrap_or(&[]);
+                .map_or(&[][..], |(_, c)| c.as_slice());
             let ours_cells = ours_sheets
                 .iter()
                 .find(|(n, _)| n == name)
-                .map(|(_, c)| c.as_slice())
-                .unwrap_or(&[]);
+                .map_or(&[][..], |(_, c)| c.as_slice());
             let theirs_cells = theirs_sheets
                 .iter()
                 .find(|(n, _)| n == name)
-                .map(|(_, c)| c.as_slice())
-                .unwrap_or(&[]);
+                .map_or(&[][..], |(_, c)| c.as_slice());
 
             match Self::merge_cells(base_cells, ours_cells, theirs_cells) {
-                Some(cells) => merged_sheets.push((name.to_string(), cells)),
+                Some(cells) => merged_sheets.push((name.to_owned(), cells)),
                 None => return Ok(None),
             }
         }
@@ -497,7 +480,7 @@ impl SutureDriver for XlsxDriver {
             if path.contains("worksheets/") && path.ends_with(".xml") {
                 let sheet_name = path.rsplit('/').next().unwrap_or("sheet");
                 let sheet_name = sheet_name.strip_suffix(".xml").unwrap_or(sheet_name);
-                name_to_path.insert(sheet_name.to_string(), path.clone());
+                name_to_path.insert(sheet_name.to_owned(), path.clone());
             }
         }
 
@@ -540,15 +523,12 @@ impl XlsxDriver {
                 // Find the closing > of the opening tag
                 let after = &original_xml[pos..];
 
-                after.find('>').map(|i| pos + i + 1).unwrap_or(pos)
+                after.find('>').map_or(pos, |i| pos + i + 1)
             }
-            None => return original_xml.to_string(),
+            None => return original_xml.to_owned(),
         };
 
-        let data_end = match original_xml.find("</sheetData>") {
-            Some(pos) => pos,
-            None => return original_xml.to_string(),
-        };
+        let Some(data_end) = original_xml.find("</sheetData>") else { return original_xml.to_owned() };
 
         // Build new sheetData content
         let mut rows: BTreeMap<usize, Vec<(usize, &String)>> = BTreeMap::new();
@@ -558,21 +538,20 @@ impl XlsxDriver {
 
         let mut new_data = String::from("<sheetData>");
         for (row_num, cols) in &rows {
-            new_data.push_str(&format!("<row r=\"{}\">", row_num));
+            let _ = write!(new_data, "<row r=\"{row_num}\">");
             for (col, val) in cols {
                 let col_letter = col_to_letter(*col);
-                let ref_str = format!("{}{}", col_letter, row_num);
+                let ref_str = format!("{col_letter}{row_num}");
                 // Use inlineStr for all string values to avoid shared string table issues
                 if val.parse::<f64>().is_ok() {
-                    new_data.push_str(&format!("<c r=\"{}\"><v>{}</v></c>", ref_str, val));
+                    let _ = write!(new_data, "<c r=\"{ref_str}\"><v>{val}</v></c>");
                 } else if *val == "TRUE" || *val == "FALSE" {
                     let bval = if *val == "TRUE" { "1" } else { "0" };
-                    new_data.push_str(&format!("<c r=\"{}\" t=\"b\"><v>{}</v></c>", ref_str, bval));
+                    let _ = write!(new_data, "<c r=\"{ref_str}\" t=\"b\"><v>{bval}</v></c>");
                 } else {
-                    new_data.push_str(&format!(
-                        "<c r=\"{}\" t=\"inlineStr\"><is><t>{}</t></is></c>",
-                        ref_str, val
-                    ));
+                    let _ = write!(new_data, 
+                        "<c r=\"{ref_str}\" t=\"inlineStr\"><is><t>{val}</t></is></c>"
+                    );
                 }
             }
             new_data.push_str("</row>");

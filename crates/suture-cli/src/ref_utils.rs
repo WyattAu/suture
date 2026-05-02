@@ -1,4 +1,4 @@
-pub(crate) fn resolve_ref<'a>(
+pub fn resolve_ref<'a>(
     repo: &suture_core::repository::Repository,
     ref_str: &str,
     all_patches: &'a [suture_core::patch::types::Patch],
@@ -9,7 +9,7 @@ pub(crate) fn resolve_ref<'a>(
         if let Some(n_str) = ref_str.strip_prefix("HEAD~") {
             let n: usize = n_str
                 .parse()
-                .map_err(|_| format!("invalid HEAD~N: {}", n_str))?;
+                .map_err(|_| format!("invalid HEAD~N: {n_str}"))?;
             for _ in 0..n {
                 let patch = all_patches
                     .iter()
@@ -60,21 +60,21 @@ pub(crate) fn resolve_ref<'a>(
                     candidates.push(name.clone());
                 }
             }
-            if let Some(suggestion) = crate::fuzzy::suggest(ref_str, &candidates) {
-                Err(format!(
-                    "unknown ref: '{}' (did you mean '{}'?)",
-                    ref_str, suggestion
-                )
-                .into())
-            } else {
-                Err(format!("unknown ref: {}", ref_str).into())
-            }
+            crate::fuzzy::suggest(ref_str, &candidates).map_or_else(
+                || Err(format!("unknown ref: {ref_str}").into()),
+                |suggestion| {
+                    Err(format!(
+                        "unknown ref: '{ref_str}' (did you mean '{suggestion}'?)"
+                    )
+                    .into())
+                },
+            )
         }
-        n => Err(format!("ambiguous ref '{}' matches {} commits", ref_str, n).into()),
+        n => Err(format!("ambiguous ref '{ref_str}' matches {n} commits").into()),
     }
 }
 
-pub(crate) fn parse_time_filter(s: &str) -> Result<u64, String> {
+pub fn parse_time_filter(s: &str) -> Result<u64, String> {
     if let Some(rest) = s.strip_suffix(" ago") {
         let parts: Vec<&str> = rest.split_whitespace().collect();
         if parts.len() == 2
@@ -129,13 +129,12 @@ pub(crate) fn parse_time_filter(s: &str) -> Result<u64, String> {
         return Ok(ts);
     }
 
-    Err(format!("invalid time filter: {}", s))
+    Err(format!("invalid time filter: {s}"))
 }
 
 fn days_in_month(_year: u64, month: u64) -> u64 {
     match month {
         1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-        4 | 6 | 9 | 11 => 30,
         2 => {
             let year = _year;
             if year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400)) {

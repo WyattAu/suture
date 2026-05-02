@@ -67,10 +67,7 @@ impl RepoConfig {
         if !path.exists() {
             return Self::default();
         }
-        let content = match std::fs::read_to_string(&path) {
-            Ok(c) => c,
-            Err(_) => return Self::default(),
-        };
+        let Ok(content) = std::fs::read_to_string(&path) else { return Self::default() };
         match toml::from_str(&content) {
             Ok(config) => config,
             Err(e) => {

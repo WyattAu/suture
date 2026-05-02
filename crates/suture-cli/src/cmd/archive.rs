@@ -4,7 +4,7 @@ use flate2::write::GzEncoder;
 use std::fs::File;
 use std::path::Path;
 
-pub(crate) async fn cmd_archive(
+pub async fn cmd_archive(
     commit: Option<&str>,
     output: &str,
     format: Option<&str>,
@@ -28,10 +28,7 @@ pub(crate) async fn cmd_archive(
         .unwrap_or("suture-archive");
     let prefix_str = prefix.unwrap_or(repo_name);
 
-    let fmt = match format {
-        Some(f) => f,
-        None => detect_format(output),
-    };
+    let fmt = format.unwrap_or_else(|| detect_format(output));
 
     match fmt {
         "tar" => write_tar(&repo, &tree, output, prefix_str)?,
@@ -39,8 +36,7 @@ pub(crate) async fn cmd_archive(
         "zip" => write_zip(&repo, &tree, output, prefix_str)?,
         other => {
             return Err(format!(
-                "unsupported archive format: '{}' (supported: tar, tar.gz, tgz, zip)",
-                other
+                "unsupported archive format: '{other}' (supported: tar, tar.gz, tgz, zip)"
             )
             .into());
         }
@@ -50,7 +46,7 @@ pub(crate) async fn cmd_archive(
         .iter()
         .filter(|(p, _)| !p.starts_with(".suture/"))
         .count();
-    println!("Archived {} files to {}", file_count, output);
+    println!("Archived {file_count} files to {output}");
     Ok(())
 }
 
@@ -96,8 +92,8 @@ fn write_tar(
 
     let entries = collect_entries(repo, tree);
     for (path, data_result) in &entries {
-        let data = data_result.as_ref().map_err(|e| e.to_string())?;
-        let archive_path = format!("{}/{}", prefix, path);
+        let data = data_result.as_ref().map_err(std::string::ToString::to_string)?;
+        let archive_path = format!("{prefix}/{path}");
         let mut header = tar::Header::new_gnu();
         header.set_size(data.len() as u64);
         header.set_mode(0o644);
@@ -121,8 +117,8 @@ fn write_tar_gz(
 
     let entries = collect_entries(repo, tree);
     for (path, data_result) in &entries {
-        let data = data_result.as_ref().map_err(|e| e.to_string())?;
-        let archive_path = format!("{}/{}", prefix, path);
+        let data = data_result.as_ref().map_err(std::string::ToString::to_string)?;
+        let archive_path = format!("{prefix}/{path}");
         let mut header = tar::Header::new_gnu();
         header.set_size(data.len() as u64);
         header.set_mode(0o644);
@@ -151,7 +147,7 @@ fn write_zip(
 
     let entries = collect_entries(repo, tree);
     for (path, data_result) in &entries {
-        let data = data_result.as_ref().map_err(|e| e.to_string())?;
+        let data = data_result.as_ref().map_err(std::string::ToString::to_string)?;
         let full_path = prefix_dir.join(path);
         if let Some(parent) = full_path.parent() {
             std::fs::create_dir_all(parent)?;

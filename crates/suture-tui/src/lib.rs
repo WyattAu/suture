@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-#![allow(clippy::collapsible_match)]
 
 //! Suture TUI — Terminal User Interface for Suture USVCS.
 //!

@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-#![allow(clippy::collapsible_match)]
-#![allow(clippy::unnecessary_sort_by)]
 
 //! Suture Core — The central library for the Suture Universal Semantic Version Control System.
 //!

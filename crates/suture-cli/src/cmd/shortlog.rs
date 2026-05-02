@@ -1,4 +1,4 @@
-pub(crate) async fn cmd_shortlog(
+pub async fn cmd_shortlog(
     branch: Option<&str>,
     number: Option<usize>,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -26,9 +26,8 @@ pub(crate) async fn cmd_shortlog(
             .unwrap_or_default();
         let first_msg = commits
             .first()
-            .map(|p| p.message.trim().lines().next().unwrap_or(""))
-            .unwrap_or("");
-        println!("{} ({}) {} {}", short_hash, count, author, first_msg);
+            .map_or("", |p| p.message.trim().lines().next().unwrap_or(""));
+        println!("{short_hash} ({count}) {author} {first_msg}");
     }
 
     Ok(())

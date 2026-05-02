@@ -14,6 +14,7 @@ use suture_core::repository::Repository;
 
 use suture_hub::HubStorage;
 use suture_protocol::{
+use std::fmt::Write;
     apply_delta, compress as proto_compress, compute_delta, decompress as proto_decompress,
 };
 
@@ -606,7 +607,7 @@ fn generate_json_keys(n: usize) -> String {
 fn generate_yaml_keys(n: usize) -> String {
     let mut lines = String::new();
     for i in 0..n {
-        lines.push_str(&format!("key_{}: value_{}\n", i, i));
+        let _ = write!(lines, "key_{}: value_{}\n", i, i);
     }
     lines
 }
@@ -614,7 +615,7 @@ fn generate_yaml_keys(n: usize) -> String {
 fn generate_toml_keys(n: usize) -> String {
     let mut lines = String::new();
     for i in 0..n {
-        lines.push_str(&format!("key_{} = \"value_{}\"\n", i, i));
+        let _ = write!(lines, "key_{} = \"value_{}\"\n", i, i);
     }
     lines
 }
@@ -622,7 +623,7 @@ fn generate_toml_keys(n: usize) -> String {
 fn generate_csv_rows(n: usize) -> String {
     let mut csv = String::from("id,name,value\n");
     for i in 0..n {
-        csv.push_str(&format!("{},item_{},{}\n", i, i, i * 10));
+        let _ = write!(csv, "{},item_{},{}\n", i, i, i * 10);
     }
     csv
 }

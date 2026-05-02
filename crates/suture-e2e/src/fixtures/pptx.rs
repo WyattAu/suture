@@ -4,10 +4,12 @@ fn zip_to_string(buf: Vec<u8>) -> String {
     unsafe { String::from_utf8_unchecked(buf) }
 }
 
+#[must_use] 
 pub fn simple() -> String {
     make_pptx(&["Title Slide", "Content Slide", "Summary Slide"])
 }
 
+#[must_use] 
 pub fn multi_layout() -> String {
     make_pptx(&[
         "Title",
@@ -25,6 +27,7 @@ pub fn multi_layout() -> String {
     ])
 }
 
+#[must_use] 
 pub fn styled() -> String {
     make_pptx(&[
         "Acme Corp Annual Report 2025",
@@ -38,6 +41,7 @@ pub fn styled() -> String {
     ])
 }
 
+#[must_use] 
 pub fn complex() -> String {
     make_pptx(&[
         "Project Phoenix - Kickoff",
@@ -88,9 +92,8 @@ fn make_pptx(slide_names: &[impl AsRef<str>]) -> String {
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
   <Default Extension="xml" ContentType="application/xml"/>
   <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
-{}
-</Types>"#,
-                ct_overrides
+{ct_overrides}
+</Types>"#
             )
             .as_bytes(),
         )
@@ -119,9 +122,8 @@ fn make_pptx(slide_names: &[impl AsRef<str>]) -> String {
             format!(
                 r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-{}
-</Relationships>"#,
-                slide_rels
+{slide_rels}
+</Relationships>"#
             )
             .as_bytes(),
         )
@@ -151,10 +153,9 @@ fn make_pptx(slide_names: &[impl AsRef<str>]) -> String {
                 r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <p:sldIdLst>
-{}
+{sld_ids}
   </p:sldIdLst>
-</p:presentation>"#,
-                sld_ids
+</p:presentation>"#
             )
             .as_bytes(),
         )

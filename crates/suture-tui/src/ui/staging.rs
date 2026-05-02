@@ -54,7 +54,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                 Style::default().fg(Color::White)
             };
 
-            let prefix = if is_selected { "▶ " } else { "  " };
+            let prefix = if is_selected { "\u{25b6} " } else { "  " };
 
             staged_lines.push(Line::from(vec![
                 Span::styled(prefix, Style::default().fg(Color::Yellow)),
@@ -76,12 +76,12 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
 
     // Unstaged files pane
     let unstaged = app.unstaged_files();
-    let unstaged_style = if !focus_staged {
+    let unstaged_style = if focus_staged {
+        Style::default().fg(Color::Yellow)
+    } else {
         Style::default()
             .fg(Color::Yellow)
             .add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(Color::Yellow)
     };
 
     let unstaged_title = format!(" Unstaged Files ({}) ", unstaged.len());
@@ -112,7 +112,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                 Style::default().fg(Color::White)
             };
 
-            let prefix = if is_selected { "▶ " } else { "  " };
+            let prefix = if is_selected { "\u{25b6} " } else { "  " };
 
             unstaged_lines.push(Line::from(vec![
                 Span::styled(prefix, Style::default().fg(Color::Yellow)),

@@ -45,8 +45,7 @@ fn build_propfind_collection(path: &str, entries: &[(&str, bool)]) -> String {
                 "<D:response><D:href>{href}</D:href><D:propstat><D:prop>{kind}</D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response>"
             )
         })
-        .collect::<Vec<_>>()
-        .join("");
+        .collect::<String>();
 
     format!(
         "<?xml version=\"1.0\" encoding=\"utf-8\"?>\
@@ -83,7 +82,7 @@ fn list_entries(state: &WebDavState, dir_path: &str) -> Vec<(String, bool)> {
         }
         let parent = parent_of(d).unwrap_or_default();
         if parent == dir_path {
-            let name = d.rsplit('/').next().unwrap_or(d).to_string();
+            let name = d.rsplit('/').next().unwrap_or(d).to_owned();
             entries.push((name, true));
         }
     }
@@ -91,7 +90,7 @@ fn list_entries(state: &WebDavState, dir_path: &str) -> Vec<(String, bool)> {
     for path in files.keys() {
         let parent = parent_of(path).unwrap_or_default();
         if parent == dir_path {
-            let name = path.rsplit('/').next().unwrap_or(path).to_string();
+            let name = path.rsplit('/').next().unwrap_or(path).to_owned();
             entries.push((name, false));
         }
     }
@@ -149,7 +148,7 @@ async fn handle_propfind_path(
     let clean = path.trim_start_matches('/').trim_end_matches('/');
 
     let dirs = state.dirs.unpoison_lock();
-    let is_dir = clean.is_empty() || dirs.contains(&clean.to_string());
+    let is_dir = clean.is_empty() || dirs.contains(&clean.to_owned());
     drop(dirs);
 
     if is_dir {
@@ -164,7 +163,7 @@ async fn handle_propfind_path(
         )
     } else {
         let files = state.file_contents.unpoison_lock();
-        let size = files.get(clean).map(|d| d.len()).unwrap_or(0);
+        let size = files.get(clean).map_or(0, std::vec::Vec::len);
         drop(files);
         let body = build_propfind_resource(clean, size);
         (
@@ -206,12 +205,14 @@ async fn handle_get_file(
 ) -> Response {
     let clean = path.trim_start_matches('/');
 
-    let files = state.file_contents.unpoison_lock();
-    match files.get(clean) {
-        Some(data) => {
+    let data: Option<Vec<u8>> = {
+        let files = state.file_contents.unpoison_lock();
+        files.get(clean).cloned()
+    };
+    data.map_or_else(
+        || (StatusCode::NOT_FOUND, "not found").into_response(),
+        |body| {
             let mime = mime_guess_path(clean);
-            let body = data.clone();
-            drop(files);
             (
                 StatusCode::OK,
                 [
@@ -221,9 +222,8 @@ async fn handle_get_file(
                 body,
             )
                 .into_response()
-        }
-        None => (StatusCode::NOT_FOUND, "not found").into_response(),
-    }
+        },
+    )
 }
 
 fn mime_guess_path(path: &str) -> String {
@@ -233,20 +233,19 @@ fn mime_guess_path(path: &str) -> String {
         Some("md") => "text/markdown",
         Some("json") => "application/json",
         Some("txt") => "text/plain",
-        Some("html") | Some("htm") => "text/html",
+        Some("html" | "htm") => "text/html",
         Some("css") => "text/css",
         Some("js") => "text/javascript",
         Some("xml") => "application/xml",
         Some("png") => "image/png",
-        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("jpg" | "jpeg") => "image/jpeg",
         Some("gif") => "image/gif",
         Some("svg") => "image/svg+xml",
         Some("pdf") => "application/pdf",
         Some("zip") => "application/zip",
-        Some("gz") | Some("tgz") => "application/gzip",
+        Some("gz" | "tgz") => "application/gzip",
         _ => "application/octet-stream",
-    }
-    .to_string()
+    }.to_owned()
 }
 
 async fn handle_put(
@@ -254,7 +253,7 @@ async fn handle_put(
     AxumPath(path): AxumPath<String>,
     body: axum::body::Bytes,
 ) -> impl IntoResponse {
-    let clean = path.trim_start_matches('/').to_string();
+    let clean = path.trim_start_matches('/').to_owned();
 
     if clean.is_empty() || clean.ends_with('/') {
         return StatusCode::CONFLICT.into_response();
@@ -268,7 +267,7 @@ async fn handle_put(
     state
         .file_contents
         .lock()
-        .unwrap_or_else(|e| e.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .insert(clean.clone(), body.to_vec());
 
     tracing::info!("PUT {} ({} bytes)", clean, body.len());
@@ -284,7 +283,7 @@ async fn handle_put(
         if let Err(e) = repo.add(&clean) {
             tracing::warn!("WebDAV PUT failed to git add {}: {}", clean, e);
         }
-        if let Err(e) = repo.commit(&format!("webdav: modify {}", clean)) {
+        if let Err(e) = repo.commit(&format!("webdav: modify {clean}")) {
             tracing::warn!("WebDAV PUT failed to commit: {}", e);
         }
     }
@@ -329,7 +328,7 @@ async fn handle_delete(
         if let Err(e) = repo.add(clean) {
             tracing::warn!("WebDAV DELETE failed to git add: {}", e);
         }
-        if let Err(e) = repo.commit(&format!("webdav: delete {}", clean)) {
+        if let Err(e) = repo.commit(&format!("webdav: delete {clean}")) {
             tracing::warn!("WebDAV DELETE failed to commit: {}", e);
         }
     }
@@ -343,8 +342,7 @@ async fn handle_mkcol(
 ) -> impl IntoResponse {
     let clean = path
         .trim_start_matches('/')
-        .trim_end_matches('/')
-        .to_string();
+        .trim_end_matches('/').to_owned();
 
     if clean.is_empty() {
         return StatusCode::FORBIDDEN.into_response();
@@ -369,7 +367,7 @@ async fn handle_webdav_fallback(
     uri: axum::http::Uri,
     State(state): State<Arc<WebDavState>>,
 ) -> Response {
-    let path = uri.path().to_string();
+    let path = uri.path().to_owned();
     match method.as_str() {
         "PROPFIND" => handle_propfind_path(State(state), AxumPath(path))
             .await
@@ -419,7 +417,7 @@ fn load_repo(repo_path: &Path) -> anyhow::Result<(FileContents, Vec<String>)> {
 pub async fn serve_webdav(repo_path: &str, addr: &str) -> Result<(), anyhow::Error> {
     let repo = Path::new(repo_path);
     if !repo.exists() {
-        anyhow::bail!("repository path does not exist: {}", repo_path);
+        anyhow::bail!("repository path does not exist: {repo_path}");
     }
 
     let (file_contents, dirs) = load_repo(repo)?;
@@ -462,13 +460,13 @@ async fn webdav_method_middleware(
     match method.as_str() {
         "OPTIONS" => handle_options().await.into_response(),
         "PROPFIND" => {
-            let path = uri.path().to_string();
+            let path = uri.path().to_owned();
             handle_propfind_path(State(state), AxumPath(path))
                 .await
                 .into_response()
         }
         "MKCOL" => {
-            let path = uri.path().to_string();
+            let path = uri.path().to_owned();
             handle_mkcol(State(state), AxumPath(path))
                 .await
                 .into_response()

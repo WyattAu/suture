@@ -1,6 +1,6 @@
 use crate::ref_utils::resolve_ref;
 
-pub(crate) async fn cmd_notes(
+pub async fn cmd_notes(
     action: &crate::NotesAction,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
@@ -17,22 +17,22 @@ pub(crate) async fn cmd_notes(
                 eprintln!("Enter note (Ctrl+D to finish):");
                 let mut buf = String::new();
                 std::io::stdin().read_line(&mut buf).unwrap_or_default();
-                buf.trim_end().to_string()
+                buf.trim_end().to_owned()
             });
             if *append {
                 let existing = repo.list_notes(&patch_id)?;
                 if let Some(last_note) = existing.last() {
-                    let appended = format!("{}\n---\n{}", last_note, msg);
+                    let appended = format!("{last_note}\n---\n{msg}");
                     repo.remove_note(&patch_id, existing.len() - 1)?;
                     repo.add_note(&patch_id, &appended)?;
-                    println!("Note appended to {}", commit);
+                    println!("Note appended to {commit}");
                 } else {
                     repo.add_note(&patch_id, &msg)?;
-                    println!("Note added to {}", commit);
+                    println!("Note added to {commit}");
                 }
             } else {
                 repo.add_note(&patch_id, &msg)?;
-                println!("Note added to {}", commit);
+                println!("Note added to {commit}");
             }
         }
         crate::NotesAction::List { commit } | crate::NotesAction::Show { commit } => {
@@ -40,10 +40,10 @@ pub(crate) async fn cmd_notes(
             let patch_id = target.id;
             let notes = repo.list_notes(&patch_id)?;
             if notes.is_empty() {
-                println!("No notes for commit {}.", commit);
+                println!("No notes for commit {commit}.");
             } else {
                 for (i, note) in notes.iter().enumerate() {
-                    println!("Note {}: {}", i, note);
+                    println!("Note {i}: {note}");
                 }
             }
         }
@@ -51,7 +51,7 @@ pub(crate) async fn cmd_notes(
             let target = resolve_ref(&repo, commit, &patches)?;
             let patch_id = target.id;
             repo.remove_note(&patch_id, *index)?;
-            println!("Removed note {} from {}", index, commit);
+            println!("Removed note {index} from {commit}");
         }
     }
     Ok(())

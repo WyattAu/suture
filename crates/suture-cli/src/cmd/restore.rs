@@ -1,6 +1,6 @@
 use std::path::Path as StdPath;
 
-pub(crate) async fn cmd_restore(
+pub async fn cmd_restore(
     source: Option<&str>,
     paths: &[String],
     staged: bool,
@@ -20,7 +20,7 @@ pub(crate) async fn cmd_restore(
                 repo.meta()
                     .working_set_add(&repo_path, suture_common::FileStatus::Modified)?;
             }
-            println!("Unstaged {}", path);
+            println!("Unstaged {path}");
         }
     } else {
         let source_ref = source.unwrap_or("HEAD");
@@ -35,12 +35,12 @@ pub(crate) async fn cmd_restore(
                     std::fs::create_dir_all(parent)?;
                 }
                 std::fs::write(&full_path, data)?;
-                println!("Restored {}", path);
+                println!("Restored {path}");
             } else {
                 let full_path = repo.root().join(path);
                 if full_path.exists() {
                     std::fs::remove_file(&full_path)?;
-                    println!("Removed {}", path);
+                    println!("Removed {path}");
                 }
             }
         }
@@ -63,7 +63,7 @@ fn resolve_ref(
     if let Some(rest) = target.strip_prefix("HEAD~") {
         let n: usize = rest
             .parse()
-            .map_err(|_| format!("invalid HEAD~N: {}", target))?;
+            .map_err(|_| format!("invalid HEAD~N: {target}"))?;
         let (_, head_id) = repo.head()?;
         let mut current = head_id;
         for _ in 0..n {
@@ -93,8 +93,7 @@ fn resolve_ref(
     }
 
     Err(format!(
-        "error: could not resolve '{}': not a valid branch, tag, or commit hash",
-        target
+        "error: could not resolve '{target}': not a valid branch, tag, or commit hash"
     )
     .into())
 }

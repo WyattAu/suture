@@ -38,7 +38,7 @@ impl FromRequestParts<Arc<AppState>> for Claims {
     ) -> Result<Self, Self::Rejection> {
         parts
             .extensions
-            .get::<Claims>()
+            .get::<Self>()
             .cloned()
             .ok_or(axum::http::StatusCode::UNAUTHORIZED)
     }
@@ -50,10 +50,10 @@ pub async fn start(config: Config) -> anyhow::Result<()> {
 
     if let Ok(entries) = std::fs::read_dir("plugins") {
         for entry in entries.flatten() {
-            if entry.path().extension().map(|e| e == "wasm").unwrap_or(false) {
+            if entry.path().extension().is_some_and(|e| e == "wasm") {
                 let path = entry.path().to_string_lossy().to_string();
                 match plugins.lock().unwrap().load_file(&path) {
-                    Ok(_) => tracing::info!("Loaded plugin: {}", path),
+                    Ok(()) => tracing::info!("Loaded plugin: {}", path),
                     Err(e) => tracing::warn!("Failed to load plugin {}: {}", path, e),
                 }
             }

@@ -1,4 +1,4 @@
-pub(crate) async fn cmd_blame(
+pub async fn cmd_blame(
     path: &str,
     at: Option<&str>,
     lines: Option<&str>,
@@ -10,8 +10,7 @@ pub(crate) async fn cmd_blame(
         let parts: Vec<&str> = range.split(',').collect();
         if parts.len() != 2 {
             let msg = format!(
-                "invalid line range format: '{}' (expected start,end)",
-                range
+                "invalid line range format: '{range}' (expected start,end)"
             );
             eprintln!("error: {msg}");
             std::process::exit(1);
@@ -27,7 +26,7 @@ pub(crate) async fn cmd_blame(
             std::process::exit(1);
         })?;
         if s == 0 || e == 0 || s > e {
-            let msg = format!("invalid line range: {} > {} or zero values", s, e);
+            let msg = format!("invalid line range: {s} > {e} or zero values");
             eprintln!("error: {msg}");
             std::process::exit(1);
         }

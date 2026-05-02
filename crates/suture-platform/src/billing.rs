@@ -12,7 +12,7 @@ use crate::auth::Claims;
 use crate::db::PlatformDb;
 use crate::server::AppState;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Tier {
     Free,
@@ -21,58 +21,65 @@ pub enum Tier {
 }
 
 impl Tier {
+    #[must_use] 
     pub fn as_str(&self) -> &'static str {
         match self {
-            Tier::Free => "free",
-            Tier::Pro => "pro",
-            Tier::Enterprise => "enterprise",
+            Self::Free => "free",
+            Self::Pro => "pro",
+            Self::Enterprise => "enterprise",
         }
     }
 
     #[allow(clippy::should_implement_trait)]
+    #[must_use] 
     pub fn from_str(s: &str) -> Self {
         match s {
-            "pro" => Tier::Pro,
-            "enterprise" => Tier::Enterprise,
-            _ => Tier::Free,
+            "pro" => Self::Pro,
+            "enterprise" => Self::Enterprise,
+            _ => Self::Free,
         }
     }
 
+    #[must_use] 
     pub fn max_repos(&self) -> i64 {
         match self {
-            Tier::Free => 5,
-            Tier::Pro | Tier::Enterprise => -1,
+            Self::Free => 5,
+            Self::Pro | Self::Enterprise => -1,
         }
     }
 
+    #[must_use] 
     pub fn max_merges_per_month(&self) -> i64 {
         match self {
-            Tier::Free => 100,
-            Tier::Pro => 10_000,
-            Tier::Enterprise => -1,
+            Self::Free => 100,
+            Self::Pro => 10_000,
+            Self::Enterprise => -1,
         }
     }
 
+    #[must_use] 
     pub fn max_storage_bytes(&self) -> i64 {
         match self {
-            Tier::Free => 100 * 1024 * 1024,
-            Tier::Pro => 10 * 1024 * 1024 * 1024,
-            Tier::Enterprise => 100 * 1024 * 1024 * 1024,
+            Self::Free => 100 * 1024 * 1024,
+            Self::Pro => 10 * 1024 * 1024 * 1024,
+            Self::Enterprise => 100 * 1024 * 1024 * 1024,
         }
     }
 
+    #[must_use] 
     pub fn max_drivers(&self) -> i64 {
         match self {
-            Tier::Free => 5,
-            Tier::Pro | Tier::Enterprise => -1,
+            Self::Free => 5,
+            Self::Pro | Self::Enterprise => -1,
         }
     }
 
+    #[must_use] 
     pub fn price_cents_per_seat(&self) -> i64 {
         match self {
-            Tier::Free => 0,
-            Tier::Pro => 900,
-            Tier::Enterprise => 2900,
+            Self::Free => 0,
+            Self::Pro => 900,
+            Self::Enterprise => 2900,
         }
     }
 }

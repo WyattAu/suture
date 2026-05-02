@@ -18,7 +18,7 @@ use suture_driver_xml::XmlDriver;
 use suture_driver_yaml::YamlDriver;
 
 /// Build a [`DriverRegistry`] with all builtin semantic drivers registered.
-pub(crate) fn builtin_registry() -> DriverRegistry {
+pub fn builtin_registry() -> DriverRegistry {
     let mut registry = DriverRegistry::new();
     registry.register(Box::new(JsonDriver));
     registry.register(Box::new(TomlDriver));

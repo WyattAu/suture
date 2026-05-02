@@ -58,13 +58,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                         Span::styled(&line.content, super::diff_line_style(line.line_type)),
                     ]));
                 }
-                DiffLineType::HunkHeader => {
-                    lines.push(Line::from(Span::styled(
-                        format!("  {}", &line.content),
-                        super::diff_line_style(line.line_type),
-                    )));
-                }
-                DiffLineType::ConflictMarker => {
+                DiffLineType::HunkHeader | DiffLineType::ConflictMarker => {
                     lines.push(Line::from(Span::styled(
                         format!("  {}", &line.content),
                         super::diff_line_style(line.line_type),
@@ -77,7 +71,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     // Navigation hint
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        " [↑/k] Scroll Up  [↓/j] Scroll Down  [PgUp/PgDn] Page  [g] Top  [G] Bottom",
+        " [\u{2191}/k] Scroll Up  [\u{2193}/j] Scroll Down  [PgUp/PgDn] Page  [g] Top  [G] Bottom",
         Style::default().fg(Color::DarkGray),
     )));
 

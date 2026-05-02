@@ -82,7 +82,7 @@ fn apply_template(
             }
             std::fs::write(&full_path, content)
                 .map_err(|e| user_error(&format!("failed to write '{}'", entry.path), e))?;
-            created_files.push(entry.path.to_string());
+            created_files.push(entry.path.to_owned());
         } else {
             std::fs::create_dir_all(&full_path).map_err(|e| {
                 user_error(&format!("failed to create directory '{}'", entry.path), e)
@@ -98,7 +98,7 @@ fn apply_template(
     Ok(())
 }
 
-pub(crate) async fn cmd_init(
+pub async fn cmd_init(
     path: &str,
     repo_type: Option<&str>,
     template: Option<&str>,

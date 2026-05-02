@@ -3,12 +3,12 @@ use ed25519_dalek::Signer;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct HashProto {
+pub struct HashProto {
     pub value: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct PatchProto {
+pub struct PatchProto {
     pub id: HashProto,
     pub operation_type: String,
     pub touch_set: Vec<String>,
@@ -21,19 +21,19 @@ pub(crate) struct PatchProto {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct BranchProto {
+pub struct BranchProto {
     pub name: String,
     pub target_id: HashProto,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct BlobRef {
+pub struct BlobRef {
     pub hash: HashProto,
     pub data: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct PushRequest {
+pub struct PushRequest {
     pub repo_id: String,
     pub patches: Vec<PatchProto>,
     pub branches: Vec<BranchProto>,
@@ -47,7 +47,7 @@ pub(crate) struct PushRequest {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct PushResponse {
+pub struct PushResponse {
     pub success: bool,
     #[allow(dead_code)]
     pub error: Option<String>,
@@ -56,7 +56,7 @@ pub(crate) struct PushResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct PullRequest {
+pub struct PullRequest {
     pub repo_id: String,
     pub known_branches: Vec<BranchProto>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -64,7 +64,7 @@ pub(crate) struct PullRequest {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct PullResponse {
+pub struct PullResponse {
     pub success: bool,
     pub error: Option<String>,
     pub patches: Vec<PatchProto>,
@@ -72,13 +72,13 @@ pub(crate) struct PullResponse {
     pub blobs: Vec<BlobRef>,
 }
 
-pub(crate) fn hex_to_hash_proto(hex: &str) -> HashProto {
+pub fn hex_to_hash_proto(hex: &str) -> HashProto {
     HashProto {
-        value: hex.to_string(),
+        value: hex.to_owned(),
     }
 }
 
-pub(crate) fn patch_to_proto(patch: &suture_core::patch::types::Patch) -> PatchProto {
+pub fn patch_to_proto(patch: &suture_core::patch::types::Patch) -> PatchProto {
     PatchProto {
         id: hex_to_hash_proto(&patch.id.to_hex()),
         operation_type: patch.operation_type.to_string(),
@@ -96,7 +96,7 @@ pub(crate) fn patch_to_proto(patch: &suture_core::patch::types::Patch) -> PatchP
     }
 }
 
-pub(crate) fn proto_to_patch(
+pub fn proto_to_patch(
     proto: &PatchProto,
 ) -> Result<suture_core::patch::types::Patch, Box<dyn std::error::Error>> {
     use suture_common::Hash;
@@ -111,7 +111,6 @@ pub(crate) fn proto_to_patch(
     let op_type = match proto.operation_type.as_str() {
         "create" => OperationType::Create,
         "delete" => OperationType::Delete,
-        "modify" => OperationType::Modify,
         "move" => OperationType::Move,
         "metadata" => OperationType::Metadata,
         "merge" => OperationType::Merge,
@@ -135,7 +134,7 @@ pub(crate) fn proto_to_patch(
     ))
 }
 
-pub(crate) fn canonical_push_bytes(req: &PushRequest) -> Vec<u8> {
+pub fn canonical_push_bytes(req: &PushRequest) -> Vec<u8> {
     let mut buf = Vec::new();
 
     buf.extend_from_slice(req.repo_id.as_bytes());
@@ -171,19 +170,16 @@ pub(crate) fn canonical_push_bytes(req: &PushRequest) -> Vec<u8> {
         buf.push(0);
     }
 
-    buf.push(if req.force { 1 } else { 0 });
+    buf.push(u8::from(req.force));
 
     buf
 }
 
-pub(crate) fn sign_push_request(
+pub fn sign_push_request(
     repo: &suture_core::repository::Repository,
     mut req: PushRequest,
 ) -> Result<PushRequest, Box<dyn std::error::Error>> {
-    let key_name = match repo.get_config("signing.key")? {
-        Some(name) => name,
-        None => return Ok(req),
-    };
+    let Some(key_name) = repo.get_config("signing.key").ok().flatten() else { return Ok(req) };
 
     let keys_dir = std::path::Path::new(".suture").join("keys");
     // Validate key_name to prevent path traversal
@@ -192,8 +188,7 @@ pub(crate) fn sign_push_request(
         .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
     {
         return Err(format!(
-            "invalid signing key name '{}': must contain only alphanumeric characters, hyphens, and underscores",
-            key_name
+            "invalid signing key name '{key_name}': must contain only alphanumeric characters, hyphens, and underscores"
         )
         .into());
     }
@@ -223,33 +218,29 @@ pub(crate) fn sign_push_request(
     Ok(req)
 }
 
-pub(crate) fn get_remote_token(
+pub fn get_remote_token(
     repo: &suture_core::repository::Repository,
     remote: &str,
 ) -> Result<Option<String>, Box<dyn std::error::Error>> {
-    let key = format!("remote.{}.token", remote);
+    let key = format!("remote.{remote}.token");
     Ok(repo.get_config(&key)?)
 }
 
-pub(crate) fn derive_repo_id(url: &str, remote_name: &str) -> String {
+pub fn derive_repo_id(url: &str, remote_name: &str) -> String {
     let trimmed = url.trim_end_matches('/');
-    let after_scheme = if let Some(idx) = trimmed.find("://") {
-        &trimmed[idx + 3..]
-    } else {
-        trimmed
-    };
+    let after_scheme = trimmed.find("://").map_or(trimmed, |idx| &trimmed[idx + 3..]);
     if let Some(path_start) = after_scheme.find('/') {
         let path = &after_scheme[path_start + 1..];
         if let Some(name) = path.rsplit('/').next()
             && !name.is_empty()
         {
-            return name.to_string();
+            return name.to_owned();
         }
     }
-    remote_name.to_string()
+    remote_name.to_owned()
 }
 
-pub(crate) async fn check_handshake(url: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn check_handshake(url: &str) -> Result<(), Box<dyn std::error::Error>> {
     const PROTOCOL_VERSION: u32 = 1;
 
     #[derive(serde::Deserialize)]
@@ -259,7 +250,7 @@ pub(crate) async fn check_handshake(url: &str) -> Result<(), Box<dyn std::error:
     }
 
     let client = reqwest::Client::new();
-    let resp = client.get(format!("{}/handshake", url)).send().await?;
+    let resp = client.get(format!("{url}/handshake")).send().await?;
 
     if !resp.status().is_success() {
         return Err(format!("handshake failed: server returned {}", resp.status()).into());
@@ -277,7 +268,7 @@ pub(crate) async fn check_handshake(url: &str) -> Result<(), Box<dyn std::error:
     Ok(())
 }
 
-pub(crate) async fn do_fetch(
+pub async fn do_fetch(
     repo: &mut suture_core::repository::Repository,
     remote: &str,
     depth: Option<u32>,
@@ -302,7 +293,7 @@ pub(crate) async fn do_fetch(
     };
 
     let client = reqwest::Client::new();
-    let mut req_builder = client.post(format!("{}/pull", url)).json(&pull_body);
+    let mut req_builder = client.post(format!("{url}/pull")).json(&pull_body);
 
     if let Some(token) = get_remote_token(repo, remote)? {
         req_builder = req_builder.bearer_auth(&token);
@@ -371,10 +362,10 @@ pub(crate) async fn do_fetch(
         let branch_name = suture_common::BranchName::new(&branch.name)?;
         let ref_key = format!("remote.{}.ref.{}", remote, branch.name);
         repo.meta().set_config(&ref_key, &target_id.to_hex()).ok();
-        if !repo.dag().branch_exists(&branch_name) {
-            let _ = repo.dag_mut().create_branch(branch_name.clone(), target_id);
-        } else {
+        if repo.dag().branch_exists(&branch_name) {
             let _ = repo.dag_mut().update_branch(&branch_name, target_id);
+        } else {
+            let _ = repo.dag_mut().create_branch(branch_name.clone(), target_id);
         }
         repo.meta().set_branch(&branch_name, &target_id)?;
     }
@@ -384,14 +375,14 @@ pub(crate) async fn do_fetch(
     Ok(new_patches)
 }
 
-pub(crate) async fn do_pull(
+pub async fn do_pull(
     repo: &mut suture_core::repository::Repository,
     remote: &str,
 ) -> Result<usize, Box<dyn std::error::Error>> {
     do_pull_with_depth(repo, remote, None).await
 }
 
-pub(crate) async fn do_pull_with_depth(
+pub async fn do_pull_with_depth(
     repo: &mut suture_core::repository::Repository,
     remote: &str,
     max_depth: Option<u32>,

@@ -1,6 +1,6 @@
 use crate::KeyAction;
 
-pub(crate) async fn cmd_key(action: &crate::KeyAction) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_key(action: &crate::KeyAction) -> Result<(), Box<dyn std::error::Error>> {
     let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
 
     match action {
@@ -16,7 +16,7 @@ pub(crate) async fn cmd_key(action: &crate::KeyAction) -> Result<(), Box<dyn std
             {
                 use std::os::unix::fs::PermissionsExt;
                 std::fs::set_permissions(&priv_path, std::fs::Permissions::from_mode(0o600))
-                    .map_err(|e| format!("failed to set key permissions: {}", e))?;
+                    .map_err(|e| format!("failed to set key permissions: {e}"))?;
             }
 
             let pub_hex = hex::encode(keypair.public_key_bytes());
@@ -26,9 +26,9 @@ pub(crate) async fn cmd_key(action: &crate::KeyAction) -> Result<(), Box<dyn std
                 repo.set_config("signing.key", "default")?;
             }
 
-            println!("Generated keypair '{}'", name);
+            println!("Generated keypair '{name}'");
             println!("  Private key: {}", priv_path.display());
-            println!("  Public key:  {}", pub_hex);
+            println!("  Public key:  {pub_hex}");
             if name != "default" {
                 println!(
                     "Hint: run `suture config signing.key={name}` to use this key for signing"
@@ -40,7 +40,7 @@ pub(crate) async fn cmd_key(action: &crate::KeyAction) -> Result<(), Box<dyn std
             let mut found = false;
             for (key, value) in &entries {
                 if let Some(name) = key.strip_prefix("key.public.") {
-                    println!("{}  {}", name, value);
+                    println!("{name}  {value}");
                     found = true;
                 }
             }
@@ -51,25 +51,21 @@ pub(crate) async fn cmd_key(action: &crate::KeyAction) -> Result<(), Box<dyn std
         }
         KeyAction::Public { name } => {
             let key = format!("key.public.{name}");
-            match repo.get_config(&key)? {
-                Some(pub_hex) => println!("{}", pub_hex),
-                None => {
-                    let all_keys: Vec<String> = repo
-                        .list_config()
-                        .unwrap_or_default()
-                        .into_iter()
-                        .filter_map(|(k, _)| k.strip_prefix("key.public.").map(|s| s.to_string()))
-                        .collect();
-                    if let Some(suggestion) = crate::fuzzy::suggest(name, &all_keys) {
-                        eprintln!(
-                            "No public key found for '{}' (did you mean '{}'?)",
-                            name, suggestion
-                        );
-                    } else {
-                        eprintln!("No public key found for '{}'", name);
-                    }
-                    std::process::exit(1);
+            if let Some(pub_hex) = repo.get_config(&key)? { println!("{pub_hex}") } else {
+                let all_keys: Vec<String> = repo
+                    .list_config()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter_map(|(k, _)| k.strip_prefix("key.public.").map(std::borrow::ToOwned::to_owned))
+                    .collect();
+                if let Some(suggestion) = crate::fuzzy::suggest(name, &all_keys) {
+                    eprintln!(
+                        "No public key found for '{name}' (did you mean '{suggestion}'?)"
+                    );
+                } else {
+                    eprintln!("No public key found for '{name}'");
                 }
+                std::process::exit(1);
             }
         }
     }

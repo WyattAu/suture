@@ -1,4 +1,4 @@
-pub(crate) async fn cmd_reset(target: &str, mode: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_reset(target: &str, mode: &str) -> Result<(), Box<dyn std::error::Error>> {
     use suture_core::repository::ResetMode;
 
     let reset_mode = match mode {
@@ -7,8 +7,7 @@ pub(crate) async fn cmd_reset(target: &str, mode: &str) -> Result<(), Box<dyn st
         "hard" => ResetMode::Hard,
         _ => {
             return Err(format!(
-                "invalid reset mode: '{}' (expected soft, mixed, hard)",
-                mode
+                "invalid reset mode: '{mode}' (expected soft, mixed, hard)"
             )
             .into());
         }
@@ -16,6 +15,6 @@ pub(crate) async fn cmd_reset(target: &str, mode: &str) -> Result<(), Box<dyn st
 
     let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
     let target_id = repo.reset(target, reset_mode)?;
-    println!("HEAD is now at {}", target_id);
+    println!("HEAD is now at {target_id}");
     Ok(())
 }

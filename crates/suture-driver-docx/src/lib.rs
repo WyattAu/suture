@@ -249,14 +249,14 @@ fn extract_blocks(body_content: &str) -> Vec<Block> {
 /// Extract non-block trailing content from the body.
 fn extract_trailing_body_content(body_content: &str, blocks: &[Block]) -> String {
     if blocks.is_empty() {
-        return body_content.trim_end().to_string();
+        return body_content.trim_end().to_owned();
     }
 
     let last = &blocks[blocks.len() - 1];
     if let Some(last_end) = body_content.rfind(&last.raw_xml) {
         let after = &body_content[last_end + last.raw_xml.len()..];
         if !after.trim().is_empty() {
-            return after.to_string();
+            return after.to_owned();
         }
     }
 
@@ -289,6 +289,7 @@ fn merge_blocks(base: &[Block], ours: &[Block], theirs: &[Block]) -> Option<Vec<
         let o = ours.get(i);
         let t = theirs.get(i);
 
+        #[allow(clippy::match_same_arms)]
         match (b, o, t) {
             (None, Some(o), None) => merged.push(o.clone()),
             (None, None, Some(t)) => merged.push(t.clone()),
@@ -334,6 +335,7 @@ fn extract_blocks_from_doc(doc: &OoxmlDocument) -> Result<Vec<Block>, DriverErro
 pub struct DocxDriver;
 
 impl DocxDriver {
+    #[must_use] 
     pub fn new() -> Self {
         Self
     }
@@ -346,7 +348,7 @@ impl Default for DocxDriver {
 }
 
 impl SutureDriver for DocxDriver {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "DOCX"
     }
 
@@ -392,15 +394,14 @@ impl SutureDriver for DocxDriver {
         for i in 0..max_len {
             let block_type = new_blocks
                 .get(i)
-                .map(|b| {
+                .map_or("paragraph", |b| {
                     if b.kind == BlockKind::Table {
                         "table"
                     } else {
                         "paragraph"
                     }
-                })
-                .unwrap_or("paragraph");
-            let path = format!("/{}/{}", block_type, i);
+                });
+            let path = format!("/{block_type}/{i}");
             match (base_blocks.get(i), new_blocks.get(i)) {
                 (None, Some(new)) => changes.push(SemanticChange::Added {
                     path,
@@ -430,30 +431,30 @@ impl SutureDriver for DocxDriver {
     ) -> Result<String, DriverError> {
         let changes = self.diff(base_content, new_content)?;
         if changes.is_empty() {
-            return Ok("no changes".to_string());
+            return Ok("no changes".to_owned());
         }
         let lines: Vec<String> = changes
             .iter()
             .map(|c| match c {
                 SemanticChange::Added { path, value } => {
-                    format!("  ADDED     {}: {}", path, value)
+                    format!("  ADDED     {path}: {value}")
                 }
                 SemanticChange::Removed { path, old_value } => {
-                    format!("  REMOVED   {}: {}", path, old_value)
+                    format!("  REMOVED   {path}: {old_value}")
                 }
                 SemanticChange::Modified {
                     path,
                     old_value,
                     new_value,
                 } => {
-                    format!("  MODIFIED  {}: {} -> {}", path, old_value, new_value)
+                    format!("  MODIFIED  {path}: {old_value} -> {new_value}")
                 }
                 SemanticChange::Moved {
                     old_path,
                     new_path,
                     value,
                 } => {
-                    format!("  MOVED     {} -> {}: {}", old_path, new_path, value)
+                    format!("  MOVED     {old_path} -> {new_path}: {value}")
                 }
             })
             .collect();
@@ -463,15 +464,7 @@ impl SutureDriver for DocxDriver {
     fn merge(&self, base: &str, ours: &str, theirs: &str) -> Result<Option<String>, DriverError> {
         // Delegate to merge_raw and convert bytes → String.
         let bytes = self.merge_raw(base.as_bytes(), ours.as_bytes(), theirs.as_bytes())?;
-        match bytes {
-            Some(b) => {
-                // OOXML documents contain ZIP-compressed data which may include
-                // non-UTF-8 bytes. Use lossy conversion for the text-oriented API;
-                // use merge_raw() for binary-safe operation.
-                Ok(Some(bytes_to_string_lossy(b)))
-            }
-            None => Ok(None),
-        }
+        Ok(bytes.map(bytes_to_string_lossy))
     }
 
     fn merge_raw(
@@ -489,8 +482,7 @@ impl SutureDriver for DocxDriver {
 
         let main_path = base_doc
             .main_document_path()
-            .ok_or_else(|| DriverError::ParseError("no main document part".into()))?
-            .to_string();
+            .ok_or_else(|| DriverError::ParseError("no main document part".into()))?.to_owned();
 
         let base_main = base_doc
             .get_part(&main_path)

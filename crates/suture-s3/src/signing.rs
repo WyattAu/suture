@@ -4,6 +4,7 @@ use chrono::Utc;
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
 
+use std::fmt::Write;
 type HmacSha256 = Hmac<Sha256>;
 
 const S3_SERVICE: &str = "s3";
@@ -15,18 +16,11 @@ pub fn sign_request(request: &mut reqwest::Request, config: &S3Config) -> Result
     let amz_date = now.format("%Y%m%dT%H%M%SZ").to_string();
     let date_stamp = now.format("%Y%m%d").to_string();
 
-    let payload_hash = if let Some(body) = request.body().as_ref() {
-        match body.as_bytes() {
-            Some(bytes) => hex::encode(Sha256::digest(bytes)),
-            None => {
-                let hash = Sha256::digest([]);
-                hex::encode(hash)
-            }
-        }
-    } else {
-        let hash = Sha256::digest([]);
-        hex::encode(hash)
-    };
+    let payload_hash = request
+        .body()
+        .as_ref()
+        .and_then(|body| body.as_bytes())
+        .map_or_else(|| hex::encode(Sha256::digest([])), |bytes| hex::encode(Sha256::digest(bytes)));
 
     let uri = request.url().path();
     let query = request.url().query().unwrap_or("");
@@ -40,7 +34,7 @@ pub fn sign_request(request: &mut reqwest::Request, config: &S3Config) -> Result
         .map(|(k, v)| {
             (
                 k.as_str().to_lowercase(),
-                v.to_str().unwrap_or("").to_string(),
+                v.to_str().unwrap_or("").to_owned(),
             )
         })
         .collect();
@@ -74,7 +68,7 @@ pub fn sign_request(request: &mut reqwest::Request, config: &S3Config) -> Result
         hex::encode(Sha256::digest(canonical_request.as_bytes()))
     );
 
-    let signing_key = derive_signing_key(&config.secret_key, &date_stamp, &config.region)?;
+    let signing_key = derive_signing_key(&config.secret_key, &date_stamp, &config.region);
     let signature = compute_hmac_hex(&signing_key, string_to_sign.as_bytes());
 
     let authorization = format!(
@@ -108,15 +102,15 @@ fn derive_signing_key(
     secret_key: &str,
     date_stamp: &str,
     region: &str,
-) -> Result<Vec<u8>, S3Error> {
+) -> Vec<u8> {
     let k_date = compute_hmac(
         format!("AWS4{secret_key}").as_bytes(),
         date_stamp.as_bytes(),
     );
     let k_region = compute_hmac(&k_date, region.as_bytes());
     let k_service = compute_hmac(&k_region, S3_SERVICE.as_bytes());
-    let k_signing = compute_hmac(&k_service, AWS4_REQUEST.as_bytes());
-    Ok(k_signing)
+    
+    compute_hmac(&k_service, AWS4_REQUEST.as_bytes())
 }
 
 fn compute_hmac(key: &[u8], data: &[u8]) -> Vec<u8> {
@@ -140,7 +134,7 @@ fn uri_encode(uri: &str, encode_slash: bool) -> String {
                 out.push('/');
             }
             _ => {
-                out.push_str(&format!("%{:02X}", byte));
+                let _ = write!(out, "%{byte:02X}");
             }
         }
     }
@@ -184,8 +178,7 @@ mod tests {
             "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
             "20150830",
             "us-east-1",
-        )
-        .unwrap();
+        );
         // Verify the signing key is 32 bytes (SHA-256 HMAC output)
         assert_eq!(key.len(), 32, "signing key must be 32 bytes");
         // Verify deterministic: same inputs produce same output
@@ -193,11 +186,10 @@ mod tests {
             "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
             "20150830",
             "us-east-1",
-        )
-        .unwrap();
+        );
         assert_eq!(key, key2, "signing key derivation must be deterministic");
         // Verify different inputs produce different keys
-        let key3 = derive_signing_key("different-secret-key", "20150830", "us-east-1").unwrap();
+        let key3 = derive_signing_key("different-secret-key", "20150830", "us-east-1");
         assert_ne!(key, key3, "different secrets must produce different keys");
     }
 

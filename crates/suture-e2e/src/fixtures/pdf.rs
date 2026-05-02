@@ -1,5 +1,6 @@
 pub const SIMPLE_PAGES: &[&str] = &["Hello, World! This is a simple one-page PDF document."];
 
+#[must_use] 
 pub fn simple() -> String {
     make_pdf(SIMPLE_PAGES)
 }
@@ -22,6 +23,7 @@ pub const MULTI_PAGE_PAGES: &[&str] = &[
     "Complete API reference with request and response examples.",
 ];
 
+#[must_use] 
 pub fn multi_page() -> String {
     make_pdf(MULTI_PAGE_PAGES)
 }
@@ -46,6 +48,7 @@ pub const COMPLEX_PAGES: &[&str] = &[
     "Strategic Priorities for Fiscal Year 2026",
 ];
 
+#[must_use] 
 pub fn complex() -> String {
     make_pdf(COMPLEX_PAGES)
 }
@@ -89,8 +92,8 @@ fn make_pdf(page_texts: &[impl AsRef<str>]) -> String {
     let kids_str = kids.join(" ");
 
     let catalog = format!("<< /Type /Catalog /Pages {pages_id} 0 R >>");
-    let pages_dict = format!("<< /Type /Pages /Kids [{}] /Count {num_pages} >>", kids_str);
-    let font_dict = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_string();
+    let pages_dict = format!("<< /Type /Pages /Kids [{kids_str}] /Count {num_pages} >>");
+    let font_dict = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_owned();
 
     let mut all_objects: Vec<(u32, String)> = vec![
         (catalog_id, catalog),
@@ -124,11 +127,11 @@ fn make_pdf(page_texts: &[impl AsRef<str>]) -> String {
 }
 
 pub fn with_modified_page(page_texts: &[impl AsRef<str>], index: usize, new_text: &str) -> String {
-    let mut modified: Vec<String> = page_texts.iter().map(|p| p.as_ref().to_string()).collect();
+    let mut modified: Vec<String> = page_texts.iter().map(|p| p.as_ref().to_owned()).collect();
     if index < modified.len() {
-        modified[index] = new_text.to_string();
+        modified[index] = new_text.to_owned();
     } else {
-        modified.push(new_text.to_string());
+        modified.push(new_text.to_owned());
     }
     make_pdf(&modified)
 }

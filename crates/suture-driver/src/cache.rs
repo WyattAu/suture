@@ -23,6 +23,7 @@ pub struct MergeCache {
 }
 
 impl MergeCache {
+    #[must_use] 
     pub fn new(max_entries: usize) -> Self {
         Self {
             entries: HashMap::new(),
@@ -30,9 +31,10 @@ impl MergeCache {
         }
     }
 
+    #[must_use] 
     pub fn get(&self, base: &str, ours: &str, theirs: &str) -> Option<&str> {
         let key = (hash(base), hash(ours), hash(theirs));
-        self.entries.get(&key).map(|s| s.as_str())
+        self.entries.get(&key).map(std::string::String::as_str)
     }
 
     pub fn insert(&mut self, base: &str, ours: &str, theirs: &str, result: String) {
@@ -45,10 +47,12 @@ impl MergeCache {
         self.entries.insert(key, result);
     }
 
+    #[must_use] 
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }

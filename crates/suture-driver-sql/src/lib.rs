@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-#![allow(clippy::collapsible_match)]
 use std::collections::BTreeMap;
 use suture_driver::{DriverError, SemanticChange, SutureDriver};
 
@@ -111,7 +110,7 @@ fn parse_column_def(col_text: &str) -> Option<ColumnDef> {
         return None;
     }
 
-    let name = parts[0].trim().to_string();
+    let name = parts[0].trim().to_owned();
     let rest = parts[1].trim();
 
     let mut col_type_parts = Vec::new();
@@ -125,7 +124,7 @@ fn parse_column_def(col_text: &str) -> Option<ColumnDef> {
             && i + 1 < tokens.len()
             && tokens[i + 1].eq_ignore_ascii_case("NULL")
         {
-            constraints.push("NOT NULL".to_string());
+            constraints.push("NOT NULL".to_owned());
             i += 2;
             continue;
         }
@@ -143,19 +142,19 @@ fn parse_column_def(col_text: &str) -> Option<ColumnDef> {
                 def_val.push_str(t);
                 i += 1;
             }
-            constraints.push(format!("DEFAULT {}", def_val));
+            constraints.push(format!("DEFAULT {def_val}"));
             continue;
         }
         if tok.eq_ignore_ascii_case("PRIMARY")
             && i + 1 < tokens.len()
             && tokens[i + 1].eq_ignore_ascii_case("KEY")
         {
-            constraints.push("PRIMARY KEY".to_string());
+            constraints.push("PRIMARY KEY".to_owned());
             i += 2;
             continue;
         }
         if tok.eq_ignore_ascii_case("UNIQUE") {
-            constraints.push("UNIQUE".to_string());
+            constraints.push("UNIQUE".to_owned());
             i += 1;
             continue;
         }
@@ -173,11 +172,11 @@ fn parse_column_def(col_text: &str) -> Option<ColumnDef> {
                 ref_str.push_str(t);
                 i += 1;
             }
-            constraints.push(format!("REFERENCES {}", ref_str));
+            constraints.push(format!("REFERENCES {ref_str}"));
             continue;
         }
         if tok.eq_ignore_ascii_case("AUTO_INCREMENT") || tok.eq_ignore_ascii_case("AUTOINCREMENT") {
-            constraints.push("AUTO_INCREMENT".to_string());
+            constraints.push("AUTO_INCREMENT".to_owned());
             i += 1;
             continue;
         }
@@ -203,7 +202,7 @@ fn parse_column_def(col_text: &str) -> Option<ColumnDef> {
                 check_str.push_str(t);
                 i += 1;
             }
-            constraints.push(format!("CHECK {}", check_str));
+            constraints.push(format!("CHECK {check_str}"));
             continue;
         }
         if tok.eq_ignore_ascii_case("NULL") {
@@ -300,7 +299,7 @@ fn find_on_upper(s: &str) -> Option<usize> {
     upper.find(" ON ")
 }
 
-fn parse_statements(content: &str) -> Result<Vec<Statement>, DriverError> {
+fn parse_statements(content: &str) -> Vec<Statement> {
     let mut statements = Vec::new();
     let raw_stmts: Vec<&str> = content.split(';').collect();
 
@@ -320,7 +319,7 @@ fn parse_statements(content: &str) -> Result<Vec<Statement>, DriverError> {
                 let body = &rest[paren_start + 1..];
                 let columns = parse_column_list(body);
                 statements.push(Statement::CreateTable {
-                    name: name.to_string(),
+                    name: name.to_owned(),
                     columns,
                 });
                 continue;
@@ -332,7 +331,7 @@ fn parse_statements(content: &str) -> Result<Vec<Statement>, DriverError> {
             let name = extract_identifier(rest);
             if let Some(name) = name {
                 statements.push(Statement::DropTable {
-                    name: name.to_string(),
+                    name: name.to_owned(),
                 });
                 continue;
             }
@@ -348,7 +347,7 @@ fn parse_statements(content: &str) -> Result<Vec<Statement>, DriverError> {
                     let col_rest = col_rest.trim();
                     if let Some(col) = parse_column_def(col_rest) {
                         statements.push(Statement::AlterTableAddColumn {
-                            table: table.to_string(),
+                            table: table.to_owned(),
                             column: col,
                         });
                         continue;
@@ -359,7 +358,7 @@ fn parse_statements(content: &str) -> Result<Vec<Statement>, DriverError> {
                     let col_rest = col_rest.trim();
                     if let Some(col) = parse_column_def(col_rest) {
                         statements.push(Statement::AlterTableAddColumn {
-                            table: table.to_string(),
+                            table: table.to_owned(),
                             column: col,
                         });
                         continue;
@@ -370,8 +369,8 @@ fn parse_statements(content: &str) -> Result<Vec<Statement>, DriverError> {
                     let col_rest = col_rest.trim();
                     let col_name = extract_identifier(col_rest);
                     statements.push(Statement::AlterTableDropColumn {
-                        table: table.to_string(),
-                        column_name: col_name.unwrap_or(col_rest).to_string(),
+                        table: table.to_owned(),
+                        column_name: col_name.unwrap_or(col_rest).to_owned(),
                     });
                     continue;
                 }
@@ -380,7 +379,7 @@ fn parse_statements(content: &str) -> Result<Vec<Statement>, DriverError> {
                     let col_rest = col_rest.trim();
                     if let Some(col) = parse_column_def(col_rest) {
                         statements.push(Statement::AlterTableAlterColumn {
-                            table: table.to_string(),
+                            table: table.to_owned(),
                             column: col,
                         });
                         continue;
@@ -392,7 +391,7 @@ fn parse_statements(content: &str) -> Result<Vec<Statement>, DriverError> {
         if let Some(rest) = strip_prefix_ignore_case(&stmt, "CREATE INDEX") {
             let rest = rest.trim();
             if let Some(on_pos) = find_on_upper(rest) {
-                let idx_name = rest[..on_pos].trim().to_string();
+                let idx_name = rest[..on_pos].trim().to_owned();
                 let after_on = &rest[on_pos + 4..];
                 let after_on = after_on.trim();
                 let table = extract_identifier(after_on);
@@ -401,12 +400,12 @@ fn parse_statements(content: &str) -> Result<Vec<Statement>, DriverError> {
                     let after_table = after_table.trim_start_matches('(').trim_end_matches(')');
                     let cols: Vec<String> = after_table
                         .split(',')
-                        .map(|c| c.trim().to_string())
+                        .map(|c| c.trim().to_owned())
                         .filter(|c| !c.is_empty())
                         .collect();
                     statements.push(Statement::CreateIndex {
                         name: idx_name,
-                        table: table.to_string(),
+                        table: table.to_owned(),
                         columns: cols,
                     });
                     continue;
@@ -418,15 +417,13 @@ fn parse_statements(content: &str) -> Result<Vec<Statement>, DriverError> {
             let rest = rest.trim();
             let name = extract_identifier(rest);
             statements.push(Statement::DropIndex {
-                name: name
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(|| rest.to_string()),
+                name: name.map_or_else(|| rest.to_owned(), std::string::ToString::to_string),
             });
             continue;
         }
     }
 
-    Ok(statements)
+    statements
 }
 
 fn statements_to_schema(stmts: &[Statement]) -> SqlSchema {
@@ -487,12 +484,13 @@ fn statements_to_schema(stmts: &[Statement]) -> SqlSchema {
     SqlSchema { tables, indexes }
 }
 
-fn parse_schema(content: &str) -> Result<SqlSchema, DriverError> {
-    let stmts = parse_statements(content)?;
-    Ok(statements_to_schema(&stmts))
+fn parse_schema(content: &str) -> SqlSchema {
+    let stmts = parse_statements(content);
+    statements_to_schema(&stmts)
 }
 
 impl SqlDriver {
+    #[must_use] 
     pub fn new() -> Self {
         Self
     }
@@ -501,16 +499,16 @@ impl SqlDriver {
         let mut changes = Vec::new();
 
         let old_tables: std::collections::HashSet<&str> =
-            old.tables.keys().map(|s| s.as_str()).collect();
+            old.tables.keys().map(std::string::String::as_str).collect();
         let new_tables: std::collections::HashSet<&str> =
-            new.tables.keys().map(|s| s.as_str()).collect();
+            new.tables.keys().map(std::string::String::as_str).collect();
 
         for name in &old_tables {
             if !new_tables.contains(name) {
                 let cols_str = old.tables[*name]
                     .columns
                     .iter()
-                    .map(|c| c.signature())
+                    .map(ColumnDef::signature)
                     .collect::<Vec<_>>()
                     .join(", ");
                 changes.push(SemanticChange::Removed {
@@ -525,7 +523,7 @@ impl SqlDriver {
                 let cols_str = new.tables[*name]
                     .columns
                     .iter()
-                    .map(|c| c.signature())
+                    .map(ColumnDef::signature)
                     .collect::<Vec<_>>()
                     .join(", ");
                 changes.push(SemanticChange::Added {
@@ -602,9 +600,9 @@ impl SqlDriver {
         }
 
         let old_idx: std::collections::HashSet<&str> =
-            old.indexes.keys().map(|s| s.as_str()).collect();
+            old.indexes.keys().map(std::string::String::as_str).collect();
         let new_idx: std::collections::HashSet<&str> =
-            new.indexes.keys().map(|s| s.as_str()).collect();
+            new.indexes.keys().map(std::string::String::as_str).collect();
 
         for name in &old_idx {
             if !new_idx.contains(name) {
@@ -695,7 +693,7 @@ impl SqlDriver {
         base: &SqlSchema,
         ours: &SqlSchema,
         theirs: &SqlSchema,
-    ) -> Result<Option<SqlSchema>, DriverError> {
+    ) -> Option<SqlSchema> {
         let mut tables: BTreeMap<String, Option<TableDef>> = BTreeMap::new();
 
         let all_table_names: std::collections::HashSet<&str> = base
@@ -703,7 +701,7 @@ impl SqlDriver {
             .keys()
             .chain(ours.tables.keys())
             .chain(theirs.tables.keys())
-            .map(|s| s.as_str())
+            .map(std::string::String::as_str)
             .collect();
 
         for name in &all_table_names {
@@ -712,26 +710,19 @@ impl SqlDriver {
             let in_theirs = theirs.tables.get(*name);
 
             match (in_base, in_ours, in_theirs) {
-                (None, None, None) => {}
-                (None, Some(o), None) => {
+                (None | Some(_), None, None) => {}
+                (None | Some(_), Some(o), None) => {
                     tables.insert(name.to_string(), Some(o.clone()));
                 }
-                (None, None, Some(t)) => {
+                (None | Some(_), None, Some(t)) => {
                     tables.insert(name.to_string(), Some(t.clone()));
                 }
                 (None, Some(o), Some(t)) => {
                     if o == t {
                         tables.insert(name.to_string(), Some(o.clone()));
                     } else {
-                        return Ok(None);
+                        return None;
                     }
-                }
-                (Some(_), None, None) => {}
-                (Some(_), Some(o), None) => {
-                    tables.insert(name.to_string(), Some(o.clone()));
-                }
-                (Some(_), None, Some(t)) => {
-                    tables.insert(name.to_string(), Some(t.clone()));
                 }
                 (Some(b), Some(o), Some(t)) => {
                     if o == t {
@@ -741,12 +732,12 @@ impl SqlDriver {
                     } else if t == b {
                         tables.insert(name.to_string(), Some(o.clone()));
                     } else {
-                        let merged_cols = merge_columns(&b.columns, &o.columns, &t.columns)?;
+                        let merged_cols = merge_columns(&b.columns, &o.columns, &t.columns);
                         match merged_cols {
                             Some(cols) => {
                                 tables.insert(name.to_string(), Some(TableDef { columns: cols }));
                             }
-                            None => return Ok(None),
+                            None => return None,
                         }
                     }
                 }
@@ -760,7 +751,7 @@ impl SqlDriver {
             .keys()
             .chain(ours.indexes.keys())
             .chain(theirs.indexes.keys())
-            .map(|s| s.as_str())
+            .map(std::string::String::as_str)
             .collect();
 
         for name in &all_idx_names {
@@ -769,32 +760,18 @@ impl SqlDriver {
             let in_theirs = theirs.indexes.get(*name);
 
             match (in_base, in_ours, in_theirs) {
-                (None, None, None) => {}
-                (None, Some(o), None) => {
+                (None | Some(_), None, None) => {}
+                (None | Some(_), Some(o), None) => {
                     merged_indexes.insert(name.to_string(), o.clone());
                 }
-                (None, None, Some(t)) => {
+                (None | Some(_), None, Some(t)) => {
                     merged_indexes.insert(name.to_string(), t.clone());
                 }
-                (None, Some(o), Some(t)) => {
+                (None | Some(_), Some(o), Some(t)) => {
                     if o == t {
                         merged_indexes.insert(name.to_string(), o.clone());
                     } else {
-                        return Ok(None);
-                    }
-                }
-                (Some(_), None, None) => {}
-                (Some(_), Some(o), None) => {
-                    merged_indexes.insert(name.to_string(), o.clone());
-                }
-                (Some(_), None, Some(t)) => {
-                    merged_indexes.insert(name.to_string(), t.clone());
-                }
-                (Some(_), Some(o), Some(t)) => {
-                    if o == t {
-                        merged_indexes.insert(name.to_string(), o.clone());
-                    } else {
-                        return Ok(None);
+                        return None;
                     }
                 }
             }
@@ -807,10 +784,10 @@ impl SqlDriver {
             }
         }
 
-        Ok(Some(SqlSchema {
+        Some(SqlSchema {
             tables: final_tables,
             indexes: merged_indexes,
-        }))
+        })
     }
 
     fn format_change(change: &SemanticChange) -> String {
@@ -843,7 +820,7 @@ fn merge_columns(
     base: &[ColumnDef],
     ours: &[ColumnDef],
     theirs: &[ColumnDef],
-) -> Result<Option<Vec<ColumnDef>>, DriverError> {
+) -> Option<Vec<ColumnDef>> {
     let base_map: std::collections::HashMap<&str, &ColumnDef> =
         base.iter().map(|c| (c.name.as_str(), c)).collect();
     let ours_map: std::collections::HashMap<&str, &ColumnDef> =
@@ -866,19 +843,16 @@ fn merge_columns(
         let in_theirs = theirs_map.get(name);
 
         match (in_base, in_ours, in_theirs) {
-            (None, None, None) => {}
-            (None, Some(o), None) => merged.push((*o).clone()),
-            (None, None, Some(t)) => merged.push((*t).clone()),
+            (None | Some(_), None, None) => {}
+            (None | Some(_), Some(o), None) => merged.push((*o).clone()),
+            (None | Some(_), None, Some(t)) => merged.push((*t).clone()),
             (None, Some(o), Some(t)) => {
                 if o == t {
                     merged.push((*o).clone());
                 } else {
-                    return Ok(None);
+                    return None;
                 }
             }
-            (Some(_), None, None) => {}
-            (Some(_), Some(o), None) => merged.push((*o).clone()),
-            (Some(_), None, Some(t)) => merged.push((*t).clone()),
             (Some(b), Some(o), Some(t)) => {
                 if o == t {
                     merged.push((*o).clone());
@@ -887,7 +861,7 @@ fn merge_columns(
                 } else if t == b {
                     merged.push((*o).clone());
                 } else {
-                    return Ok(None);
+                    return None;
                 }
             }
         }
@@ -895,7 +869,7 @@ fn merge_columns(
 
     merged.sort_by(|a, b| a.name.cmp(&b.name));
 
-    Ok(Some(merged))
+    Some(merged)
 }
 
 impl Default for SqlDriver {
@@ -905,7 +879,7 @@ impl Default for SqlDriver {
 }
 
 impl SutureDriver for SqlDriver {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "SQL"
     }
 
@@ -918,7 +892,7 @@ impl SutureDriver for SqlDriver {
         base_content: Option<&str>,
         new_content: &str,
     ) -> Result<Vec<SemanticChange>, DriverError> {
-        let new_schema = parse_schema(new_content)?;
+        let new_schema = parse_schema(new_content);
 
         match base_content {
             None => {
@@ -927,7 +901,7 @@ impl SutureDriver for SqlDriver {
                     let cols_str = table
                         .columns
                         .iter()
-                        .map(|c| c.signature())
+                        .map(ColumnDef::signature)
                         .collect::<Vec<_>>()
                         .join(", ");
                     changes.push(SemanticChange::Added {
@@ -949,7 +923,7 @@ impl SutureDriver for SqlDriver {
                 Ok(changes)
             }
             Some(base) => {
-                let old_schema = parse_schema(base)?;
+                let old_schema = parse_schema(base);
                 Ok(Self::diff_schemas(&old_schema, &new_schema))
             }
         }
@@ -963,7 +937,7 @@ impl SutureDriver for SqlDriver {
         let changes = self.diff(base_content, new_content)?;
 
         if changes.is_empty() {
-            return Ok("no changes".to_string());
+            return Ok("no changes".to_owned());
         }
 
         let lines: Vec<String> = changes.iter().map(Self::format_change).collect();
@@ -971,14 +945,11 @@ impl SutureDriver for SqlDriver {
     }
 
     fn merge(&self, base: &str, ours: &str, theirs: &str) -> Result<Option<String>, DriverError> {
-        let base_schema = parse_schema(base)?;
-        let ours_schema = parse_schema(ours)?;
-        let theirs_schema = parse_schema(theirs)?;
+        let base_schema = parse_schema(base);
+        let ours_schema = parse_schema(ours);
+        let theirs_schema = parse_schema(theirs);
 
-        match Self::merge_schemas(&base_schema, &ours_schema, &theirs_schema)? {
-            Some(merged) => Ok(Some(Self::schema_to_sql(&merged))),
-            None => Ok(None),
-        }
+        Ok(Self::merge_schemas(&base_schema, &ours_schema, &theirs_schema).map(|merged| Self::schema_to_sql(&merged)))
     }
 }
 
@@ -1212,8 +1183,8 @@ mod tests {
         let r2 = driver.merge(base, theirs, ours).unwrap();
         assert_eq!(r1.is_some(), r2.is_some());
         if let (Some(m1), Some(m2)) = (r1, r2) {
-            let s1 = parse_schema(&m1).unwrap();
-            let s2 = parse_schema(&m2).unwrap();
+            let s1 = parse_schema(&m1);
+            let s2 = parse_schema(&m2);
             assert_eq!(s1, s2, "merge must be commutative");
         }
     }
@@ -1227,8 +1198,8 @@ mod tests {
         let result = driver.merge(base, ours, ours).unwrap();
         assert!(result.is_some());
         let merged = result.unwrap();
-        let merged_schema = parse_schema(&merged).unwrap();
-        let ours_schema = parse_schema(ours).unwrap();
+        let merged_schema = parse_schema(&merged);
+        let ours_schema = parse_schema(ours);
         assert_eq!(
             merged_schema, ours_schema,
             "merge(base, ours, ours) should equal ours"

@@ -27,9 +27,9 @@ pub enum S3Error {
 impl From<reqwest::Error> for S3Error {
     fn from(err: reqwest::Error) -> Self {
         if err.is_connect() {
-            S3Error::Connection(err.to_string())
+            Self::Connection(err.to_string())
         } else {
-            S3Error::Connection(format!("{err:#}"))
+            Self::Connection(format!("{err:#}"))
         }
     }
 }

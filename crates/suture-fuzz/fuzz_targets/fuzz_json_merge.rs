@@ -9,18 +9,9 @@ fuzz_target!(|data: &[u8]| {
         return;
     }
 
-    let base = match std::str::from_utf8(parts[0]) {
-        Ok(s) => s,
-        Err(_) => return,
-    };
-    let ours = match std::str::from_utf8(parts[1]) {
-        Ok(s) => s,
-        Err(_) => return,
-    };
-    let theirs = match std::str::from_utf8(parts[2]) {
-        Ok(s) => s,
-        Err(_) => return,
-    };
+    let Ok(base) = std::str::from_utf8(parts[0]) else { return };
+    let Ok(ours) = std::str::from_utf8(parts[1]) else { return };
+    let Ok(theirs) = std::str::from_utf8(parts[2]) else { return };
 
     let driver = suture_driver_json::JsonDriver::new();
     let _ = driver.merge(base, ours, theirs);

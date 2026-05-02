@@ -58,14 +58,14 @@ pub enum OperationType {
 impl std::fmt::Display for OperationType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            OperationType::Create => write!(f, "create"),
-            OperationType::Delete => write!(f, "delete"),
-            OperationType::Modify => write!(f, "modify"),
-            OperationType::Move => write!(f, "move"),
-            OperationType::Metadata => write!(f, "metadata"),
-            OperationType::Merge => write!(f, "merge"),
-            OperationType::Identity => write!(f, "identity"),
-            OperationType::Batch => write!(f, "batch"),
+            Self::Create => write!(f, "create"),
+            Self::Delete => write!(f, "delete"),
+            Self::Modify => write!(f, "modify"),
+            Self::Move => write!(f, "move"),
+            Self::Metadata => write!(f, "metadata"),
+            Self::Merge => write!(f, "merge"),
+            Self::Identity => write!(f, "identity"),
+            Self::Batch => write!(f, "batch"),
         }
     }
 }
@@ -81,6 +81,7 @@ pub struct TouchSet {
 
 impl TouchSet {
     /// Create an empty touch set (identity patch).
+    #[must_use] 
     pub fn empty() -> Self {
         Self {
             inner: BTreeSet::new(),
@@ -102,11 +103,13 @@ impl TouchSet {
     }
 
     /// Check if this touch set is empty.
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
 
     #[inline]
+    #[must_use] 
     pub fn len(&self) -> usize {
         self.inner.len()
     }
@@ -122,37 +125,43 @@ impl TouchSet {
     }
 
     #[inline]
-    pub fn intersects(&self, other: &TouchSet) -> bool {
+    #[must_use] 
+    pub fn intersects(&self, other: &Self) -> bool {
         self.inner.intersection(&other.inner).next().is_some()
     }
 
     /// Get the intersection of two touch sets.
-    pub fn intersection(&self, other: &TouchSet) -> TouchSet {
-        TouchSet {
+    #[must_use] 
+    pub fn intersection(&self, other: &Self) -> Self {
+        Self {
             inner: self.inner.intersection(&other.inner).cloned().collect(),
         }
     }
 
     /// Get all addresses as a sorted Vec.
+    #[must_use] 
     pub fn addresses(&self) -> Vec<String> {
         self.inner.iter().cloned().collect()
     }
 
     #[inline]
+    #[must_use] 
     pub fn contains(&self, addr: &str) -> bool {
         self.inner.contains(addr)
     }
 
     /// Compute the union of two touch sets.
-    pub fn union(&self, other: &TouchSet) -> TouchSet {
-        TouchSet {
+    #[must_use] 
+    pub fn union(&self, other: &Self) -> Self {
+        Self {
             inner: self.inner.union(&other.inner).cloned().collect(),
         }
     }
 
     /// Subtract addresses from this touch set.
-    pub fn subtract(&self, other: &TouchSet) -> TouchSet {
-        TouchSet {
+    #[must_use] 
+    pub fn subtract(&self, other: &Self) -> Self {
+        Self {
             inner: self.inner.difference(&other.inner).cloned().collect(),
         }
     }
@@ -203,6 +212,7 @@ pub struct Patch {
 
 impl Patch {
     /// Create a new patch.
+    #[must_use] 
     pub fn new(
         operation_type: OperationType,
         touch_set: TouchSet,
@@ -237,6 +247,7 @@ impl Patch {
 
     /// Create a patch with an explicit ID (used by Hub when reconstructing from proto/network).
     #[allow(clippy::too_many_arguments)]
+    #[must_use] 
     pub fn with_id(
         id: Hash,
         operation_type: OperationType,
@@ -250,18 +261,19 @@ impl Patch {
     ) -> Self {
         Self {
             id,
+            parent_ids,
             operation_type,
             touch_set,
             target_path,
             payload,
-            parent_ids,
+            timestamp,
             author,
             message,
-            timestamp,
         }
     }
 
     /// Create an identity (no-op) patch.
+    #[must_use] 
     pub fn identity(parent: PatchId, author: String) -> Self {
         Self::new(
             OperationType::Identity,
@@ -270,7 +282,7 @@ impl Patch {
             Vec::new(),
             vec![parent],
             author,
-            "identity".to_string(),
+            "identity".to_owned(),
         )
     }
 
@@ -294,11 +306,13 @@ impl Patch {
     }
 
     /// Check if this is an identity (no-op) patch.
+    #[must_use] 
     pub fn is_identity(&self) -> bool {
         self.operation_type == OperationType::Identity && self.touch_set.is_empty()
     }
 
     /// Create a batched commit patch that groups multiple file changes.
+    #[must_use] 
     pub fn new_batch(
         mut file_changes: Vec<FileChange>,
         parent_ids: Vec<PatchId>,
@@ -322,6 +336,7 @@ impl Patch {
     }
 
     /// If this is a Batch patch, deserialize the file changes.
+    #[must_use] 
     pub fn file_changes(&self) -> Option<Vec<FileChange>> {
         if self.operation_type == OperationType::Batch {
             serde_json::from_slice(&self.payload).ok()
@@ -331,6 +346,7 @@ impl Patch {
     }
 
     /// Whether this patch is a batched commit.
+    #[must_use] 
     pub fn is_batch(&self) -> bool {
         self.operation_type == OperationType::Batch
     }

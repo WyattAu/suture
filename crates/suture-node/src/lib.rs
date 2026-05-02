@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-#![allow(clippy::collapsible_match)]
 //! Node.js bindings for Suture via napi-rs.
 //!
 //! This crate exposes the Suture core library as a native Node.js addon,
@@ -100,11 +99,11 @@ pub fn status(path: String) -> napi::Result<StatusResult> {
         .map(|(p, st)| FileEntry {
             path: p.clone(),
             status: match st {
-                FileStatus::Added => "added".to_string(),
-                FileStatus::Modified => "modified".to_string(),
-                FileStatus::Deleted => "deleted".to_string(),
-                FileStatus::Clean => "clean".to_string(),
-                FileStatus::Untracked => "untracked".to_string(),
+                FileStatus::Added => "added".to_owned(),
+                FileStatus::Modified => "modified".to_owned(),
+                FileStatus::Deleted => "deleted".to_owned(),
+                FileStatus::Clean => "clean".to_owned(),
+                FileStatus::Untracked => "untracked".to_owned(),
             },
         })
         .collect();
@@ -209,12 +208,11 @@ pub fn merge_json(base: String, ours: String, theirs: String) -> napi::Result<St
     let result = driver
         .merge(&base, &ours, &theirs)
         .map_err(|e| napi::Error::from_reason(format!("merge failed: {e}")))?;
-    match result {
-        Some(merged) => Ok(merged),
-        None => Err(napi::Error::from_reason(
+    result.ok_or_else(|| {
+        napi::Error::from_reason(
             "merge conflict: cannot auto-resolve",
-        )),
-    }
+        )
+    })
 }
 
 #[napi]
@@ -223,12 +221,11 @@ pub fn merge_yaml(base: String, ours: String, theirs: String) -> napi::Result<St
     let result = driver
         .merge(&base, &ours, &theirs)
         .map_err(|e| napi::Error::from_reason(format!("merge failed: {e}")))?;
-    match result {
-        Some(merged) => Ok(merged),
-        None => Err(napi::Error::from_reason(
+    result.ok_or_else(|| {
+        napi::Error::from_reason(
             "merge conflict: cannot auto-resolve",
-        )),
-    }
+        )
+    })
 }
 
 #[napi]
@@ -237,12 +234,11 @@ pub fn merge_toml(base: String, ours: String, theirs: String) -> napi::Result<St
     let result = driver
         .merge(&base, &ours, &theirs)
         .map_err(|e| napi::Error::from_reason(format!("merge failed: {e}")))?;
-    match result {
-        Some(merged) => Ok(merged),
-        None => Err(napi::Error::from_reason(
+    result.ok_or_else(|| {
+        napi::Error::from_reason(
             "merge conflict: cannot auto-resolve",
-        )),
-    }
+        )
+    })
 }
 
 #[napi]
@@ -251,15 +247,15 @@ pub fn merge_csv(base: String, ours: String, theirs: String) -> napi::Result<Str
     let result = driver
         .merge(&base, &ours, &theirs)
         .map_err(|e| napi::Error::from_reason(format!("merge failed: {e}")))?;
-    match result {
-        Some(merged) => Ok(merged),
-        None => Err(napi::Error::from_reason(
+    result.ok_or_else(|| {
+        napi::Error::from_reason(
             "merge conflict: cannot auto-resolve",
-        )),
-    }
+        )
+    })
 }
 
 #[napi]
+#[must_use] 
 pub fn get_version() -> String {
-    env!("CARGO_PKG_VERSION").to_string()
+    env!("CARGO_PKG_VERSION").to_owned()
 }

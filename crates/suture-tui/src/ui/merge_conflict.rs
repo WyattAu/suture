@@ -62,7 +62,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         .take(file_end - file_start)
     {
         let is_selected = i == cursor;
-        let prefix = if is_selected { "▶ " } else { "  " };
+        let prefix = if is_selected { "\u{25b6} " } else { "  " };
         let resolved_count = cf
             .hunks
             .iter()
@@ -79,7 +79,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         } else {
             Style::default().fg(Color::Red)
         };
-        let count_text = format!(" {} hunks", total);
+        let count_text = format!(" {total} hunks");
         let path_style = if is_selected {
             Style::default()
                 .fg(Color::White)
@@ -137,7 +137,7 @@ fn render_conflict_preview(conflict: &ConflictFileState) -> Vec<Line<'static>> {
 
     if conflict.hunks.is_empty() {
         lines.push(Line::from(Span::styled(
-            "(no conflict hunks — file may already be resolved)",
+            "(no conflict hunks \u{2014} file may already be resolved)",
             Style::default().fg(Color::DarkGray),
         )));
         return lines;
@@ -152,7 +152,7 @@ fn render_conflict_preview(conflict: &ConflictFileState) -> Vec<Line<'static>> {
 
     lines.push(Line::from(vec![
         Span::styled(
-            format!(" {} conflict hunk(s) ", total),
+            format!(" {total} conflict hunk(s) "),
             Style::default()
                 .fg(Color::Black)
                 .bg(Color::Red)
@@ -160,7 +160,7 @@ fn render_conflict_preview(conflict: &ConflictFileState) -> Vec<Line<'static>> {
         ),
         Span::raw("  "),
         Span::styled(
-            format!("{} resolved", resolved_count),
+            format!("{resolved_count} resolved"),
             Style::default().fg(if resolved_count == total {
                 Color::Green
             } else {
@@ -174,8 +174,8 @@ fn render_conflict_preview(conflict: &ConflictFileState) -> Vec<Line<'static>> {
     let max_preview = 3usize;
     for (idx, hunk) in conflict.hunks.iter().take(max_preview).enumerate() {
         let status = match hunk.resolution {
-            HunkResolution::Unresolved => "✗",
-            _ => "✓",
+            HunkResolution::Unresolved => "\u{2717}",
+            _ => "\u{2713}",
         };
         let status_color = match hunk.resolution {
             HunkResolution::Unresolved => Color::Red,
@@ -204,7 +204,7 @@ fn render_conflict_preview(conflict: &ConflictFileState) -> Vec<Line<'static>> {
         let preview_count = 2usize;
         for line in hunk.ours_lines.iter().take(preview_count) {
             lines.push(Line::from(Span::styled(
-                format!("    │ {}", line),
+                format!("    │ {line}"),
                 Style::default().fg(Color::Cyan),
             )));
         }
@@ -215,12 +215,12 @@ fn render_conflict_preview(conflict: &ConflictFileState) -> Vec<Line<'static>> {
             )));
         }
         lines.push(Line::from(Span::styled(
-            "    │ =======",
+            "    \u{2502} =======",
             Style::default().fg(Color::DarkGray),
         )));
         for line in hunk.theirs_lines.iter().take(preview_count) {
             lines.push(Line::from(Span::styled(
-                format!("    │ {}", line),
+                format!("    │ {line}"),
                 Style::default().fg(Color::Magenta),
             )));
         }

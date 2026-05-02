@@ -1,7 +1,7 @@
 use regex::Regex;
 use std::path::Path as StdPath;
 
-pub(crate) async fn cmd_grep(
+pub async fn cmd_grep(
     pattern: &str,
     paths: &[String],
     ignore_case: bool,
@@ -18,12 +18,12 @@ pub(crate) async fn cmd_grep(
     let re: Regex = if fixed_string {
         let escaped = regex::escape(pattern);
         if ignore_case {
-            Regex::new(&format!("(?i){}", escaped))?
+            Regex::new(&format!("(?i){escaped}"))?
         } else {
             Regex::new(&escaped)?
         }
     } else if ignore_case {
-        Regex::new(&format!("(?i){}", pattern))?
+        Regex::new(&format!("(?i){pattern}"))?
     } else {
         Regex::new(pattern)?
     };
@@ -74,7 +74,7 @@ pub(crate) async fn cmd_grep(
         match_count += match_indices.len();
 
         if files_only {
-            println!("{}", path);
+            println!("{path}");
             continue;
         }
 
@@ -110,7 +110,7 @@ pub(crate) async fn cmd_grep(
                     }
                 }
                 if range.end() < &lines.len().saturating_sub(1) {
-                    println!("{}--", path);
+                    println!("{path}--");
                 }
             }
         } else {
@@ -134,7 +134,7 @@ pub(crate) async fn cmd_grep(
         .into());
     }
 
-    eprintln!("\n{} matches in {} files", match_count, file_match_count);
+    eprintln!("\n{match_count} matches in {file_match_count} files");
 
     Ok(())
 }

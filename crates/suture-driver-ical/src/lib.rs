@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-#![allow(clippy::collapsible_match)]
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use suture_driver::{DriverError, SemanticChange, SutureDriver};
 
+use std::fmt::Write;
 type Component = (String, Vec<(String, String)>);
 
 pub struct IcalDriver;
 
 impl IcalDriver {
+    #[must_use] 
     pub fn new() -> Self {
         Self
     }
@@ -24,7 +25,7 @@ impl IcalDriver {
                 if !current.is_empty() {
                     lines.push(current);
                 }
-                current = line.to_string();
+                current = line.to_owned();
             }
         }
         if !current.is_empty() {
@@ -33,7 +34,7 @@ impl IcalDriver {
         lines
     }
 
-    fn parse_ical(content: &str) -> Result<Vec<Component>, DriverError> {
+    fn parse_ical(content: &str) -> Vec<Component> {
         let lines = Self::unfold_lines(content);
         let mut components: Vec<Component> = Vec::new();
         let mut component_stack: Vec<Component> = Vec::new();
@@ -44,7 +45,7 @@ impl IcalDriver {
             }
             if let Some(rest) = line.strip_prefix("BEGIN:") {
                 let comp_type = rest.trim();
-                component_stack.push((comp_type.to_string(), Vec::new()));
+                component_stack.push((comp_type.to_owned(), Vec::new()));
             } else if let Some(rest) = line.strip_prefix("END:") {
                 let end_type = rest.trim();
                 if let Some((comp_type, props)) = component_stack.pop()
@@ -71,7 +72,7 @@ impl IcalDriver {
             }
         }
 
-        Ok(components)
+        components
     }
 
     fn parse_property_line(line: &str) -> Option<(String, String)> {
@@ -79,13 +80,9 @@ impl IcalDriver {
         let value = &line[colon_pos + 1..];
         let prop_part = &line[..colon_pos];
 
-        let prop_name = if let Some(semi_pos) = prop_part.find(';') {
-            &prop_part[..semi_pos]
-        } else {
-            prop_part
-        };
+        let prop_name = prop_part.find(';').map_or(prop_part, |semi_pos| &prop_part[..semi_pos]);
 
-        Some((prop_name.to_string(), value.to_string()))
+        Some((prop_name.to_owned(), value.to_owned()))
     }
 
     fn extract_uid(props: &[(String, String)]) -> Option<String> {
@@ -137,7 +134,7 @@ impl IcalDriver {
             if !new_keys.contains(key) {
                 changes.push(SemanticChange::Removed {
                     path: format!("{base_path}/{key}"),
-                    old_value: old_map[key].to_string(),
+                    old_value: old_map[key].to_owned(),
                 });
             }
         }
@@ -146,7 +143,7 @@ impl IcalDriver {
             if !old_keys.contains(key) {
                 changes.push(SemanticChange::Added {
                     path: format!("{base_path}/{key}"),
-                    value: new_map[key].to_string(),
+                    value: new_map[key].to_owned(),
                 });
             }
         }
@@ -157,8 +154,8 @@ impl IcalDriver {
                 if old_val != new_val {
                     changes.push(SemanticChange::Modified {
                         path: format!("{base_path}/{key}"),
-                        old_value: old_val.to_string(),
-                        new_value: new_val.to_string(),
+                        old_value: old_val.to_owned(),
+                        new_value: new_val.to_owned(),
                     });
                 }
             }
@@ -173,11 +170,11 @@ impl IcalDriver {
         output.push_str("VERSION:2.0\r\n");
         output.push_str("PRODID:-//Suture//ICAL//EN\r\n");
         for (comp_type, props) in components {
-            output.push_str(&format!("BEGIN:{comp_type}\r\n"));
+            let _ = write!(output, "BEGIN:{comp_type}\r\n");
             for (key, value) in props {
-                output.push_str(&format!("{key}:{value}\r\n"));
+                let _ = write!(output, "{key}:{value}\r\n");
             }
-            output.push_str(&format!("END:{comp_type}\r\n"));
+            let _ = write!(output, "END:{comp_type}\r\n");
         }
         output.push_str("END:VCALENDAR\r\n");
         output
@@ -196,7 +193,7 @@ impl IcalDriver {
                             inner_props.push(props[i].clone());
                             i += 1;
                         }
-                        inner.push((ct.to_string(), inner_props));
+                        inner.push((ct.to_owned(), inner_props));
                     }
                     i += 1;
                 }
@@ -211,7 +208,7 @@ impl IcalDriver {
         base: &[Component],
         ours: &[Component],
         theirs: &[Component],
-    ) -> Result<Option<Vec<Component>>, DriverError> {
+    ) -> Option<Vec<Component>> {
         let base_by_uid = Self::components_by_uid(base);
         let ours_by_uid = Self::components_by_uid(ours);
         let theirs_by_uid = Self::components_by_uid(theirs);
@@ -231,30 +228,22 @@ impl IcalDriver {
             let in_theirs = theirs_by_uid.contains_key(uid_key);
 
             match (in_base, in_ours, in_theirs) {
-                (true, false, false) => continue,
-                (false, true, false) => {
-                    let comp_type = uid_key.split('[').next().unwrap_or("VEVENT").to_string();
+                (true, false, false) => {}
+                (false | true, true, false) => {
+                    let comp_type = uid_key.split('[').next().unwrap_or("VEVENT").to_owned();
                     merged.push((comp_type, ours_by_uid[uid_key].clone()));
                 }
-                (false, false, true) => {
-                    let comp_type = uid_key.split('[').next().unwrap_or("VEVENT").to_string();
+                (false | true, false, true) => {
+                    let comp_type = uid_key.split('[').next().unwrap_or("VEVENT").to_owned();
                     merged.push((comp_type, theirs_by_uid[uid_key].clone()));
                 }
                 (false, true, true) => {
                     if ours_by_uid[uid_key] == theirs_by_uid[uid_key] {
-                        let comp_type = uid_key.split('[').next().unwrap_or("VEVENT").to_string();
+                        let comp_type = uid_key.split('[').next().unwrap_or("VEVENT").to_owned();
                         merged.push((comp_type, ours_by_uid[uid_key].clone()));
                     } else {
-                        return Ok(None);
+                        return None;
                     }
-                }
-                (true, true, false) => {
-                    let comp_type = uid_key.split('[').next().unwrap_or("VEVENT").to_string();
-                    merged.push((comp_type, ours_by_uid[uid_key].clone()));
-                }
-                (true, false, true) => {
-                    let comp_type = uid_key.split('[').next().unwrap_or("VEVENT").to_string();
-                    merged.push((comp_type, theirs_by_uid[uid_key].clone()));
                 }
                 (false, false, false) => {}
                 (true, true, true) => {
@@ -263,7 +252,7 @@ impl IcalDriver {
                     let theirs_props = &theirs_by_uid[uid_key];
 
                     if ours_props == theirs_props {
-                        let comp_type = uid_key.split('[').next().unwrap_or("VEVENT").to_string();
+                        let comp_type = uid_key.split('[').next().unwrap_or("VEVENT").to_owned();
                         merged.push((comp_type, ours_props.clone()));
                         continue;
                     }
@@ -297,33 +286,33 @@ impl IcalDriver {
 
                         match (bv, ov, tv) {
                             (_, Some(o), None) => {
-                                merged_props.push((key.to_string(), o.to_string()))
+                                merged_props.push((key.to_string(), o.to_owned()));
                             }
                             (_, None, Some(t)) => {
-                                merged_props.push((key.to_string(), t.to_string()))
+                                merged_props.push((key.to_string(), t.to_owned()));
                             }
                             (_, Some(o), Some(t)) => {
                                 if o == t {
-                                    merged_props.push((key.to_string(), o.to_string()));
+                                    merged_props.push((key.to_string(), o.to_owned()));
                                 } else if o == bv.unwrap_or("") {
-                                    merged_props.push((key.to_string(), t.to_string()));
+                                    merged_props.push((key.to_string(), t.to_owned()));
                                 } else if t == bv.unwrap_or("") {
-                                    merged_props.push((key.to_string(), o.to_string()));
+                                    merged_props.push((key.to_string(), o.to_owned()));
                                 } else {
-                                    return Ok(None);
+                                    return None;
                                 }
                             }
                             (_, None, None) => {}
                         }
                     }
 
-                    let comp_type = uid_key.split('[').next().unwrap_or("VEVENT").to_string();
+                    let comp_type = uid_key.split('[').next().unwrap_or("VEVENT").to_owned();
                     merged.push((comp_type, merged_props));
                 }
             }
         }
 
-        Ok(Some(merged))
+        Some(merged)
     }
 
     fn format_change(change: &SemanticChange) -> String {
@@ -360,8 +349,7 @@ fn _merged_components_from_props(
     let uid = merged_props
         .iter()
         .find(|(k, _)| k == "UID")
-        .map(|(_, v)| v.as_str())
-        .unwrap_or("");
+        .map_or("", |(_, v)| v.as_str());
     let uid_key = format!("{comp_type}[UID={uid}]");
     if !merged.contains(&uid_key) {
         merged.push(uid_key);
@@ -375,7 +363,7 @@ impl Default for IcalDriver {
 }
 
 impl SutureDriver for IcalDriver {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "ICAL"
     }
 
@@ -388,14 +376,14 @@ impl SutureDriver for IcalDriver {
         base_content: Option<&str>,
         new_content: &str,
     ) -> Result<Vec<SemanticChange>, DriverError> {
-        let new_components = Self::parse_ical(new_content)?;
+        let new_components = Self::parse_ical(new_content);
 
-        match base_content {
-            None => {
+        base_content.map_or_else(
+            || {
                 let mut changes = Vec::new();
                 let inner = Self::extract_inner_components(&new_components);
                 for (comp_type, props) in &inner {
-                    let uid = Self::extract_uid(props).unwrap_or_else(|| "?".to_string());
+                    let uid = Self::extract_uid(props).unwrap_or_else(|| "?".to_owned());
                     let base_path = format!("/VCALENDAR/{comp_type}[UID={uid}]");
                     for (key, value) in props {
                         changes.push(SemanticChange::Added {
@@ -405,9 +393,9 @@ impl SutureDriver for IcalDriver {
                     }
                 }
                 Ok(changes)
-            }
-            Some(base) => {
-                let old_components = Self::parse_ical(base)?;
+            },
+            |base| {
+                let old_components = Self::parse_ical(base);
                 let old_inner = Self::extract_inner_components(&old_components);
                 let new_inner = Self::extract_inner_components(&new_components);
 
@@ -453,8 +441,8 @@ impl SutureDriver for IcalDriver {
                 }
 
                 Ok(changes)
-            }
-        }
+            },
+        )
     }
 
     fn format_diff(
@@ -465,7 +453,7 @@ impl SutureDriver for IcalDriver {
         let changes = self.diff(base_content, new_content)?;
 
         if changes.is_empty() {
-            return Ok("no changes".to_string());
+            return Ok("no changes".to_owned());
         }
 
         let lines: Vec<String> = changes.iter().map(Self::format_change).collect();
@@ -473,18 +461,15 @@ impl SutureDriver for IcalDriver {
     }
 
     fn merge(&self, base: &str, ours: &str, theirs: &str) -> Result<Option<String>, DriverError> {
-        let base_components = Self::parse_ical(base)?;
-        let ours_components = Self::parse_ical(ours)?;
-        let theirs_components = Self::parse_ical(theirs)?;
+        let base_components = Self::parse_ical(base);
+        let ours_components = Self::parse_ical(ours);
+        let theirs_components = Self::parse_ical(theirs);
 
         let base_inner = Self::extract_inner_components(&base_components);
         let ours_inner = Self::extract_inner_components(&ours_components);
         let theirs_inner = Self::extract_inner_components(&theirs_components);
 
-        match Self::merge_components(&base_inner, &ours_inner, &theirs_inner)? {
-            Some(merged) => Ok(Some(Self::serialize_components(&merged))),
-            None => Ok(None),
-        }
+        Ok(Self::merge_components(&base_inner, &ours_inner, &theirs_inner).map(|merged| Self::serialize_components(&merged)))
     }
 }
 

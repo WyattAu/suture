@@ -29,7 +29,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
             let is_selected = i == cursor;
             let is_current = head_branch == Some(name.as_str());
 
-            let prefix = if is_selected { "▶ " } else { "  " };
+            let prefix = if is_selected { "\u{25b6} " } else { "  " };
             let marker = if is_current { "* " } else { "  " };
 
             let name_style = if is_current {
@@ -64,7 +64,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                 ),
                 Span::styled(name, name_style),
                 Span::styled(
-                    format!("  {}", short_id),
+                    format!("  {short_id}"),
                     Style::default().fg(Color::DarkGray),
                 ),
             ]));

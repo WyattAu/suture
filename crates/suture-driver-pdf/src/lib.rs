@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-#![allow(clippy::collapsible_match)]
 //! PDF semantic driver — page-level diff and merge for PDF documents.
 //!
 //! Uses `lopdf` to parse PDF binary content and extract text from each page.
@@ -18,6 +17,7 @@ fn bytes_to_string_lossy(bytes: Vec<u8>) -> String {
 pub struct PdfDriver;
 
 impl PdfDriver {
+    #[must_use] 
     pub fn new() -> Self {
         Self
     }
@@ -33,7 +33,7 @@ impl PdfDriver {
 
         let page_map = doc.get_pages();
         let mut sorted_page_nums: Vec<_> = page_map.keys().copied().collect();
-        sorted_page_nums.sort();
+        sorted_page_nums.sort_unstable();
 
         let mut pages = Vec::new();
         for page_num in sorted_page_nums {
@@ -138,7 +138,7 @@ impl PdfDriver {
                             let mut oct = 0u32;
                             for _ in 0..3 {
                                 if i < bytes.len() && matches!(bytes[i], b'0'..=b'7') {
-                                    oct = oct * 8 + (bytes[i] - b'0') as u32;
+                                    oct = oct * 8 + u32::from(bytes[i] - b'0');
                                     i += 1;
                                 } else {
                                     break;
@@ -172,7 +172,7 @@ impl PdfDriver {
         let mut changes = Vec::new();
 
         for i in 0..max_len {
-            let path = format!("/pages/{}", i);
+            let path = format!("/pages/{i}");
             match (base.get(i), new.get(i)) {
                 (None, Some(n)) => changes.push(SemanticChange::Added {
                     path,
@@ -203,17 +203,15 @@ impl PdfDriver {
             let t = theirs.get(i);
 
             match (b, o, t) {
-                (None, Some(o), None) => merged.push(o.clone()),
-                (None, None, Some(t)) => merged.push(t.clone()),
-                (None, Some(o), Some(t)) => {
-                    if o == t {
-                        merged.push(o.clone());
-                    } else {
-                        return None;
-                    }
+            (None | Some(_), None, Some(t)) => merged.push(t.clone()),
+            (None, Some(o), Some(t)) => {
+                if o == t {
+                    merged.push(o.clone());
+                } else {
+                    return None;
                 }
-                (Some(_), Some(o), None) => merged.push(o.clone()),
-                (Some(_), None, Some(t)) => merged.push(t.clone()),
+            }
+            (None | Some(_), Some(o), None) => merged.push(o.clone()),
                 (Some(_), None, None) => {}
                 (Some(b), Some(o), Some(t)) => {
                     if o == t {
@@ -240,7 +238,7 @@ impl Default for PdfDriver {
 }
 
 impl SutureDriver for PdfDriver {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "PDF"
     }
 
@@ -270,30 +268,30 @@ impl SutureDriver for PdfDriver {
     ) -> Result<String, DriverError> {
         let changes = self.diff(base_content, new_content)?;
         if changes.is_empty() {
-            return Ok("no changes".to_string());
+            return Ok("no changes".to_owned());
         }
         let lines: Vec<String> = changes
             .iter()
             .map(|c| match c {
                 SemanticChange::Added { path, value } => {
-                    format!("  ADDED     {}: {}", path, value)
+                    format!("  ADDED     {path}: {value}")
                 }
                 SemanticChange::Removed { path, old_value } => {
-                    format!("  REMOVED   {}: {}", path, old_value)
+                    format!("  REMOVED   {path}: {old_value}")
                 }
                 SemanticChange::Modified {
                     path,
                     old_value,
                     new_value,
                 } => {
-                    format!("  MODIFIED  {}: {} -> {}", path, old_value, new_value)
+                    format!("  MODIFIED  {path}: {old_value} -> {new_value}")
                 }
                 SemanticChange::Moved {
                     old_path,
                     new_path,
                     value,
                 } => {
-                    format!("  MOVED     {} -> {}: {}", old_path, new_path, value)
+                    format!("  MOVED     {old_path} -> {new_path}: {value}")
                 }
             })
             .collect();
@@ -302,10 +300,7 @@ impl SutureDriver for PdfDriver {
 
     fn merge(&self, base: &str, ours: &str, theirs: &str) -> Result<Option<String>, DriverError> {
         let bytes = self.merge_raw(base.as_bytes(), ours.as_bytes(), theirs.as_bytes())?;
-        match bytes {
-            Some(b) => Ok(Some(bytes_to_string_lossy(b))),
-            None => Ok(None),
-        }
+        Ok(bytes.map(bytes_to_string_lossy))
     }
 
     fn merge_raw(

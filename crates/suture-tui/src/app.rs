@@ -23,17 +23,17 @@ pub enum Tab {
 
 impl Tab {
     /// All tabs in order for tab cycling.
-    pub const ALL: [Tab; 10] = [
-        Tab::Dashboard,
-        Tab::Status,
-        Tab::Log,
-        Tab::Staging,
-        Tab::Diff,
-        Tab::PatchBrowser,
-        Tab::MergeView,
-        Tab::Branches,
-        Tab::Remote,
-        Tab::Help,
+    pub const ALL: [Self; 10] = [
+        Self::Dashboard,
+        Self::Status,
+        Self::Log,
+        Self::Staging,
+        Self::Diff,
+        Self::PatchBrowser,
+        Self::MergeView,
+        Self::Branches,
+        Self::Remote,
+        Self::Help,
     ];
 
     fn next(self) -> Self {
@@ -46,18 +46,19 @@ impl Tab {
         Self::ALL[(idx + Self::ALL.len() - 1) % Self::ALL.len()]
     }
 
+    #[must_use] 
     pub fn title(self) -> &'static str {
         match self {
-            Tab::Dashboard => "Dashboard",
-            Tab::Status => "Status",
-            Tab::Log => "Log",
-            Tab::Staging => "Staging",
-            Tab::Diff => "Diff",
-            Tab::PatchBrowser => "Patches",
-            Tab::MergeView => "Merge",
-            Tab::Branches => "Branches",
-            Tab::Remote => "Remote",
-            Tab::Help => "Help",
+            Self::Dashboard => "Dashboard",
+            Self::Status => "Status",
+            Self::Log => "Log",
+            Self::Staging => "Staging",
+            Self::Diff => "Diff",
+            Self::PatchBrowser => "Patches",
+            Self::MergeView => "Merge",
+            Self::Branches => "Branches",
+            Self::Remote => "Remote",
+            Self::Help => "Help",
         }
     }
 }
@@ -314,7 +315,7 @@ impl App {
         self.refresh_log()?;
 
         // Refresh branch list
-        self.refresh_branches()?;
+        self.refresh_branches();
 
         // Refresh remotes
         if let Err(e) = self.refresh_remotes() {
@@ -344,7 +345,7 @@ impl App {
             .into_iter()
             .map(|p| {
                 let is_merge = p.parent_ids.len() > 1;
-                let parents: Vec<String> = p.parent_ids.iter().map(|id| id.to_hex()).collect();
+                let parents: Vec<String> = p.parent_ids.iter().map(suture_common::Hash::to_hex).collect();
                 LogEntry {
                     id: p.id.to_hex(),
                     short_id: format!("{}…", &p.id.to_hex()[..12]),
@@ -366,7 +367,7 @@ impl App {
         Ok(())
     }
 
-    fn refresh_branches(&mut self) -> Result<(), RepoError> {
+    fn refresh_branches(&mut self) {
         self.branch_list = self
             .repo
             .dag()
@@ -379,7 +380,6 @@ impl App {
         if self.branch_cursor > max {
             self.branch_cursor = max;
         }
-        Ok(())
     }
 
     fn refresh_remotes(&mut self) -> Result<(), RepoError> {
@@ -516,7 +516,7 @@ impl App {
             && !matches!(self.current_tab, Tab::Status | Tab::Branches)
         {
             self.current_tab = Tab::Remote;
-            self.status_message = "Switched to Remote".to_string();
+            self.status_message = "Switched to Remote".to_owned();
             return false;
         }
 
@@ -539,47 +539,46 @@ impl App {
         match key.code {
             KeyCode::Char('s') => {
                 self.current_tab = Tab::Staging;
-                self.status_message = "Switched to Staging".to_string();
+                self.status_message = "Switched to Staging".to_owned();
             }
             KeyCode::Char('l') => {
                 self.current_tab = Tab::Log;
-                self.status_message = "Switched to Log".to_string();
+                self.status_message = "Switched to Log".to_owned();
             }
             KeyCode::Char('b') => {
                 self.current_tab = Tab::Branches;
-                self.status_message = "Switched to Branches".to_string();
+                self.status_message = "Switched to Branches".to_owned();
             }
             KeyCode::Char('c') => {
-                if !self.staged_files.is_empty() {
+                if self.staged_files.is_empty() {
+                    self.error_message = Some("Nothing staged to commit".to_owned());
+                } else {
                     self.commit_mode = true;
                     self.commit_message.clear();
                     self.status_message =
-                        "Enter commit message (Enter to commit, Esc to cancel)".to_string();
-                } else {
-                    self.error_message = Some("Nothing staged to commit".to_string());
+                        "Enter commit message (Enter to commit, Esc to cancel)".to_owned();
                 }
             }
             KeyCode::Char('n') => {
                 self.commit_mode = true;
                 self.commit_message.clear();
                 self.status_message =
-                    "Enter commit message for new patch (Enter to commit, Esc to cancel)"
-                        .to_string();
+                    "Enter commit message for new patch (Enter to commit, Esc to cancel)".to_owned();
             }
             KeyCode::Char('r') => {
                 self.current_tab = Tab::Remote;
-                self.status_message = "Switched to Remote".to_string();
+                self.status_message = "Switched to Remote".to_owned();
             }
             KeyCode::Char('p') => {
                 self.current_tab = Tab::PatchBrowser;
-                self.status_message = "Switched to Patch Browser".to_string();
+                self.status_message = "Switched to Patch Browser".to_owned();
             }
             KeyCode::Char('m') => {
-                if !self.conflict_files.is_empty() {
-                    self.current_tab = Tab::MergeView;
-                    self.status_message = "Switched to Merge View".to_string();
+                if self.conflict_files.is_empty() {
+                    self.error_message = Some("No conflicts to visualize".to_owned());
                 } else {
-                    self.error_message = Some("No conflicts to visualize".to_string());
+                    self.current_tab = Tab::MergeView;
+                    self.status_message = "Switched to Merge View".to_owned();
                 }
             }
             _ => {}
@@ -591,38 +590,38 @@ impl App {
         match key.code {
             KeyCode::Char('s') => {
                 self.current_tab = Tab::Staging;
-                self.status_message = "Switched to Staging".to_string();
+                self.status_message = "Switched to Staging".to_owned();
             }
             KeyCode::Char('l') => {
                 self.current_tab = Tab::Log;
-                self.status_message = "Switched to Log".to_string();
+                self.status_message = "Switched to Log".to_owned();
             }
             KeyCode::Char('b') => {
                 self.current_tab = Tab::Branches;
-                self.status_message = "Switched to Branches".to_string();
+                self.status_message = "Switched to Branches".to_owned();
             }
             KeyCode::Char('c') => {
-                if !self.staged_files.is_empty() {
+                if self.staged_files.is_empty() {
+                    self.error_message = Some("Nothing staged to commit".to_owned());
+                } else {
                     self.commit_mode = true;
                     self.commit_message.clear();
                     self.status_message =
-                        "Enter commit message (Enter to commit, Esc to cancel)".to_string();
-                } else {
-                    self.error_message = Some("Nothing staged to commit".to_string());
+                        "Enter commit message (Enter to commit, Esc to cancel)".to_owned();
                 }
             }
             KeyCode::Char('r') => {
                 if let Err(e) = self.refresh() {
                     self.error_message = Some(format!("Refresh failed: {e}"));
                 } else {
-                    self.status_message = "Refreshed".to_string();
+                    self.status_message = "Refreshed".to_owned();
                 }
             }
             KeyCode::Char('m') => {
                 if !self.conflict_files.is_empty() {
                     self.conflict_mode = true;
                     self.conflict_cursor = 0;
-                    self.status_message = "Conflict resolution mode".to_string();
+                    self.status_message = "Conflict resolution mode".to_owned();
                 }
             }
             _ => {}
@@ -706,9 +705,9 @@ impl App {
                 self.staging_focus_staged = !self.staging_focus_staged;
                 self.staging_cursor = 0;
                 self.status_message = if self.staging_focus_staged {
-                    "Focus: Staged files".to_string()
+                    "Focus: Staged files".to_owned()
                 } else {
-                    "Focus: Unstaged files".to_string()
+                    "Focus: Unstaged files".to_owned()
                 };
             }
             KeyCode::Char('a') => {
@@ -718,7 +717,7 @@ impl App {
                 } else if let Err(e) = self.refresh() {
                     self.error_message = Some(format!("Refresh failed: {e}"));
                 } else {
-                    self.status_message = "All files staged".to_string();
+                    self.status_message = "All files staged".to_owned();
                 }
             }
             KeyCode::Char('d') => {
@@ -726,13 +725,13 @@ impl App {
                 self.show_file_diff();
             }
             KeyCode::Char('c') => {
-                if !self.staged_files.is_empty() {
+                if self.staged_files.is_empty() {
+                    self.error_message = Some("Nothing staged to commit".to_owned());
+                } else {
                     self.commit_mode = true;
                     self.commit_message.clear();
                     self.status_message =
-                        "Enter commit message (Enter to commit, Esc to cancel)".to_string();
-                } else {
-                    self.error_message = Some("Nothing staged to commit".to_string());
+                        "Enter commit message (Enter to commit, Esc to cancel)".to_owned();
                 }
             }
             _ => {}
@@ -746,9 +745,9 @@ impl App {
                 // Ctrl+Enter or plain Enter commits; Ctrl+J inserts newline
                 if key.modifiers.contains(KeyModifiers::CONTROL) {
                     // Ctrl+Enter: commit (alternative to plain Enter)
-                    let msg = self.commit_message.trim().to_string();
+                    let msg = self.commit_message.trim().to_owned();
                     if msg.is_empty() {
-                        self.error_message = Some("Empty commit message".to_string());
+                        self.error_message = Some("Empty commit message".to_owned());
                         return false;
                     }
                     if let Err(e) = self.repo.commit(&msg) {
@@ -756,15 +755,15 @@ impl App {
                     } else if let Err(e) = self.refresh() {
                         self.error_message = Some(format!("Refresh failed: {e}"));
                     } else {
-                        self.status_message = "Committed successfully".to_string();
+                        self.status_message = "Committed successfully".to_owned();
                     }
                     self.commit_mode = false;
                     self.commit_message.clear();
                 } else {
                     // Plain Enter: commit
-                    let msg = self.commit_message.trim().to_string();
+                    let msg = self.commit_message.trim().to_owned();
                     if msg.is_empty() {
-                        self.error_message = Some("Empty commit message".to_string());
+                        self.error_message = Some("Empty commit message".to_owned());
                         return false;
                     }
                     if let Err(e) = self.repo.commit(&msg) {
@@ -772,7 +771,7 @@ impl App {
                     } else if let Err(e) = self.refresh() {
                         self.error_message = Some(format!("Refresh failed: {e}"));
                     } else {
-                        self.status_message = "Committed successfully".to_string();
+                        self.status_message = "Committed successfully".to_owned();
                     }
                     self.commit_mode = false;
                     self.commit_message.clear();
@@ -785,7 +784,7 @@ impl App {
             KeyCode::Esc => {
                 self.commit_mode = false;
                 self.commit_message.clear();
-                self.status_message = "Commit cancelled".to_string();
+                self.status_message = "Commit cancelled".to_owned();
             }
             KeyCode::Char(c) => {
                 self.commit_message.push(c);
@@ -852,7 +851,7 @@ impl App {
                 self.remote_input_name.clear();
                 self.remote_input_url.clear();
                 self.status_message =
-                    "Enter remote name (Enter to confirm, Esc to cancel)".to_string();
+                    "Enter remote name (Enter to confirm, Esc to cancel)".to_owned();
             }
             KeyCode::Char('d') => {
                 if let Some((name, _)) = self.remote_list.get(self.remote_cursor).cloned() {
@@ -882,21 +881,21 @@ impl App {
         match key.code {
             KeyCode::Enter => {
                 if self.remote_input_step == 0 {
-                    let name = self.remote_input_name.trim().to_string();
+                    let name = self.remote_input_name.trim().to_owned();
                     if name.is_empty() {
-                        self.error_message = Some("Empty remote name".to_string());
+                        self.error_message = Some("Empty remote name".to_owned());
                         return false;
                     }
                     self.remote_input_step = 1;
                     self.status_message =
-                        "Enter remote URL (Enter to confirm, Esc to cancel)".to_string();
+                        "Enter remote URL (Enter to confirm, Esc to cancel)".to_owned();
                 } else {
-                    let url = self.remote_input_url.trim().to_string();
+                    let url = self.remote_input_url.trim().to_owned();
                     if url.is_empty() {
-                        self.error_message = Some("Empty remote URL".to_string());
+                        self.error_message = Some("Empty remote URL".to_owned());
                         return false;
                     }
-                    let name = self.remote_input_name.trim().to_string();
+                    let name = self.remote_input_name.trim().to_owned();
                     if let Err(e) = self.repo.add_remote(&name, &url) {
                         self.error_message = Some(format!("Add remote failed: {e}"));
                     } else if let Err(e) = self.refresh_remotes() {
@@ -913,7 +912,7 @@ impl App {
                 self.remote_input_mode = false;
                 self.remote_input_name.clear();
                 self.remote_input_url.clear();
-                self.status_message = "Cancelled".to_string();
+                self.status_message = "Cancelled".to_owned();
             }
             KeyCode::Char(c) => {
                 if self.remote_input_step == 0 {
@@ -936,7 +935,7 @@ impl App {
 
     fn handle_checkout_confirm_key(&mut self, key: KeyEvent) -> bool {
         match key.code {
-            KeyCode::Char('y') | KeyCode::Char('Y') => {
+            KeyCode::Char('y' | 'Y') => {
                 let target = self.checkout_target.clone().unwrap_or_default();
                 if let Err(e) = self.repo.checkout(&target) {
                     self.error_message = Some(format!("Checkout failed: {e}"));
@@ -949,11 +948,11 @@ impl App {
                 self.checkout_target = None;
                 self.checkout_changed_files.clear();
             }
-            KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+            KeyCode::Char('n' | 'N') | KeyCode::Esc => {
                 self.checkout_confirm_mode = false;
                 self.checkout_target = None;
                 self.checkout_changed_files.clear();
-                self.status_message = "Checkout cancelled".to_string();
+                self.status_message = "Checkout cancelled".to_owned();
             }
             _ => {}
         }
@@ -964,7 +963,7 @@ impl App {
         match key.code {
             KeyCode::Esc => {
                 self.conflict_mode = false;
-                self.status_message = "Exited conflict resolution".to_string();
+                self.status_message = "Exited conflict resolution".to_owned();
             }
             KeyCode::Char('j') | KeyCode::Down => {
                 if self.conflict_cursor < self.conflict_files.len().saturating_sub(1) {
@@ -981,7 +980,7 @@ impl App {
                 if let Some(conflict) = self.conflict_files.get(self.conflict_cursor) {
                     let root = self.repo.root().to_path_buf();
                     let full_path = root.join(&conflict.path);
-                    let editor = std::env::var("EDITOR").unwrap_or_else(|_| "nvim".to_string());
+                    let editor = std::env::var("EDITOR").unwrap_or_else(|_| "nvim".to_owned());
                     self.status_message = format!("Opening {} in {} ...", conflict.path, editor);
 
                     // Drop the terminal, run editor, restore terminal
@@ -990,7 +989,7 @@ impl App {
                     // We can't run the editor inside the TUI event loop, so we
                     // save state and exit. The user re-runs `suture tui` after editing.
                     // For now, print instructions and quit.
-                    let editor = std::env::var("EDITOR").unwrap_or_else(|_| "nvim".to_string());
+                    let editor = std::env::var("EDITOR").unwrap_or_else(|_| "nvim".to_owned());
                     eprintln!(
                         "\n\n  Open in editor: {} \"{}\"",
                         editor,
@@ -1003,11 +1002,11 @@ impl App {
             }
             KeyCode::Char('r') => {
                 // Re-scan for conflicts (editor may have resolved some)
-                self.status_message = "Re-scanning for conflicts...".to_string();
+                self.status_message = "Re-scanning for conflicts...".to_owned();
                 self.detect_conflicts();
                 if self.conflict_files.is_empty() {
                     self.status_message =
-                        "All conflicts resolved! Run `suture commit` to finalize.".to_string();
+                        "All conflicts resolved! Run `suture commit` to finalize.".to_owned();
                 } else {
                     self.status_message =
                         format!("{} conflict file(s) remaining", self.conflict_files.len());
@@ -1029,7 +1028,7 @@ impl App {
                     self.patch_browser_search_mode = false;
                     self.patch_browser_filter.clear();
                     self.patch_browser_cursor = 0;
-                    self.status_message = "Filter cleared".to_string();
+                    self.status_message = "Filter cleared".to_owned();
                 }
                 KeyCode::Enter => {
                     self.patch_browser_search_mode = false;
@@ -1080,16 +1079,16 @@ impl App {
                 self.patch_browser_sort_desc = !self.patch_browser_sort_desc;
                 self.patch_browser_cursor = 0;
                 self.status_message = if self.patch_browser_sort_desc {
-                    "Sort: newest first".to_string()
+                    "Sort: newest first".to_owned()
                 } else {
-                    "Sort: oldest first".to_string()
+                    "Sort: oldest first".to_owned()
                 };
             }
             KeyCode::Char('/') => {
                 self.patch_browser_search_mode = true;
                 self.patch_browser_filter.clear();
                 self.patch_browser_cursor = 0;
-                self.status_message = "Type to filter patches (Esc to cancel, Enter to apply)".to_string();
+                self.status_message = "Type to filter patches (Esc to cancel, Enter to apply)".to_owned();
             }
             KeyCode::PageUp => {
                 self.patch_browser_cursor = self.patch_browser_cursor.saturating_sub(10);
@@ -1107,7 +1106,7 @@ impl App {
         match key.code {
             KeyCode::Esc => {
                 self.current_tab = Tab::Status;
-                self.status_message = "Switched to Status".to_string();
+                self.status_message = "Switched to Status".to_owned();
             }
             KeyCode::Char('j') | KeyCode::Down => {
                 if self.conflict_cursor < self.conflict_files.len().saturating_sub(1) {
@@ -1123,10 +1122,10 @@ impl App {
                 if let Some(conflict) = self.conflict_files.get(self.conflict_cursor) {
                     let root = self.repo.root().to_path_buf();
                     let full_path = root.join(&conflict.path);
-                    let editor = std::env::var("EDITOR").unwrap_or_else(|_| "nvim".to_string());
+                    let editor = std::env::var("EDITOR").unwrap_or_else(|_| "nvim".to_owned());
                     self.status_message = format!("Opening {} in {} ...", conflict.path, editor);
                     self.should_quit = true;
-                    let editor = std::env::var("EDITOR").unwrap_or_else(|_| "nvim".to_string());
+                    let editor = std::env::var("EDITOR").unwrap_or_else(|_| "nvim".to_owned());
                     eprintln!(
                         "\n\n  Open in editor: {} \"{}\"",
                         editor,
@@ -1141,7 +1140,7 @@ impl App {
                 self.detect_conflicts();
                 if self.conflict_files.is_empty() {
                     self.status_message =
-                        "All conflicts resolved! Run `suture commit` to finalize.".to_string();
+                        "All conflicts resolved! Run `suture commit` to finalize.".to_owned();
                 } else {
                     self.status_message =
                         format!("{} conflict file(s) remaining", self.conflict_files.len());
@@ -1173,7 +1172,7 @@ impl App {
                 self.branch_input.clear();
                 self.branch_input_action = BranchAction::Create;
                 self.status_message =
-                    "Enter new branch name (Enter to confirm, Esc to cancel)".to_string();
+                    "Enter new branch name (Enter to confirm, Esc to cancel)".to_owned();
             }
             KeyCode::Char('x') => {
                 // Checkout selected branch (with confirmation)
@@ -1183,7 +1182,7 @@ impl App {
                     .map(|(n, _)| n.clone());
                 if let Some(name) = branch_name {
                     if self.head_branch.as_deref() == Some(name.as_str()) {
-                        self.error_message = Some("Already on this branch".to_string());
+                        self.error_message = Some("Already on this branch".to_owned());
                         return false;
                     }
                     let current = self.head_branch.clone().unwrap_or_default();
@@ -1197,7 +1196,7 @@ impl App {
                     self.checkout_confirm_mode = true;
                     self.checkout_target = Some(name);
                     self.checkout_changed_files = changed_files;
-                    self.status_message = "Confirm checkout? [y] Yes  [n] No".to_string();
+                    self.status_message = "Confirm checkout? [y] Yes  [n] No".to_owned();
                 }
             }
             KeyCode::Char('d') => {
@@ -1205,7 +1204,7 @@ impl App {
                 if let Some((name, _)) = self.branch_list.get(self.branch_cursor).cloned() {
                     // Don't allow deleting the current branch
                     if self.head_branch.as_deref() == Some(name.as_str()) {
-                        self.error_message = Some("Cannot delete the current branch".to_string());
+                        self.error_message = Some("Cannot delete the current branch".to_owned());
                         return false;
                     }
                     match self.repo.delete_branch(&name) {
@@ -1228,7 +1227,7 @@ impl App {
                     self.branch_input = name.clone();
                     self.branch_input_action = BranchAction::Rename;
                     self.status_message =
-                        "Enter new branch name (Enter to confirm, Esc to cancel)".to_string();
+                        "Enter new branch name (Enter to confirm, Esc to cancel)".to_owned();
                 }
             }
             KeyCode::Char('g') => {
@@ -1247,15 +1246,15 @@ impl App {
     fn handle_branch_input_key(&mut self, key: KeyEvent) -> bool {
         match key.code {
             KeyCode::Enter => {
-                let name = self.branch_input.trim().to_string();
+                let name = self.branch_input.trim().to_owned();
                 if name.is_empty() {
-                    self.error_message = Some("Empty branch name".to_string());
+                    self.error_message = Some("Empty branch name".to_owned());
                     return false;
                 }
                 // Validate branch name
                 if suture_common::BranchName::new(&name).is_err() {
                     self.error_message =
-                        Some("Invalid branch name (must be non-empty, no null bytes)".to_string());
+                        Some("Invalid branch name (must be non-empty, no null bytes)".to_owned());
                     return false;
                 }
                 match self.branch_input_action {
@@ -1293,7 +1292,7 @@ impl App {
             KeyCode::Esc => {
                 self.branch_input_mode = false;
                 self.branch_input.clear();
-                self.status_message = "Cancelled".to_string();
+                self.status_message = "Cancelled".to_owned();
             }
             KeyCode::Char(c) => {
                 self.branch_input.push(c);
@@ -1317,10 +1316,7 @@ impl App {
         if let Some(entry) = files.get(self.staging_cursor) {
             if self.staging_focus_staged {
                 // Unstage
-                let repo_path = match suture_common::RepoPath::new(&entry.path) {
-                    Ok(rp) => rp,
-                    Err(_) => return,
-                };
+                let Ok(repo_path) = suture_common::RepoPath::new(&entry.path) else { return };
                 if let Err(e) = self.repo.meta().working_set_remove(&repo_path) {
                     self.error_message = Some(format!("Unstage failed: {e}"));
                     return;
@@ -1364,7 +1360,7 @@ impl App {
     /// Load diff content for a file path.
     fn load_file_diff(&mut self, path: &str) {
         self.diff_lines.clear();
-        self.diff_file = Some(path.to_string());
+        self.diff_file = Some(path.to_owned());
 
         // Try to read the file from working tree
         let root = self.repo.root().to_path_buf();
@@ -1402,7 +1398,7 @@ impl App {
 
         if self.diff_lines.is_empty() {
             self.diff_lines.push(DiffLine {
-                content: "(no changes)".to_string(),
+                content: "(no changes)".to_owned(),
                 line_type: DiffLineType::Context,
                 old_line: None,
                 new_line: None,
@@ -1412,20 +1408,14 @@ impl App {
 
     /// Show diff for a specific patch.
     fn show_patch_diff(&mut self, patch_id_hex: &str) {
-        let patch_id = match Hash::from_hex(patch_id_hex) {
-            Ok(h) => h,
-            Err(_) => {
-                self.error_message = Some("Invalid patch ID".to_string());
+        let Ok(patch_id) = Hash::from_hex(patch_id_hex) else {
+                self.error_message = Some("Invalid patch ID".to_owned());
                 return;
-            }
-        };
+            };
 
-        let patch = match self.repo.dag().get_patch(&patch_id) {
-            Some(p) => p.clone(),
-            None => {
-                self.error_message = Some("Patch not found".to_string());
-                return;
-            }
+        let patch = if let Some(p) = self.repo.dag().get_patch(&patch_id) { p.clone() } else {
+            self.error_message = Some("Patch not found".to_owned());
+            return;
         };
 
         self.diff_file = Some(format!("patch: {}", patch.message));
@@ -1447,10 +1437,10 @@ impl App {
         };
 
         let patch_tree = self.repo.snapshot(&patch_id_copy).ok();
-        let new_paths: std::collections::HashSet<String> = match &patch_tree {
-            Some(t) => t.iter().map(|(k, _)| k.clone()).collect(),
-            None => std::collections::HashSet::new(),
-        };
+        let new_paths: std::collections::HashSet<String> = patch_tree.as_ref().map_or_else(
+            std::collections::HashSet::new,
+            |t| t.iter().map(|(k, _)| k.clone()).collect(),
+        );
 
         // Added files
         for path in new_paths.difference(&parent_paths) {
@@ -1493,7 +1483,7 @@ impl App {
 
         if self.diff_lines.is_empty() {
             self.diff_lines.push(DiffLine {
-                content: "(no changes)".to_string(),
+                content: "(no changes)".to_owned(),
                 line_type: DiffLineType::Context,
                 old_line: None,
                 new_line: None,
@@ -1704,8 +1694,7 @@ fn parse_conflict_markers(content: &str) -> Option<Vec<Hunk>> {
             let after_sep = separator + sep_marker.len();
             content[after_sep..]
                 .find('\n')
-                .map(|i| after_sep + i + 1)
-                .unwrap_or(after_sep)
+                .map_or(after_sep, |i| after_sep + i + 1)
         };
 
         let theirs_end_marker = content[theirs_content_start..].find(theirs_marker)?;
@@ -1714,8 +1703,8 @@ fn parse_conflict_markers(content: &str) -> Option<Vec<Hunk>> {
         let ours_text = content[ours_content_start..separator].to_string();
         let theirs_text = content[theirs_content_start..theirs_end].to_string();
 
-        let ours_lines: Vec<String> = ours_text.lines().map(|l| l.to_string()).collect();
-        let theirs_lines: Vec<String> = theirs_text.lines().map(|l| l.to_string()).collect();
+        let ours_lines: Vec<String> = ours_text.lines().map(std::string::ToString::to_string).collect();
+        let theirs_lines: Vec<String> = theirs_text.lines().map(std::string::ToString::to_string).collect();
 
         hunks.push(Hunk {
             ours_lines,
@@ -1726,8 +1715,7 @@ fn parse_conflict_markers(content: &str) -> Option<Vec<Hunk>> {
 
         let after_theirs = content[theirs_end..]
             .find('\n')
-            .map(|i| theirs_end + i + 1)
-            .unwrap_or(theirs_end);
+            .map_or(theirs_end, |i| theirs_end + i + 1);
         search_from = after_theirs;
     }
 
@@ -1799,7 +1787,7 @@ fn compute_line_diff(old_lines: &[&str], new_lines: &[&str]) -> Vec<DiffLine> {
                 old_line_no = *old_idx + 1;
                 new_line_no = *new_idx + 1;
                 result.push(DiffLine {
-                    content: old_lines[*old_idx].to_string(),
+                    content: old_lines[*old_idx].to_owned(),
                     line_type: DiffLineType::Context,
                     old_line: Some(old_line_no),
                     new_line: Some(new_line_no),
@@ -1808,7 +1796,7 @@ fn compute_line_diff(old_lines: &[&str], new_lines: &[&str]) -> Vec<DiffLine> {
             DiffLineType::Add => {
                 new_line_no = *new_idx + 1;
                 result.push(DiffLine {
-                    content: new_lines[*new_idx].to_string(),
+                    content: new_lines[*new_idx].to_owned(),
                     line_type: DiffLineType::Add,
                     old_line: None,
                     new_line: Some(new_line_no),
@@ -1817,7 +1805,7 @@ fn compute_line_diff(old_lines: &[&str], new_lines: &[&str]) -> Vec<DiffLine> {
             DiffLineType::Remove => {
                 old_line_no = *old_idx + 1;
                 result.push(DiffLine {
-                    content: old_lines[*old_idx].to_string(),
+                    content: old_lines[*old_idx].to_owned(),
                     line_type: DiffLineType::Remove,
                     old_line: Some(old_line_no),
                     new_line: None,

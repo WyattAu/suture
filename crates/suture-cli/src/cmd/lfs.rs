@@ -5,21 +5,21 @@ const DEFAULT_THRESHOLD: u64 = 10 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
-pub(crate) struct LfsPointer {
+pub struct LfsPointer {
     pub oid: String,
     pub size: u64,
     pub name: String,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub(crate) struct LfsTrackRule {
+pub struct LfsTrackRule {
     pub pattern: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub size_limit: Option<String>,
 }
 
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
-pub(crate) struct LfsConfig {
+pub struct LfsConfig {
     #[serde(rename = "track", default)]
     pub rules: Vec<LfsTrackRule>,
 }
@@ -53,17 +53,22 @@ fn save_lfs_config(config: &LfsConfig) -> Result<(), Box<dyn std::error::Error>>
 
 fn parse_human_size(s: &str) -> Option<u64> {
     let s = s.trim();
-    let (num_str, multiplier) = if let Some(n) = s.strip_suffix("GB") {
-        (n.trim(), 1024u64 * 1024 * 1024)
-    } else if let Some(n) = s.strip_suffix("MB") {
-        (n.trim(), 1024u64 * 1024)
-    } else if let Some(n) = s.strip_suffix("KB") {
-        (n.trim(), 1024u64)
-    } else if let Some(n) = s.strip_suffix("B") {
-        (n.trim(), 1)
-    } else {
-        (s, 1)
-    };
+    let (num_str, multiplier) = s.strip_suffix("GB").map_or_else(
+        || {
+            s.strip_suffix("MB").map_or_else(
+                || {
+                    s.strip_suffix("KB").map_or_else(
+                        || {
+                            s.strip_suffix("B").map_or((s, 1u64), |n| (n.trim(), 1))
+                        },
+                        |n| (n.trim(), 1024u64),
+                    )
+                },
+                |n| (n.trim(), 1024u64 * 1024),
+            )
+        },
+        |n| (n.trim(), 1024u64 * 1024 * 1024),
+    );
     let num: f64 = num_str.parse().ok()?;
     Some((num * multiplier as f64) as u64)
 }
@@ -88,33 +93,30 @@ fn get_threshold(repo_root: &Path) -> u64 {
     DEFAULT_THRESHOLD
 }
 
-pub(crate) fn lfs_object_path(hash: &str) -> PathBuf {
+pub fn lfs_object_path(hash: &str) -> PathBuf {
     let prefix = &hash[..2.min(hash.len())];
     lfs_objects_dir().join(prefix).join(hash)
 }
 
-pub(crate) fn is_lfs_pointer(content: &[u8]) -> bool {
-    if let Ok(text) = std::str::from_utf8(content) {
-        text.starts_with(LFS_POINTER_HEADER)
-    } else {
-        false
-    }
+pub fn is_lfs_pointer(content: &[u8]) -> bool {
+    std::str::from_utf8(content)
+        .is_ok_and(|text| text.starts_with(LFS_POINTER_HEADER))
 }
 
-pub(crate) fn parse_lfs_pointer(content: &str) -> Option<LfsPointer> {
+pub fn parse_lfs_pointer(content: &str) -> Option<LfsPointer> {
     let mut oid = None;
     let mut size = None;
     let mut name = None;
 
     for line in content.lines() {
         if let Some(val) = line.strip_prefix("oid sha256:") {
-            oid = Some(val.trim().to_string());
+            oid = Some(val.trim().to_owned());
         } else if let Some(val) = line.strip_prefix("oid blake3:") {
             oid = Some(format!("blake3:{}", val.trim()));
         } else if let Some(val) = line.strip_prefix("size ") {
             size = val.trim().parse().ok();
         } else if let Some(val) = line.strip_prefix("name ") {
-            name = Some(val.trim().to_string());
+            name = Some(val.trim().to_owned());
         }
     }
 
@@ -125,14 +127,13 @@ pub(crate) fn parse_lfs_pointer(content: &str) -> Option<LfsPointer> {
     })
 }
 
-pub(crate) fn create_lfs_pointer(hash: &str, size: u64, name: &str) -> String {
+pub fn create_lfs_pointer(hash: &str, size: u64, name: &str) -> String {
     format!(
-        "{}\noid sha256:{}\nsize {}\nname {}\n",
-        LFS_POINTER_HEADER, hash, size, name
+        "{LFS_POINTER_HEADER}\noid sha256:{hash}\nsize {size}\nname {name}\n"
     )
 }
 
-pub(crate) fn store_lfs_object(
+pub fn store_lfs_object(
     _repo_root: &Path,
     hash: &str,
     data: &[u8],
@@ -147,13 +148,13 @@ pub(crate) fn store_lfs_object(
     Ok(())
 }
 
-pub(crate) fn read_lfs_object(
+pub fn read_lfs_object(
     _repo_root: &Path,
     hash: &str,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let path = lfs_object_path(hash);
     if !path.exists() {
-        return Err(format!("LFS object not found: {}", hash).into());
+        return Err(format!("LFS object not found: {hash}").into());
     }
     Ok(std::fs::read(&path)?)
 }
@@ -180,19 +181,23 @@ fn simple_glob_match(pattern: &str, text: &str) -> bool {
     dp[p.len()][t.len()]
 }
 
-pub(crate) fn pattern_matches(pattern: &str, rel_path: &str) -> bool {
-    if let Some(suffix) = pattern.strip_prefix('*') {
-        rel_path.ends_with(suffix)
-    } else if let Some(prefix) = pattern.strip_suffix('*') {
-        rel_path.starts_with(prefix)
-    } else if pattern.contains('*') {
-        simple_glob_match(pattern, rel_path)
-    } else {
-        rel_path == pattern || rel_path.starts_with(&format!("{}/", pattern))
-    }
+pub fn pattern_matches(pattern: &str, rel_path: &str) -> bool {
+    pattern.strip_prefix('*').map_or_else(
+        || {
+            pattern.strip_suffix('*').map_or_else(
+                || if pattern.contains('*') {
+                    simple_glob_match(pattern, rel_path)
+                } else {
+                    rel_path == pattern || rel_path.starts_with(&format!("{pattern}/"))
+                },
+                |prefix| rel_path.starts_with(prefix),
+            )
+        },
+        |suffix| rel_path.ends_with(suffix),
+    )
 }
 
-pub(crate) fn matches_lfs_pattern(rel_path: &str, rules: &[LfsTrackRule]) -> Option<u64> {
+pub fn matches_lfs_pattern(rel_path: &str, rules: &[LfsTrackRule]) -> Option<u64> {
     for rule in rules {
         if pattern_matches(&rule.pattern, rel_path) {
             if let Some(ref limit_str) = rule.size_limit
@@ -206,7 +211,7 @@ pub(crate) fn matches_lfs_pattern(rel_path: &str, rules: &[LfsTrackRule]) -> Opt
     None
 }
 
-pub(crate) fn should_track_as_lfs(repo_root: &Path, rel_path: &str, file_size: u64) -> Option<u64> {
+pub fn should_track_as_lfs(repo_root: &Path, rel_path: &str, file_size: u64) -> Option<u64> {
     let config = load_lfs_config();
     if config.rules.is_empty() {
         return None;
@@ -224,7 +229,7 @@ pub(crate) fn should_track_as_lfs(repo_root: &Path, rel_path: &str, file_size: u
     None
 }
 
-pub(crate) fn compute_sha256(data: &[u8]) -> String {
+pub fn compute_sha256(data: &[u8]) -> String {
     use sha2::Digest;
     let mut hasher = sha2::Sha256::new();
     hasher.update(data);
@@ -256,14 +261,8 @@ fn walk_lfs_objects(dir: &Path) -> usize {
 
 fn list_lfs_pointers_in_tree() -> Vec<(String, LfsPointer)> {
     let mut pointers = Vec::new();
-    let repo = match suture_core::repository::Repository::open(Path::new(".")) {
-        Ok(r) => r,
-        Err(_) => return pointers,
-    };
-    let tree = match repo.snapshot_head() {
-        Ok(t) => t,
-        Err(_) => return pointers,
-    };
+    let Ok(repo) = suture_core::repository::Repository::open(Path::new(".")) else { return pointers };
+    let Ok(tree) = repo.snapshot_head() else { return pointers };
     for (path, hash) in tree.iter() {
         if let Ok(blob) = repo.cas().get_blob(hash)
             && let Ok(text) = std::str::from_utf8(&blob)
@@ -275,7 +274,7 @@ fn list_lfs_pointers_in_tree() -> Vec<(String, LfsPointer)> {
     pointers
 }
 
-pub(crate) fn resolve_lfs_pointers_in_workdir() -> Result<(usize, usize), Box<dyn std::error::Error>>
+pub fn resolve_lfs_pointers_in_workdir() -> Result<(usize, usize), Box<dyn std::error::Error>>
 {
     let mut resolved = 0usize;
     let mut missing = 0usize;
@@ -283,47 +282,38 @@ pub(crate) fn resolve_lfs_pointers_in_workdir() -> Result<(usize, usize), Box<dy
     for entry in walkdir::WalkDir::new(".")
         .min_depth(1)
         .into_iter()
-        .filter_map(|e| e.ok())
+        .filter_map(std::result::Result::ok)
     {
         let path = entry.path();
         if path.starts_with(".suture") || !path.is_file() {
             continue;
         }
 
-        let content = match std::fs::read(path) {
-            Ok(c) => c,
-            Err(_) => continue,
-        };
+        let Ok(content) = std::fs::read(path) else { continue };
 
         if !is_lfs_pointer(&content) {
             continue;
         }
 
         let text = std::str::from_utf8(&content).unwrap_or("");
-        let ptr = match parse_lfs_pointer(text) {
-            Some(p) => p,
-            None => continue,
-        };
+        let Some(ptr) = parse_lfs_pointer(text) else { continue };
 
-        match read_lfs_object(Path::new("."), &ptr.oid) {
-            Ok(data) => {
-                std::fs::write(path, &data)?;
-                resolved += 1;
-            }
-            Err(_) => {
-                missing += 1;
-                eprintln!(
-                    "warning: LFS object not found: {} (run `suture lfs pull`)",
-                    path.display()
-                );
-            }
+        if let Ok(data) = read_lfs_object(Path::new("."), &ptr.oid) {
+            std::fs::write(path, &data)?;
+            resolved += 1;
+        } else {
+            missing += 1;
+            eprintln!(
+                "warning: LFS object not found: {} (run `suture lfs pull`)",
+                path.display()
+            );
         }
     }
 
     Ok((resolved, missing))
 }
 
-pub(crate) enum LfsAction {
+pub enum LfsAction {
     Track {
         pattern: String,
         size_limit: Option<String>,
@@ -337,7 +327,7 @@ pub(crate) enum LfsAction {
     Status,
 }
 
-pub(crate) async fn cmd_lfs(action: &LfsAction) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_lfs(action: &LfsAction) -> Result<(), Box<dyn std::error::Error>> {
     match action {
         LfsAction::Track {
             pattern,
@@ -361,22 +351,20 @@ fn cmd_lfs_track(
     let mut config = load_lfs_config();
 
     if config.rules.iter().any(|r| r.pattern == pattern) {
-        return Err(format!("pattern '{}' is already tracked", pattern).into());
+        return Err(format!("pattern '{pattern}' is already tracked").into());
     }
 
     let rule = LfsTrackRule {
-        pattern: pattern.to_string(),
+        pattern: pattern.to_owned(),
         size_limit: size_limit.clone(),
     };
 
     config.rules.push(rule);
     save_lfs_config(&config)?;
 
-    let limit_info = match size_limit {
-        Some(limit) => format!(" (size limit: {})", limit),
-        None => String::new(),
-    };
-    println!("Tracking {}{}", pattern, limit_info);
+    let limit_info =
+        size_limit.as_ref().map_or_else(String::new, |limit| format!(" (size limit: {limit})"));
+    println!("Tracking {pattern}{limit_info}");
 
     let threshold = get_threshold(Path::new("."));
     println!(
@@ -398,11 +386,11 @@ fn cmd_lfs_untrack(pattern: &str) -> Result<(), Box<dyn std::error::Error>> {
     config.rules.retain(|r| r.pattern != pattern);
 
     if config.rules.len() == before {
-        return Err(format!("pattern '{}' is not tracked", pattern).into());
+        return Err(format!("pattern '{pattern}' is not tracked").into());
     }
 
     save_lfs_config(&config)?;
-    println!("Stopped tracking {}", pattern);
+    println!("Stopped tracking {pattern}");
 
     Ok(())
 }
@@ -423,16 +411,13 @@ fn cmd_lfs_list() -> Result<(), Box<dyn std::error::Error>> {
     println!("LFS tracking patterns ({}):", config.rules.len());
     let threshold = get_threshold(Path::new("."));
     for rule in &config.rules {
-        let effective = match &rule.size_limit {
-            Some(limit) => {
-                if let Some(bytes) = parse_human_size(limit) {
-                    format!("(> {} bytes)", bytes)
-                } else {
-                    format!("(> {})", limit)
-                }
-            }
-            None => format!("(> {} bytes, default threshold)", threshold),
-        };
+        let effective = rule.size_limit.as_ref().map_or_else(
+            || format!("(> {threshold} bytes, default threshold)"),
+            |limit| {
+                parse_human_size(limit)
+                    .map_or_else(|| format!("(> {limit})"), |bytes| format!("(> {bytes} bytes)"))
+            },
+        );
         println!("  {} {}", rule.pattern, effective);
     }
 
@@ -451,7 +436,7 @@ async fn cmd_lfs_push() -> Result<(), Box<dyn std::error::Error>> {
     let remote_name = "origin";
     let url = repo
         .get_remote_url(remote_name)
-        .map_err(|e| format!("remote '{}' not found: {e}", remote_name))?;
+        .map_err(|e| format!("remote '{remote_name}' not found: {e}"))?;
 
     let pointers = list_lfs_pointers_in_tree();
     if pointers.is_empty() {
@@ -493,7 +478,7 @@ async fn cmd_lfs_push() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let batch_resp: serde_json::Value = client
-        .post(format!("{}/lfs/batch", url))
+        .post(format!("{url}/lfs/batch"))
         .json(&batch_body)
         .send()
         .await?
@@ -536,9 +521,9 @@ async fn cmd_lfs_push() -> Result<(), Box<dyn std::error::Error>> {
                     .and_then(|v| v.as_str())
                     .ok_or("upload action missing href")?;
                 let upload_url = if href.starts_with('/') {
-                    format!("{}{}", url, href)
+                    format!("{url}{href}")
                 } else {
-                    href.to_string()
+                    href.to_owned()
                 };
 
                 let upload_resp = client
@@ -553,7 +538,7 @@ async fn cmd_lfs_push() -> Result<(), Box<dyn std::error::Error>> {
                     println!(
                         "  uploaded: {} ({} bytes)",
                         &oid[..12],
-                        action_val.get("size").and_then(|v| v.as_u64()).unwrap_or(0)
+                        action_val.get("size").and_then(serde_json::Value::as_u64).unwrap_or(0)
                     );
                 } else {
                     eprintln!(
@@ -580,11 +565,10 @@ async fn cmd_lfs_push() -> Result<(), Box<dyn std::error::Error>> {
 
     println!();
     println!(
-        "LFS push complete: {} uploaded, {} skipped, {} failed",
-        uploaded, skipped, failed
+        "LFS push complete: {uploaded} uploaded, {skipped} skipped, {failed} failed"
     );
     if failed > 0 {
-        return Err(format!("{} LFS object(s) failed to upload", failed).into());
+        return Err(format!("{failed} LFS object(s) failed to upload").into());
     }
     Ok(())
 }
@@ -600,7 +584,7 @@ async fn cmd_lfs_pull() -> Result<(), Box<dyn std::error::Error>> {
     let remote_name = "origin";
     let url = repo
         .get_remote_url(remote_name)
-        .map_err(|e| format!("remote '{}' not found: {e}", remote_name))?;
+        .map_err(|e| format!("remote '{remote_name}' not found: {e}"))?;
 
     let pointers = list_lfs_pointers_in_tree();
     let mut missing = Vec::new();
@@ -636,7 +620,7 @@ async fn cmd_lfs_pull() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let batch_resp: serde_json::Value = client
-        .post(format!("{}/lfs/batch", url))
+        .post(format!("{url}/lfs/batch"))
         .json(&batch_body)
         .send()
         .await?
@@ -670,9 +654,9 @@ async fn cmd_lfs_pull() -> Result<(), Box<dyn std::error::Error>> {
                     .and_then(|v| v.as_str())
                     .ok_or("download action missing href")?;
                 let download_url = if href.starts_with('/') {
-                    format!("{}{}", url, href)
+                    format!("{url}{href}")
                 } else {
-                    href.to_string()
+                    href.to_owned()
                 };
 
                 let download_resp = client.get(&download_url).send().await?;
@@ -715,11 +699,10 @@ async fn cmd_lfs_pull() -> Result<(), Box<dyn std::error::Error>> {
 
     println!();
     println!(
-        "LFS pull complete: {} downloaded, {} skipped, {} failed",
-        downloaded, skipped, failed
+        "LFS pull complete: {downloaded} downloaded, {skipped} skipped, {failed} failed"
     );
     if failed > 0 {
-        return Err(format!("{} LFS object(s) failed to download", failed).into());
+        return Err(format!("{failed} LFS object(s) failed to download").into());
     }
     Ok(())
 }
@@ -744,16 +727,16 @@ fn cmd_lfs_status() -> Result<(), Box<dyn std::error::Error>> {
     println!("===========");
     println!("Tracked patterns: {}", config.rules.len());
     for rule in &config.rules {
-        let limit = match &rule.size_limit {
-            Some(l) => l.clone(),
-            None => "default".to_string(),
-        };
+        let limit = rule
+            .size_limit
+            .clone()
+            .unwrap_or_else(|| "default".to_owned());
         println!("  {} (limit: {})", rule.pattern, limit);
     }
     println!();
-    println!("Local LFS objects: {}", local_count);
+    println!("Local LFS objects: {local_count}");
     println!("LFS pointers in tree: {}", pointers.len());
-    println!("Missing LFS objects: {}", missing_count);
+    println!("Missing LFS objects: {missing_count}");
 
     if missing_count > 0 {
         println!();

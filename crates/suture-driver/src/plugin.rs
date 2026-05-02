@@ -67,6 +67,7 @@ pub struct PluginRegistry {
 }
 
 impl PluginRegistry {
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             plugins: HashMap::new(),
@@ -75,31 +76,34 @@ impl PluginRegistry {
     }
 
     pub fn register(&mut self, plugin: Arc<dyn DriverPlugin>) {
-        let name = plugin.name().to_string();
+        let name = plugin.name().to_owned();
         for ext in plugin.extensions() {
             self.extension_map.insert(ext.to_string(), name.clone());
         }
         self.plugins.insert(name, plugin);
     }
 
+    #[must_use] 
     pub fn get(&self, name: &str) -> Option<&dyn DriverPlugin> {
-        self.plugins.get(name).map(|p| p.as_ref())
+        self.plugins.get(name).map(std::convert::AsRef::as_ref)
     }
 
+    #[must_use] 
     pub fn get_by_extension(&self, ext: &str) -> Option<&dyn DriverPlugin> {
         let normalized = if ext.starts_with('.') {
-            ext.to_string()
+            ext.to_owned()
         } else {
-            format!(".{}", ext)
+            format!(".{ext}")
         };
         self.extension_map
             .get(&normalized)
-            .and_then(|name| self.plugins.get(name).map(|p| p.as_ref()))
+            .and_then(|name| self.plugins.get(name).map(std::convert::AsRef::as_ref))
     }
 
+    #[must_use] 
     pub fn list_drivers(&self) -> Vec<&str> {
-        let mut names: Vec<&str> = self.plugins.keys().map(|s| s.as_str()).collect();
-        names.sort();
+        let mut names: Vec<&str> = self.plugins.keys().map(std::string::String::as_str).collect();
+        names.sort_unstable();
         names
     }
 
@@ -110,13 +114,12 @@ impl PluginRegistry {
 
         if let Ok(entries) = std::fs::read_dir(plugin_dir) {
             let mut sorted_entries: Vec<_> = entries.flatten().collect();
-            sorted_entries.sort_by_key(|e| e.file_name());
+            sorted_entries.sort_by_key(std::fs::DirEntry::file_name);
             for entry in sorted_entries {
                 let path = entry.path();
                 if path
                     .extension()
-                    .map(|e| e == "suture-plugin")
-                    .unwrap_or(false)
+                    .is_some_and(|e| e == "suture-plugin")
                     && let Ok(content) = std::fs::read_to_string(&path)
                     && let Some(desc) = Self::parse_plugin_descriptor(&content)
                 {
@@ -144,7 +147,7 @@ impl PluginRegistry {
                     for ext in inner.split(',') {
                         let ext = ext.trim().trim_matches('"');
                         if !ext.is_empty() {
-                            extensions.push(ext.to_string());
+                            extensions.push(ext.to_owned());
                         }
                     }
                 }

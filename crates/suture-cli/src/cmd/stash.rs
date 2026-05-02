@@ -1,7 +1,7 @@
 use crate::StashAction;
 use crate::cmd::user_error;
 
-pub(crate) async fn cmd_stash(
+pub async fn cmd_stash(
     action: &crate::StashAction,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))
@@ -20,7 +20,7 @@ pub(crate) async fn cmd_stash(
             let idx = repo
                 .stash_push(message.as_deref())
                 .map_err(|e| user_error("failed to stash changes", e))?;
-            println!("Saved as stash@{{{}}}", idx);
+            println!("Saved as stash@{{{idx}}}");
         }
         StashAction::Save { message } => {
             let status = repo
@@ -35,7 +35,7 @@ pub(crate) async fn cmd_stash(
             let idx = repo
                 .stash_push(message.as_deref())
                 .map_err(|e| user_error("failed to stash changes", e))?;
-            println!("Saved as stash@{{{}}}", idx);
+            println!("Saved as stash@{{{idx}}}");
         }
         StashAction::Pop => {
             let stashes_before = repo
@@ -46,13 +46,12 @@ pub(crate) async fn cmd_stash(
             } else {
                 let highest = stashes_before.iter().map(|s| s.index).max().unwrap_or(0);
                 repo.stash_pop()
-                    .map_err(|e| user_error(&format!("failed to pop stash@{{{}}}", highest), e))?;
+                    .map_err(|e| user_error(&format!("failed to pop stash@{{{highest}}}"), e))?;
                 let message = stashes_before
                     .iter()
                     .find(|s| s.index == highest)
-                    .map(|s| s.message.as_str())
-                    .unwrap_or("unknown");
-                println!("Restored stash@{{{}}}: {}", highest, message);
+                    .map_or("unknown", |s| s.message.as_str());
+                println!("Restored stash@{{{highest}}}: {message}");
             }
         }
         StashAction::Apply { index } => {
@@ -61,14 +60,13 @@ pub(crate) async fn cmd_stash(
                 .map_err(|e| user_error("failed to list stashes", e))?;
             if !stashes.iter().any(|s| s.index == *index) {
                 return Err(format!(
-                    "stash@{{{}}} not found (use 'suture stash list' to see available stashes)",
-                    index
+                    "stash@{{{index}}} not found (use 'suture stash list' to see available stashes)"
                 )
                 .into());
             }
             repo.stash_apply(*index)
-                .map_err(|e| user_error(&format!("failed to apply stash@{{{}}}", index), e))?;
-            println!("Applied stash@{{{}}}", index);
+                .map_err(|e| user_error(&format!("failed to apply stash@{{{index}}}"), e))?;
+            println!("Applied stash@{{{index}}}");
         }
         StashAction::List => {
             let stashes = repo
@@ -88,14 +86,13 @@ pub(crate) async fn cmd_stash(
                 .map_err(|e| user_error("failed to list stashes", e))?;
             if !stashes.iter().any(|s| s.index == *index) {
                 return Err(format!(
-                    "stash@{{{}}} not found (use 'suture stash list' to see available stashes)",
-                    index
+                    "stash@{{{index}}} not found (use 'suture stash list' to see available stashes)"
                 )
                 .into());
             }
             repo.stash_drop(*index)
-                .map_err(|e| user_error(&format!("failed to drop stash@{{{}}}", index), e))?;
-            println!("Dropped stash@{{{}}}", index);
+                .map_err(|e| user_error(&format!("failed to drop stash@{{{index}}}"), e))?;
+            println!("Dropped stash@{{{index}}}");
         }
         StashAction::Branch { name, index } => {
             let stashes = repo
@@ -104,7 +101,7 @@ pub(crate) async fn cmd_stash(
             let entry = stashes
                 .iter()
                 .find(|s| s.index == *index)
-                .ok_or_else(|| format!("stash@{{{}}} not found", index))?;
+                .ok_or_else(|| format!("stash@{{{index}}} not found"))?;
             repo.create_branch(
                 name,
                 if entry.head_id.is_empty() {
@@ -117,7 +114,7 @@ pub(crate) async fn cmd_stash(
             repo.checkout(name)
                 .map_err(|e| user_error(&format!("failed to checkout branch '{name}'"), e))?;
             repo.stash_apply(*index)
-                .map_err(|e| user_error(&format!("failed to apply stash@{{{}}}", index), e))?;
+                .map_err(|e| user_error(&format!("failed to apply stash@{{{index}}}"), e))?;
             println!(
                 "Created branch '{}' from stash@{{{}}}: {}",
                 name, index, entry.message
@@ -136,7 +133,7 @@ pub(crate) async fn cmd_stash(
             }
             let count = stashes.len();
             if *dry_run {
-                println!("Would drop {} stash(es):", count);
+                println!("Would drop {count} stash(es):");
                 for s in &stashes {
                     println!("  stash@{{{}}}: {}", s.index, s.message);
                 }
@@ -144,9 +141,9 @@ pub(crate) async fn cmd_stash(
                 let indices: Vec<usize> = stashes.iter().map(|s| s.index).collect();
                 for idx in &indices {
                     repo.stash_drop(*idx)
-                        .map_err(|e| user_error(&format!("failed to drop stash@{{{}}}", idx), e))?;
+                        .map_err(|e| user_error(&format!("failed to drop stash@{{{idx}}}"), e))?;
                 }
-                println!("Dropped {} stash(es)", count);
+                println!("Dropped {count} stash(es)");
             }
         }
     }
@@ -161,7 +158,7 @@ fn stash_show(
     let entry = stashes
         .iter()
         .find(|s| s.index == index)
-        .ok_or_else(|| format!("error: stash@{{{}}} not found", index))?;
+        .ok_or_else(|| format!("error: stash@{{{index}}} not found"))?;
 
     let patches = repo.all_patches();
     let stash_patch = if entry.head_id.is_empty() {
@@ -179,7 +176,7 @@ fn stash_show(
     }
 
     if let Some(patch) = stash_patch {
-        print_stash_stat(repo, patch)?;
+        print_stash_stat(repo, patch);
     }
 
     Ok(())
@@ -188,16 +185,16 @@ fn stash_show(
 fn print_stash_stat(
     repo: &suture_core::repository::Repository,
     patch: &suture_core::patch::types::Patch,
-) -> Result<(), Box<dyn std::error::Error>> {
+) {
     let files: Vec<String> = patch.touch_set.addresses();
     if files.is_empty() {
-        return Ok(());
+        return;
     }
 
-    let parent_tree = if !patch.parent_ids.is_empty() {
-        repo.snapshot(&patch.parent_ids[0]).ok()
-    } else {
+    let parent_tree = if patch.parent_ids.is_empty() {
         None
+    } else {
+        repo.snapshot(&patch.parent_ids[0]).ok()
     };
     let commit_tree = repo.snapshot(&patch.id).ok();
 
@@ -226,6 +223,4 @@ fn print_stash_stat(
         modified,
         deleted,
     );
-
-    Ok(())
 }

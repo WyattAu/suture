@@ -255,7 +255,6 @@ impl MetadataStore {
                     let op_type = match op_type_str.as_str() {
                         "create" => crate::patch::types::OperationType::Create,
                         "delete" => crate::patch::types::OperationType::Delete,
-                        "modify" => crate::patch::types::OperationType::Modify,
                         "move" => crate::patch::types::OperationType::Move,
                         "metadata" => crate::patch::types::OperationType::Metadata,
                         "merge" => crate::patch::types::OperationType::Merge,
@@ -298,7 +297,7 @@ impl MetadataStore {
                 params![name.as_str()],
                 |row| row.get(0),
             )
-            .map_err(|_| MetaError::BranchNotFound(name.as_str().to_string()))?;
+            .map_err(|_| MetaError::BranchNotFound(name.as_str().to_owned()))?;
 
         PatchId::from_hex(&hex).map_err(|e| MetaError::Corrupt(e.to_string()))
     }
@@ -362,7 +361,7 @@ impl MetadataStore {
     pub fn working_set_add(&self, path: &RepoPath, status: FileStatus) -> Result<(), MetaError> {
         self.conn.execute(
             "INSERT OR REPLACE INTO working_set (path, status) VALUES (?1, ?2)",
-            params![path.as_str(), format!("{:?}", status).to_lowercase()],
+            params![path.as_str(), format!("{status:?}").to_lowercase()],
         )?;
         Ok(())
     }
@@ -408,7 +407,7 @@ impl MetadataStore {
                 };
                 Ok((path, status))
             })?
-            .filter_map(|r| r.ok())
+            .filter_map(std::result::Result::ok)
             .collect();
 
         Ok(entries)
@@ -616,7 +615,7 @@ impl MetadataStore {
                     row.get::<_, i64>(3)?,
                 ))
             })?
-            .filter_map(|r| r.ok())
+            .filter_map(std::result::Result::ok)
             .collect();
 
         Ok(entries)

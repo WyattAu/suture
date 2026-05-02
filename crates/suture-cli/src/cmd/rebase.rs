@@ -1,7 +1,7 @@
 use crate::cmd::user_error;
 use crate::style::run_hook_if_exists;
 
-pub(crate) async fn cmd_rebase(
+pub async fn cmd_rebase(
     branch: &str,
     interactive: bool,
     resume: bool,
@@ -11,12 +11,11 @@ pub(crate) async fn cmd_rebase(
         .map_err(|e| user_error("failed to open repository", e))?;
 
     let branches: Vec<String> = repo.list_branches().into_iter().map(|(n, _)| n).collect();
-    if !branches.contains(&branch.to_string()) && repo.resolve_ref(branch).is_err() {
-        let hint = if let Some(suggestion) = crate::fuzzy::suggest(branch, &branches) {
-            format!(" (did you mean '{}'?)", suggestion)
-        } else {
-            String::new()
-        };
+    if !branches.contains(&branch.to_owned()) && repo.resolve_ref(branch).is_err() {
+        let hint = crate::fuzzy::suggest(branch, &branches).map_or_else(
+            String::new,
+            |suggestion| format!(" (did you mean '{suggestion}'?)"),
+        );
         return Err(format!(
             "branch '{branch}' not found{hint} (use 'suture branch' to create it)"
         )
@@ -58,11 +57,11 @@ pub(crate) async fn cmd_rebase(
     // Run pre-rebase hook
     let (current_branch, head_id) = repo
         .head()
-        .unwrap_or_else(|_| ("main".to_string(), suture_common::Hash::ZERO));
+        .unwrap_or_else(|_| ("main".to_owned(), suture_common::Hash::ZERO));
     let mut pre_extra = std::collections::HashMap::new();
-    pre_extra.insert("SUTURE_BRANCH".to_string(), current_branch.clone());
-    pre_extra.insert("SUTURE_HEAD".to_string(), head_id.to_hex());
-    pre_extra.insert("SUTURE_REBASE_ONTO".to_string(), branch.to_string());
+    pre_extra.insert("SUTURE_BRANCH".to_owned(), current_branch);
+    pre_extra.insert("SUTURE_HEAD".to_owned(), head_id.to_hex());
+    pre_extra.insert("SUTURE_REBASE_ONTO".to_owned(), branch.to_owned());
     run_hook_if_exists(repo.root(), "pre-rebase", pre_extra)?;
 
     let result = repo
@@ -80,9 +79,9 @@ pub(crate) async fn cmd_rebase(
     // Run post-rebase hook
     let (branch_after, head_after) = repo.head()?;
     let mut post_extra = std::collections::HashMap::new();
-    post_extra.insert("SUTURE_BRANCH".to_string(), branch_after);
-    post_extra.insert("SUTURE_HEAD".to_string(), head_after.to_hex());
-    post_extra.insert("SUTURE_REBASE_ONTO".to_string(), branch.to_string());
+    post_extra.insert("SUTURE_BRANCH".to_owned(), branch_after);
+    post_extra.insert("SUTURE_HEAD".to_owned(), head_after.to_hex());
+    post_extra.insert("SUTURE_REBASE_ONTO".to_owned(), branch.to_owned());
     run_hook_if_exists(repo.root(), "post-rebase", post_extra)?;
 
     Ok(())
@@ -97,14 +96,14 @@ async fn cmd_rebase_interactive(
         .map_err(|e| format!("invalid branch name '{base_branch}': {e}"))?;
     let base_id = repo.dag().get_branch(&base_bn).ok_or_else(|| {
         let branches: Vec<String> = repo.list_branches().into_iter().map(|(n, _)| n).collect();
-        if let Some(suggestion) = crate::fuzzy::suggest(base_branch, &branches) {
-            format!(
-                "branch '{}' not found (did you mean '{}'?)",
-                base_branch, suggestion
-            )
-        } else {
-            format!("branch '{}' not found", base_branch)
-        }
+        crate::fuzzy::suggest(base_branch, &branches).map_or_else(
+            || format!("branch '{base_branch}' not found"),
+            |suggestion| {
+                format!(
+                    "branch '{base_branch}' not found (did you mean '{suggestion}'?)"
+                )
+            },
+        )
     })?;
 
     // Generate TODO file
@@ -128,16 +127,16 @@ async fn cmd_rebase_interactive(
     // Open editor
     let editor = std::env::var("SUTURE_EDITOR")
         .or_else(|_| std::env::var("EDITOR"))
-        .unwrap_or_else(|_| "vim".to_string());
+        .unwrap_or_else(|_| "vim".to_owned());
 
     let status = std::process::Command::new(&editor)
         .arg(&todo_path)
         .status()
-        .map_err(|e| format!("failed to run editor '{}': {}", editor, e))?;
+        .map_err(|e| format!("failed to run editor '{editor}': {e}"))?;
 
     if !status.success() {
         std::fs::remove_file(&todo_path).ok();
-        return Err(format!("editor '{}' exited with non-zero status", editor).into());
+        return Err(format!("editor '{editor}' exited with non-zero status").into());
     }
 
     // Read edited TODO
@@ -181,18 +180,17 @@ async fn cmd_rebase_interactive(
         .count();
 
     println!(
-        "Rebase plan: {} pick, {} squash, {} reword, {} drop",
-        pick_count, squash_count, reword_count, drop_count
+        "Rebase plan: {pick_count} pick, {squash_count} squash, {reword_count} reword, {drop_count} drop"
     );
 
     // Run pre-rebase hook
     let (current_branch, head_id) = repo
         .head()
-        .unwrap_or_else(|_| ("main".to_string(), suture_common::Hash::ZERO));
+        .unwrap_or_else(|_| ("main".to_owned(), suture_common::Hash::ZERO));
     let mut pre_extra = std::collections::HashMap::new();
-    pre_extra.insert("SUTURE_BRANCH".to_string(), current_branch.clone());
-    pre_extra.insert("SUTURE_HEAD".to_string(), head_id.to_hex());
-    pre_extra.insert("SUTURE_REBASE_ONTO".to_string(), base_branch.to_string());
+    pre_extra.insert("SUTURE_BRANCH".to_owned(), current_branch);
+    pre_extra.insert("SUTURE_HEAD".to_owned(), head_id.to_hex());
+    pre_extra.insert("SUTURE_REBASE_ONTO".to_owned(), base_branch.to_owned());
     run_hook_if_exists(repo.root(), "pre-rebase", pre_extra)?;
 
     // Execute the plan
@@ -202,12 +200,12 @@ async fn cmd_rebase_interactive(
 
     let (branch_after, head_after) = repo.head()?;
     let mut post_extra = std::collections::HashMap::new();
-    post_extra.insert("SUTURE_BRANCH".to_string(), branch_after);
-    post_extra.insert("SUTURE_HEAD".to_string(), head_after.to_hex());
-    post_extra.insert("SUTURE_REBASE_ONTO".to_string(), base_branch.to_string());
+    post_extra.insert("SUTURE_BRANCH".to_owned(), branch_after);
+    post_extra.insert("SUTURE_HEAD".to_owned(), head_after.to_hex());
+    post_extra.insert("SUTURE_REBASE_ONTO".to_owned(), base_branch.to_owned());
     run_hook_if_exists(repo.root(), "post-rebase", post_extra)?;
 
-    println!("Interactive rebase complete. New tip: {}", new_tip);
+    println!("Interactive rebase complete. New tip: {new_tip}");
 
     Ok(())
 }

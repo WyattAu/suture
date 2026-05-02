@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-#![allow(clippy::collapsible_match)]
 mod mount;
 mod shm;
 
@@ -48,8 +47,8 @@ impl Default for DaemonConfig {
             repo_path: PathBuf::from("."),
             remote_url: None,
             sync_interval: DEFAULT_SYNC_INTERVAL,
-            commit_template: "auto: {count} file(s) changed".to_string(),
-            author: "suture-daemon".to_string(),
+            commit_template: "auto: {count} file(s) changed".to_owned(),
+            author: "suture-daemon".to_owned(),
             auto_mounts: Vec::new(),
         }
     }
@@ -83,7 +82,7 @@ impl FileChangeEvent {
             if rel_str.starts_with(".suture") || rel_str.starts_with(".suture/") {
                 continue;
             }
-            return Some(FileChangeEvent {
+            return Some(Self {
                 path: relative.to_path_buf(),
                 kind,
             });
@@ -98,6 +97,7 @@ pub struct FileWatcher {
 }
 
 impl FileWatcher {
+    #[must_use] 
     pub fn new(repo_path: PathBuf, debounce_window: Duration) -> Self {
         Self {
             repo_path,
@@ -168,7 +168,7 @@ impl FileWatcher {
                                 debounce_timer.as_mut().reset(time::Instant::now() + debounce);
                             }
                         }
-                        _ = &mut debounce_timer => {
+                        () = &mut debounce_timer => {
                             if !pending.is_empty() {
                                 let changes: Vec<FileChangeEvent> = pending.drain()
                                     .map(|(path, kind)| FileChangeEvent { path, kind })
@@ -183,7 +183,7 @@ impl FileWatcher {
                     }
 
                     tokio::select! {
-                        _ = time::sleep(Duration::from_millis(50)) => {}
+                        () = time::sleep(Duration::from_millis(50)) => {}
                         _ = shutdown_rx.recv() => {
                             break;
                         }
@@ -200,6 +200,7 @@ pub struct AutoCommit {
 }
 
 impl AutoCommit {
+    #[must_use] 
     pub fn new(repo_path: PathBuf, commit_template: String) -> Self {
         Self {
             repo_path,
@@ -252,6 +253,7 @@ pub struct AutoSync {
 }
 
 impl AutoSync {
+    #[must_use] 
     pub fn new(repo_path: PathBuf, remote_url: Option<String>, interval: Duration) -> Self {
         Self {
             repo_path,
@@ -293,13 +295,13 @@ impl AutoSync {
             tokio::task::spawn_blocking(move || {
                 let repo =
                     Repository::open(&rp).map_err(|e| format!("failed to open repo: {e}"))?;
-                match repo.get_remote_url("origin") {
-                    Ok(url) => Ok(Some(url)),
-                    Err(_) => {
+                repo.get_remote_url("origin").map_or_else(
+                    |_| {
                         info!("no remote 'origin' configured, skipping sync");
                         Ok(None)
-                    }
-                }
+                    },
+                    |url| Ok(Some(url)),
+                )
             })
             .await
             .map_err(|e| format!("sync task panicked: {e}"))?
@@ -360,7 +362,7 @@ impl AutoSync {
 
         let client = reqwest::Client::new();
         let resp = client
-            .post(format!("{}/pull", remote_url))
+            .post(format!("{remote_url}/pull"))
             .json(&pull_body)
             .send()
             .await
@@ -368,7 +370,7 @@ impl AutoSync {
 
         if !resp.status().is_success() {
             let text = resp.text().await.unwrap_or_default();
-            return Err(format!("pull failed (HTTP): {}", text));
+            return Err(format!("pull failed (HTTP): {text}"));
         }
 
         let result: PullResponse = resp
@@ -440,14 +442,12 @@ impl AutoSync {
                     .map_err(|e| format!("invalid branch target: {e}"))?;
                 let branch_name = suture_common::BranchName::new(&branch.name)
                     .map_err(|e| format!("invalid branch name: {e}"))?;
-                if !repo.dag().branch_exists(&branch_name) {
-                    if let Err(e) = repo.dag_mut().create_branch(branch_name.clone(), target_id) {
-                        tracing::warn!("create_branch failed: {e}");
-                    }
-                } else {
+                if repo.dag().branch_exists(&branch_name) {
                     if let Err(e) = repo.dag_mut().update_branch(&branch_name, target_id) {
                         tracing::warn!("update_branch failed: {e}");
                     }
+                } else if let Err(e) = repo.dag_mut().create_branch(branch_name.clone(), target_id) {
+                    tracing::warn!("create_branch failed: {e}");
                 }
                 repo.meta()
                     .set_branch(&branch_name, &target_id)
@@ -496,13 +496,13 @@ impl AutoSync {
                 let branches = repo.list_branches();
                 let (_, head_id) = repo
                     .head()
-                    .unwrap_or_else(|_| ("main".to_string(), suture_common::Hash::ZERO));
+                    .unwrap_or_else(|_| ("main".to_owned(), suture_common::Hash::ZERO));
 
                 let b64 = base64::engine::general_purpose::STANDARD;
                 let mut blobs = Vec::new();
                 let mut seen = HashMap::new();
                 for patch in &patches {
-                    collect_blobs_from_patch(patch, repo.cas(), &b64, &mut blobs, &mut seen)?;
+                    collect_blobs_from_patch(patch, repo.cas(), &b64, &mut blobs, &mut seen);
                 }
 
                 let branches_proto: Vec<BranchProto> = branches
@@ -563,7 +563,7 @@ impl AutoSync {
 
         let client = reqwest::Client::new();
         let resp = client
-            .post(format!("{}/push", remote_url))
+            .post(format!("{remote_url}/push"))
             .json(&push_body)
             .send()
             .await
@@ -571,7 +571,7 @@ impl AutoSync {
 
         if !resp.status().is_success() {
             let text = resp.text().await.unwrap_or_default();
-            return Err(format!("push failed (HTTP): {}", text));
+            return Err(format!("push failed (HTTP): {text}"));
         }
 
         let result: PushResponse = resp
@@ -606,6 +606,7 @@ pub struct Daemon {
 }
 
 impl Daemon {
+    #[must_use] 
     pub fn new(repo_path: PathBuf, remote_url: Option<String>, sync_interval: Duration) -> Self {
         Self {
             config: DaemonConfig {
@@ -617,10 +618,12 @@ impl Daemon {
         }
     }
 
+    #[must_use] 
     pub fn with_config(config: DaemonConfig) -> Self {
         Self { config }
     }
 
+    #[must_use] 
     pub fn config(&self) -> &DaemonConfig {
         &self.config
     }
@@ -879,12 +882,12 @@ pub async fn execute_command(cmd: DaemonCommand) -> Result<(), Box<dyn Error + S
             match mount_type.as_str() {
                 "fuse" => {
                     let mount_path =
-                        path.ok_or_else(|| "missing --path for FUSE mount".to_string())?;
+                        path.ok_or_else(|| "missing --path for FUSE mount".to_owned())?;
                     let id = manager.mount_fuse(&mount_path)?;
                     println!("FUSE mounted: {id}");
                 }
                 "webdav" => {
-                    let port = port.ok_or_else(|| "missing --port for WebDAV mount".to_string())?;
+                    let port = port.ok_or_else(|| "missing --port for WebDAV mount".to_owned())?;
                     let id = manager.mount_webdav(port)?;
                     println!("WebDAV mounted: {id}");
                 }
@@ -917,7 +920,7 @@ fn print_status(status: &shm::ShmStatus) {
         if status.last_commit_ts > 0 {
             format_timestamp(status.last_commit_ts)
         } else {
-            "never".to_string()
+            "never".to_owned()
         }
     );
     println!(
@@ -925,7 +928,7 @@ fn print_status(status: &shm::ShmStatus) {
         if status.last_sync_ts > 0 {
             format_timestamp(status.last_sync_ts)
         } else {
-            "never".to_string()
+            "never".to_owned()
         }
     );
 }
@@ -935,7 +938,7 @@ fn format_timestamp(ts: u64) -> String {
     let nanos = ts % 1_000_000_000;
     let dt = UNIX_EPOCH + Duration::from_secs(secs);
     let datetime = humantime::format_rfc3339_seconds(dt);
-    format!("{}.{:09}", datetime, nanos)
+    format!("{datetime}.{nanos:09}")
 }
 
 fn signal_process(pid: u32, sig: libc::c_int) {
@@ -963,20 +966,16 @@ struct PushData {
 
 fn derive_repo_id(url: &str, remote_name: &str) -> String {
     let trimmed = url.trim_end_matches('/');
-    let after_scheme = if let Some(idx) = trimmed.find("://") {
-        &trimmed[idx + 3..]
-    } else {
-        trimmed
-    };
+    let after_scheme = trimmed.find("://").map_or(trimmed, |idx| &trimmed[idx + 3..]);
     if let Some(path_start) = after_scheme.find('/') {
         let path = &after_scheme[path_start + 1..];
         if let Some(name) = path.rsplit('/').next()
             && !name.is_empty()
         {
-            return name.to_string();
+            return name.to_owned();
         }
     }
-    remote_name.to_string()
+    remote_name.to_owned()
 }
 
 fn proto_to_patch(proto: &PatchProto) -> Result<Patch, String> {
@@ -991,7 +990,6 @@ fn proto_to_patch(proto: &PatchProto) -> Result<Patch, String> {
     let op_type = match proto.operation_type.as_str() {
         "create" => OperationType::Create,
         "delete" => OperationType::Delete,
-        "modify" => OperationType::Modify,
         "move" => OperationType::Move,
         "metadata" => OperationType::Metadata,
         "merge" => OperationType::Merge,
@@ -1023,7 +1021,7 @@ fn collect_blobs_from_patch(
     b64: &base64::engine::general_purpose::GeneralPurpose,
     blobs: &mut Vec<BlobRef>,
     seen: &mut HashMap<String, bool>,
-) -> Result<(), String> {
+) {
     let is_batch = patch.operation_type == OperationType::Batch;
 
     if is_batch {
@@ -1053,11 +1051,11 @@ fn collect_blobs_from_patch(
         let hash_hex = String::from_utf8_lossy(&patch.payload).to_string();
         if !seen.contains_key(&hash_hex) {
             let Ok(hash) = suture_common::Hash::from_hex(&hash_hex) else {
-                return Ok(());
+                return;
             };
             seen.insert(hash_hex.clone(), true);
             let Ok(blob_data) = cas.get_blob(&hash) else {
-                return Ok(());
+                return;
             };
             blobs.push(BlobRef {
                 hash: hex_to_hash(&hash_hex),
@@ -1066,8 +1064,6 @@ fn collect_blobs_from_patch(
             });
         }
     }
-
-    Ok(())
 }
 
 #[cfg(test)]

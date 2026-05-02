@@ -1,4 +1,4 @@
-pub(crate) async fn cmd_reflog(show: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_reflog(show: bool) -> Result<(), Box<dyn std::error::Error>> {
     let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
     let entries = repo.reflog_entries()?;
     if entries.is_empty() {
@@ -71,7 +71,7 @@ fn format_timestamp(unix_ts: i64) -> String {
     let now = SystemTime::now();
 
     match now.duration_since(entry_time) {
-        Ok(delta) if delta.as_secs() < 60 => "just now".to_string(),
+        Ok(delta) if delta.as_secs() < 60 => "just now".to_owned(),
         Ok(delta) if delta.as_secs() < 3600 => {
             format!("{} min ago", delta.as_secs() / 60)
         }

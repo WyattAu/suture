@@ -1,6 +1,6 @@
 use crate::display::format_timestamp;
 use crate::ref_utils::resolve_ref;
-pub(crate) async fn cmd_show(
+pub async fn cmd_show(
     commit_ref: &str,
     stat: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -24,13 +24,13 @@ pub(crate) async fn cmd_show(
     if !target.parent_ids.is_empty() {
         print!("\nParents:");
         for pid in &target.parent_ids {
-            print!(" {}", pid);
+            print!(" {pid}");
         }
         println!();
     }
 
     if stat {
-        print_stat(&repo, &target)?;
+        print_stat(&repo, &target);
     }
 
     Ok(())
@@ -39,16 +39,16 @@ pub(crate) async fn cmd_show(
 fn print_stat(
     repo: &suture_core::repository::Repository,
     patch: &suture_core::patch::types::Patch,
-) -> Result<(), Box<dyn std::error::Error>> {
+) {
     let files: Vec<String> = patch.touch_set.addresses();
     if files.is_empty() {
-        return Ok(());
+        return;
     }
 
-    let parent_tree = if !patch.parent_ids.is_empty() {
-        repo.snapshot(&patch.parent_ids[0]).ok()
-    } else {
+    let parent_tree = if patch.parent_ids.is_empty() {
         None
+    } else {
+        repo.snapshot(&patch.parent_ids[0]).ok()
     };
     let commit_tree = repo.snapshot(&patch.id).ok();
 
@@ -94,8 +94,6 @@ fn print_stat(
             classify_file(file, &parent_tree, &commit_tree)
         );
     }
-
-    Ok(())
 }
 
 fn classify_file(

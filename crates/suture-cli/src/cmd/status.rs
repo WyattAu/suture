@@ -2,21 +2,21 @@ use crate::display::walk_repo_files;
 use std::collections::HashSet;
 use std::path::Path as StdPath;
 
-pub(crate) async fn cmd_status() -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_status() -> Result<(), Box<dyn std::error::Error>> {
     let repo = suture_core::repository::Repository::open(StdPath::new("."))?;
     let status = repo.status()?;
 
     if let Some(ref branch_name) = status.head_branch {
-        println!("On branch {}", branch_name);
+        println!("On branch {branch_name}");
     } else if let Some(ref id) = status.head_patch {
         println!("HEAD detached at {}", &id.to_hex()[..12]);
     }
     if let Some(id) = status.head_patch {
-        println!("HEAD: {}", id);
+        println!("HEAD: {id}");
     }
 
     if let Some(ref branch_name) = status.head_branch {
-        if let Ok(Some(remote_ref)) = find_remote_ref(&repo, branch_name) {
+        if let Some(remote_ref) = find_remote_ref(&repo, branch_name) {
             if let Some(id) = status.head_patch {
                 let (ahead, behind) = compute_ahead_behind(&repo, &id, &remote_ref.tip);
                 match (ahead, behind) {
@@ -72,7 +72,7 @@ pub(crate) async fn cmd_status() -> Result<(), Box<dyn std::error::Error>> {
         println!("\nStaged changes:");
         for (path, file_status) in &status.staged_files {
             let icon = file_type_icon(path);
-            println!("  {:?} {} {}", file_status, icon, path);
+            println!("  {file_status:?} {icon} {path}");
         }
     }
 
@@ -121,14 +121,14 @@ pub(crate) async fn cmd_status() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 ""
             };
-            println!("  modified: {}{}{}", icon, path, marker);
+            println!("  modified: {icon}{path}{marker}");
         }
         for path in &unstaged_deleted {
-            println!("  deleted:  {}", path);
+            println!("  deleted:  {path}");
         }
         for path in &untracked {
             let icon = file_type_icon(path);
-            println!("  untracked: {}{}", icon, path);
+            println!("  untracked: {icon}{path}");
         }
     }
 
@@ -147,20 +147,20 @@ struct RemoteRef {
 fn find_remote_ref(
     repo: &suture_core::repository::Repository,
     branch_name: &str,
-) -> Result<Option<RemoteRef>, Box<dyn std::error::Error>> {
+) -> Option<RemoteRef> {
     let remotes = repo.list_remotes().unwrap_or_default();
     for (remote_name, _url) in &remotes {
-        let ref_key = format!("remote.{}.ref.{}", remote_name, branch_name);
+        let ref_key = format!("remote.{remote_name}.ref.{branch_name}");
         if let Ok(Some(hex)) = repo.get_config(&ref_key)
             && let Ok(tip) = suture_common::Hash::from_hex(&hex)
         {
-            return Ok(Some(RemoteRef {
-                label: format!("{}/{}", remote_name, branch_name),
+            return Some(RemoteRef {
+                label: format!("{remote_name}/{branch_name}"),
                 tip,
-            }));
+            });
         }
     }
-    Ok(None)
+    None
 }
 
 fn compute_ahead_behind(

@@ -1,4 +1,4 @@
-pub(crate) async fn cmd_audit(
+pub async fn cmd_audit(
     verify: bool,
     show: bool,
     count: bool,
@@ -14,8 +14,8 @@ pub(crate) async fn cmd_audit(
     if verify {
         let (total, first_invalid) = audit.verify_chain()?;
         match first_invalid {
-            None => println!("VALID: {} entries", total),
-            Some(i) => println!("TAMPERED: first invalid at entry {}", i),
+            None => println!("VALID: {total} entries"),
+            Some(i) => println!("TAMPERED: first invalid at entry {i}"),
         }
         return Ok(());
     }

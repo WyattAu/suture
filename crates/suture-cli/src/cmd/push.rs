@@ -6,7 +6,7 @@ use crate::remote_proto::{
 use crate::style::run_hook_if_exists;
 use base64::Engine;
 
-pub(crate) async fn cmd_push(
+pub async fn cmd_push(
     remote: &str,
     force: bool,
     branch: Option<&str>,
@@ -50,7 +50,7 @@ pub(crate) async fn cmd_push(
         return Err("no branches to push".into());
     }
 
-    let push_state_key = format!("remote.{}.last_pushed", remote);
+    let push_state_key = format!("remote.{remote}.last_pushed");
     let patches = if let Some(last_pushed_hex) = repo.get_config(&push_state_key)? {
         let last_pushed = suture_common::Hash::from_hex(&last_pushed_hex)?;
         repo.patches_since(&last_pushed)
@@ -144,17 +144,17 @@ pub(crate) async fn cmd_push(
 
     let (branch_display, head_id) = repo
         .head()
-        .unwrap_or_else(|_| ("main".to_string(), suture_common::Hash::ZERO));
+        .unwrap_or_else(|_| ("main".to_owned(), suture_common::Hash::ZERO));
     let mut pre_extra = std::collections::HashMap::new();
-    pre_extra.insert("SUTURE_BRANCH".to_string(), branch_display);
-    pre_extra.insert("SUTURE_HEAD".to_string(), head_id.to_hex());
-    pre_extra.insert("SUTURE_PUSH_REMOTE".to_string(), remote.to_string());
-    pre_extra.insert("SUTURE_PUSH_PATCHES".to_string(), patches.len().to_string());
+    pre_extra.insert("SUTURE_BRANCH".to_owned(), branch_display);
+    pre_extra.insert("SUTURE_HEAD".to_owned(), head_id.to_hex());
+    pre_extra.insert("SUTURE_PUSH_REMOTE".to_owned(), remote.to_owned());
+    pre_extra.insert("SUTURE_PUSH_PATCHES".to_owned(), patches.len().to_string());
     run_hook_if_exists(repo.root(), "pre-push", pre_extra)?;
 
     let client = reqwest::Client::new();
     let resp = client
-        .post(format!("{}/push", url))
+        .post(format!("{url}/push"))
         .json(&push_body)
         .send()
         .await
@@ -175,10 +175,10 @@ pub(crate) async fn cmd_push(
 
             let (branch_display, head_id) = repo.head()?;
             let mut post_extra = std::collections::HashMap::new();
-            post_extra.insert("SUTURE_BRANCH".to_string(), branch_display);
-            post_extra.insert("SUTURE_HEAD".to_string(), head_id.to_hex());
-            post_extra.insert("SUTURE_PUSH_REMOTE".to_string(), remote.to_string());
-            post_extra.insert("SUTURE_PUSH_PATCHES".to_string(), patches.len().to_string());
+            post_extra.insert("SUTURE_BRANCH".to_owned(), branch_display);
+            post_extra.insert("SUTURE_HEAD".to_owned(), head_id.to_hex());
+            post_extra.insert("SUTURE_PUSH_REMOTE".to_owned(), remote.to_owned());
+            post_extra.insert("SUTURE_PUSH_PATCHES".to_owned(), patches.len().to_string());
             run_hook_if_exists(repo.root(), "post-push", post_extra)?;
         } else {
             return Err(format!("push rejected: {}", result.error.unwrap_or_default()).into());

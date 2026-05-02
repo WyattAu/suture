@@ -1,6 +1,6 @@
 use std::path::Path as StdPath;
 
-pub(crate) async fn cmd_clean(
+pub async fn cmd_clean(
     dry_run: bool,
     dirs: bool,
     paths: &[String],
@@ -52,7 +52,7 @@ pub(crate) async fn cmd_clean(
     if dry_run {
         println!("Would remove:");
         for path in &untracked {
-            println!("  {}", path);
+            println!("  {path}");
         }
         println!(
             "\nWould remove {} file{}",
@@ -74,7 +74,7 @@ pub(crate) async fn cmd_clean(
         let mut dirs_removed = 0usize;
         remove_empty_dirs(repo_dir, repo_dir, &mut dirs_removed);
         if dirs_removed > 0 {
-            println!("Removed {} files, {} directories", removed, dirs_removed);
+            println!("Removed {removed} files, {dirs_removed} directories");
         } else {
             println!(
                 "Removed {} file{}",
@@ -97,17 +97,17 @@ fn remove_empty_dirs(root: &StdPath, current: &StdPath, removed: &mut usize) {
     let Ok(entries) = std::fs::read_dir(current) else {
         return;
     };
-    let mut entries: Vec<_> = entries.filter_map(|e| e.ok()).collect();
+    let mut entries: Vec<_> = entries.filter_map(std::result::Result::ok).collect();
 
     for entry in &entries {
         let path = entry.path();
-        if path.is_dir() && path.file_name().map(|n| n != ".suture").unwrap_or(true) {
+        if path.is_dir() && path.file_name().is_none_or(|n| n != ".suture") {
             remove_empty_dirs(root, &path, removed);
         }
     }
 
     entries.retain(|e| {
-        e.path().is_dir() && e.path().file_name().map(|n| n != ".suture").unwrap_or(true)
+        e.path().is_dir() && e.path().file_name().is_none_or(|n| n != ".suture")
     });
     let is_empty = entries.iter().all(|e| {
         let Ok(inner) = std::fs::read_dir(e.path()) else {

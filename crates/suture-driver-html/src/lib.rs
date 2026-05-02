@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-#![allow(clippy::collapsible_match)]
 use std::collections::{HashMap, HashSet};
 
 use suture_driver::{DriverError, SemanticChange, SutureDriver};
 
+use std::fmt::Write;
 pub struct HtmlDriver;
 
 impl HtmlDriver {
+    #[must_use] 
     pub fn new() -> Self {
         Self
     }
@@ -17,7 +18,7 @@ impl HtmlDriver {
 
         while current.is_element() {
             let tag = current.tag_name().name();
-            let mut part = tag.to_string();
+            let mut part = tag.to_owned();
 
             if let Some(id) = current.attribute("id") {
                 part.push('#');
@@ -39,7 +40,7 @@ impl HtmlDriver {
                     }
                 }
                 if same_tag_count > 1 {
-                    part.push_str(&format!("[{idx}]"));
+                    let _ = write!(part, "[{idx}]");
                 }
             }
 
@@ -79,7 +80,7 @@ impl HtmlDriver {
 
         let text = node.text().unwrap_or("").trim();
         let element_children: Vec<roxmltree::Node> =
-            node.children().filter(|n| n.is_element()).collect();
+            node.children().filter(roxmltree::Node::is_element).collect();
 
         if element_children.is_empty() && text.is_empty() {
             format!("{pad}<{tag}{attr_str}/>")
@@ -88,17 +89,17 @@ impl HtmlDriver {
         } else {
             let mut result = format!("{pad}<{tag}{attr_str}>\n");
             if !text.is_empty() {
-                result.push_str(&format!(
-                    "{}{}\n",
+                let _ = writeln!(result, 
+                    "{}{}",
                     "  ".repeat(indent + 1),
                     Self::escape_xml(text)
-                ));
+                );
             }
             for child in &element_children {
                 result.push_str(&Self::element_to_string(*child, indent + 1));
                 result.push('\n');
             }
-            result.push_str(&format!("{pad}</{tag}>"));
+            let _ = write!(result, "{pad}</{tag}>");
             result
         }
     }
@@ -109,8 +110,8 @@ impl HtmlDriver {
         if old.tag_name().name() != new.tag_name().name() {
             changes.push(SemanticChange::Modified {
                 path: Self::node_path(new),
-                old_value: old.tag_name().name().to_string(),
-                new_value: new.tag_name().name().to_string(),
+                old_value: old.tag_name().name().to_owned(),
+                new_value: new.tag_name().name().to_owned(),
             });
             return changes;
         }
@@ -129,7 +130,7 @@ impl HtmlDriver {
             if !new_keys.contains(key) {
                 changes.push(SemanticChange::Removed {
                     path: format!("{path}@{key}"),
-                    old_value: old_attrs[key].to_string(),
+                    old_value: old_attrs[key].to_owned(),
                 });
             }
         }
@@ -138,7 +139,7 @@ impl HtmlDriver {
             if !old_keys.contains(key) {
                 changes.push(SemanticChange::Added {
                     path: format!("{path}@{key}"),
-                    value: new_attrs[key].to_string(),
+                    value: new_attrs[key].to_owned(),
                 });
             }
         }
@@ -149,8 +150,8 @@ impl HtmlDriver {
             {
                 changes.push(SemanticChange::Modified {
                     path: format!("{path}@{key}"),
-                    old_value: old_attrs[key].to_string(),
-                    new_value: new_val.to_string(),
+                    old_value: old_attrs[key].to_owned(),
+                    new_value: new_val.to_owned(),
                 });
             }
         }
@@ -160,15 +161,15 @@ impl HtmlDriver {
         if old_text != new_text {
             changes.push(SemanticChange::Modified {
                 path: format!("{path}#text"),
-                old_value: old_text.to_string(),
-                new_value: new_text.to_string(),
+                old_value: old_text.to_owned(),
+                new_value: new_text.to_owned(),
             });
         }
 
         let old_children: Vec<roxmltree::Node> =
-            old.children().filter(|n| n.is_element()).collect();
+            old.children().filter(roxmltree::Node::is_element).collect();
         let new_children: Vec<roxmltree::Node> =
-            new.children().filter(|n| n.is_element()).collect();
+            new.children().filter(roxmltree::Node::is_element).collect();
 
         let max_len = old_children.len().max(new_children.len());
         for i in 0..max_len {
@@ -214,11 +215,11 @@ impl HtmlDriver {
         let theirs_text = theirs.text().unwrap_or("").trim();
 
         let merged_text = if ours_text == theirs_text {
-            ours_text.to_string()
+            ours_text.to_owned()
         } else if ours_text == base_text {
-            theirs_text.to_string()
+            theirs_text.to_owned()
         } else if theirs_text == base_text {
-            ours_text.to_string()
+            ours_text.to_owned()
         } else {
             return Ok(None);
         };
@@ -246,42 +247,31 @@ impl HtmlDriver {
 
             match (bv, ov, tv) {
                 (_, Some(o), Some(t)) if o == t => {
-                    merged_attrs.push((key.to_string(), o.to_string()));
+                    merged_attrs.push((key.to_string(), o.to_owned()));
                 }
                 (Some(b), Some(o), Some(t)) if o == b => {
-                    merged_attrs.push((key.to_string(), t.to_string()));
+                    merged_attrs.push((key.to_string(), t.to_owned()));
                 }
                 (Some(b), Some(o), Some(t)) if t == b => {
-                    merged_attrs.push((key.to_string(), o.to_string()));
+                    merged_attrs.push((key.to_string(), o.to_owned()));
                 }
-                (Some(_), Some(_), Some(_)) => return Ok(None),
-                (Some(_), None, Some(t)) => {
-                    merged_attrs.push((key.to_string(), t.to_string()));
+                (Some(_) | None, Some(_), Some(_)) => return Ok(None),
+                (Some(_) | None, None, Some(t)) => {
+                    merged_attrs.push((key.to_string(), t.to_owned()));
                 }
-                (Some(_), Some(o), None) => {
-                    merged_attrs.push((key.to_string(), o.to_string()));
+                (Some(_) | None, Some(o), None) => {
+                    merged_attrs.push((key.to_string(), o.to_owned()));
                 }
-                (Some(_), None, None) => {}
-                (None, Some(o), Some(t)) if o == t => {
-                    merged_attrs.push((key.to_string(), o.to_string()));
-                }
-                (None, Some(_), Some(_)) => return Ok(None),
-                (None, Some(o), None) => {
-                    merged_attrs.push((key.to_string(), o.to_string()));
-                }
-                (None, None, Some(t)) => {
-                    merged_attrs.push((key.to_string(), t.to_string()));
-                }
-                (None, None, None) => {}
+                (Some(_) | None, None, None) => {}
             }
         }
 
         let base_children: Vec<roxmltree::Node> =
-            base.children().filter(|n| n.is_element()).collect();
+            base.children().filter(roxmltree::Node::is_element).collect();
         let ours_children: Vec<roxmltree::Node> =
-            ours.children().filter(|n| n.is_element()).collect();
+            ours.children().filter(roxmltree::Node::is_element).collect();
         let theirs_children: Vec<roxmltree::Node> =
-            theirs.children().filter(|n| n.is_element()).collect();
+            theirs.children().filter(roxmltree::Node::is_element).collect();
 
         let max_len = base_children
             .len()
@@ -295,30 +285,21 @@ impl HtmlDriver {
             let t = theirs_children.get(i).copied();
 
             match (b, o, t) {
-                (None, Some(o), None) => {
+                (None | Some(_), Some(o), None) => {
                     merged_children.push(Self::element_to_string(o, indent + 1));
                 }
-                (None, None, Some(t)) => {
+                (None | Some(_), None, Some(t)) => {
                     merged_children.push(Self::element_to_string(t, indent + 1));
                 }
                 (None, Some(o), Some(t)) => {
-                    if o.tag_name().name() == t.tag_name().name()
-                        && Self::element_to_string(o, 0) == Self::element_to_string(t, 0)
+                    merged_children.push(Self::element_to_string(o, indent + 1));
+                    if o.tag_name().name() != t.tag_name().name()
+                        || Self::element_to_string(o, 0) != Self::element_to_string(t, 0)
                     {
-                        merged_children.push(Self::element_to_string(o, indent + 1));
-                    } else {
-                        merged_children.push(Self::element_to_string(o, indent + 1));
                         merged_children.push(Self::element_to_string(t, indent + 1));
                     }
                 }
-                (None, None, _) => {}
-                (Some(_), Some(o), None) => {
-                    merged_children.push(Self::element_to_string(o, indent + 1));
-                }
-                (Some(_), None, Some(t)) => {
-                    merged_children.push(Self::element_to_string(t, indent + 1));
-                }
-                (Some(_), None, None) => {}
+                (None, None, _) | (Some(_), None, None) => {}
                 (Some(b), Some(o), Some(t)) => {
                     let bt = b.tag_name().name();
                     let ot = o.tag_name().name();
@@ -366,17 +347,17 @@ impl HtmlDriver {
         } else {
             let mut result = format!("{pad}<{tag}{attr_str}>\n");
             if !merged_text.is_empty() {
-                result.push_str(&format!(
-                    "{}{}\n",
+                let _ = writeln!(result, 
+                    "{}{}",
                     "  ".repeat(indent + 1),
                     Self::escape_xml(&merged_text)
-                ));
+                );
             }
             for child in &merged_children {
                 result.push_str(child);
                 result.push('\n');
             }
-            result.push_str(&format!("{pad}</{tag}>"));
+            let _ = write!(result, "{pad}</{tag}>");
             Ok(Some(result))
         }
     }
@@ -414,7 +395,7 @@ impl Default for HtmlDriver {
 }
 
 impl SutureDriver for HtmlDriver {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "HTML"
     }
 
@@ -456,7 +437,7 @@ impl SutureDriver for HtmlDriver {
         let changes = self.diff(base_content, new_content)?;
 
         if changes.is_empty() {
-            return Ok("no changes".to_string());
+            return Ok("no changes".to_owned());
         }
 
         let lines: Vec<String> = changes.iter().map(Self::format_change).collect();
@@ -473,15 +454,15 @@ impl SutureDriver for HtmlDriver {
 
         let mut result = String::new();
         result.push_str("<!DOCTYPE html>\n");
-        if let Some(merged) =
-            Self::merge_elements(base_doc.root(), ours_doc.root(), theirs_doc.root(), 0)?
-        {
-            result.push_str(&merged);
-            result.push('\n');
-            Ok(Some(result))
-        } else {
-            Ok(None)
-        }
+        Self::merge_elements(base_doc.root(), ours_doc.root(), theirs_doc.root(), 0)?
+            .map_or_else(
+                || Ok(None),
+                |merged| {
+                    result.push_str(&merged);
+                    result.push('\n');
+                    Ok(Some(result))
+                },
+            )
     }
 }
 
@@ -495,7 +476,7 @@ fn collect_all_paths(node: roxmltree::Node, out: &mut Vec<SemanticChange>) {
     for attr in node.attributes() {
         out.push(SemanticChange::Added {
             path: format!("{path}@{}", attr.name()),
-            value: attr.value().to_string(),
+            value: attr.value().to_owned(),
         });
     }
 
@@ -503,7 +484,7 @@ fn collect_all_paths(node: roxmltree::Node, out: &mut Vec<SemanticChange>) {
     if !text.is_empty() {
         out.push(SemanticChange::Added {
             path: format!("{path}#text"),
-            value: text.to_string(),
+            value: text.to_owned(),
         });
     }
 

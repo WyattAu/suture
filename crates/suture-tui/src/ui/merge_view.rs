@@ -77,14 +77,14 @@ fn draw_merge_header(f: &mut Frame, app: &App, cursor: usize, area: Rect) {
         ),
         Span::raw("  "),
         Span::styled("Base", Style::default().fg(Color::DarkGray)),
-        Span::raw(" → "),
+        Span::raw(" \u{2192} "),
         Span::styled(
-            format!("Ours({})", ours_label),
+            format!("Ours({ours_label})"),
             Style::default().fg(Color::Cyan),
         ),
         Span::raw(" + "),
         Span::styled(theirs_label, Style::default().fg(Color::Magenta)),
-        Span::raw(" → "),
+        Span::raw(" \u{2192} "),
         Span::styled("Result", Style::default().fg(Color::Green)),
     ])];
 
@@ -144,7 +144,7 @@ fn draw_side_panel(
             let max_lines = 8usize;
             for line in side_lines.iter().take(max_lines) {
                 lines.push(Line::from(vec![
-                    Span::styled("  │ ", Style::default().fg(Color::DarkGray)),
+                    Span::styled("  \u{2502} ", Style::default().fg(Color::DarkGray)),
                     Span::styled(line.as_str(), Style::default().fg(color)),
                 ]));
             }
@@ -194,7 +194,7 @@ fn draw_merge_result(f: &mut Frame, app: &App, cursor: usize, area: Rect) {
 
     if all_resolved {
         lines.push(Line::from(Span::styled(
-            format!(" All {} hunks resolved ", total),
+            format!(" All {total} hunks resolved "),
             Style::default()
                 .fg(Color::Black)
                 .bg(Color::Green)
@@ -202,7 +202,7 @@ fn draw_merge_result(f: &mut Frame, app: &App, cursor: usize, area: Rect) {
         )));
     } else {
         lines.push(Line::from(Span::styled(
-            format!(" {}/{} hunks resolved ", resolved, total),
+            format!(" {resolved}/{total} hunks resolved "),
             Style::default()
                 .fg(Color::Black)
                 .bg(Color::Yellow)

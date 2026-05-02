@@ -12,7 +12,7 @@ const POLL_INTERVAL_SECS: u64 = 1;
 const SYNC_PUSH_COOLDOWN_SECS: u64 = 30;
 const SYNC_PULL_INTERVAL_SECS: u64 = 60;
 
-pub(crate) async fn cmd_sync(
+pub async fn cmd_sync(
     remote: &str,
     no_push: bool,
     pull_only: bool,
@@ -25,7 +25,7 @@ pub(crate) async fn cmd_sync(
     let mut pull_count = 0;
 
     if has_remote {
-        eprintln!("Pulling from {}...", remote);
+        eprintln!("Pulling from {remote}...");
         match do_pull(&mut repo, remote).await {
             Ok(count) => {
                 if count > 0 {
@@ -52,23 +52,23 @@ pub(crate) async fn cmd_sync(
         return Ok(());
     }
 
-    let changed_files = detect_changed_files(&repo)?;
+    let changed_files = detect_changed_files(&repo);
     if changed_files.is_empty() && !pulled {
         println!("Everything up to date.");
         return Ok(());
     }
 
-    let committed_files = if !changed_files.is_empty() {
+    let committed_files = if changed_files.is_empty() {
+        None
+    } else {
         let count = repo.add_all()?;
         if count == 0 {
             println!("Everything up to date.");
             return Ok(());
         }
 
-        let msg = match message {
-            Some(m) => m.to_string(),
-            None => generate_sync_message(&changed_files),
-        };
+        let msg =
+            message.map_or_else(|| generate_sync_message(&changed_files), std::borrow::ToOwned::to_owned);
 
         let patch_id = repo.commit(&msg)?;
         println!(
@@ -87,14 +87,12 @@ pub(crate) async fn cmd_sync(
         println!("  ({})", &patch_id.to_hex()[..12]);
 
         Some(changed_files)
-    } else {
-        None
     };
 
     if has_remote && !no_push {
         let (branch, _) = repo
             .head()
-            .unwrap_or(("main".to_string(), suture_common::Hash::ZERO));
+            .unwrap_or(("main".to_owned(), suture_common::Hash::ZERO));
         match cmd_push_inner(&mut repo, remote).await {
             Ok(()) => {
                 println!("Pushed to {remote}/{branch}");
@@ -128,7 +126,7 @@ fn has_configured_remote(repo: &suture_core::repository::Repository, name: &str)
 
 fn detect_changed_files(
     repo: &suture_core::repository::Repository,
-) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+) -> Vec<String> {
     let mut changed = Vec::new();
 
     let head_tree = repo
@@ -158,13 +156,13 @@ fn detect_changed_files(
         }
     }
 
-    Ok(changed)
+    changed
 }
 
 fn generate_sync_message(changed_files: &[String]) -> String {
     let file_count = changed_files.len();
     if file_count == 0 {
-        return "Sync: no changes".to_string();
+        return "Sync: no changes".to_owned();
     }
 
     if file_count == 1 {
@@ -181,7 +179,7 @@ fn generate_sync_message(changed_files: &[String]) -> String {
             let ext = Path::new(f)
                 .extension()
                 .and_then(|e| e.to_str())
-                .map(|e| e.to_lowercase())
+                .map(str::to_lowercase)
                 .unwrap_or_default();
             matches!(ext.as_str(), "docx" | "pdf" | "md" | "html" | "htm")
         })
@@ -192,7 +190,7 @@ fn generate_sync_message(changed_files: &[String]) -> String {
             let ext = Path::new(f)
                 .extension()
                 .and_then(|e| e.to_str())
-                .map(|e| e.to_lowercase())
+                .map(str::to_lowercase)
                 .unwrap_or_default();
             matches!(ext.as_str(), "xlsx" | "csv")
         })
@@ -203,7 +201,7 @@ fn generate_sync_message(changed_files: &[String]) -> String {
             let ext = Path::new(f)
                 .extension()
                 .and_then(|e| e.to_str())
-                .map(|e| e.to_lowercase())
+                .map(str::to_lowercase)
                 .unwrap_or_default();
             ext == "pptx"
         })
@@ -256,10 +254,10 @@ async fn cmd_push_inner(
         .collect();
 
     if branches_to_push.is_empty() {
-        return Err(format!("branch '{}' not found", branch_name).into());
+        return Err(format!("branch '{branch_name}' not found").into());
     }
 
-    let push_state_key = format!("remote.{}.last_pushed", remote);
+    let push_state_key = format!("remote.{remote}.last_pushed");
     let patches = if let Some(last_pushed_hex) = repo.get_config(&push_state_key)? {
         let last_pushed = suture_common::Hash::from_hex(&last_pushed_hex)?;
         repo.patches_since(&last_pushed)
@@ -345,7 +343,7 @@ async fn cmd_push_inner(
 
     let client = reqwest::Client::new();
     let resp = client
-        .post(format!("{}/push", url))
+        .post(format!("{url}/push"))
         .json(&push_body)
         .send()
         .await?;
@@ -369,7 +367,7 @@ async fn cmd_push_inner(
 // File-watching sync daemon (polling-based)
 // ---------------------------------------------------------------------------
 
-pub(crate) async fn cmd_sync_start() -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_sync_start() -> Result<(), Box<dyn std::error::Error>> {
     if is_daemon_running() {
         return Err("sync daemon is already running (use `suture sync stop` first)".into());
     }
@@ -398,7 +396,7 @@ pub(crate) async fn cmd_sync_start() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-pub(crate) fn cmd_sync_stop() -> Result<(), Box<dyn std::error::Error>> {
+pub fn cmd_sync_stop() -> Result<(), Box<dyn std::error::Error>> {
     let pid = read_pid_file()?;
 
     match pid {
@@ -447,24 +445,21 @@ pub(crate) fn cmd_sync_stop() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-pub(crate) fn cmd_sync_status() -> Result<(), Box<dyn std::error::Error>> {
-    let daemon_alive = match read_pid_file()? {
-        Some(pid) => {
-            if is_process_alive(pid) {
-                println!("Sync daemon: running (PID {pid})");
-                true
-            } else {
-                println!("Sync daemon: not running (stale PID file for PID: {pid})");
-                println!("Run `suture sync stop` to clean up the stale PID file.");
-                println!();
-                false
-            }
+pub fn cmd_sync_status() -> Result<(), Box<dyn std::error::Error>> {
+    let daemon_alive = if let Some(pid) = read_pid_file()? {
+        if is_process_alive(pid) {
+            println!("Sync daemon: running (PID {pid})");
+            true
+        } else {
+            println!("Sync daemon: not running (stale PID file for PID: {pid})");
+            println!("Run `suture sync stop` to clean up the stale PID file.");
+            println!();
+            false
         }
-        None => {
-            println!("Sync daemon: not running");
-            println!("Run `suture sync start` to begin syncing.");
-            return Ok(());
-        }
+    } else {
+        println!("Sync daemon: not running");
+        println!("Run `suture sync start` to begin syncing.");
+        return Ok(());
     };
 
     let last_sync = read_last_sync();
@@ -478,14 +473,11 @@ pub(crate) fn cmd_sync_status() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let repo = match suture_core::repository::Repository::open(Path::new(".")) {
-        Ok(r) => r,
-        Err(_) => {
+    let Ok(repo) = suture_core::repository::Repository::open(Path::new(".")) else {
             println!();
             println!("Not a suture repository.");
             return Ok(());
-        }
-    };
+        };
 
     let remotes = repo.list_remotes().unwrap_or_default();
     if let Some((name, url)) = remotes.first() {
@@ -494,7 +486,7 @@ pub(crate) fn cmd_sync_status() -> Result<(), Box<dyn std::error::Error>> {
 
     let branch = match repo.head() {
         Ok((b, _)) => b,
-        Err(_) => "unknown".to_string(),
+        Err(_) => "unknown".to_owned(),
     };
     println!("Branch: {branch}");
 
@@ -519,7 +511,7 @@ fn read_last_sync() -> Option<String> {
     let path = PathBuf::from(SYNC_LAST_SYNC_FILE);
     std::fs::read_to_string(&path)
         .ok()
-        .map(|s| s.trim().to_string())
+        .map(|s| s.trim().to_owned())
 }
 
 fn write_last_sync() -> Result<(), Box<dyn std::error::Error>> {
@@ -535,13 +527,14 @@ fn write_last_sync() -> Result<(), Box<dyn std::error::Error>> {
 
 fn format_ago(iso_ts: &str) -> String {
     let parsed = chrono::DateTime::parse_from_str(iso_ts, "%Y-%m-%d %H:%M:%S UTC");
-    match parsed {
-        Ok(dt) => {
+    parsed.map_or_else(
+        |_| "failed to parse timestamp".to_owned(),
+        |dt| {
             let now = chrono::Utc::now();
             let duration = now.signed_duration_since(dt.with_timezone(&chrono::Utc));
             let total_secs = duration.num_seconds().unsigned_abs();
             if total_secs < 60 {
-                format!("{}s ago", total_secs)
+                format!("{total_secs}s ago")
             } else if total_secs < 3600 {
                 format!("{}m ago", total_secs / 60)
             } else if total_secs < 86400 {
@@ -549,9 +542,8 @@ fn format_ago(iso_ts: &str) -> String {
             } else {
                 format!("{}d ago", total_secs / 86400)
             }
-        }
-        Err(_) => "unknown".to_string(),
-    }
+        },
+    )
 }
 
 fn detect_pending_conflicts(repo: &suture_core::repository::Repository) -> Vec<String> {
@@ -580,7 +572,7 @@ fn detect_pending_conflicts(repo: &suture_core::repository::Repository) -> Vec<S
             if trimmed.starts_with("- ") || trimmed.starts_with("* ") {
                 let desc = trimmed.trim_start_matches("- ").trim_start_matches("* ");
                 if !desc.is_empty() && !conflicts.iter().any(|c| c.contains(desc)) {
-                    conflicts.push(desc.to_string());
+                    conflicts.push(desc.to_owned());
                 }
             }
         }
@@ -660,7 +652,7 @@ fn snapshot_dir(
     snapshot: &mut HashMap<String, (u64, u64)>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let entries = std::fs::read_dir(current)?;
-    for entry in entries.filter_map(|e| e.ok()) {
+    for entry in entries.filter_map(std::result::Result::ok) {
         let path = entry.path();
         let name = entry.file_name();
 
@@ -698,7 +690,7 @@ async fn run_polling_watcher(repo_dir: &Path) -> Result<(), Box<dyn std::error::
 
     loop {
         tokio::select! {
-            _ = tokio::time::sleep(std::time::Duration::from_secs(POLL_INTERVAL_SECS)) => {
+            () = tokio::time::sleep(std::time::Duration::from_secs(POLL_INTERVAL_SECS)) => {
                 let current = compute_file_snapshot(repo_dir)?;
 
                 if has_origin && last_pull_time.elapsed().as_secs() >= SYNC_PULL_INTERVAL_SECS {

@@ -1,6 +1,6 @@
 use crate::cmd::user_error;
 
-pub(crate) async fn cmd_branch(
+pub async fn cmd_branch(
     name: Option<&str>,
     target: Option<&str>,
     delete: bool,
@@ -13,7 +13,7 @@ pub(crate) async fn cmd_branch(
 
     if protect || unprotect {
         let branch_name = name.ok_or("--protect/--unprotect requires a branch name")?;
-        let config_key = format!("branch.{}.protected", branch_name);
+        let config_key = format!("branch.{branch_name}.protected");
         if protect {
             repo.set_config(&config_key, "true")?;
         } else {
@@ -70,31 +70,30 @@ pub(crate) async fn cmd_branch(
                     "  "
                 };
                 let protected = repo
-                    .get_config(&format!("branch.{}.protected", bname))?
+                    .get_config(&format!("branch.{bname}.protected"))?
                     .is_some_and(|v| v == "true");
                 let lock = if protected { " [protected]" } else { "" };
-                println!("{}{}{}", marker, bname, lock);
+                println!("{marker}{bname}{lock}");
             }
         }
         return Ok(());
     }
 
     let name =
-        name.ok_or_else(|| "branch name required (use --list to show branches)".to_string())?;
+        name.ok_or_else(|| "branch name required (use --list to show branches)".to_owned())?;
     if delete {
         let branches: Vec<String> = repo.list_branches().into_iter().map(|(n, _)| n).collect();
         if !branches.iter().any(|b| b == name) {
             if let Some(suggestion) = crate::fuzzy::suggest(name, &branches) {
                 return Err(
-                    format!("branch '{name}' not found (did you mean '{}'?)", suggestion).into(),
+                    format!("branch '{name}' not found (did you mean '{suggestion}'?)").into(),
                 );
-            } else {
-                return Err(format!("branch '{name}' not found (use 'suture branch --list' to see available branches)").into());
             }
+            return Err(format!("branch '{name}' not found (use 'suture branch --list' to see available branches)").into());
         }
         repo.delete_branch(name)
             .map_err(|e| user_error(&format!("failed to delete branch '{name}'"), e))?;
-        println!("Deleted branch '{}'", name);
+        println!("Deleted branch '{name}'");
     } else {
         let existing: Vec<String> = repo.list_branches().into_iter().map(|(n, _)| n).collect();
         if existing.iter().any(|b| b == name) {
@@ -105,7 +104,7 @@ pub(crate) async fn cmd_branch(
         }
         repo.create_branch(name, target)
             .map_err(|e| user_error(&format!("failed to create branch '{name}'"), e))?;
-        println!("Created branch '{}'", name);
+        println!("Created branch '{name}'");
     }
     Ok(())
 }

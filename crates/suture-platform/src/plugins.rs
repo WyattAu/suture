@@ -24,7 +24,7 @@ pub struct PluginListResponse {
 pub async fn list_plugins(
     State(state): State<AppState>,
 ) -> Json<PluginListResponse> {
-    let plugins = state.plugins.lock().unwrap_or_else(|e| e.into_inner());
+    let plugins = state.plugins.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let list = plugins.list();
     Json(PluginListResponse {
         count: list.len(),
@@ -48,16 +48,11 @@ pub async fn upload_plugin(
         (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e.to_string()})))
     })?;
 
-    let field = match field {
-        Some(f) => f,
-        None => {
+    let Some(field) = field else {
             return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "no file uploaded"}))));
-        }
-    };
+        };
 
-    let name = field.file_name()
-        .map(|s| s.replace(['/', '\\', '\0'], "_").replace("..", "_"))
-        .unwrap_or_else(|| "unknown".into());
+    let name = field.file_name().map_or_else(|| "unknown".into(), |s| s.replace(['/', '\\', '\0'], "_").replace("..", "_"));
     let data = field.bytes().await.map_err(|e| {
         (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e.to_string()})))
     })?;
@@ -78,8 +73,8 @@ pub async fn upload_plugin(
         }
     }
 
-    match state.plugins.lock().unwrap_or_else(|e| e.into_inner()).load(&name, &data) {
-        Ok(_) => {
+    match state.plugins.lock().unwrap_or_else(std::sync::PoisonError::into_inner).load(&name, &data) {
+        Ok(()) => {
             let plugin_path = format!("plugins/{}.wasm", name.replace(".wasm", ""));
             let data_ref = &data;
             tokio::task::block_in_place(|| {
@@ -96,7 +91,7 @@ pub async fn upload_plugin(
                 Json(serde_json::json!({
                     "name": name,
                     "status": "loaded",
-                    "driver": state.plugins.lock().unwrap_or_else(|e| e.into_inner()).get(&format!("plugin-{}", name.replace(".wasm", ""))).map(|p| p.driver_name())
+                    "driver": state.plugins.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(&format!("plugin-{}", name.replace(".wasm", ""))).map(|p| p.driver_name())
                 })),
             ))
         }
@@ -112,7 +107,7 @@ pub async fn merge_with_plugin(
     Extension(_claims): Extension<Claims>,
     Json(req): Json<crate::merge_api::MergeRequest>,
 ) -> Result<Json<crate::merge_api::MergeResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let plugins = state.plugins.lock().unwrap_or_else(|e| e.into_inner());
+    let plugins = state.plugins.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let plugin = plugins.get(&req.driver).ok_or_else(|| {
         (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": format!("plugin '{}' not loaded", req.driver)})))
     })?;

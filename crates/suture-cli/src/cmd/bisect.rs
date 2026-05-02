@@ -1,7 +1,7 @@
 use crate::BisectAction;
 use crate::ref_utils::resolve_ref;
 
-pub(crate) async fn cmd_bisect(
+pub async fn cmd_bisect(
     action: &crate::BisectAction,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match action {
@@ -20,11 +20,11 @@ pub(crate) async fn cmd_bisect(
             let good_idx = log
                 .iter()
                 .position(|p| p.id == good_patch.id)
-                .ok_or_else(|| format!("'{}' not found in history", good_ref))?;
+                .ok_or_else(|| format!("'{good_ref}' not found in history"))?;
             let bad_idx = log
                 .iter()
                 .position(|p| p.id == bad_patch.id)
-                .ok_or_else(|| format!("'{}' not found in history", bad_ref))?;
+                .ok_or_else(|| format!("'{bad_ref}' not found in history"))?;
 
             let bad_ancestors = repo.dag().ancestors(&bad_patch.id);
             if !bad_ancestors.contains(&good_patch.id) && good_patch.id != bad_patch.id {
@@ -50,7 +50,7 @@ pub(crate) async fn cmd_bisect(
                 return Ok(());
             }
 
-            let midpoint_idx = (older_idx + newer_idx) / 2;
+            let midpoint_idx = usize::midpoint(older_idx, newer_idx);
             let midpoint = &log[midpoint_idx];
 
             println!(
@@ -89,7 +89,7 @@ pub(crate) async fn cmd_bisect(
         BisectAction::Reset => {
             let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
             let (branch_name, _) = repo.head().map_err(|e| e.to_string())?;
-            println!("Bisect reset. You are on branch '{}'.", branch_name);
+            println!("Bisect reset. You are on branch '{branch_name}'.");
         }
         BisectAction::Run {
             good: good_ref,
@@ -123,11 +123,11 @@ pub(crate) async fn cmd_bisect(
                 let good_idx = log
                     .iter()
                     .position(|p| p.id == good_patch.id)
-                    .ok_or_else(|| format!("'{}' not found in history", good_ref))?;
+                    .ok_or_else(|| format!("'{good_ref}' not found in history"))?;
                 let bad_idx = log
                     .iter()
                     .position(|p| p.id == bad_patch.id)
-                    .ok_or_else(|| format!("'{}' not found in history", bad_ref))?;
+                    .ok_or_else(|| format!("'{bad_ref}' not found in history"))?;
 
                 // Verify ancestry
                 let bad_ancestors = repo.dag().ancestors(&bad_patch.id);
@@ -170,7 +170,7 @@ pub(crate) async fn cmd_bisect(
                     // Only one commit between good and bad — that's the first bad commit
                     // The first bad is one step newer than the last known good
                     let first_bad = &ordered_log[current_good - 1];
-                    println!("First bad commit found after {} step(s):", step);
+                    println!("First bad commit found after {step} step(s):");
                     println!(
                         "  {} {}",
                         first_bad.id.to_hex(),
@@ -179,7 +179,7 @@ pub(crate) async fn cmd_bisect(
                     break;
                 }
 
-                let midpoint_idx = (current_good + current_bad) / 2;
+                let midpoint_idx = usize::midpoint(current_good, current_bad);
                 let midpoint = &ordered_log[midpoint_idx];
 
                 // Reset to the midpoint commit
@@ -215,13 +215,13 @@ pub(crate) async fn cmd_bisect(
                             current_good = midpoint_idx - 1;
                         } else {
                             let code = status.code().unwrap_or(1);
-                            println!("  -> BAD (exit {})", code);
+                            println!("  -> BAD (exit {code})");
                             // Midpoint is bad; good commit must be older (higher index)
                             current_bad = midpoint_idx + 1;
                         }
                     }
                     Err(e) => {
-                        eprintln!("  -> Command failed to execute: {}", e);
+                        eprintln!("  -> Command failed to execute: {e}");
                         eprintln!("  Aborting bisect run.");
                         break;
                     }

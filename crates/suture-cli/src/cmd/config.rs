@@ -1,4 +1,4 @@
-pub(crate) async fn cmd_config(
+pub async fn cmd_config(
     key_value: &[String],
     global: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -21,7 +21,7 @@ async fn cmd_config_repo(key_value: &[String]) -> Result<(), Box<dyn std::error:
                 if key.starts_with("pending_merge_parents") || key.starts_with("head_branch") {
                     continue;
                 }
-                println!("{}={}", key, value);
+                println!("{key}={value}");
             }
         }
         return Ok(());
@@ -29,43 +29,39 @@ async fn cmd_config_repo(key_value: &[String]) -> Result<(), Box<dyn std::error:
 
     let (key, value) = if key_value.len() >= 2 {
         (
-            key_value[0].trim().to_string(),
-            key_value[1..].join(" ").trim().to_string(),
+            key_value[0].trim().to_owned(),
+            key_value[1..].join(" ").trim().to_owned(),
         )
     } else if let Some((k, v)) = key_value[0].split_once('=') {
-        (k.trim().to_string(), v.trim().to_string())
+        (k.trim().to_owned(), v.trim().to_owned())
     } else {
         let key = key_value[0].trim();
-        match repo.get_config(key)? {
-            Some(value) => {
-                println!("{}", value);
-                return Ok(());
+        if let Some(value) = repo.get_config(key)? {
+            println!("{value}");
+            return Ok(());
+        } else {
+            let all_keys: Vec<String> = repo
+                .list_config()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(k, _)| k)
+                .filter(|k| {
+                    !k.starts_with("pending_merge_parents") && !k.starts_with("head_branch")
+                })
+                .collect();
+            if let Some(suggestion) = crate::fuzzy::suggest(key, &all_keys) {
+                eprintln!(
+                    "config key '{key}' not found (did you mean '{suggestion}'?)"
+                );
+            } else {
+                eprintln!("config key '{key}' not found");
             }
-            None => {
-                let all_keys: Vec<String> = repo
-                    .list_config()
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|(k, _)| k)
-                    .filter(|k| {
-                        !k.starts_with("pending_merge_parents") && !k.starts_with("head_branch")
-                    })
-                    .collect();
-                if let Some(suggestion) = crate::fuzzy::suggest(key, &all_keys) {
-                    eprintln!(
-                        "config key '{}' not found (did you mean '{}'?)",
-                        key, suggestion
-                    );
-                } else {
-                    eprintln!("config key '{}' not found", key);
-                }
-                std::process::exit(1);
-            }
+            std::process::exit(1);
         }
     };
 
     repo.set_config(&key, &value)?;
-    println!("{}={}", key, value);
+    println!("{key}={value}");
 
     Ok(())
 }
@@ -85,7 +81,7 @@ async fn cmd_config_global(key_value: &[String]) -> Result<(), Box<dyn std::erro
             println!("No global configuration set.");
         } else {
             for (key, value) in &table {
-                println!("{}={}", key, value);
+                println!("{key}={value}");
             }
         }
         return Ok(());
@@ -93,33 +89,28 @@ async fn cmd_config_global(key_value: &[String]) -> Result<(), Box<dyn std::erro
 
     let (key, value) = if key_value.len() >= 2 {
         (
-            key_value[0].trim().to_string(),
-            key_value[1..].join(" ").trim().to_string(),
+            key_value[0].trim().to_owned(),
+            key_value[1..].join(" ").trim().to_owned(),
         )
     } else if let Some((k, v)) = key_value[0].split_once('=') {
-        (k.trim().to_string(), v.trim().to_string())
+        (k.trim().to_owned(), v.trim().to_owned())
     } else {
         let key = key_value[0].trim();
-        match table
+        if let Some(value) = table
             .get(key)
-            .and_then(|v| v.as_str().map(|s| s.to_string()))
-        {
-            Some(value) => {
-                println!("{}", value);
-                return Ok(());
+            .and_then(|v| v.as_str().map(std::borrow::ToOwned::to_owned)) {
+            println!("{value}");
+            return Ok(());
+        } else {
+            let all_keys: Vec<String> = table.keys().cloned().collect();
+            if let Some(suggestion) = crate::fuzzy::suggest(key, &all_keys) {
+                eprintln!(
+                    "global config key '{key}' not found (did you mean '{suggestion}'?)"
+                );
+            } else {
+                eprintln!("global config key '{key}' not found");
             }
-            None => {
-                let all_keys: Vec<String> = table.keys().cloned().collect();
-                if let Some(suggestion) = crate::fuzzy::suggest(key, &all_keys) {
-                    eprintln!(
-                        "global config key '{}' not found (did you mean '{}'?)",
-                        key, suggestion
-                    );
-                } else {
-                    eprintln!("global config key '{}' not found", key);
-                }
-                std::process::exit(1);
-            }
+            std::process::exit(1);
         }
     };
 
@@ -130,7 +121,7 @@ async fn cmd_config_global(key_value: &[String]) -> Result<(), Box<dyn std::erro
     }
     std::fs::write(&config_path, toml::to_string_pretty(&table)?)?;
 
-    println!("{}={}", key, value);
+    println!("{key}={value}");
 
     Ok(())
 }

@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-#![allow(clippy::collapsible_match)]
 use suture_driver::{DriverError, SemanticChange, SutureDriver};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -12,6 +11,7 @@ enum BlockType {
 }
 
 #[derive(Debug, Clone)]
+#[allow(clippy::struct_field_names)]
 struct Block {
     block_type: BlockType,
     heading: Option<String>,
@@ -28,16 +28,16 @@ impl PartialEq for Block {
 
 impl Block {
     fn path(&self) -> String {
-        match &self.heading {
-            Some(h) => format!("/{h}"),
-            None => match self.block_type {
-                BlockType::CodeBlock => "/code".to_string(),
-                BlockType::ListItem => "/list".to_string(),
-                BlockType::Table => "/table".to_string(),
-                BlockType::Paragraph => "/paragraph".to_string(),
-                BlockType::Heading => "/".to_string(),
+        self.heading.as_ref().map_or_else(
+            || match self.block_type {
+                BlockType::CodeBlock => "/code".to_owned(),
+                BlockType::ListItem => "/list".to_owned(),
+                BlockType::Table => "/table".to_owned(),
+                BlockType::Paragraph => "/paragraph".to_owned(),
+                BlockType::Heading => "/".to_owned(),
             },
-        }
+            |h| format!("/{h}"),
+        )
     }
 
     fn content_str(&self) -> String {
@@ -74,7 +74,7 @@ fn regex_is_numbered_list(line: &str) -> bool {
     while let Some(c) = chars.next() {
         if c.is_ascii_digit() {
             has_digit = true;
-        } else if c == '.' && has_digit && chars.next().is_none_or(|n| n.is_whitespace()) {
+        } else if c == '.' && has_digit && chars.next().is_none_or(char::is_whitespace) {
             return true;
         } else {
             break;
@@ -102,7 +102,7 @@ fn parse_blocks(content: &str) -> Vec<Block> {
     for line in content.lines() {
         if in_code_block {
             if let Some(ref mut block) = current_block {
-                block.lines.push(line.to_string());
+                block.lines.push(line.to_owned());
             }
             if line.trim_start().starts_with("```") {
                 in_code_block = false;
@@ -117,7 +117,7 @@ fn parse_blocks(content: &str) -> Vec<Block> {
             current_block = Some(Block {
                 block_type: BlockType::CodeBlock,
                 heading: current_heading.clone(),
-                lines: vec![line.to_string()],
+                lines: vec![line.to_owned()],
             });
             continue;
         }
@@ -129,32 +129,28 @@ fn parse_blocks(content: &str) -> Vec<Block> {
 
         let bt = detect_block_type(line);
 
-        match bt {
-            BlockType::Heading => {
-                flush_block!();
-                let heading_text = line.trim_start_matches('#').trim().to_string();
-                current_heading = Some(heading_text.clone());
-                current_block = Some(Block {
-                    block_type: BlockType::Heading,
-                    heading: Some(heading_text),
-                    lines: vec![line.to_string()],
-                });
-            }
-            _ => {
-                if let Some(ref mut block) = current_block {
-                    if block.block_type == bt {
-                        block.lines.push(line.to_string());
-                        continue;
-                    } else {
-                        flush_block!();
-                    }
+        if bt == BlockType::Heading {
+            flush_block!();
+            let heading_text = line.trim_start_matches('#').trim().to_owned();
+            current_heading = Some(heading_text.clone());
+            current_block = Some(Block {
+                block_type: BlockType::Heading,
+                heading: Some(heading_text),
+                lines: vec![line.to_owned()],
+            });
+        } else {
+            if let Some(ref mut block) = current_block {
+                if block.block_type == bt {
+                    block.lines.push(line.to_owned());
+                    continue;
                 }
-                current_block = Some(Block {
-                    block_type: bt,
-                    heading: current_heading.clone(),
-                    lines: vec![line.to_string()],
-                });
+                flush_block!();
             }
+            current_block = Some(Block {
+                block_type: bt,
+                heading: current_heading.clone(),
+                lines: vec![line.to_owned()],
+            });
         }
     }
 
@@ -206,8 +202,8 @@ fn match_blocks(base: &[Block], other: &[Block]) -> Vec<(Option<usize>, Option<u
     }
 
     pairs.sort_by(|a, b| {
-        let a_key = a.0.unwrap_or(a.1.unwrap_or(0));
-        let b_key = b.0.unwrap_or(b.1.unwrap_or(0));
+        let a_key = a.0.unwrap_or_else(|| a.1.unwrap_or(0));
+        let b_key = b.0.unwrap_or_else(|| b.1.unwrap_or(0));
         a_key.cmp(&b_key)
     });
 
@@ -217,6 +213,7 @@ fn match_blocks(base: &[Block], other: &[Block]) -> Vec<(Option<usize>, Option<u
 pub struct MarkdownDriver;
 
 impl MarkdownDriver {
+    #[must_use] 
     pub fn new() -> Self {
         Self
     }
@@ -229,7 +226,7 @@ impl Default for MarkdownDriver {
 }
 
 impl SutureDriver for MarkdownDriver {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Markdown"
     }
 
@@ -244,8 +241,8 @@ impl SutureDriver for MarkdownDriver {
     ) -> Result<Vec<SemanticChange>, DriverError> {
         let new_blocks = parse_blocks(new_content);
 
-        match base_content {
-            None => {
+        base_content.map_or_else(
+            || {
                 let mut changes = Vec::new();
                 for block in &new_blocks {
                     changes.push(SemanticChange::Added {
@@ -254,8 +251,8 @@ impl SutureDriver for MarkdownDriver {
                     });
                 }
                 Ok(changes)
-            }
-            Some(base) => {
+            },
+            |base| {
                 let base_blocks = parse_blocks(base);
                 let pairs = match_blocks(&base_blocks, &new_blocks);
                 let mut changes = Vec::new();
@@ -292,8 +289,8 @@ impl SutureDriver for MarkdownDriver {
                 }
 
                 Ok(changes)
-            }
-        }
+            },
+        )
     }
 
     fn format_diff(
@@ -304,7 +301,7 @@ impl SutureDriver for MarkdownDriver {
         let changes = self.diff(base_content, new_content)?;
 
         if changes.is_empty() {
-            return Ok("no changes".to_string());
+            return Ok("no changes".to_owned());
         }
 
         let lines: Vec<String> = changes

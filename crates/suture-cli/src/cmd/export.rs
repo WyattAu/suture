@@ -8,7 +8,7 @@ struct ExportContext<'a> {
     client: &'a str,
 }
 
-pub(crate) async fn cmd_export(
+pub async fn cmd_export(
     output: &str,
     at: Option<&str>,
     zip: bool,
@@ -25,10 +25,8 @@ pub(crate) async fn cmd_export(
         repo.snapshot(&patch.id)?
     };
 
-    let effective_output = match client {
-        Some(name) => format!("{}/{}", output, name),
-        None => output.to_string(),
-    };
+    let effective_output =
+        client.as_ref().map_or_else(|| output.to_owned(), |name| format!("{output}/{name}"));
 
     let date = chrono::Local::now().format("%Y-%m-%d").to_string();
     let version = ref_str;
@@ -76,7 +74,7 @@ fn export_as_dir(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let dest = Path::new(destination);
     if dest.exists() {
-        let err_msg = format!("destination '{}' already exists", destination);
+        let err_msg = format!("destination '{destination}' already exists");
         return Err(err_msg.into());
     }
     std::fs::create_dir_all(dest)?;
@@ -103,7 +101,7 @@ fn export_as_dir(
         }
     }
 
-    println!("Exported {} files to {}", file_count, destination);
+    println!("Exported {file_count} files to {destination}");
     Ok(())
 }
 
@@ -158,7 +156,7 @@ fn export_as_zip(
         return Err("zip command failed".into());
     }
 
-    println!("Exported {} files to {}", file_count, output);
+    println!("Exported {file_count} files to {output}");
     Ok(())
 }
 
@@ -178,7 +176,7 @@ fn copy_template_recursive(
     ctx: &ExportContext,
     count: &mut usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let entries: Vec<_> = std::fs::read_dir(src)?.filter_map(|e| e.ok()).collect();
+    let entries: Vec<_> = std::fs::read_dir(src)?.filter_map(std::result::Result::ok).collect();
 
     for entry in &entries {
         let src_path = entry.path();

@@ -5,7 +5,7 @@
 //! approach to compute diffs and merge them intelligently.
 
 /// A change in a sequence of lines relative to a base.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LineChange {
     /// Lines that are unchanged between base and modified.
     Unchanged(Vec<String>),
@@ -18,25 +18,26 @@ pub enum LineChange {
 impl LineChange {
     #[allow(dead_code)]
     fn is_unchanged(&self) -> bool {
-        matches!(self, LineChange::Unchanged(_))
+        matches!(self, Self::Unchanged(_))
     }
 }
 
 /// Compute the diff between two line sequences using LCS.
 ///
 /// Returns a list of changes that transform `base` into `modified`.
+#[must_use] 
 pub fn diff_lines(base: &[&str], modified: &[&str]) -> Vec<LineChange> {
     if base.is_empty() && modified.is_empty() {
         return Vec::new();
     }
     if base.is_empty() {
         return vec![LineChange::Inserted(
-            modified.iter().map(|s| s.to_string()).collect(),
+            modified.iter().map(std::string::ToString::to_string).collect(),
         )];
     }
     if modified.is_empty() {
         return vec![LineChange::Deleted(
-            base.iter().map(|s| s.to_string()).collect(),
+            base.iter().map(std::string::ToString::to_string).collect(),
         )];
     }
 
@@ -62,14 +63,14 @@ pub fn diff_lines(base: &[&str], modified: &[&str]) -> Vec<LineChange> {
 
     while i > 0 || j > 0 {
         if i > 0 && j > 0 && base[i - 1] == modified[j - 1] {
-            changes.push(LineChange::Unchanged(vec![base[i - 1].to_string()]));
+            changes.push(LineChange::Unchanged(vec![base[i - 1].to_owned()]));
             i -= 1;
             j -= 1;
         } else if j > 0 && (i == 0 || dp[i][j - 1] >= dp[i - 1][j]) {
-            changes.push(LineChange::Inserted(vec![modified[j - 1].to_string()]));
+            changes.push(LineChange::Inserted(vec![modified[j - 1].to_owned()]));
             j -= 1;
         } else {
-            changes.push(LineChange::Deleted(vec![base[i - 1].to_string()]));
+            changes.push(LineChange::Deleted(vec![base[i - 1].to_owned()]));
             i -= 1;
         }
     }
@@ -94,15 +95,9 @@ fn try_extend_last(result: &mut [LineChange], change: &LineChange) -> bool {
         return false;
     };
     match (last, change) {
-        (LineChange::Unchanged(v), LineChange::Unchanged(new)) => {
-            v.extend(new.iter().cloned());
-            true
-        }
-        (LineChange::Deleted(v), LineChange::Deleted(new)) => {
-            v.extend(new.iter().cloned());
-            true
-        }
-        (LineChange::Inserted(v), LineChange::Inserted(new)) => {
+        (LineChange::Unchanged(v), LineChange::Unchanged(new))
+        | (LineChange::Deleted(v), LineChange::Deleted(new))
+        | (LineChange::Inserted(v), LineChange::Inserted(new)) => {
             v.extend(new.iter().cloned());
             true
         }
@@ -142,6 +137,7 @@ pub struct MergeOutput {
 /// 3. For each chunk: auto-merge if possible, otherwise conflict markers
 ///
 /// Returns a `MergeOutput` with the merged lines and conflict status.
+#[must_use] 
 pub fn three_way_merge_lines(
     base: &[&str],
     ours: &[&str],
@@ -152,7 +148,7 @@ pub fn three_way_merge_lines(
     // Trivial cases
     if ours == theirs {
         return MergeOutput {
-            lines: ours.iter().map(|s| s.to_string()).collect(),
+            lines: ours.iter().map(std::string::ToString::to_string).collect(),
             is_clean: true,
             auto_merged: 0,
             conflicts: 0,
@@ -160,7 +156,7 @@ pub fn three_way_merge_lines(
     }
     if base == ours {
         return MergeOutput {
-            lines: theirs.iter().map(|s| s.to_string()).collect(),
+            lines: theirs.iter().map(std::string::ToString::to_string).collect(),
             is_clean: true,
             auto_merged: 0,
             conflicts: 0,
@@ -168,7 +164,7 @@ pub fn three_way_merge_lines(
     }
     if base == theirs {
         return MergeOutput {
-            lines: ours.iter().map(|s| s.to_string()).collect(),
+            lines: ours.iter().map(std::string::ToString::to_string).collect(),
             is_clean: true,
             auto_merged: 0,
             conflicts: 0,
@@ -198,7 +194,7 @@ pub fn three_way_merge_lines(
         match (ours_action, theirs_action) {
             (None, None) => {
                 // Both sides kept this line
-                merged.push(base[i].to_string());
+                merged.push(base[i].to_owned());
                 i += 1;
             }
             (Some(a), None) => {
@@ -221,11 +217,11 @@ pub fn three_way_merge_lines(
                     // Conflict!
                     is_clean = false;
                     conflicts += 1;
-                    merged.push(format!("<<<<<<< {}", ours_label));
+                    merged.push(format!("<<<<<<< {ours_label}"));
                     merged.extend(a.output_lines());
-                    merged.push("=======".to_string());
+                    merged.push("=======".to_owned());
                     merged.extend(b.output_lines());
-                    merged.push(format!(">>>>>>> {}", theirs_label));
+                    merged.push(format!(">>>>>>> {theirs_label}"));
                     // Advance past the longer action
                     i += a.advance().max(b.advance());
                 }
@@ -248,11 +244,11 @@ pub fn three_way_merge_lines(
             } else {
                 is_clean = false;
                 conflicts += 1;
-                merged.push(format!("<<<<<<< {}", ours_label));
+                merged.push(format!("<<<<<<< {ours_label}"));
                 merged.extend(a.output_lines());
-                merged.push("=======".to_string());
+                merged.push("=======".to_owned());
                 merged.extend(b.output_lines());
-                merged.push(format!(">>>>>>> {}", theirs_label));
+                merged.push(format!(">>>>>>> {theirs_label}"));
             }
         }
     }
@@ -280,15 +276,15 @@ enum SideAction {
 impl SideAction {
     fn advance(&self) -> usize {
         match self {
-            SideAction::DeleteInsert { deleted, .. } => *deleted,
-            SideAction::Insert { .. } => 0,
+            Self::DeleteInsert { deleted, .. } => *deleted,
+            Self::Insert { .. } => 0,
         }
     }
 
     fn output_lines(&self) -> Vec<String> {
         match self {
-            SideAction::DeleteInsert { inserted, .. } => inserted.clone(),
-            SideAction::Insert { lines } => lines.clone(),
+            Self::DeleteInsert { inserted, .. } => inserted.clone(),
+            Self::Insert { lines } => lines.clone(),
         }
     }
 }

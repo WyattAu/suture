@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-#![allow(clippy::collapsible_match)]
 //! Shared OOXML infrastructure for Office Open XML format support.
 //!
 //! Office documents (.docx, .xlsx, .pptx) are ZIP archives containing
@@ -60,7 +59,7 @@ impl OoxmlDocument {
                 .by_index(i)
                 .map_err(|e| OoxmlError::Zip(e.to_string()))?;
 
-            let path = file.name().to_string();
+            let path = file.name().to_owned();
             let enc_name = file
                 .enclosed_name()
                 .map(|n| n.display().to_string())
@@ -72,9 +71,7 @@ impl OoxmlDocument {
                 .map_err(|e| OoxmlError::Io(e.to_string()))?;
 
             // Try to interpret as UTF-8 text
-            let content = match String::from_utf8(raw_bytes.clone()) {
-                Ok(text) => text,
-                Err(_) => {
+            let Ok(content) = String::from_utf8(raw_bytes.clone()) else {
                     // Binary part (font, image, etc.) — store as raw bytes
                     binary_parts.insert(path.clone(), raw_bytes);
                     parts.insert(
@@ -86,11 +83,10 @@ impl OoxmlDocument {
                         },
                     );
                     continue;
-                }
-            };
+                };
 
             if path == "[Content_Types].xml" {
-                content_types = content.clone();
+                content_types.clone_from(&content);
             }
 
             // Root-level relationships: _rels/.rels
@@ -160,6 +156,7 @@ impl OoxmlDocument {
         Ok(buf)
     }
 
+    #[must_use] 
     pub fn get_part(&self, path: &str) -> Option<&OoxmlPart> {
         self.parts.get(path)
     }
@@ -172,7 +169,7 @@ impl OoxmlDocument {
                     || path.ends_with("workbook.xml")
                     || path.ends_with("presentation.xml")
             })
-            .map(|v| v.as_str())
+            .map(std::string::String::as_str)
     }
 
     /// Resolve a relationship ID for a given part to an absolute part path.
@@ -181,6 +178,7 @@ impl OoxmlDocument {
     /// `ppt/slides/slide1.xml` based on `ppt/_rels/presentation.xml.rels`.
     ///
     /// Returns `None` if the relationship ID is not found.
+    #[must_use] 
     pub fn resolve_rel(&self, part_path: &str, rel_id: &str) -> Option<String> {
         let id_map = self.part_rels.get(part_path)?;
         let target = id_map.get(rel_id)?;
@@ -191,6 +189,7 @@ impl OoxmlDocument {
     /// Get all relationship IDs and their resolved target paths for a given part.
     ///
     /// Returns an iterator of `(rel_id, resolved_target_path)` pairs.
+    #[must_use] 
     pub fn get_part_rels(&self, part_path: &str) -> Option<&HashMap<String, String>> {
         self.part_rels.get(part_path)
     }
@@ -208,13 +207,12 @@ fn path_rels_to_owner(rels_path: &str) -> String {
     // Find the directory containing "_rels"
     let dir = rels_path
         .rsplit_once("/_rels/")
-        .map(|(d, _)| d)
-        .unwrap_or("");
+        .map_or("", |(d, _)| d);
 
     if dir.is_empty() {
-        name.to_string()
+        name.to_owned()
     } else {
-        format!("{}/{}", dir, name)
+        format!("{dir}/{name}")
     }
 }
 
@@ -263,21 +261,21 @@ fn parse_rels(xml: &str) -> Vec<(String, String)> {
 /// e.g. `("ppt/presentation.xml", "slides/slide1.xml")` → `"ppt/slides/slide1.xml"`
 fn resolve_relative_path(base_part: &str, target: &str) -> String {
     // Get the directory of the base part
-    let dir = base_part.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
+    let dir = base_part.rsplit_once('/').map_or("", |(d, _)| d);
 
     if target.starts_with('/') {
         // Absolute path within the archive (starts with /)
-        target.strip_prefix('/').unwrap_or(target).to_string()
+        target.strip_prefix('/').unwrap_or(target).to_owned()
     } else if dir.is_empty() {
-        target.to_string()
+        target.to_owned()
     } else {
-        format!("{}/{}", dir, target)
+        format!("{dir}/{target}")
     }
 }
 
 /// Extract an XML attribute value from a line.
 fn extract_attr(xml_line: &str, attr_name: &str) -> Option<String> {
-    let pattern = &format!("{}=\"", attr_name);
+    let pattern = &format!("{attr_name}=\"");
     let start = xml_line.find(pattern)?;
     let start = start + pattern.len();
     let rest = &xml_line[start..];

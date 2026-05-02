@@ -1,4 +1,4 @@
-pub(crate) async fn cmd_drivers() -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_drivers() -> Result<(), Box<dyn std::error::Error>> {
     let registry = crate::driver_registry::builtin_registry();
 
     let drivers = registry.list();

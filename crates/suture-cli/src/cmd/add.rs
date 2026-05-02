@@ -13,7 +13,7 @@ fn expand_paths(paths: &[String]) -> Vec<String> {
         } else if path.is_file()
             && let Some(s) = path.to_str()
         {
-            result.push(s.to_string());
+            result.push(s.to_owned());
         }
     }
     result
@@ -25,7 +25,7 @@ fn expand_dir_recursive(dir: &Path, result: &mut Vec<String>) {
         return;
     };
     let mut entries: Vec<_> = entries.flatten().collect();
-    entries.sort_by_key(|e| e.file_name());
+    entries.sort_by_key(std::fs::DirEntry::file_name);
 
     for entry in entries {
         let entry_path = entry.path();
@@ -41,7 +41,7 @@ fn expand_dir_recursive(dir: &Path, result: &mut Vec<String>) {
         } else if entry_path.is_file()
             && let Some(s) = entry_path.to_str()
         {
-            result.push(s.to_string());
+            result.push(s.to_owned());
         }
     }
 }
@@ -58,8 +58,7 @@ fn maybe_convert_to_lfs_pointer(path: &str) -> Result<bool, Box<dyn std::error::
         let file_name = full_path
             .file_name()
             .and_then(|n| n.to_str())
-            .unwrap_or(path)
-            .to_string();
+            .unwrap_or(path).to_owned();
         store_lfs_object(repo_root, &hash, &data)?;
         let pointer = create_lfs_pointer(&hash, file_size, &file_name);
         std::fs::write(full_path, pointer)?;
@@ -68,7 +67,7 @@ fn maybe_convert_to_lfs_pointer(path: &str) -> Result<bool, Box<dyn std::error::
     Ok(false)
 }
 
-pub(crate) async fn cmd_add(
+pub async fn cmd_add(
     paths: &[String],
     all: bool,
     patch: bool,
@@ -77,7 +76,7 @@ pub(crate) async fn cmd_add(
 
     if all {
         let count = repo.add_all()?;
-        println!("Staged {} files", count);
+        println!("Staged {count} files");
         return Ok(());
     }
 
@@ -101,7 +100,7 @@ pub(crate) async fn cmd_add(
                 );
             } else {
                 repo.add(path)?;
-                println!("Added {}", path);
+                println!("Added {path}");
             }
         }
         Ok(())
@@ -120,7 +119,7 @@ async fn cmd_add_patch(
     for path in paths {
         if stage_all {
             repo.add(path)?;
-            println!("Added {}", path);
+            println!("Added {path}");
             continue;
         }
 
@@ -140,14 +139,14 @@ async fn cmd_add_patch(
             let head_lines: Vec<&str> = head_content.lines().collect();
             let disk_lines: Vec<&str> = disk_content.lines().collect();
 
-            println!("\n--- diff for {} ---", path);
+            println!("\n--- diff for {path} ---");
             print_line_diff(&head_lines, &disk_lines);
         } else {
             let content = std::fs::read_to_string(path).unwrap_or_default();
             let lines: Vec<&str> = content.lines().take(10).collect();
             println!("\n--- new file: {} (first {} lines) ---", path, lines.len());
             for line in &lines {
-                println!("+ {}", line);
+                println!("+ {line}");
             }
             if content.lines().count() > 10 {
                 println!("+ ... ({} more lines)", content.lines().count() - 10);
@@ -155,7 +154,7 @@ async fn cmd_add_patch(
         }
 
         loop {
-            print!("Stage changes to {}? [y/n/q/a(ll)] ", path);
+            print!("Stage changes to {path}? [y/n/q/a(ll)] ");
             use std::io::Write;
             std::io::stdout().flush()?;
 
@@ -168,7 +167,7 @@ async fn cmd_add_patch(
             match answer.as_str() {
                 "y" | "yes" => {
                     repo.add(path)?;
-                    println!("Added {}", path);
+                    println!("Added {path}");
                     break;
                 }
                 "n" | "no" => {
@@ -180,7 +179,7 @@ async fn cmd_add_patch(
                 }
                 "a" | "all" => {
                     repo.add(path)?;
-                    println!("Added {}", path);
+                    println!("Added {path}");
                     stage_all = true;
                     break;
                 }
@@ -207,9 +206,9 @@ fn print_line_diff(head_lines: &[&str], disk_lines: &[&str]) {
         .collect();
 
     for line in &removals {
-        println!("- {}", line);
+        println!("- {line}");
     }
     for line in &additions {
-        println!("+ {}", line);
+        println!("+ {line}");
     }
 }

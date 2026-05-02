@@ -35,7 +35,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
 
         for (i, (name, url)) in remotes.iter().enumerate().skip(start).take(end - start) {
             let is_selected = i == cursor;
-            let prefix = if is_selected { "▶ " } else { "  " };
+            let prefix = if is_selected { "\u{25b6} " } else { "  " };
 
             let name_style = if is_selected {
                 Style::default()
@@ -56,7 +56,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
 
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        " [a] Add remote  [d] Remove selected  [↑/k] Up  [↓/j] Down",
+        " [a] Add remote  [d] Remove selected  [\u{2191}/k] Up  [\u{2193}/j] Down",
         Style::default().fg(Color::DarkGray),
     )));
 

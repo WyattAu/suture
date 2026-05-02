@@ -1,6 +1,7 @@
 use crate::cmd::user_error;
 use crate::style::run_hook_if_exists;
 
+use std::fmt::Write;
 /// Merge conflict resolution strategy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MergeStrategy {
@@ -17,29 +18,26 @@ enum MergeStrategy {
 impl MergeStrategy {
     fn parse(s: &str) -> Option<Self> {
         match s {
-            "semantic" | "auto" => Some(MergeStrategy::Semantic),
-            "ours" | "keep-ours" => Some(MergeStrategy::Ours),
-            "theirs" | "keep-theirs" => Some(MergeStrategy::Theirs),
-            "manual" | "none" => Some(MergeStrategy::Manual),
+            "semantic" | "auto" => Some(Self::Semantic),
+            "ours" | "keep-ours" => Some(Self::Ours),
+            "theirs" | "keep-theirs" => Some(Self::Theirs),
+            "manual" | "none" => Some(Self::Manual),
             _ => None,
         }
     }
 }
 
-pub(crate) async fn cmd_merge_abort() -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_merge_abort() -> Result<(), Box<dyn std::error::Error>> {
     let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))
         .map_err(|e| user_error("failed to open repository", e))?;
 
-    let parents_json = match repo.get_config("pending_merge_parents") {
-        Ok(Some(v)) => v,
-        _ => {
+    let Some(parents_json) = repo.get_config("pending_merge_parents").ok().flatten() else {
             println!("no merge in progress");
             return Ok(());
-        }
-    };
+        };
 
     let parents: Vec<suture_common::Hash> = serde_json::from_str(&parents_json)
-        .map_err(|e| format!("failed to parse pending_merge_parents: {}", e))?;
+        .map_err(|e| format!("failed to parse pending_merge_parents: {e}"))?;
 
     if parents.len() != 2 {
         return Err(format!(
@@ -60,7 +58,7 @@ pub(crate) async fn cmd_merge_abort() -> Result<(), Box<dyn std::error::Error>> 
         .unwrap_or_else(|_| suture_core::engine::FileTree::empty());
 
     let bn = suture_common::BranchName::new(&branch)
-        .map_err(|e| format!("invalid branch name '{}': {}", branch, e))?;
+        .map_err(|e| format!("invalid branch name '{branch}': {e}"))?;
     repo.dag_mut()
         .update_branch(&bn, original_head)
         .map_err(|e| user_error("failed to update branch", e))?;
@@ -92,16 +90,13 @@ pub(crate) async fn cmd_merge_abort() -> Result<(), Box<dyn std::error::Error>> 
     Ok(())
 }
 
-pub(crate) async fn cmd_merge_continue() -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_merge_continue() -> Result<(), Box<dyn std::error::Error>> {
     let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))
         .map_err(|e| user_error("failed to open repository", e))?;
 
-    match repo.get_config("pending_merge_parents") {
-        Ok(Some(_)) => {}
-        _ => {
-            println!("no merge in progress");
-            return Ok(());
-        }
+    if let Ok(Some(_)) = repo.get_config("pending_merge_parents") {} else {
+        println!("no merge in progress");
+        return Ok(());
     }
 
     let report_path = repo
@@ -126,13 +121,13 @@ pub(crate) async fn cmd_merge_continue() -> Result<(), Box<dyn std::error::Error
         .get_config("pending_merge_branch")
         .ok()
         .flatten()
-        .unwrap_or_else(|| "unknown".to_string());
-    let message = format!("Merge branch '{}' (conflicts resolved)", branch_name);
+        .unwrap_or_else(|| "unknown".to_owned());
+    let message = format!("Merge branch '{branch_name}' (conflicts resolved)");
 
     let patch_id = repo
         .commit(&message)
         .map_err(|e| user_error("failed to commit", e))?;
-    println!("Merge complete: {}", patch_id);
+    println!("Merge complete: {patch_id}");
 
     let _ = repo
         .meta()
@@ -151,7 +146,7 @@ pub(crate) async fn cmd_merge_continue() -> Result<(), Box<dyn std::error::Error
     Ok(())
 }
 
-pub(crate) async fn cmd_merge(
+pub async fn cmd_merge(
     source: &str,
     dry_run: bool,
     strategy: &str,
@@ -161,8 +156,7 @@ pub(crate) async fn cmd_merge(
 
     let merge_strategy = MergeStrategy::parse(strategy).ok_or_else(|| {
         format!(
-            "unknown merge strategy '{}' (expected: semantic, ours, theirs, manual)",
-            strategy
+            "unknown merge strategy '{strategy}' (expected: semantic, ours, theirs, manual)"
         )
     })?;
 
@@ -177,31 +171,28 @@ pub(crate) async fn cmd_merge(
     }
 
     let branches: Vec<String> = repo.list_branches().into_iter().map(|(n, _)| n).collect();
-    if !branches.contains(&source.to_string()) && repo.resolve_ref(source).is_err() {
-        let hint = if let Some(suggestion) = crate::fuzzy::suggest(source, &branches) {
-            format!(" (did you mean '{}'?)", suggestion)
-        } else {
-            String::new()
-        };
+    if !branches.contains(&source.to_owned()) && repo.resolve_ref(source).is_err() {
+        let hint = crate::fuzzy::suggest(source, &branches).map_or_else(
+            String::new,
+            |suggestion| format!(" (did you mean '{suggestion}'?)"),
+        );
         return Err(format!(
-            "branch '{}' not found{hint} (use 'suture branch' to create it)",
-            source
+            "branch '{source}' not found{hint} (use 'suture branch' to create it)"
         )
         .into());
     }
 
     let (branch, head_id) = repo
         .head()
-        .unwrap_or_else(|_| ("main".to_string(), suture_common::Hash::ZERO));
+        .unwrap_or_else(|_| ("main".to_owned(), suture_common::Hash::ZERO));
     let mut pre_extra = std::collections::HashMap::new();
-    pre_extra.insert("SUTURE_BRANCH".to_string(), branch.clone());
-    pre_extra.insert("SUTURE_HEAD".to_string(), head_id.to_hex());
-    pre_extra.insert("SUTURE_MERGE_SOURCE".to_string(), source.to_string());
+    pre_extra.insert("SUTURE_BRANCH".to_owned(), branch.clone());
+    pre_extra.insert("SUTURE_HEAD".to_owned(), head_id.to_hex());
+    pre_extra.insert("SUTURE_MERGE_SOURCE".to_owned(), source.to_owned());
 
     if dry_run {
         println!(
-            "DRY RUN: previewing merge of '{}' into current branch (strategy: {})",
-            source, strategy
+            "DRY RUN: previewing merge of '{source}' into current branch (strategy: {strategy})"
         );
     } else {
         run_hook_if_exists(repo.root(), "pre-merge", pre_extra)?;
@@ -252,12 +243,12 @@ pub(crate) async fn cmd_merge(
             } else {
                 println!("Already up to date.");
             }
-            println!("DRY RUN — no files were modified.");
+            println!("DRY RUN \u{2014} no files were modified.");
             return Ok(());
         }
 
         if let Some(id) = result.merge_patch_id {
-            println!("Merge successful: {}", id);
+            println!("Merge successful: {id}");
         }
         if result.patches_applied > 0 {
             println!(
@@ -280,28 +271,27 @@ pub(crate) async fn cmd_merge(
             ) {
                 Ok(semantic_count) if semantic_count > 0 => {
                     println!(
-                        "Re-merged {} file(s) via semantic drivers (both branches modified)",
-                        semantic_count
+                        "Re-merged {semantic_count} file(s) via semantic drivers (both branches modified)"
                     );
                     // Rewrite the merge commit's stored tree to match the
                     // corrected working tree. This ensures diff, checkout,
                     // and subsequent merges see the semantically correct content.
                     if let Err(e) = repo.rewrite_head_tree() {
-                        eprintln!("  warning: could not update merge tree: {}", e);
+                        eprintln!("  warning: could not update merge tree: {e}");
                     }
                 }
                 Ok(_) => {}
                 Err(e) => {
-                    eprintln!("  warning: semantic re-merge skipped: {}", e);
+                    eprintln!("  warning: semantic re-merge skipped: {e}");
                 }
             }
         }
 
         let (branch, head_id) = repo.head()?;
         let mut post_extra = std::collections::HashMap::new();
-        post_extra.insert("SUTURE_BRANCH".to_string(), branch.clone());
-        post_extra.insert("SUTURE_HEAD".to_string(), head_id.to_hex());
-        post_extra.insert("SUTURE_MERGE_SOURCE".to_string(), source.to_string());
+        post_extra.insert("SUTURE_BRANCH".to_owned(), branch);
+        post_extra.insert("SUTURE_HEAD".to_owned(), head_id.to_hex());
+        post_extra.insert("SUTURE_MERGE_SOURCE".to_owned(), source.to_owned());
         run_hook_if_exists(repo.root(), "post-merge", post_extra)?;
 
         {
@@ -340,8 +330,7 @@ pub(crate) async fn cmd_merge(
         let ooxml_count = conflicts.iter().filter(|c| is_ooxml_file(&c.path)).count();
         if ooxml_count > 0 {
             println!(
-                "Note: {} OOXML file(s) will have your version preserved (conflict markers would corrupt binary format)",
-                ooxml_count
+                "Note: {ooxml_count} OOXML file(s) will have your version preserved (conflict markers would corrupt binary format)"
             );
         }
         conflicts
@@ -366,7 +355,7 @@ pub(crate) async fn cmd_merge(
                 }
             }
             if let Err(e) = generate_ooxml_conflict_report(&ooxml, repo.root()) {
-                eprintln!("warning: could not write conflict report: {}", e);
+                eprintln!("warning: could not write conflict report: {e}");
             }
             println!(
                 "Preserved your version for {} OOXML file(s) (see .suture_conflicts/report.md)",
@@ -411,8 +400,7 @@ pub(crate) async fn cmd_merge(
                 }
                 if resolved_count > 0 {
                     println!(
-                        "Would resolve {} conflict(s) via semantic drivers",
-                        resolved_count
+                        "Would resolve {resolved_count} conflict(s) via semantic drivers"
                     );
                 }
                 if remaining.is_empty() && resolved_count > 0 {
@@ -434,7 +422,7 @@ pub(crate) async fn cmd_merge(
                 }
             }
         }
-        println!("DRY RUN — no files were modified.");
+        println!("DRY RUN \u{2014} no files were modified.");
         return Ok(());
     }
 
@@ -464,8 +452,7 @@ pub(crate) async fn cmd_merge(
                 }
             }
             println!(
-                "Resolved {} conflict(s) by keeping their version",
-                resolved_count
+                "Resolved {resolved_count} conflict(s) by keeping their version"
             );
         }
         MergeStrategy::Semantic => {
@@ -497,17 +484,14 @@ pub(crate) async fn cmd_merge(
                 ) {
                     (Some(base_b), Some(ours_b), Some(theirs_b)) => {
                         // Try merge_raw first, then fall back to text merge.
-                        match driver.merge_raw(base_b, ours_b, theirs_b) {
-                            Ok(result) => Ok(result),
-                            Err(_) => {
+                        driver.merge_raw(base_b, ours_b, theirs_b).or_else(|_| {
                                 let base_s = String::from_utf8_lossy(base_b);
                                 let ours_s = String::from_utf8_lossy(ours_b);
                                 let theirs_s = String::from_utf8_lossy(theirs_b);
                                 driver
                                     .merge(&base_s, &ours_s, &theirs_s)
-                                    .map(|opt| opt.map(|s| s.into_bytes()))
-                            }
-                        }
+                                    .map(|opt| opt.map(std::string::String::into_bytes))
+                            })
                     }
                     _ => Err(suture_driver::DriverError::ParseError(
                         "missing content".into(),
@@ -552,7 +536,7 @@ pub(crate) async fn cmd_merge(
     }
 
     let total_conflicts = remaining.len();
-    println!("Merge has {} conflict(s):", total_conflicts);
+    println!("Merge has {total_conflicts} conflict(s):");
 
     let (binary_conflicts, text_conflicts): (Vec<_>, Vec<_>) =
         remaining.into_iter().partition(|c| {
@@ -573,11 +557,11 @@ pub(crate) async fn cmd_merge(
 
         let mut report = String::new();
         report.push_str("# Merge Conflict Report\n");
-        report.push_str(&format!(
-            "Generated: {}\n",
+        let _ = writeln!(report, 
+            "Generated: {}",
             chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ")
-        ));
-        report.push_str(&format!("Branch: {} → {}\n", source, branch));
+        );
+        let _ = writeln!(report, "Branch: {source} → {branch}");
         report.push_str("\n## Binary File Conflicts\n");
 
         for conflict in &binary_conflicts {
@@ -593,12 +577,12 @@ pub(crate) async fn cmd_merge(
 
             let theirs_rel = format!(".suture/conflicts/{}.theirs", conflict.path);
             println!("  CONFLICT (binary) in '{}': both modified", conflict.path);
-            println!("    Your version preserved. Their version: {}", theirs_rel);
+            println!("    Your version preserved. Their version: {theirs_rel}");
 
-            report.push_str(&format!("\n### {}\n", conflict.path));
+            let _ = write!(report, "\n### {}\n", conflict.path);
             report.push_str("- **Status:** Both sides modified\n");
             report.push_str("- **Your version:** preserved in working tree\n");
-            report.push_str(&format!("- **Their version:** saved to `{}`\n", theirs_rel));
+            let _ = writeln!(report, "- **Their version:** saved to `{theirs_rel}`");
             report.push_str(
                 "- **Resolution:** Choose which version to keep, or manually merge in an external tool\n",
             );
@@ -607,7 +591,7 @@ pub(crate) async fn cmd_merge(
         if !text_conflicts.is_empty() {
             report.push_str("\n## Text File Conflicts\n\n");
             for conflict in &text_conflicts {
-                report.push_str(&format!("### {}\n", conflict.path));
+                let _ = writeln!(report, "### {}", conflict.path);
                 report.push_str("- **Status:** Both sides modified (conflict markers in file)\n");
             }
         }
@@ -647,11 +631,10 @@ pub(crate) async fn cmd_merge(
             );
         } else if ooxml_resolved > 0 {
             println!(
-                "All {} conflict(s) resolved. {} OOXML file(s) preserved (your version).",
-                resolved_count, ooxml_resolved
+                "All {resolved_count} conflict(s) resolved. {ooxml_resolved} OOXML file(s) preserved (your version)."
             );
         } else {
-            println!("All conflicts resolved. {} via {}.", resolved_count, via);
+            println!("All conflicts resolved. {resolved_count} via {via}.");
         }
         println!("Run `suture commit` to finalize the merge.");
     } else {
@@ -664,7 +647,7 @@ pub(crate) async fn cmd_merge(
 
 fn indent(s: &str, prefix: &str) -> String {
     s.lines()
-        .map(|line| format!("{}{}", prefix, line))
+        .map(|line| format!("{prefix}{line}"))
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -677,7 +660,7 @@ fn is_binary_path(path: &str) -> bool {
     std::path::Path::new(path)
         .extension()
         .and_then(|e| e.to_str())
-        .map(|e| e.to_lowercase())
+        .map(str::to_lowercase)
         .is_some_and(|ext| {
             matches!(
                 ext.as_str(),
@@ -710,35 +693,33 @@ fn generate_ooxml_conflict_report(
     for conflict in conflicts {
         let ext = std::path::Path::new(&conflict.path)
             .extension()
-            .and_then(|e| e.to_str())
-            .map(|e| e.to_uppercase())
-            .unwrap_or_else(|| "UNKNOWN".to_string());
+            .and_then(|e| e.to_str()).map_or_else(|| "UNKNOWN".to_owned(), str::to_uppercase);
 
-        report.push_str(&format!("{} ({})\n", conflict.path, ext));
+        let _ = writeln!(report, "{} ({})", conflict.path, ext);
         report.push_str("  Could not automatically merge. Your version has been preserved.\n\n");
 
         if conflict.our_content_hash.is_some() {
             let our_size = std::fs::metadata(&conflict.path)
                 .map(|m| m.len())
                 .unwrap_or(0);
-            report.push_str(&format!("  Your version: {} bytes\n", our_size));
+            let _ = writeln!(report, "  Your version: {our_size} bytes");
             if let Some(their_hash) = conflict.their_content_hash {
                 let hex = suture_common::Hash::to_hex(&their_hash);
-                report.push_str(&format!("  Their version: blob {}\n", &hex[..12]));
+                let _ = writeln!(report, "  Their version: blob {}", &hex[..12]);
             }
             if let Some(base_hash) = conflict.base_content_hash {
                 let hex = suture_common::Hash::to_hex(&base_hash);
-                report.push_str(&format!("  Base version: blob {}\n", &hex[..12]));
+                let _ = writeln!(report, "  Base version: blob {}", &hex[..12]);
             }
         }
 
         report.push_str("\n  To resolve:\n");
         report.push_str("    1. Open the file (your version is preserved)\n");
         report.push_str("    2. Contact the other editor to see their changes\n");
-        report.push_str(&format!(
+        let _ = write!(report, 
             "    3. Make your edits and run: suture add {} && suture commit \"resolved conflict\"\n\n",
             conflict.path
-        ));
+        );
     }
 
     std::fs::write(report_dir.join("report.md"), report)?;
@@ -779,10 +760,10 @@ fn manual_line_merge(ours: &str, theirs: &str) -> String {
 
     // If one side has no unique changes, the other side wins
     if ours_only.is_empty() {
-        return theirs.to_string();
+        return theirs.to_owned();
     }
     if theirs_only.is_empty() {
-        return ours.to_string();
+        return ours.to_owned();
     }
 
     // Both sides have unique changes — build combined output.
@@ -800,7 +781,7 @@ fn manual_line_merge(ours: &str, theirs: &str) -> String {
                 if ours_set.contains(next_theirs)
                     && result.iter().any(|r| r.trim() == next_theirs.trim())
                 {
-                    result.push(theirs_only[theirs_idx].to_string());
+                    result.push(theirs_only[theirs_idx].to_owned());
                     theirs_idx += 1;
                 } else {
                     break;
@@ -812,7 +793,7 @@ fn manual_line_merge(ours: &str, theirs: &str) -> String {
     }
 
     while theirs_idx < theirs_only.len() {
-        result.push(theirs_only[theirs_idx].to_string());
+        result.push(theirs_only[theirs_idx].to_owned());
         theirs_idx += 1;
     }
 
@@ -834,13 +815,13 @@ fn semantic_remerge_both_modified(
     // which would make LCA(merge, source) = source (trivially wrong).
     let head_id = pre_merge_head_id
         .as_ref()
-        .ok_or_else(|| "pre-merge HEAD ID not available".to_string())?;
+        .ok_or_else(|| "pre-merge HEAD ID not available".to_owned())?;
     let bn = suture_common::BranchName::new(source_branch)
-        .map_err(|e| format!("invalid branch name '{}': {}", source_branch, e))?;
+        .map_err(|e| format!("invalid branch name '{source_branch}': {e}"))?;
     let source_id = repo
         .dag()
         .get_branch(&bn)
-        .ok_or_else(|| format!("branch '{}' not found", source_branch))?;
+        .ok_or_else(|| format!("branch '{source_branch}' not found"))?;
 
     // Compute the LCA between HEAD and the source branch tip.
     // The LCA is the true 3-way merge base — it represents the last
@@ -849,13 +830,13 @@ fn semantic_remerge_both_modified(
     let lca_id = repo
         .dag()
         .lca(head_id, &source_id)
-        .ok_or_else(|| "no common ancestor found for merge".to_string())?;
+        .ok_or_else(|| "no common ancestor found for merge".to_owned())?;
 
     // Build LCA file tree snapshot to get the base content for 3-way merge.
     // Use snapshot_fresh to bypass any stale SQLite cache.
     let lca_tree = repo
         .snapshot_fresh(&lca_id)
-        .map_err(|e| format!("failed to snapshot LCA: {}", e))?;
+        .map_err(|e| format!("failed to snapshot LCA: {e}"))?;
 
     // Build LCA file content map from the snapshot.
     // FileTree maps path → blob hash; we resolve each hash to content via CAS.
@@ -871,7 +852,7 @@ fn semantic_remerge_both_modified(
     // Use snapshot_fresh for correctness.
     let source_tree = repo
         .snapshot_fresh(&source_id)
-        .map_err(|e| format!("failed to snapshot source: {}", e))?;
+        .map_err(|e| format!("failed to snapshot source: {e}"))?;
 
     let source_files: std::collections::HashMap<String, String> = source_tree
         .iter()
@@ -912,10 +893,7 @@ fn semantic_remerge_both_modified(
         // - theirs: source branch tip's version (from snapshot, NOT post-merge
         //           working tree, because the clean merge may have already
         //           overwritten ours' changes with theirs')
-        let base = match lca_files.get(path.as_str()) {
-            Some(c) => c.as_str(),
-            None => "", // File didn't exist at LCA — treat as empty base
-        };
+        let base = lca_files.get(path.as_str()).map_or("", String::as_str);
         let ours = match pre_merge_files.get(path.as_str()) {
             Some(c) => c.as_str(),
             None => continue,

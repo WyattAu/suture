@@ -1,4 +1,4 @@
-pub(crate) async fn cmd_undo(
+pub async fn cmd_undo(
     n: usize,
     hard: bool,
     force: bool,
@@ -19,7 +19,7 @@ pub(crate) async fn cmd_undo(
         let patch = repo
             .dag()
             .get_patch(&current)
-            .ok_or_else(|| "HEAD commit not found in DAG".to_string())?;
+            .ok_or_else(|| "HEAD commit not found in DAG".to_owned())?;
         match patch.parent_ids.first() {
             Some(parent_id) => {
                 current = *parent_id;
@@ -42,7 +42,7 @@ pub(crate) async fn cmd_undo(
         eprintln!("warning: you have uncommitted changes");
     }
 
-    let target_ref = format!("HEAD~{}", n);
+    let target_ref = format!("HEAD~{n}");
     let mode = if hard {
         ResetMode::Hard
     } else {

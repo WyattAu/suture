@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-#![allow(clippy::collapsible_match)]
 
 //! # suture-merge
 //!
@@ -102,7 +101,7 @@ pub fn merge_auto(
     extension: Option<&str>,
 ) -> Result<MergeResult, MergeError> {
     let ext = extension
-        .ok_or_else(|| MergeError::UnsupportedFormat("no extension provided".to_string()))?;
+        .ok_or_else(|| MergeError::UnsupportedFormat("no extension provided".to_owned()))?;
     let registry = build_registry();
     let driver = registry.get(ext)?;
     perform_merge(driver, base, ours, theirs)
@@ -114,7 +113,7 @@ pub fn diff(
     extension: Option<&str>,
 ) -> Result<Vec<SemanticChange>, MergeError> {
     let ext = extension
-        .ok_or_else(|| MergeError::UnsupportedFormat("no extension provided".to_string()))?;
+        .ok_or_else(|| MergeError::UnsupportedFormat("no extension provided".to_owned()))?;
     let registry = build_registry();
     let driver = registry.get(ext)?;
     Ok(driver.diff(Some(base), modified)?)
@@ -126,7 +125,7 @@ pub fn format_diff(
     extension: Option<&str>,
 ) -> Result<String, MergeError> {
     let ext = extension
-        .ok_or_else(|| MergeError::UnsupportedFormat("no extension provided".to_string()))?;
+        .ok_or_else(|| MergeError::UnsupportedFormat("no extension provided".to_owned()))?;
     let registry = build_registry();
     let driver = registry.get(ext)?;
     Ok(driver.format_diff(Some(base), modified)?)

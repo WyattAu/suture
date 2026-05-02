@@ -22,9 +22,9 @@ pub enum MergeError {
 impl std::fmt::Display for MergeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MergeError::UnsupportedFormat(fmt) => write!(f, "unsupported format: {fmt}"),
-            MergeError::ParseError(msg) => write!(f, "parse error: {msg}"),
-            MergeError::NoDriver(ext) => write!(f, "no driver available for extension: {ext}"),
+            Self::UnsupportedFormat(fmt) => write!(f, "unsupported format: {fmt}"),
+            Self::ParseError(msg) => write!(f, "parse error: {msg}"),
+            Self::NoDriver(ext) => write!(f, "no driver available for extension: {ext}"),
         }
     }
 }
@@ -34,29 +34,28 @@ impl std::error::Error for MergeError {}
 impl From<DriverError> for MergeError {
     fn from(err: DriverError) -> Self {
         match err {
-            DriverError::ParseError(msg) => MergeError::ParseError(msg),
-            DriverError::DriverNotFound(ext) => MergeError::NoDriver(ext),
-            DriverError::UnsupportedExtension(ext) => MergeError::UnsupportedFormat(ext),
-            DriverError::SerializationError(msg) => MergeError::ParseError(msg),
-            DriverError::IoError(e) => MergeError::ParseError(e.to_string()),
+            DriverError::DriverNotFound(ext) => Self::NoDriver(ext),
+            DriverError::UnsupportedExtension(ext) => Self::UnsupportedFormat(ext),
+            DriverError::ParseError(msg) | DriverError::SerializationError(msg) => Self::ParseError(msg),
+            DriverError::IoError(e) => Self::ParseError(e.to_string()),
         }
     }
 }
 
-pub(crate) fn perform_merge(
+pub fn perform_merge(
     driver: &dyn SutureDriver,
     base: &str,
     ours: &str,
     theirs: &str,
 ) -> Result<MergeResult, MergeError> {
-    match driver.merge(base, ours, theirs)? {
-        Some(merged) => Ok(MergeResult {
+    Ok(driver.merge(base, ours, theirs)?.map_or_else(
+        || MergeResult {
+            merged: ours.to_owned(),
+            status: MergeStatus::Conflict,
+        },
+        |merged| MergeResult {
             merged,
             status: MergeStatus::Clean,
-        }),
-        None => Ok(MergeResult {
-            merged: ours.to_string(),
-            status: MergeStatus::Conflict,
-        }),
-    }
+        },
+    ))
 }

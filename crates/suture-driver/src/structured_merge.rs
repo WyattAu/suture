@@ -26,6 +26,7 @@ macro_rules! impl_structured_driver {
         arrow = $arrow:literal,
     ) => {
         #[allow(clippy::collapsible_match)]
+        #[allow(clippy::unnested_or_patterns)]
         impl $driver {
             pub fn new() -> Self {
                 Self

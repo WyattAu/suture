@@ -12,13 +12,13 @@ const KNOWN_HOOKS: &[&str] = &[
     "pre-cherry-pick",
 ];
 
-pub(crate) enum HookAction {
+pub enum HookAction {
     List,
     Run { name: String },
     Edit { name: String },
 }
 
-pub(crate) async fn cmd_hook(action: &HookAction) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_hook(action: &HookAction) -> Result<(), Box<dyn std::error::Error>> {
     let repo = suture_core::repository::Repository::open(Path::new("."))?;
     let hooks_dir = suture_core::hooks::hooks_dir(repo.root());
 
@@ -46,28 +46,28 @@ fn cmd_hook_list(hooks_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
             };
 
             let size_str = if size < 1024 {
-                format!("{} B", size)
+                format!("{size} B")
             } else if size < 1024 * 1024 {
                 format!("{:.1} KB", size as f64 / 1024.0)
             } else {
                 format!("{:.1} MB", size as f64 / (1024.0 * 1024.0))
             };
 
-            println!("{:<20}  {:>8}  {}", hook_name, size_str, status);
+            println!("{hook_name:<20}  {size_str:>8}  {status}");
 
-            let sub_dir = hooks_dir.join(format!("{}.d", hook_name));
+            let sub_dir = hooks_dir.join(format!("{hook_name}.d"));
             if sub_dir.is_dir() {
                 let mut entries: Vec<_> = std::fs::read_dir(&sub_dir)?
-                    .filter_map(|e| e.ok())
+                    .filter_map(std::result::Result::ok)
                     .filter(|e| e.path().is_file())
                     .collect();
-                entries.sort_by_key(|e| e.file_name());
+                entries.sort_by_key(std::fs::DirEntry::file_name);
                 for entry in &entries {
                     let name = entry.file_name().to_string_lossy().to_string();
                     let sub_size = entry.metadata().map(|m| m.len()).unwrap_or(0);
                     let sub_exec = is_executable(&entry.path());
                     let sub_status = if sub_exec { "active" } else { "inactive" };
-                    println!("  {}/{}  {:>8}  {}", hook_name, name, sub_size, sub_status);
+                    println!("  {hook_name}/{name}  {sub_size:>8}  {sub_status}");
                 }
             }
         }
@@ -79,7 +79,7 @@ fn cmd_hook_list(hooks_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
         println!();
         println!("Available hooks:");
         for name in KNOWN_HOOKS {
-            println!("  {}", name);
+            println!("  {name}");
         }
     }
 
@@ -98,11 +98,11 @@ async fn cmd_hook_run(repo_root: &Path, name: &str) -> Result<(), Box<dyn std::e
 
     let hook_path = suture_core::hooks::hooks_dir(repo_root).join(name);
     if !hook_path.exists() {
-        return Err(format!("hook '{}' not found", name).into());
+        return Err(format!("hook '{name}' not found").into());
     }
 
     if !is_executable(&hook_path) {
-        return Err(format!("hook '{}' exists but is not executable", name).into());
+        return Err(format!("hook '{name}' exists but is not executable").into());
     }
 
     let start = std::time::Instant::now();
@@ -126,9 +126,9 @@ async fn cmd_hook_run(repo_root: &Path, name: &str) -> Result<(), Box<dyn std::e
             Ok(())
         }
         Err(suture_core::hooks::HookError::NotFound(_)) => {
-            Err(format!("hook '{}' not found", name).into())
+            Err(format!("hook '{name}' not found").into())
         }
-        Err(e) => Err(format!("{}: {}", name, e).into()),
+        Err(e) => Err(format!("{name}: {e}").into()),
     }
 }
 
@@ -153,12 +153,12 @@ fn cmd_hook_edit(hooks_dir: &Path, name: &str) -> Result<(), Box<dyn std::error:
 
     let editor = std::env::var("VISUAL")
         .or_else(|_| std::env::var("EDITOR"))
-        .unwrap_or_else(|_| "vi".to_string());
+        .unwrap_or_else(|_| "vi".to_owned());
 
     let status = std::process::Command::new(&editor)
         .arg(&hook_path)
         .status()
-        .map_err(|e| format!("failed to run editor '{}': {}", editor, e))?;
+        .map_err(|e| format!("failed to run editor '{editor}': {e}"))?;
 
     if !status.success() {
         return Err(format!("editor exited with code {:?}", status.code()).into());

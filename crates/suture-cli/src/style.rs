@@ -1,10 +1,10 @@
-pub(crate) const ANSI_RED: &str = "\x1b[31m";
-pub(crate) const ANSI_GREEN: &str = "\x1b[32m";
-pub(crate) const ANSI_YELLOW: &str = "\x1b[33m";
-pub(crate) const ANSI_BOLD_CYAN: &str = "\x1b[1;36m";
-pub(crate) const ANSI_RESET: &str = "\x1b[0m";
+pub const ANSI_RED: &str = "\x1b[31m";
+pub const ANSI_GREEN: &str = "\x1b[32m";
+pub const ANSI_YELLOW: &str = "\x1b[33m";
+pub const ANSI_BOLD_CYAN: &str = "\x1b[1;36m";
+pub const ANSI_RESET: &str = "\x1b[0m";
 
-pub(crate) fn run_hook_if_exists(
+pub fn run_hook_if_exists(
     repo_root: &std::path::Path,
     hook_name: &str,
     extra_env: std::collections::HashMap<String, String>,
@@ -35,7 +35,7 @@ pub(crate) fn run_hook_if_exists(
                         suture_core::hooks::format_hook_result(result),
                         ANSI_RESET
                     );
-                    eprintln!("{}", msg);
+                    eprintln!("{msg}");
                     if !result.stderr.is_empty() {
                         eprintln!("{}", result.stderr);
                     }
@@ -49,6 +49,6 @@ pub(crate) fn run_hook_if_exists(
             Ok(())
         }
         Err(suture_core::hooks::HookError::NotFound(_)) => Ok(()),
-        Err(e) => Err(format!("Hook '{}' error: {}", hook_name, e).into()),
+        Err(e) => Err(format!("Hook '{hook_name}' error: {e}").into()),
     }
 }

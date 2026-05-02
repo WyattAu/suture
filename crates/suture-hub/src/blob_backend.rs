@@ -161,13 +161,13 @@ pub struct BlobBackendConfig {
 impl Default for BlobBackendConfig {
     fn default() -> Self {
         Self {
-            backend_type: "sqlite".to_string(),
+            backend_type: "sqlite".to_owned(),
             s3_endpoint: String::new(),
             s3_bucket: String::new(),
-            s3_region: "us-east-1".to_string(),
+            s3_region: "us-east-1".to_owned(),
             s3_access_key: String::new(),
             s3_secret_key: String::new(),
-            s3_prefix: "suture/blobs/".to_string(),
+            s3_prefix: "suture/blobs/".to_owned(),
         }
     }
 }

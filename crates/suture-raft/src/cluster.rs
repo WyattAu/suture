@@ -21,6 +21,7 @@ pub struct ClusterTickResult {
 }
 
 impl Cluster {
+    #[must_use] 
     pub fn new(peers: Vec<u64>, election_timeout: u64, heartbeat_interval: u64) -> Self {
         let mut nodes = BTreeMap::new();
         for &id in &peers {
@@ -87,6 +88,7 @@ impl Cluster {
         node.propose(command)
     }
 
+    #[must_use] 
     pub fn leader(&self) -> Option<u64> {
         self.nodes
             .iter()
@@ -94,13 +96,14 @@ impl Cluster {
             .map(|(&id, _)| id)
     }
 
+    #[must_use] 
     pub fn state(&self, node_id: u64) -> NodeState {
         self.nodes
             .get(&node_id)
-            .map(|n| *n.state())
-            .unwrap_or(NodeState::Follower)
+            .map_or(NodeState::Follower, |n| *n.state())
     }
 
+    #[must_use] 
     pub fn committed_entries(&self, node_id: u64) -> Vec<LogEntry> {
         self.nodes
             .get(&node_id)
@@ -132,7 +135,7 @@ impl Cluster {
     #[allow(dead_code)]
     fn all_ids(&self) -> Vec<u64> {
         let mut ids: Vec<u64> = self.nodes.keys().copied().collect();
-        ids.sort();
+        ids.sort_unstable();
         ids
     }
 }

@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use thiserror::Error;
-use wasmtime::*;
+use wasmtime::{Engine, Module, Store, Linker, Caller, Instance, Config};
 
 // ---------------------------------------------------------------------------
 // Plugin error types
@@ -144,13 +144,12 @@ impl WasmPlugin {
             .context("failed to compile Wasm module")?;
 
         let exports: Vec<_> = module.exports().collect();
-        let export_names: Vec<&str> = exports.iter().map(|e| e.name()).collect();
+        let export_names: Vec<&str> = exports.iter().map(wasmtime::ExportType::name).collect();
 
         for required in &["merge", "metadata"] {
             if !export_names.contains(required) {
                 anyhow::bail!(
-                    "plugin '{}' missing required export '{}'. Has: {:?}",
-                    name, required, export_names
+                    "plugin '{name}' missing required export '{required}'. Has: {export_names:?}"
                 );
             }
         }
@@ -160,7 +159,7 @@ impl WasmPlugin {
         Ok(Self {
             engine,
             module,
-            name: name.to_string(),
+            name: name.to_owned(),
             driver_name,
             extensions,
         })
@@ -175,23 +174,26 @@ impl WasmPlugin {
             .instantiate(&mut store, module)
             .context("failed to instantiate plugin")?;
 
-        let driver_name = format!("plugin-{}", name);
+        let driver_name = format!("plugin-{name}");
         let extensions = vec![];
 
         Ok((driver_name, extensions))
     }
 
     /// Get the plugin's driver name.
+    #[must_use] 
     pub fn driver_name(&self) -> &str {
         &self.driver_name
     }
 
     /// Get the plugin's supported extensions.
+    #[must_use] 
     pub fn extensions(&self) -> &[String] {
         &self.extensions
     }
 
     /// Get the plugin's name.
+    #[must_use] 
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -280,7 +282,7 @@ impl WasmPlugin {
             let result_start = result_ptr as usize + 4;
             let result_end = result_start + result_len as usize;
             let merged = String::from_utf8(mem_data[result_start..result_end].to_vec())
-                .unwrap_or_else(|_| format!("<invalid utf8: {} bytes>", result_len));
+                .unwrap_or_else(|_| format!("<invalid utf8: {result_len} bytes>"));
 
             Ok(PluginMergeResult {
                 merged: Some(merged),
@@ -348,7 +350,7 @@ impl WasmPluginHost {
         linker.func_wrap("env", "get_input_byte", |caller: Caller<'_, PluginState>, offset: i32| -> i32 {
             let state = caller.data();
             if (offset as usize) < state.input_buffer.len() {
-                state.input_buffer[offset as usize] as i32
+                i32::from(state.input_buffer[offset as usize])
             } else {
                 -1
             }
@@ -370,7 +372,7 @@ impl WasmPluginHost {
         let instance = linker.instantiate(&mut store, &module)
             .map_err(|e| PluginError::Runtime(e.to_string()))?;
 
-        let metadata = extract_metadata_host(&instance, &mut store)?;
+        let metadata = extract_metadata_host(&instance, &mut store);
 
         Ok(Self {
             engine,
@@ -412,7 +414,7 @@ impl WasmPluginHost {
 
         let merge_fn = instance
             .get_typed_func::<(), i32>(&mut *store, "suture_merge")
-            .map_err(|e| PluginError::Interface(format!("suture_merge function not found: {}", e)))?;
+            .map_err(|e| PluginError::Interface(format!("suture_merge function not found: {e}")))?;
 
         let result_code = merge_fn.call(&mut *store, ())
             .map_err(|e| PluginError::Runtime(e.to_string()))?;
@@ -430,8 +432,8 @@ impl WasmPluginHost {
                 Ok(Some(output))
             }
             1 => Ok(None),
-            -1 => Err(PluginError::Runtime("Plugin returned error".to_string())),
-            _ => Err(PluginError::Runtime(format!("Unknown result code: {}", result_code))),
+            -1 => Err(PluginError::Runtime("Plugin returned error".to_owned())),
+            _ => Err(PluginError::Runtime(format!("Unknown result code: {result_code}"))),
         }
     }
 
@@ -452,7 +454,7 @@ impl WasmPluginHost {
 fn extract_metadata_host(
     instance: &Instance,
     store: &mut Store<PluginState>,
-) -> Result<PluginMetadata, PluginError> {
+) -> PluginMetadata {
     let memory = instance
         .get_memory(&mut *store, "memory");
 
@@ -466,16 +468,17 @@ fn extract_metadata_host(
             (Some(pf), Some(lf)) => {
                 let ptr = pf.call(&mut *store, ()).unwrap_or(0);
                 let len = lf.call(&mut *store, ()).unwrap_or(0) as usize;
-                if let Some(ref mem) = memory {
-                    let data: &[u8] = mem.data(&*store);
-                    if ptr as usize + len <= data.len() {
-                        String::from_utf8_lossy(&data[ptr as usize..ptr as usize + len]).into_owned()
-                    } else {
-                        String::new()
-                    }
-                } else {
-                    String::new()
-                }
+                memory.as_ref().map_or_else(
+                    String::new,
+                    |mem| {
+                        let data: &[u8] = mem.data(&*store);
+                        if ptr as usize + len <= data.len() {
+                            String::from_utf8_lossy(&data[ptr as usize..ptr as usize + len]).into_owned()
+                        } else {
+                            String::new()
+                        }
+                    },
+                )
             }
             _ => String::new(),
         }
@@ -486,15 +489,15 @@ fn extract_metadata_host(
 
     let extensions = vec![];
 
-    Ok(PluginMetadata {
-        driver_name: format!("wasm-plugin-{}", name),
+    PluginMetadata {
+        driver_name: format!("wasm-plugin-{name}"),
         name,
         version,
         abi_version: PLUGIN_ABI_VERSION,
         extensions,
         description: String::new(),
         author: String::new(),
-    })
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -507,11 +510,11 @@ impl SutureWasmPlugin for WasmPlugin {
     }
 
     fn plugin_extensions(&self) -> Vec<&str> {
-        self.extensions.iter().map(|s| s.as_str()).collect()
+        self.extensions.iter().map(std::string::String::as_str).collect()
     }
 
     fn merge(&self, base: &str, ours: &str, theirs: &str) -> Result<Option<String>, PluginError> {
-        let result = WasmPlugin::merge(self, base, ours, theirs)
+        let result = Self::merge(self, base, ours, theirs)
             .map_err(|e| PluginError::Runtime(e.to_string()))?;
         if result.conflicts {
             Ok(None)
@@ -548,15 +551,15 @@ impl SutureWasmPlugin for WasmPluginHost {
     }
 
     fn plugin_extensions(&self) -> Vec<&str> {
-        self.metadata.extensions.iter().map(|s| s.as_str()).collect()
+        self.metadata.extensions.iter().map(std::string::String::as_str).collect()
     }
 
     fn merge(&self, base: &str, ours: &str, theirs: &str) -> Result<Option<String>, PluginError> {
-        WasmPluginHost::merge(self, base, ours, theirs)
+        Self::merge(self, base, ours, theirs)
     }
 
     fn can_handle(&self, _content: &str, extension: &str) -> bool {
-        WasmPluginHost::can_handle(self, extension)
+        Self::can_handle(self, extension)
     }
 
     fn metadata(&self) -> PluginMetadata {
@@ -574,6 +577,7 @@ pub struct PluginManager {
 }
 
 impl PluginManager {
+    #[must_use] 
     pub fn new() -> Self {
         Self { plugins: Vec::new() }
     }
@@ -588,7 +592,7 @@ impl PluginManager {
     /// Load a plugin from a .wasm file.
     pub fn load_file(&mut self, path: &str) -> Result<()> {
         let wasm_bytes = std::fs::read(path)
-            .with_context(|| format!("failed to read plugin file: {}", path))?;
+            .with_context(|| format!("failed to read plugin file: {path}"))?;
         let name = std::path::Path::new(path)
             .file_stem()
             .and_then(|s| s.to_str())
@@ -597,11 +601,13 @@ impl PluginManager {
     }
 
     /// Get a plugin by driver name.
+    #[must_use] 
     pub fn get(&self, driver_name: &str) -> Option<&Arc<WasmPlugin>> {
         self.plugins.iter().find(|p| p.driver_name == driver_name)
     }
 
     /// List all loaded plugins.
+    #[must_use] 
     pub fn list(&self) -> Vec<PluginInfo> {
         self.plugins.iter().map(|p| PluginInfo {
             name: p.name.clone(),
@@ -611,6 +617,7 @@ impl PluginManager {
     }
 
     /// Get total number of loaded plugins.
+    #[must_use] 
     pub fn count(&self) -> usize {
         self.plugins.len()
     }
@@ -642,6 +649,7 @@ pub struct PluginRegistry {
 }
 
 impl PluginRegistry {
+    #[must_use] 
     pub fn new() -> Self {
         Self { plugins: HashMap::new() }
     }
@@ -664,11 +672,13 @@ impl PluginRegistry {
     }
 
     /// Get a plugin by name.
+    #[must_use] 
     pub fn get_plugin(&self, name: &str) -> Option<&WasmPluginHost> {
         self.plugins.get(name)
     }
 
     /// Find the first plugin that handles the given extension.
+    #[must_use] 
     pub fn find_plugin_for_extension(&self, ext: &str) -> Option<&WasmPluginHost> {
         let normalized = ext.strip_prefix('.').unwrap_or(ext);
         self.plugins.values().find(|p| {
@@ -677,11 +687,13 @@ impl PluginRegistry {
     }
 
     /// List metadata for all loaded plugins.
+    #[must_use] 
     pub fn list_plugins(&self) -> Vec<&PluginMetadata> {
-        self.plugins.values().map(|p| p.metadata()).collect()
+        self.plugins.values().map(WasmPluginHost::metadata).collect()
     }
 
     /// Number of registered plugins.
+    #[must_use] 
     pub fn count(&self) -> usize {
         self.plugins.len()
     }
@@ -706,16 +718,16 @@ pub fn validate_plugin(wasm_bytes: &[u8]) -> Result<Vec<String>> {
 
     let exports: Vec<String> = module
         .exports()
-        .map(|e| e.name().to_string())
+        .map(|e| e.name().to_owned())
         .collect();
 
     let mut warnings = Vec::new();
 
-    if !exports.contains(&"merge".to_string()) {
-        warnings.push("missing 'merge' export".to_string());
+    if !exports.contains(&"merge".to_owned()) {
+        warnings.push("missing 'merge' export".to_owned());
     }
-    if !exports.contains(&"memory".to_string()) {
-        warnings.push("missing 'memory' export (required for string I/O)".to_string());
+    if !exports.contains(&"memory".to_owned()) {
+        warnings.push("missing 'memory' export (required for string I/O)".to_owned());
     }
 
     Ok(warnings)

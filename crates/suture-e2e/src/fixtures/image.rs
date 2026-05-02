@@ -1,28 +1,34 @@
+#[must_use] 
 pub fn small_png() -> String {
     let img = image::RgbImage::from_pixel(100, 100, image::Rgb([64, 128, 192]));
     png_to_string(&img)
 }
 
+#[must_use] 
 pub fn hd_png() -> String {
     let img = image::RgbImage::from_pixel(1920, 1080, image::Rgb([32, 64, 128]));
     png_to_string(&img)
 }
 
+#[must_use] 
 pub fn large_png() -> String {
     let img = image::RgbImage::from_pixel(4000, 3000, image::Rgb([16, 32, 64]));
     png_to_string(&img)
 }
 
+#[must_use] 
 pub fn grayscale_png() -> String {
     let img = image::GrayImage::from_pixel(800, 600, image::Luma([128]));
     gray_png_to_string(&img)
 }
 
+#[must_use] 
 pub fn rgba_png() -> String {
     let img = image::RgbaImage::from_pixel(500, 500, image::Rgba([255, 0, 0, 128]));
     rgba_png_to_string(&img)
 }
 
+#[must_use] 
 pub fn jpeg_quality_low() -> String {
     let img = image::RgbImage::from_pixel(800, 600, image::Rgb([100, 150, 200]));
     let mut buf = Vec::new();
@@ -31,6 +37,7 @@ pub fn jpeg_quality_low() -> String {
     unsafe { String::from_utf8_unchecked(buf) }
 }
 
+#[must_use] 
 pub fn jpeg_quality_high() -> String {
     let img = image::RgbImage::from_pixel(800, 600, image::Rgb([100, 150, 200]));
     let mut buf = Vec::new();
@@ -39,6 +46,7 @@ pub fn jpeg_quality_high() -> String {
     unsafe { String::from_utf8_unchecked(buf) }
 }
 
+#[must_use] 
 pub fn resized_png(width: u32, height: u32, color: [u8; 3]) -> String {
     let img = image::RgbImage::from_pixel(width, height, image::Rgb(color));
     png_to_string(&img)

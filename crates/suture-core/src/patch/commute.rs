@@ -29,18 +29,19 @@ pub enum CommuteResult {
 /// Note that some patches with overlapping touch sets MAY still commute
 /// (e.g., writing the same value), but we conservatively report them as
 /// non-commuting to guarantee correctness.
+#[must_use] 
 pub fn commute(p1: &Patch, p2: &Patch) -> CommuteResult {
     // Identity patches commute with everything
     if p1.is_identity() || p2.is_identity() {
         return CommuteResult::Commutes;
     }
 
-    if !p1.touch_set.intersects(&p2.touch_set) {
-        CommuteResult::Commutes
-    } else {
+    if p1.touch_set.intersects(&p2.touch_set) {
         let intersection = p1.touch_set.intersection(&p2.touch_set);
         let conflict_addresses: Vec<String> = intersection.iter().cloned().collect();
         CommuteResult::DoesNotCommute { conflict_addresses }
+    } else {
+        CommuteResult::Commutes
     }
 }
 

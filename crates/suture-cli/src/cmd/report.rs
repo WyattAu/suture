@@ -1,7 +1,8 @@
 use crate::ref_utils::resolve_ref;
 use std::path::Path;
 
-pub(crate) enum ReportType {
+use std::fmt::Write;
+pub enum ReportType {
     Change {
         from: Option<String>,
         to: Option<String>,
@@ -17,7 +18,7 @@ pub(crate) enum ReportType {
     },
 }
 
-pub(crate) async fn cmd_report(report_type: &ReportType) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_report(report_type: &ReportType) -> Result<(), Box<dyn std::error::Error>> {
     match report_type {
         ReportType::Change {
             from,
@@ -42,22 +43,19 @@ async fn cmd_report_change(
     let to_ref = to.unwrap_or("HEAD");
     let to_patch = resolve_ref(&repo, to_ref, &all_patches)?;
 
-    let from_ref = match from {
-        Some(f) => f.to_string(),
-        None => {
-            let tags = repo.list_tags().unwrap_or_default();
-            if let Some((tag_name, tag_id)) = tags.last() {
-                let tag_hex = tag_id.to_hex();
-                if tag_hex != to_patch.id.to_hex() {
-                    tag_name.clone()
-                } else {
-                    "HEAD~10".to_string()
-                }
+    let from_ref = from.map_or_else(|| {
+        let tags = repo.list_tags().unwrap_or_default();
+        if let Some((tag_name, tag_id)) = tags.last() {
+            let tag_hex = tag_id.to_hex();
+            if tag_hex == to_patch.id.to_hex() {
+                "HEAD~10".to_owned()
             } else {
-                "HEAD~10".to_string()
+                tag_name.clone()
             }
+        } else {
+            "HEAD~10".to_owned()
         }
-    };
+    }, std::borrow::ToOwned::to_owned);
 
     let from_patch = resolve_ref(&repo, &from_ref, &all_patches)?;
 
@@ -103,9 +101,7 @@ async fn cmd_report_change(
 
     let repo_name = std::env::current_dir()
         .unwrap_or_default()
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "unknown".to_string());
+        .file_name().map_or_else(|| "unknown".to_owned(), |n| n.to_string_lossy().to_string());
 
     let report = match format {
         "html" => generate_change_html(
@@ -129,7 +125,7 @@ async fn cmd_report_change(
     match output {
         Some(path) => {
             std::fs::write(path, &report)?;
-            println!("Report written to {}", path);
+            println!("Report written to {path}");
         }
         None => print!("{report}"),
     }
@@ -156,16 +152,15 @@ fn generate_change_markdown(
     file_count: usize,
 ) -> String {
     let mut out = String::new();
-    out.push_str(&format!(
-        "# Change Report: {} ({} → {})\n\n",
-        repo_name, from_ref, to_ref
-    ));
-    out.push_str(&format!(
+    let _ = write!(out, 
+        "# Change Report: {repo_name} ({from_ref} → {to_ref})\n\n"
+    );
+    let _ = write!(out, 
         "## Summary\n\n- **Commits:** {}\n- **Files changed:** {}\n- **Authors:** {}\n\n",
         entries.len(),
         file_count,
         author_count
-    ));
+    );
 
     if !entries.is_empty() {
         out.push_str("## Commits\n\n");
@@ -175,21 +170,21 @@ fn generate_change_markdown(
                 .unwrap_or_default()
                 .format("%Y-%m-%d %H:%M:%S")
                 .to_string();
-            out.push_str(&format!(
+            let _ = write!(out, 
                 "### {} — {}\n\n**Author:** {}  \n**Date:** {}\n\n",
                 short_hash, entry.message, entry.author, dt
-            ));
+            );
 
             if !entry.added.is_empty() || !entry.modified.is_empty() || !entry.deleted.is_empty() {
                 out.push_str("| Status | File |\n|--------|------|\n");
                 for f in &entry.added {
-                    out.push_str(&format!("| A | {} |\n", f));
+                    let _ = writeln!(out, "| A | {f} |");
                 }
                 for f in &entry.modified {
-                    out.push_str(&format!("| M | {} |\n", f));
+                    let _ = writeln!(out, "| M | {f} |");
                 }
                 for f in &entry.deleted {
-                    out.push_str(&format!("| D | {} |\n", f));
+                    let _ = writeln!(out, "| D | {f} |");
                 }
                 out.push('\n');
             }
@@ -218,17 +213,16 @@ fn generate_change_html(
     out.push_str("th{background:#f5f5f5}tr:nth-child(even){background:#fafafa}.added{color:#22863a}.modified{color:#b08800}.deleted{color:#cb2431}");
     out.push_str(".meta{color:#888;font-size:.9em}summary{margin:1em 0;padding:1em;background:#f9f9f9;border-radius:4px}");
     out.push_str("</style></head><body>\n");
-    out.push_str(&format!(
-        "<h1>Change Report: {} ({} → {})</h1>\n",
-        repo_name, from_ref, to_ref
-    ));
+    let _ = writeln!(out, 
+        "<h1>Change Report: {repo_name} ({from_ref} → {to_ref})</h1>"
+    );
     out.push_str("<div class=\"summary\">");
-    out.push_str(&format!(
+    let _ = write!(out, 
         "<strong>Commits:</strong> {} | <strong>Files changed:</strong> {} | <strong>Authors:</strong> {}",
         entries.len(),
         file_count,
         author_count
-    ));
+    );
     out.push_str("</div>\n");
 
     if !entries.is_empty() {
@@ -239,30 +233,27 @@ fn generate_change_html(
                 .unwrap_or_default()
                 .format("%Y-%m-%d %H:%M:%S")
                 .to_string();
-            out.push_str(&format!(
+            let _ = write!(out, 
                 "<h3>{} — {}</h3>\n<p class=\"meta\">Author: {}<br>Date: {}</p>\n",
                 short_hash, entry.message, entry.author, dt
-            ));
+            );
 
             if !entry.added.is_empty() || !entry.modified.is_empty() || !entry.deleted.is_empty() {
                 out.push_str("<table><tr><th>Status</th><th>File</th></tr>\n");
                 for f in &entry.added {
-                    out.push_str(&format!(
-                        "<tr><td class=\"added\">A</td><td>{}</td></tr>\n",
-                        f
-                    ));
+                    let _ = writeln!(out, 
+                        "<tr><td class=\"added\">A</td><td>{f}</td></tr>"
+                    );
                 }
                 for f in &entry.modified {
-                    out.push_str(&format!(
-                        "<tr><td class=\"modified\">M</td><td>{}</td></tr>\n",
-                        f
-                    ));
+                    let _ = writeln!(out, 
+                        "<tr><td class=\"modified\">M</td><td>{f}</td></tr>"
+                    );
                 }
                 for f in &entry.deleted {
-                    out.push_str(&format!(
-                        "<tr><td class=\"deleted\">D</td><td>{}</td></tr>\n",
-                        f
-                    ));
+                    let _ = writeln!(out, 
+                        "<tr><td class=\"deleted\">D</td><td>{f}</td></tr>"
+                    );
                 }
                 out.push_str("</table>\n");
             }
@@ -308,43 +299,40 @@ async fn cmd_report_activity(days: u64, format: &str) -> Result<(), Box<dyn std:
     let mut sorted_authors: Vec<_> = author_stats.into_iter().collect();
     sorted_authors.sort_by_key(|b| std::cmp::Reverse(b.1.most_recent));
 
-    match format {
-        "markdown" => {
-            println!("# Activity Report (last {} days)\n", days);
-            println!("| Author | Commits | Files Changed | Most Recent |");
-            println!("|--------|---------|---------------|-------------|");
-            for (author, stats) in &sorted_authors {
-                let dt = chrono::DateTime::from_timestamp(stats.most_recent as i64, 0)
-                    .unwrap_or_default()
-                    .format("%Y-%m-%d %H:%M")
-                    .to_string();
-                println!(
-                    "| {} | {} | {} | {} |",
-                    author, stats.commits, stats.files_changed, dt
-                );
-            }
-            println!("\n**Total commits:** {}", recent.len());
-        }
-        _ => {
-            println!("Activity Report (last {} days)", days);
-            println!("{}", "─".repeat(60));
-            for (author, stats) in &sorted_authors {
-                let dt = chrono::DateTime::from_timestamp(stats.most_recent as i64, 0)
-                    .unwrap_or_default()
-                    .format("%Y-%m-%d %H:%M")
-                    .to_string();
-                println!(
-                    "  {:<20} {} commits, {} files changed, last: {}",
-                    author, stats.commits, stats.files_changed, dt
-                );
-            }
-            println!("{}", "─".repeat(60));
+    if format == "markdown" {
+        println!("# Activity Report (last {days} days)\n");
+        println!("| Author | Commits | Files Changed | Most Recent |");
+        println!("|--------|---------|---------------|-------------|");
+        for (author, stats) in &sorted_authors {
+            let dt = chrono::DateTime::from_timestamp(stats.most_recent as i64, 0)
+                .unwrap_or_default()
+                .format("%Y-%m-%d %H:%M")
+                .to_string();
             println!(
-                "Total: {} commits by {} authors",
-                recent.len(),
-                sorted_authors.len()
+                "| {} | {} | {} | {} |",
+                author, stats.commits, stats.files_changed, dt
             );
         }
+        println!("\n**Total commits:** {}", recent.len());
+    } else {
+        println!("Activity Report (last {days} days)");
+        println!("{}", "\u{2500}".repeat(60));
+        for (author, stats) in &sorted_authors {
+            let dt = chrono::DateTime::from_timestamp(stats.most_recent as i64, 0)
+                .unwrap_or_default()
+                .format("%Y-%m-%d %H:%M")
+                .to_string();
+            println!(
+                "  {:<20} {} commits, {} files changed, last: {}",
+                author, stats.commits, stats.files_changed, dt
+            );
+        }
+        println!("{}", "\u{2500}".repeat(60));
+        println!(
+            "Total: {} commits by {} authors",
+            recent.len(),
+            sorted_authors.len()
+        );
     }
 
     Ok(())
@@ -384,19 +372,19 @@ async fn cmd_report_stats(at: &str) -> Result<(), Box<dyn std::error::Error>> {
 
     file_sizes.sort_by_key(|b| std::cmp::Reverse(b.1));
 
-    println!("File Statistics (at {})", at);
-    println!("{}", "─".repeat(60));
+    println!("File Statistics (at {at})");
+    println!("{}", "\u{2500}".repeat(60));
 
     let mut categories: Vec<_> = type_counts.into_iter().collect();
     categories.sort_by_key(|b| std::cmp::Reverse(b.1));
 
     println!("\nFiles by type:");
     for (category, count) in &categories {
-        println!("  {:<12} {}", category, count);
+        println!("  {category:<12} {count}");
     }
 
     let total_files: usize = categories.iter().map(|(_, c)| *c).sum();
-    println!("\nTotal files: {}", total_files);
+    println!("\nTotal files: {total_files}");
     println!("Total size:  {}", format_size(total_size));
 
     println!("\nLargest files:");
@@ -416,25 +404,25 @@ fn classify_file_category(path: &str) -> String {
         .to_lowercase();
 
     match ext.as_str() {
-        "txt" | "md" | "rst" => "text".to_string(),
-        "jpg" | "jpeg" | "png" | "gif" | "bmp" | "tiff" | "webp" | "svg" => "image".to_string(),
-        "mp4" | "mov" | "avi" | "mkv" | "webm" => "video".to_string(),
-        "mp3" | "wav" | "flac" | "aac" | "ogg" => "audio".to_string(),
+        "txt" | "md" | "rst" => "text".to_owned(),
+        "jpg" | "jpeg" | "png" | "gif" | "bmp" | "tiff" | "webp" | "svg" => "image".to_owned(),
+        "mp4" | "mov" | "avi" | "mkv" | "webm" => "video".to_owned(),
+        "mp3" | "wav" | "flac" | "aac" | "ogg" => "audio".to_owned(),
         "pdf" | "doc" | "docx" | "xls" | "xlsx" | "ppt" | "pptx" | "odt" | "ods" => {
-            "document".to_string()
+            "document".to_owned()
         }
-        "json" | "yaml" | "yml" | "toml" | "xml" | "csv" => "data".to_string(),
+        "json" | "yaml" | "yml" | "toml" | "xml" | "csv" => "data".to_owned(),
         "rs" | "py" | "js" | "ts" | "go" | "java" | "c" | "cpp" | "h" | "rb" | "sh" => {
-            "code".to_string()
+            "code".to_owned()
         }
-        "zip" | "tar" | "gz" | "bz2" | "xz" | "7z" | "rar" => "archive".to_string(),
-        _ => "other".to_string(),
+        "zip" | "tar" | "gz" | "bz2" | "xz" | "7z" | "rar" => "archive".to_owned(),
+        _ => "other".to_owned(),
     }
 }
 
 fn format_size(bytes: usize) -> String {
     if bytes < 1024 {
-        format!("{} B", bytes)
+        format!("{bytes} B")
     } else if bytes < 1024 * 1024 {
         format!("{:.1} KB", bytes as f64 / 1024.0)
     } else if bytes < 1024 * 1024 * 1024 {
@@ -451,7 +439,7 @@ fn classify_files(
     let parent_hex = patch
         .parent_ids
         .first()
-        .map(|h| h.to_hex())
+        .map(suture_core::Hash::to_hex)
         .unwrap_or_default();
     let commit_hex = patch.id.to_hex();
     let from = if parent_hex.is_empty() {

@@ -40,7 +40,7 @@ pub fn log_merge(
             ours_size as i64,
             theirs_size as i64,
             result_size as i64,
-            has_conflict as i64,
+            i64::from(has_conflict),
             conflict_count,
             merge_time_ms,
         ],
@@ -62,7 +62,7 @@ pub async fn analytics_handler(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
 ) -> impl IntoResponse {
-    let tier = get_user_tier(&state, &claims.sub).unwrap_or_else(|| "free".to_string());
+    let tier = get_user_tier(&state, &claims.sub).unwrap_or_else(|| "free".to_owned());
     if tier == "free" {
         return (
             StatusCode::FORBIDDEN,
@@ -111,7 +111,7 @@ pub async fn analytics_handler(
                 .query_map(rusqlite::params![claims.sub], |row| {
                     Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
                 })?
-                .filter_map(|r| r.ok())
+                .filter_map(std::result::Result::ok)
                 .collect();
             Ok(rows.into_iter().collect())
         })
@@ -126,7 +126,7 @@ pub async fn analytics_handler(
                 .query_map(rusqlite::params![claims.sub], |row| {
                     Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
                 })?
-                .filter_map(|r| r.ok())
+                .filter_map(std::result::Result::ok)
                 .collect();
             Ok(rows
                 .into_iter()

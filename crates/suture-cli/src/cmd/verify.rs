@@ -1,6 +1,6 @@
 use crate::ref_utils::resolve_ref;
 
-pub(crate) async fn cmd_verify(
+pub async fn cmd_verify(
     commit_ref: &str,
     verbose: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -42,7 +42,7 @@ pub(crate) async fn cmd_verify(
                 let fingerprint = hex::encode(pub_key_bytes);
                 println!("VALID");
                 println!("  Author:  {}", patch.author);
-                println!("  Key:     {}", fingerprint);
+                println!("  Key:     {fingerprint}");
                 println!("  Patch:   {}", patch.id.to_hex());
             } else {
                 println!("VALID");

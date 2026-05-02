@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-#![allow(clippy::collapsible_match)]
 //! Suture Language Server Protocol implementation.
 //!
 //! Provides patch-aware editor features:
@@ -15,7 +14,7 @@ use std::sync::Arc;
 
 use tokio::sync::RwLock;
 use tower_lsp::jsonrpc::Result;
-use tower_lsp::lsp_types::*;
+use tower_lsp::lsp_types::{Url, Diagnostic, Range, Position, DiagnosticSeverity, NumberOrString, MessageType, CodeAction, CodeActionKind, Command, Hover, HoverContents, MarkupContent, MarkupKind, CompletionItem, CompletionItemKind, DocumentSymbol, SymbolKind, InitializeParams, InitializeResult, ServerCapabilities, HoverProviderCapability, TextDocumentSyncCapability, TextDocumentSyncKind, CodeActionProviderCapability, CompletionOptions, OneOf, ServerInfo, InitializedParams, DidOpenTextDocumentParams, DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidSaveTextDocumentParams, HoverParams, CodeActionParams, CodeActionResponse, CodeActionOrCommand, CompletionParams, CompletionResponse, DocumentSymbolParams, DocumentSymbolResponse};
 use tower_lsp::{Client, LanguageServer};
 
 use suture_common::FileStatus;
@@ -29,6 +28,7 @@ pub struct SutureLsp {
 }
 
 impl SutureLsp {
+    #[must_use] 
     pub fn new(client: Client) -> Self {
         Self {
             client,
@@ -70,7 +70,7 @@ impl SutureLsp {
             if !is_tracked {
                 diagnostics.push(Diagnostic::new_simple(
                     Range::new(Position::new(0, 0), Position::new(0, 1)),
-                    format!("File \"{}\" is not tracked by suture", relative_str),
+                    format!("File \"{relative_str}\" is not tracked by suture"),
                 ));
             } else if let Some(status) = file_status {
                 let (severity, label) = match status {
@@ -84,9 +84,9 @@ impl SutureLsp {
                 diagnostics.push(Diagnostic::new(
                     Range::new(Position::new(0, 0), Position::new(0, 1)),
                     Some(severity),
-                    Some(NumberOrString::String("suture".to_string())),
-                    Some("suture".to_string()),
-                    label.to_string(),
+                    Some(NumberOrString::String("suture".to_owned())),
+                    Some("suture".to_owned()),
+                    label.to_owned(),
                     None,
                     None,
                 ));
@@ -140,8 +140,8 @@ impl SutureLsp {
                         Position::new((i + 1) as u32, 0),
                     ),
                     Some(DiagnosticSeverity::ERROR),
-                    Some(NumberOrString::String("merge-conflict".to_string())),
-                    Some("suture".to_string()),
+                    Some(NumberOrString::String("merge-conflict".to_owned())),
+                    Some("suture".to_owned()),
                     format!("Merge conflict ({} lines)", i - conflict_start + 1),
                     None,
                     None,
@@ -155,14 +155,14 @@ impl SutureLsp {
 
     fn resolve_conflict_action(uri: &Url, range: Range) -> CodeAction {
         CodeAction {
-            title: "Resolve with Suture semantic merge".to_string(),
+            title: "Resolve with Suture semantic merge".to_owned(),
             kind: Some(CodeActionKind::QUICKFIX),
             diagnostics: None,
             edit: None,
             disabled: None,
             command: Some(Command {
-                title: "suture.resolve".to_string(),
-                command: "suture.resolveConflict".to_string(),
+                title: "suture.resolve".to_owned(),
+                command: "suture.resolveConflict".to_owned(),
                 arguments: Some(vec![serde_json::json!({
                     "uri": uri.to_string(),
                     "range": {
@@ -199,7 +199,7 @@ impl SutureLsp {
         Some(Hover {
             contents: HoverContents::Markup(MarkupContent {
                 kind: MarkupKind::Markdown,
-                value: format!("**{}**: `{}`", key, type_name),
+                value: format!("**{key}**: `{type_name}`"),
             }),
             range: None,
         })
@@ -226,7 +226,7 @@ impl SutureLsp {
         Some(Hover {
             contents: HoverContents::Markup(MarkupContent {
                 kind: MarkupKind::Markdown,
-                value: format!("**{}**: `{}`", key, type_name),
+                value: format!("**{key}**: `{type_name}`"),
             }),
             range: None,
         })
@@ -252,7 +252,7 @@ impl SutureLsp {
         Some(Hover {
             contents: HoverContents::Markup(MarkupContent {
                 kind: MarkupKind::Markdown,
-                value: format!("**{}**: `{}`", key, type_name),
+                value: format!("**{key}**: `{type_name}`"),
             }),
             range: None,
         })
@@ -268,24 +268,18 @@ impl SutureLsp {
     }
 
     fn complete_json(content: &str, _position: Position) -> Vec<CompletionItem> {
-        let value: serde_json::Value = match serde_json::from_str(content) {
-            Ok(v) => v,
-            Err(_) => return Vec::new(),
-        };
-        let object = match value.as_object() {
-            Some(o) => o,
-            None => return Vec::new(),
-        };
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(content) else { return Vec::new() };
+        let Some(object) = value.as_object() else { return Vec::new() };
 
         object
             .keys()
             .map(|key| {
                 let ty = get_json_value_type(object.get(key).unwrap_or(&serde_json::Value::Null));
                 CompletionItem {
-                    label: format!("\"{}\"", key),
+                    label: format!("\"{key}\""),
                     kind: Some(CompletionItemKind::PROPERTY),
-                    detail: Some(format!("`{}`", ty)),
-                    insert_text: Some(format!("\"{}\"", key)),
+                    detail: Some(format!("`{ty}`")),
+                    insert_text: Some(format!("\"{key}\"")),
                     ..Default::default()
                 }
             })
@@ -304,7 +298,7 @@ impl SutureLsp {
                 continue;
             }
             if let Some((key, _)) = trimmed.split_once(':') {
-                let key = key.trim().to_string();
+                let key = key.trim().to_owned();
                 if !key.is_empty() {
                     seen.entry(key).or_insert(true);
                 }
@@ -316,7 +310,7 @@ impl SutureLsp {
             .map(|key| CompletionItem {
                 label: key.clone(),
                 kind: Some(CompletionItemKind::PROPERTY),
-                detail: Some("YAML key".to_string()),
+                detail: Some("YAML key".to_owned()),
                 insert_text: Some(key),
                 ..Default::default()
             })
@@ -344,14 +338,8 @@ impl SutureLsp {
     }
 
     fn document_symbols_json(content: &str) -> Vec<DocumentSymbol> {
-        let value: serde_json::Value = match serde_json::from_str(content) {
-            Ok(v) => v,
-            Err(_) => return Vec::new(),
-        };
-        let object = match value.as_object() {
-            Some(o) => o,
-            None => return Vec::new(),
-        };
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(content) else { return Vec::new() };
+        let Some(object) = value.as_object() else { return Vec::new() };
 
         object
             .iter()
@@ -406,7 +394,7 @@ impl SutureLsp {
                     Position::new(i as u32, character + key.len() as u32),
                 );
                 symbols.push(DocumentSymbol {
-                    name: key.to_string(),
+                    name: key.to_owned(),
                     detail: Some(infer_yaml_type(value)),
                     kind,
                     range,
@@ -443,7 +431,7 @@ fn collect_toml_symbols(
         let display_name = if prefix.is_empty() {
             key.clone()
         } else {
-            format!("{}.{}", prefix, key)
+            format!("{prefix}.{key}")
         };
         let range = find_toml_key_range(content, &display_name);
         symbols.push(DocumentSymbol {
@@ -480,10 +468,10 @@ fn extract_json_key(line: &str) -> Option<String> {
 
 fn get_json_value_type(value: &serde_json::Value) -> String {
     match value {
-        serde_json::Value::Null => "null".to_string(),
-        serde_json::Value::Bool(_) => "boolean".to_string(),
-        serde_json::Value::Number(_) => "number".to_string(),
-        serde_json::Value::String(_) => "string".to_string(),
+        serde_json::Value::Null => "null".to_owned(),
+        serde_json::Value::Bool(_) => "boolean".to_owned(),
+        serde_json::Value::Number(_) => "number".to_owned(),
+        serde_json::Value::String(_) => "string".to_owned(),
         serde_json::Value::Array(arr) => format!("array[{}]", arr.len()),
         serde_json::Value::Object(obj) => format!("object{{{}}}", obj.len()),
     }
@@ -491,19 +479,19 @@ fn get_json_value_type(value: &serde_json::Value) -> String {
 
 fn infer_yaml_type(value: &str) -> String {
     if value.is_empty() || value.starts_with('|') || value.starts_with('>') {
-        "mapping / multiline".to_string()
+        "mapping / multiline".to_owned()
     } else if value == "true" || value == "false" {
-        "boolean".to_string()
+        "boolean".to_owned()
     } else if value.parse::<i64>().is_ok() || value.parse::<f64>().is_ok() {
-        "number".to_string()
+        "number".to_owned()
     } else if value.starts_with('"') || value.starts_with('\'') {
-        "string".to_string()
+        "string".to_owned()
     } else if value.starts_with('[') {
-        "array".to_string()
+        "array".to_owned()
     } else if value.starts_with('{') {
-        "object".to_string()
+        "object".to_owned()
     } else {
-        "string".to_string()
+        "string".to_owned()
     }
 }
 
@@ -518,7 +506,7 @@ fn current_toml_section(content: &str, target_line: usize) -> String {
             && !trimmed.starts_with("[[")
             && let Some(inner) = trimmed.strip_prefix('[').and_then(|s| s.strip_suffix(']'))
         {
-            current = inner.trim().to_string();
+            current = inner.trim().to_owned();
         }
     }
     current
@@ -541,49 +529,51 @@ fn get_toml_value<'a>(
 
 fn get_toml_value_type(value: &toml::Value) -> String {
     match value {
-        toml::Value::String(_) => "string".to_string(),
-        toml::Value::Integer(_) => "integer".to_string(),
-        toml::Value::Float(_) => "float".to_string(),
-        toml::Value::Boolean(_) => "boolean".to_string(),
+        toml::Value::String(_) => "string".to_owned(),
+        toml::Value::Integer(_) => "integer".to_owned(),
+        toml::Value::Float(_) => "float".to_owned(),
+        toml::Value::Boolean(_) => "boolean".to_owned(),
         toml::Value::Array(arr) => format!("array[{}]", arr.len()),
         toml::Value::Table(tbl) => format!("table{{{}}}", tbl.len()),
-        toml::Value::Datetime(_) => "datetime".to_string(),
+        toml::Value::Datetime(_) => "datetime".to_owned(),
     }
 }
 
 fn find_key_range_in_content(content: &str, key: &str) -> Range {
-    let search = format!("\"{}\"", key);
-    if let Some(byte_offset) = content.find(&search) {
-        let before = &content[..byte_offset];
-        let line = before.matches('\n').count() as u32;
-        let last_newline = before.rfind('\n').map(|i| i + 1).unwrap_or(0);
-        let character = (byte_offset - last_newline) as u32;
-        let end_character = character + search.len() as u32;
-        Range::new(
-            Position::new(line, character),
-            Position::new(line, end_character),
-        )
-    } else {
-        Range::new(Position::new(0, 0), Position::new(0, 1))
-    }
+    let search = format!("\"{key}\"");
+    content.find(&search).map_or_else(
+        || Range::new(Position::new(0, 0), Position::new(0, 1)),
+        |byte_offset| {
+            let before = &content[..byte_offset];
+            let line = before.matches('\n').count() as u32;
+            let last_newline = before.rfind('\n').map_or(0, |i| i + 1);
+            let character = (byte_offset - last_newline) as u32;
+            let end_character = character + search.len() as u32;
+            Range::new(
+                Position::new(line, character),
+                Position::new(line, end_character),
+            )
+        },
+    )
 }
 
 fn find_toml_key_range(content: &str, full_key: &str) -> Range {
     let leaf = full_key.split('.').next_back().unwrap_or(full_key);
-    let search = format!("{} =", leaf);
-    if let Some(byte_offset) = content.find(&search) {
-        let before = &content[..byte_offset];
-        let line = before.matches('\n').count() as u32;
-        let last_newline = before.rfind('\n').map(|i| i + 1).unwrap_or(0);
-        let character = (byte_offset - last_newline) as u32;
-        let end_character = character + leaf.len() as u32;
-        Range::new(
-            Position::new(line, character),
-            Position::new(line, end_character),
-        )
-    } else {
-        Range::new(Position::new(0, 0), Position::new(0, 1))
-    }
+    let search = format!("{leaf} =");
+    content.find(&search).map_or_else(
+        || Range::new(Position::new(0, 0), Position::new(0, 1)),
+        |byte_offset| {
+            let before = &content[..byte_offset];
+            let line = before.matches('\n').count() as u32;
+            let last_newline = before.rfind('\n').map_or(0, |i| i + 1);
+            let character = (byte_offset - last_newline) as u32;
+            let end_character = character + leaf.len() as u32;
+            Range::new(
+                Position::new(line, character),
+                Position::new(line, end_character),
+            )
+        },
+    )
 }
 
 fn collect_toml_keys(
@@ -595,7 +585,7 @@ fn collect_toml_keys(
         let full_key = if prefix.is_empty() {
             key.clone()
         } else {
-            format!("{}.{}", prefix, key)
+            format!("{prefix}.{key}")
         };
         items.push(CompletionItem {
             label: full_key.clone(),
@@ -628,9 +618,9 @@ impl LanguageServer for SutureLsp {
                 code_action_provider: Some(CodeActionProviderCapability::Simple(true)),
                 completion_provider: Some(CompletionOptions {
                     trigger_characters: Some(vec![
-                        ":".to_string(),
-                        "=".to_string(),
-                        "\"".to_string(),
+                        ":".to_owned(),
+                        "=".to_owned(),
+                        "\"".to_owned(),
                     ]),
                     ..Default::default()
                 }),
@@ -638,15 +628,15 @@ impl LanguageServer for SutureLsp {
                 ..Default::default()
             },
             server_info: Some(ServerInfo {
-                name: "suture-lsp".to_string(),
-                version: Some("0.1.0".to_string()),
+                name: "suture-lsp".to_owned(),
+                version: Some("0.1.0".to_owned()),
             }),
         })
     }
 
     async fn initialized(&self, _params: InitializedParams) {
         self.client
-            .log_message(MessageType::INFO, "Suture LSP initialized".to_string())
+            .log_message(MessageType::INFO, "Suture LSP initialized".to_owned())
             .await;
     }
 
@@ -698,10 +688,7 @@ impl LanguageServer for SutureLsp {
 
         let line = position.line as usize + 1;
 
-        let blame_entries = match repo.blame(&relative_str, None) {
-            Ok(b) => b,
-            Err(_) => return Ok(None),
-        };
+        let Ok(blame_entries) = repo.blame(&relative_str, None) else { return Ok(None) };
 
         if let Some(entry) = blame_entries.iter().find(|e| e.line_number == line) {
             let contents = format!(

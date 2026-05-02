@@ -25,7 +25,7 @@ pub struct PreVote {
     pub votes_received: HashSet<NodeId>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClusterConfig {
     pub nodes: HashSet<NodeId>,
     pub transition: Option<HashSet<NodeId>>,
@@ -60,6 +60,7 @@ pub struct RaftNode {
 }
 
 impl RaftNode {
+    #[must_use] 
     pub fn new(id: NodeId, peers: Vec<NodeId>) -> Self {
         let election_timeout = Duration::from_millis(10);
         let max_offset = election_timeout.as_millis() as u64;
@@ -95,6 +96,7 @@ impl RaftNode {
         }
     }
 
+    #[must_use] 
     pub fn with_timeouts(
         id: NodeId,
         peers: Vec<NodeId>,
@@ -173,7 +175,7 @@ impl RaftNode {
                     entries,
                     leader_commit,
                 );
-                resp.map(|r| vec![(from, r)]).unwrap_or_default()
+                vec![(from, resp)]
             }
             RaftMessage::AppendEntriesResponse {
                 term,
@@ -197,7 +199,7 @@ impl RaftNode {
                     last_log_term,
                     is_pre_vote,
                 );
-                resp.map(|r| vec![(from, r)]).unwrap_or_default()
+                vec![(from, resp)]
             }
             RaftMessage::RequestVoteResponse {
                 term,
@@ -217,7 +219,7 @@ impl RaftNode {
                 snapshot,
             } => {
                 let resp = self.handle_install_snapshot(from, term, leader_id, snapshot);
-                resp.map(|r| vec![(from, r)]).unwrap_or_default()
+                vec![(from, resp)]
             }
             RaftMessage::InstallSnapshotResponse { term } => {
                 self.handle_install_snapshot_response(from, term);
@@ -259,18 +261,22 @@ impl RaftNode {
         }
     }
 
+    #[must_use] 
     pub fn state(&self) -> &NodeState {
         &self.state
     }
 
+    #[must_use] 
     pub fn term(&self) -> u64 {
         self.current_term
     }
 
+    #[must_use] 
     pub fn leader(&self) -> Option<NodeId> {
         self.leader_id
     }
 
+    #[must_use] 
     pub fn id(&self) -> NodeId {
         self.id
     }
@@ -286,6 +292,7 @@ impl RaftNode {
         Ok(())
     }
 
+    #[must_use] 
     pub fn committed_entries(&self) -> &[LogEntry] {
         if self.last_applied >= self.commit_index {
             return &[];
@@ -472,13 +479,13 @@ impl RaftNode {
         prev_log_term: u64,
         entries: Vec<LogEntry>,
         leader_commit: u64,
-    ) -> Option<RaftMessage> {
+    ) -> RaftMessage {
         if term < self.current_term {
-            return Some(RaftMessage::AppendEntriesResponse {
+            return RaftMessage::AppendEntriesResponse {
                 term: self.current_term,
                 success: false,
                 match_index: 0,
-            });
+            };
         }
 
         if term > self.current_term {
@@ -493,18 +500,18 @@ impl RaftNode {
         if prev_log_index > 0 {
             match self.log.term_for(prev_log_index) {
                 None => {
-                    return Some(RaftMessage::AppendEntriesResponse {
+                    return RaftMessage::AppendEntriesResponse {
                         term: self.current_term,
                         success: false,
                         match_index: self.log.last_index(),
-                    });
+                    };
                 }
                 Some(t) if t != prev_log_term => {
-                    return Some(RaftMessage::AppendEntriesResponse {
+                    return RaftMessage::AppendEntriesResponse {
                         term: self.current_term,
                         success: false,
                         match_index: self.log.last_index(),
-                    });
+                    };
                 }
                 _ => {}
             }
@@ -527,11 +534,11 @@ impl RaftNode {
             self.commit_index = std::cmp::min(leader_commit, self.log.last_index());
         }
 
-        Some(RaftMessage::AppendEntriesResponse {
+        RaftMessage::AppendEntriesResponse {
             term: self.current_term,
             success: true,
             match_index: self.log.last_index(),
-        })
+        }
     }
 
     fn handle_append_entries_response(
@@ -570,13 +577,13 @@ impl RaftNode {
         last_log_index: u64,
         last_log_term: u64,
         is_pre_vote: bool,
-    ) -> Option<RaftMessage> {
+    ) -> RaftMessage {
         if term < self.current_term {
-            return Some(RaftMessage::RequestVoteResponse {
+            return RaftMessage::RequestVoteResponse {
                 term: self.current_term,
                 vote_granted: false,
                 is_pre_vote,
-            });
+            };
         }
 
         if !is_pre_vote
@@ -618,11 +625,11 @@ impl RaftNode {
             );
         }
 
-        Some(RaftMessage::RequestVoteResponse {
+        RaftMessage::RequestVoteResponse {
             term: self.current_term,
             vote_granted: can_vote,
             is_pre_vote,
-        })
+        }
     }
 
     fn handle_request_vote_response(&mut self, from: NodeId, term: u64, vote_granted: bool) {
@@ -655,11 +662,11 @@ impl RaftNode {
         term: u64,
         leader_id: NodeId,
         snapshot: Snapshot,
-    ) -> Option<RaftMessage> {
+    ) -> RaftMessage {
         if term < self.current_term {
-            return Some(RaftMessage::InstallSnapshotResponse {
+            return RaftMessage::InstallSnapshotResponse {
                 term: self.current_term,
-            });
+            };
         }
 
         if term > self.current_term {
@@ -680,9 +687,9 @@ impl RaftNode {
 
         self.snapshot = Some(snapshot);
 
-        Some(RaftMessage::InstallSnapshotResponse {
+        RaftMessage::InstallSnapshotResponse {
             term: self.current_term,
-        })
+        }
     }
 
     fn handle_install_snapshot_response(&mut self, _from: NodeId, term: u64) {
@@ -736,6 +743,7 @@ impl RaftNode {
         Ok(())
     }
 
+    #[must_use] 
     pub fn snapshot(&self) -> Option<&Snapshot> {
         self.snapshot.as_ref()
     }
@@ -783,6 +791,7 @@ impl RaftNode {
         read.quorum_acked.len() >= self.majority()
     }
 
+    #[must_use] 
     pub fn read_index_messages(&self) -> Vec<(NodeId, RaftMessage)> {
         self.peers
             .iter()
@@ -809,7 +818,7 @@ impl RaftNode {
 
         let current_nodes = self.config.nodes.clone();
 
-        let mut joint: HashSet<NodeId> = current_nodes.clone();
+        let mut joint: HashSet<NodeId> = current_nodes;
         joint.extend(new_nodes.iter().copied());
 
         self.config.transition = Some(new_nodes.into_iter().collect());
@@ -854,10 +863,12 @@ impl RaftNode {
         Ok(())
     }
 
+    #[must_use] 
     pub fn config(&self) -> &ClusterConfig {
         &self.config
     }
 
+    #[must_use] 
     pub fn pre_vote(&self) -> Option<&PreVote> {
         self.pre_vote.as_ref()
     }

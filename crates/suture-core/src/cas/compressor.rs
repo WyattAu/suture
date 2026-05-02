@@ -74,6 +74,7 @@ pub fn decompress(data: &[u8]) -> Result<Vec<u8>, super::CasError> {
 /// Check if data appears to be Zstd-compressed (magic number check).
 ///
 /// Zstd frames start with 0x28 0xB5 0x2F 0xFD.
+#[must_use] 
 pub fn is_zstd_compressed(data: &[u8]) -> bool {
     data.len() >= 4 && data[0] == 0x28 && data[1] == 0xB5 && data[2] == 0x2F && data[3] == 0xFD
 }

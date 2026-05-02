@@ -1,4 +1,4 @@
-pub(crate) async fn cmd_gc(
+pub async fn cmd_gc(
     dry_run: bool,
     aggressive: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -50,9 +50,9 @@ pub(crate) async fn cmd_gc(
 
     if dry_run {
         println!("Dry run: would prune:");
-        println!("  {} unreachable patch(es)", unreachable_count);
-        println!("  {} orphaned blob(s)", orphan_count);
-        println!("  ~{} bytes estimated", estimated_bytes);
+        println!("  {unreachable_count} unreachable patch(es)");
+        println!("  {orphan_count} orphaned blob(s)");
+        println!("  ~{estimated_bytes} bytes estimated");
 
         if aggressive {
             let entries = repo.reflog_entries().unwrap_or_default();

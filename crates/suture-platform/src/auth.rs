@@ -80,11 +80,11 @@ pub fn create_jwt(
     let now = Utc::now();
     let exp = now.timestamp() as usize + (SESSION_DURATION_HOURS * 3600) as usize;
     let claims = Claims {
-        sub: user_id.to_string(),
-        email: email.to_string(),
-        tier: tier.to_string(),
-        org_id: org_id.map(|s| s.to_string()),
-        role: role.to_string(),
+        sub: user_id.to_owned(),
+        email: email.to_owned(),
+        tier: tier.to_owned(),
+        org_id: org_id.map(std::string::ToString::to_string),
+        role: role.to_owned(),
         exp,
         iat: now.timestamp() as usize,
     };
@@ -135,7 +135,7 @@ pub fn register_user(db: &PlatformDb, req: &RegisterRequest) -> anyhow::Result<(
             user_id,
             email: req.email.clone(),
             display_name,
-            tier: "free".to_string(),
+            tier: "free".to_owned(),
             created_at: Utc::now().to_rfc3339(),
         },
     ))
@@ -306,7 +306,7 @@ pub async fn list_users_handler(
     let conn = state.db.conn().map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({"error": e.to_string()})),
+            Json(serde_json::json!({"error": e})),
         )
     })?;
     let mut stmt = conn

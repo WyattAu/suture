@@ -22,7 +22,7 @@ const INDEX_HTML: &str = r##"<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Suture — Semantic Merge Platform</title>
+    <title>Suture \u{2014} Semantic Merge Platform</title>
     <style>
         :root {
             --bg: #0a0a0f;

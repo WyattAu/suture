@@ -11,6 +11,7 @@ use suture_driver_yaml::YamlDriver;
 // JSON generators
 // =============================================================================
 
+use std::fmt::Write;
 fn generate_json(n: usize) -> String {
     let mut map = serde_json::Map::new();
     for i in 0..n {
@@ -41,7 +42,7 @@ fn json_modify_keys(content: &str, keys: &[usize], prefix: &str) -> String {
 fn generate_yaml(n: usize) -> String {
     let mut s = String::new();
     for i in 0..n {
-        s.push_str(&format!("key_{}: value_{}\n", i, i));
+        let _ = write!(s, "key_{}: value_{}\n", i, i);
     }
     s
 }
@@ -65,7 +66,7 @@ fn yaml_modify_keys(content: &str, keys: &[usize], prefix: &str) -> String {
 fn generate_toml(n: usize) -> String {
     let mut s = String::new();
     for i in 0..n {
-        s.push_str(&format!("key_{} = \"value_{}\"\n", i, i));
+        let _ = write!(s, "key_{} = \"value_{}\"\n", i, i);
     }
     s
 }
@@ -89,15 +90,15 @@ fn toml_modify_keys(content: &str, keys: &[usize], prefix: &str) -> String {
 fn generate_csv(rows: usize, cols: usize) -> String {
     let mut header = String::from("id");
     for c in 1..cols {
-        header.push_str(&format!(",col_{}", c));
+        let _ = write!(header, ",col_{}", c);
     }
     header.push('\n');
 
     let mut body = String::new();
     for r in 0..rows {
-        body.push_str(&format!("{}", r));
+        let _ = write!(body, "{}", r);
         for c in 1..cols {
-            body.push_str(&format!(",val_{}_{}", r, c));
+            let _ = write!(body, ",val_{}_{}", r, c);
         }
         body.push('\n');
     }
@@ -111,7 +112,7 @@ fn generate_csv(rows: usize, cols: usize) -> String {
 fn generate_xml(n: usize) -> String {
     let mut s = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<root>\n");
     for i in 0..n {
-        s.push_str(&format!("  <item id=\"{}\">value_{}</item>\n", i, i));
+        let _ = write!(s, "  <item id=\"{}\">value_{}</item>\n", i, i);
     }
     s.push_str("</root>\n");
     s

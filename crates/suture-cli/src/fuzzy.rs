@@ -1,4 +1,4 @@
-pub(crate) fn suggest(input: &str, candidates: &[impl AsRef<str>]) -> Option<String> {
+pub fn suggest(input: &str, candidates: &[impl AsRef<str>]) -> Option<String> {
     let input_lower = input.to_lowercase();
     let threshold = std::cmp::max(1, input.len() / 3) as u32;
 
@@ -10,5 +10,5 @@ pub(crate) fn suggest(input: &str, candidates: &[impl AsRef<str>]) -> Option<Str
             best = Some((dist, c));
         }
     }
-    best.map(|(_, s)| s.to_string())
+    best.map(|(_, s)| s.to_owned())
 }

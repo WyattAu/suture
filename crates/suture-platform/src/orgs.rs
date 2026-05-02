@@ -54,7 +54,7 @@ pub async fn create_org(
     let conn = state.db.conn().map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({"error": e.to_string()})),
+            Json(serde_json::json!({"error": e})),
         )
     })?;
 
@@ -94,7 +94,7 @@ pub async fn create_org(
             org_id,
             name: req.name,
             display_name,
-            tier: "free".to_string(),
+            tier: "free".to_owned(),
             member_count: 1,
             is_owner: true,
         }),
@@ -108,7 +108,7 @@ pub async fn list_my_orgs(
     let conn = state.db.conn().map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({"error": e.to_string()})),
+            Json(serde_json::json!({"error": e})),
         )
     })?;
 
@@ -213,15 +213,15 @@ pub enum OrgError {
 impl std::fmt::Display for OrgError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            OrgError::NotFound(id) => write!(f, "Organization not found: {}", id),
-            OrgError::NotAdmin => write!(f, "Not an admin of this organization"),
-            OrgError::NotMember => write!(f, "Not a member of this organization"),
-            OrgError::LastAdmin => write!(f, "Cannot remove the last admin"),
-            OrgError::InvitationNotFound => write!(f, "Invitation not found or expired"),
-            OrgError::EmailMismatch => write!(f, "Email does not match invitation"),
-            OrgError::AlreadyMember => write!(f, "Already a member of this organization"),
-            OrgError::InvalidRole(r) => write!(f, "Invalid role: {}", r),
-            OrgError::Db(e) => write!(f, "Database error: {}", e),
+            Self::NotFound(id) => write!(f, "Organization not found: {id}"),
+            Self::NotAdmin => write!(f, "Not an admin of this organization"),
+            Self::NotMember => write!(f, "Not a member of this organization"),
+            Self::LastAdmin => write!(f, "Cannot remove the last admin"),
+            Self::InvitationNotFound => write!(f, "Invitation not found or expired"),
+            Self::EmailMismatch => write!(f, "Email does not match invitation"),
+            Self::AlreadyMember => write!(f, "Already a member of this organization"),
+            Self::InvalidRole(r) => write!(f, "Invalid role: {r}"),
+            Self::Db(e) => write!(f, "Database error: {e}"),
         }
     }
 }
@@ -232,14 +232,10 @@ fn db_err(e: rusqlite::Error) -> OrgError {
 
 fn org_error_response(e: OrgError) -> (StatusCode, Json<serde_json::Value>) {
     let status = match &e {
-        OrgError::NotFound(_) => StatusCode::NOT_FOUND,
-        OrgError::NotAdmin => StatusCode::FORBIDDEN,
-        OrgError::NotMember => StatusCode::FORBIDDEN,
-        OrgError::LastAdmin => StatusCode::CONFLICT,
-        OrgError::InvitationNotFound => StatusCode::NOT_FOUND,
-        OrgError::EmailMismatch => StatusCode::BAD_REQUEST,
-        OrgError::AlreadyMember => StatusCode::CONFLICT,
-        OrgError::InvalidRole(_) => StatusCode::BAD_REQUEST,
+        OrgError::NotAdmin | OrgError::NotMember => StatusCode::FORBIDDEN,
+        OrgError::LastAdmin | OrgError::AlreadyMember => StatusCode::CONFLICT,
+        OrgError::NotFound(_) | OrgError::InvitationNotFound => StatusCode::NOT_FOUND,
+        OrgError::EmailMismatch | OrgError::InvalidRole(_) => StatusCode::BAD_REQUEST,
         OrgError::Db(_) => StatusCode::INTERNAL_SERVER_ERROR,
     };
     (status, Json(serde_json::json!({"error": e.to_string()})))
@@ -251,7 +247,7 @@ fn validate_role(role: &str) -> Result<(), OrgError> {
     if VALID_ROLES.contains(&role) {
         Ok(())
     } else {
-        Err(OrgError::InvalidRole(role.to_string()))
+        Err(OrgError::InvalidRole(role.to_owned()))
     }
 }
 
@@ -267,7 +263,7 @@ fn check_org_admin(state: &AppState, claims: &Claims, org_id: &str) -> Result<()
         .flatten();
 
     match role.as_deref() {
-        Some("admin") | Some("owner") => Ok(()),
+        Some("admin" | "owner") => Ok(()),
         _ => Err(OrgError::NotAdmin),
     }
 }
@@ -330,9 +326,9 @@ pub fn invite_member(
         .map_err(db_err)?;
 
         Ok(InviteResponse {
-            status: "added".to_string(),
+            status: "added".to_owned(),
             user_id: Some(user_id),
-            email: email.to_string(),
+            email: email.to_owned(),
         })
     } else {
         let invite_id = format!("inv_{}", uuid::Uuid::new_v4());
@@ -343,9 +339,9 @@ pub fn invite_member(
         .map_err(db_err)?;
 
         Ok(InviteResponse {
-            status: "invited".to_string(),
+            status: "invited".to_owned(),
             user_id: None,
-            email: email.to_string(),
+            email: email.to_owned(),
         })
     }
 }
@@ -377,7 +373,7 @@ pub fn remove_member(
         .ok()
         .flatten();
 
-    let is_privileged = matches!(target_role.as_deref(), Some("admin") | Some("owner"));
+    let is_privileged = matches!(target_role.as_deref(), Some("admin" | "owner"));
 
     if is_privileged && admin_count <= 1 {
         return Err(OrgError::LastAdmin);
@@ -413,8 +409,7 @@ pub fn update_member_role(
 
     if rows == 0 {
         return Err(OrgError::NotFound(format!(
-            "member {} not found in org {}",
-            user_id, org_id
+            "member {user_id} not found in org {org_id}"
         )));
     }
 
@@ -544,7 +539,7 @@ pub async fn remove_member_handler(
     Path((org_id, user_id)): Path<(String, String)>,
 ) -> Result<StatusCode, (StatusCode, Json<serde_json::Value>)> {
     remove_member(&state, &claims, &org_id, &user_id)
-        .map(|_| StatusCode::NO_CONTENT)
+        .map(|()| StatusCode::NO_CONTENT)
         .map_err(org_error_response)
 }
 
@@ -555,7 +550,7 @@ pub async fn update_member_role_handler(
     Json(req): Json<UpdateRoleRequest>,
 ) -> Result<StatusCode, (StatusCode, Json<serde_json::Value>)> {
     update_member_role(&state, &claims, &org_id, &user_id, &req.role)
-        .map(|_| StatusCode::NO_CONTENT)
+        .map(|()| StatusCode::NO_CONTENT)
         .map_err(org_error_response)
 }
 
@@ -575,7 +570,7 @@ pub async fn accept_invitation_handler(
     Path(invite_id): Path<String>,
 ) -> Result<StatusCode, (StatusCode, Json<serde_json::Value>)> {
     accept_invitation(&state, &claims, &invite_id)
-        .map(|_| StatusCode::NO_CONTENT)
+        .map(|()| StatusCode::NO_CONTENT)
         .map_err(org_error_response)
 }
 

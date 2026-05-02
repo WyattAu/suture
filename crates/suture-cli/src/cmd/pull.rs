@@ -1,7 +1,7 @@
 use crate::cmd::user_error;
 use crate::remote_proto::{do_fetch, do_pull};
 
-pub(crate) async fn cmd_pull(
+pub async fn cmd_pull(
     remote: &str,
     rebase: bool,
     autostash: bool,
@@ -17,7 +17,7 @@ pub(crate) async fn cmd_pull(
         .into());
     }
 
-    eprintln!("Pulling from {}...", remote);
+    eprintln!("Pulling from {remote}...");
 
     let had_changes = if autostash {
         let status = repo
@@ -56,8 +56,7 @@ pub(crate) async fn cmd_pull(
                     .map_err(|e| user_error("rebase during pull failed", e))?;
                 if result.patches_replayed == 0 && result.new_tip != head_id {
                     println!(
-                        "Fast-forward pull successful ({} new patch(es))",
-                        new_patches
+                        "Fast-forward pull successful ({new_patches} new patch(es))"
                     );
                 } else if result.patches_replayed > 0 {
                     println!(
@@ -68,7 +67,7 @@ pub(crate) async fn cmd_pull(
                     println!("Already up to date.");
                 }
             } else {
-                println!("Pull successful: {} new patch(es)", new_patches);
+                println!("Pull successful: {new_patches} new patch(es)");
             }
 
             let (final_branch, _) = repo.head()?;
@@ -78,7 +77,7 @@ pub(crate) async fn cmd_pull(
         } else {
             let new_patches = do_pull(&mut repo, remote).await
                 .map_err(|e| user_error(&format!("pull from '{remote}' failed"), e))?;
-            println!("Pull successful: {} new patch(es)", new_patches);
+            println!("Pull successful: {new_patches} new patch(es)");
         }
         Ok(())
     }
@@ -101,12 +100,11 @@ pub(crate) async fn cmd_pull(
         match crate::cmd::lfs::resolve_lfs_pointers_in_workdir() {
             Ok((resolved, missing)) => {
                 if resolved > 0 {
-                    println!("Resolved {} LFS object(s)", resolved);
+                    println!("Resolved {resolved} LFS object(s)");
                 }
                 if missing > 0 {
                     eprintln!(
-                        "{} LFS object(s) not found locally (run `suture lfs pull`)",
-                        missing
+                        "{missing} LFS object(s) not found locally (run `suture lfs pull`)"
                     );
                 }
             }

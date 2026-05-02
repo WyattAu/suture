@@ -402,7 +402,7 @@ impl BlobStore {
 
     /// List all blob hashes stored in pack files.
     pub fn list_blobs_packed(&self) -> Result<Vec<Hash>, CasError> {
-        self.with_pack_cache(|cache| cache.all_hashes())
+        self.with_pack_cache(super::pack::PackCache::all_hashes)
     }
 
     /// Repack loose blobs into a pack file if the count exceeds the threshold.

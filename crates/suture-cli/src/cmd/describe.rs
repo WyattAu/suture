@@ -1,6 +1,6 @@
 use crate::ref_utils::resolve_ref;
 
-pub(crate) async fn cmd_describe(
+pub async fn cmd_describe(
     commit_ref: &str,
     _all: bool,
     _tags: bool,
@@ -40,11 +40,11 @@ pub(crate) async fn cmd_describe(
             let patch = patches
                 .iter()
                 .find(|p| p.id == current_id)
-                .ok_or_else(|| "patch not found while walking ancestors".to_string())?;
+                .ok_or_else(|| "patch not found while walking ancestors".to_owned())?;
             current_id = *patch
                 .parent_ids
                 .first()
-                .ok_or_else(|| "reached root without finding tag".to_string())?;
+                .ok_or_else(|| "reached root without finding tag".to_owned())?;
             count += 1;
         }
 
@@ -55,7 +55,7 @@ pub(crate) async fn cmd_describe(
 
     if let Some((tag_name, count)) = best_tag {
         let short_hash = target.id.to_hex().chars().take(8).collect::<String>();
-        println!("{}-{}-g{}", tag_name, count, short_hash);
+        println!("{tag_name}-{count}-g{short_hash}");
     } else {
         let short_hash = target.id.to_hex().chars().take(8).collect::<String>();
         println!("{short_hash}");

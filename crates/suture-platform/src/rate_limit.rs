@@ -41,6 +41,7 @@ impl Default for RateLimiter {
 }
 
 impl RateLimiter {
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             entries: Mutex::new(HashMap::new()),
@@ -48,7 +49,7 @@ impl RateLimiter {
     }
 
     pub fn check(&self, key: &str, limit: u32) -> (bool, u32, u64) {
-        let mut entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
+        let mut entries = self.entries.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let now = Instant::now();
         let window_duration = std::time::Duration::from_secs(60);
 
@@ -68,7 +69,7 @@ impl RateLimiter {
             }
         } else {
             entries.insert(
-                key.to_string(),
+                key.to_owned(),
                 RateLimitEntry {
                     count: 1,
                     window_start: now,
@@ -79,7 +80,7 @@ impl RateLimiter {
     }
 
     pub fn cleanup(&self) {
-        let mut entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
+        let mut entries = self.entries.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let now = Instant::now();
         let window_duration = std::time::Duration::from_secs(120);
         entries.retain(|_, entry| now.duration_since(entry.window_start) < window_duration);
@@ -99,17 +100,18 @@ pub async fn rate_limit(
     request: axum::extract::Request,
     next: Next,
 ) -> Response {
-    let (key, limit) = if let Some(claims) = request.extensions().get::<crate::auth::Claims>() {
-        (format!("user:{}", claims.sub), tier_rate_limit(&claims.tier))
-    } else {
-        let ip = request
-            .headers()
-            .get("x-forwarded-for")
-            .and_then(|h| h.to_str().ok())
-            .and_then(|h| h.split(',').next())
-            .unwrap_or("unknown");
-        (format!("ip:{}", ip), ANONYMOUS_RATE_LIMIT)
-    };
+    let (key, limit) = request.extensions().get::<crate::auth::Claims>().map_or_else(
+        || {
+            let ip = request
+                .headers()
+                .get("x-forwarded-for")
+                .and_then(|h| h.to_str().ok())
+                .and_then(|h| h.split(',').next())
+                .unwrap_or("unknown");
+            (format!("ip:{ip}"), ANONYMOUS_RATE_LIMIT)
+        },
+        |claims| (format!("user:{}", claims.sub), tier_rate_limit(&claims.tier)),
+    );
 
     let (allowed, remaining, reset_after) = state.rate_limiter.check(&key, limit);
 

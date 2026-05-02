@@ -1,4 +1,4 @@
-pub(crate) async fn cmd_fsck(full: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_fsck(full: bool) -> Result<(), Box<dyn std::error::Error>> {
     let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
     let result = repo.fsck()?;
 
@@ -58,12 +58,12 @@ pub(crate) async fn cmd_fsck(full: bool) -> Result<(), Box<dyn std::error::Error
         }
 
         if full_checks > 0 {
-            println!("  Full: {} blob integrity check(s) passed", full_checks);
+            println!("  Full: {full_checks} blob integrity check(s) passed");
         }
         if !full_issues.is_empty() {
             println!("\nFull check issues:");
             for issue in &full_issues {
-                println!("  ISSUE: {}", issue);
+                println!("  ISSUE: {issue}");
             }
         } else if full_checks > 0 {
             println!("  Full: all integrity checks passed");
@@ -73,13 +73,13 @@ pub(crate) async fn cmd_fsck(full: bool) -> Result<(), Box<dyn std::error::Error
     if !result.warnings.is_empty() {
         println!("\nWarnings:");
         for w in &result.warnings {
-            println!("  WARNING: {}", w);
+            println!("  WARNING: {w}");
         }
     }
     if !result.errors.is_empty() {
         println!("\nErrors:");
         for e in &result.errors {
-            println!("  ERROR: {}", e);
+            println!("  ERROR: {e}");
         }
     }
     Ok(())

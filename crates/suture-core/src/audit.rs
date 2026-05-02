@@ -46,6 +46,7 @@ pub struct AuditEntry {
 
 impl AuditEntry {
     /// Compute the BLAKE3 content hash for this entry over its fields.
+    #[must_use] 
     pub fn compute_content_hash(&self) -> [u8; 32] {
         let mut hasher = blake3::Hasher::new();
         hasher.update(&self.sequence.to_le_bytes());
@@ -58,12 +59,14 @@ impl AuditEntry {
     }
 
     /// Verify this entry's content hash matches its stored hash.
+    #[must_use] 
     pub fn verify_integrity(&self) -> bool {
         self.compute_content_hash() == self.content_hash
     }
 
     /// Verify both this entry's integrity and its chain link to the previous entry.
-    pub fn verify_chain(&self, prev: Option<&AuditEntry>) -> bool {
+    #[must_use] 
+    pub fn verify_chain(&self, prev: Option<&Self>) -> bool {
         if let Some(prev) = prev {
             if self.prev_hash != prev.content_hash {
                 return false;
@@ -104,8 +107,8 @@ impl AuditLog {
         details: &str,
     ) -> Result<AuditEntry, std::io::Error> {
         let prev = self.last_entry()?;
-        let prev_hash = prev.as_ref().map(|e| e.content_hash).unwrap_or([0u8; 32]);
-        let sequence = prev.as_ref().map(|e| e.sequence + 1).unwrap_or(0);
+        let prev_hash = prev.as_ref().map_or([0u8; 32], |e| e.content_hash);
+        let sequence = prev.as_ref().map_or(0, |e| e.sequence + 1);
         let timestamp = chrono::Utc::now().to_rfc3339();
 
         let entry = AuditEntry {
@@ -113,9 +116,9 @@ impl AuditLog {
             prev_hash,
             content_hash: [0u8; 32],
             timestamp,
-            actor: actor.to_string(),
-            action: action.to_string(),
-            details: details.to_string(),
+            actor: actor.to_owned(),
+            action: action.to_owned(),
+            details: details.to_owned(),
             signature: None,
         };
 
@@ -131,7 +134,7 @@ impl AuditLog {
             .open(&self.path)?;
         let json = serde_json::to_string(&entry)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        writeln!(file, "{}", json)?;
+        writeln!(file, "{json}")?;
 
         Ok(entry)
     }

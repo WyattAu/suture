@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::log::LogEntry;
 use crate::log::Snapshot;
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RaftMessage {
     AppendEntriesRequest {
         term: u64,

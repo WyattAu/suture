@@ -26,9 +26,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
 fn draw_repo_info(f: &mut Frame, app: &App, area: Rect) {
     let branch = app.head_branch().unwrap_or("(detached)");
     let head = app
-        .head_patch()
-        .map(|h| format!("{}…", &h[..12.min(h.len())]))
-        .unwrap_or_else(|| "(none)".to_string());
+        .head_patch().map_or_else(|| "(none)".to_owned(), |h| format!("{}…", &h[..12.min(h.len())]));
 
     let working_set_dirty = !app.unstaged_files().is_empty() || !app.staged_files().is_empty();
     let working_set_label = if working_set_dirty { "dirty" } else { "clean" };
@@ -43,9 +41,7 @@ fn draw_repo_info(f: &mut Frame, app: &App, area: Rect) {
     let repo_name = app
         .repo()
         .root()
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "unknown".to_string());
+        .file_name().map_or_else(|| "unknown".to_owned(), |n| n.to_string_lossy().to_string());
 
     let has_conflicts = !app.conflict_files().is_empty();
 
@@ -115,7 +111,7 @@ fn draw_recent_patches(f: &mut Frame, app: &App, area: Rect) {
     } else {
         for entry in entries.iter().take(max_display) {
             let merge_tag = if entry.is_merge {
-                Span::styled(" ◆", Style::default().fg(Color::Magenta))
+                Span::styled(" \u{25c6}", Style::default().fg(Color::Magenta))
             } else {
                 Span::raw("")
             };
@@ -159,19 +155,19 @@ fn draw_quick_actions(f: &mut Frame, _app: &App, area: Rect) {
     let lines = vec![Line::from(vec![
         Span::styled(" [n]", key_style),
         Span::styled(" New Patch ", desc_style),
-        Span::styled("│", sep_style),
+        Span::styled("\u{2502}", sep_style),
         Span::styled(" [c]", key_style),
         Span::styled(" Commit ", desc_style),
-        Span::styled("│", sep_style),
+        Span::styled("\u{2502}", sep_style),
         Span::styled(" [s]", key_style),
         Span::styled(" Stage ", desc_style),
-        Span::styled("│", sep_style),
+        Span::styled("\u{2502}", sep_style),
         Span::styled(" [l]", key_style),
         Span::styled(" Log ", desc_style),
-        Span::styled("│", sep_style),
+        Span::styled("\u{2502}", sep_style),
         Span::styled(" [b]", key_style),
         Span::styled(" Branches ", desc_style),
-        Span::styled("│", sep_style),
+        Span::styled("\u{2502}", sep_style),
         Span::styled(" [r]", key_style),
         Span::styled(" Remote ", desc_style),
     ])];

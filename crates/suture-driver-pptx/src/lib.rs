@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-#![allow(clippy::collapsible_match)]
 //! PPTX semantic driver — slide-level diff and merge for PowerPoint presentations.
 //!
 //! ## Architecture
@@ -21,6 +20,7 @@ use std::collections::{HashMap, HashSet};
 use suture_driver::{DriverError, SemanticChange, SutureDriver};
 use suture_ooxml::OoxmlDocument;
 
+use std::fmt::Write;
 /// Convert bytes to String, replacing invalid UTF-8 sequences with the Unicode replacement character.
 /// This is safe for binary formats like OOXML (ZIP/XML) where the content should be valid UTF-8
 /// per specification (ECMA-376, ISO 29500), but we defensively handle edge cases.
@@ -57,13 +57,14 @@ impl SlideRef {
 pub struct PptxDriver;
 
 impl PptxDriver {
+    #[must_use] 
     pub fn new() -> Self {
         Self
     }
 
     /// Extract an XML attribute value from a line of XML.
     fn extract_attr(xml_line: &str, attr_name: &str) -> Option<String> {
-        let pattern = format!("{}=\"", attr_name);
+        let pattern = format!("{attr_name}=\"");
         let start = xml_line.find(&pattern)?;
         let start = start + pattern.len();
         let rest = &xml_line[start..];
@@ -102,10 +103,7 @@ impl PptxDriver {
             let mut search_start = 0;
             while search_start < trimmed.len() {
                 let remaining = &trimmed[search_start..];
-                let tag_start = match remaining.find("<p:sldId ") {
-                    Some(pos) => pos,
-                    None => break,
-                };
+                let Some(tag_start) = remaining.find("<p:sldId ") else { break };
                 let element = &remaining[tag_start..];
 
                 // Find the end of this element (either /> or >)
@@ -140,17 +138,19 @@ impl PptxDriver {
         let mut refs = Vec::new();
         for &(slide_id, ref rel_id) in slide_ids {
             let part_path = doc.resolve_rel(presentation_path, rel_id).ok_or_else(|| {
-                let msg = format!("cannot resolve rId {} in {}", rel_id, presentation_path);
+                let msg = format!("cannot resolve rId {rel_id} in {presentation_path}");
                 DriverError::ParseError(msg)
             })?;
 
-            let (content_hash, name) = match doc.get_part(&part_path) {
-                Some(part) => (
-                    SlideRef::content_fingerprint(&part.content),
-                    Self::extract_slide_name(&part.content),
-                ),
-                None => (0, None),
-            };
+            let (content_hash, name) = doc.get_part(&part_path).map_or(
+                (0, None),
+                |part| {
+                    (
+                        SlideRef::content_fingerprint(&part.content),
+                        Self::extract_slide_name(&part.content),
+                    )
+                },
+            );
 
             refs.push(SlideRef {
                 slide_id,
@@ -238,8 +238,8 @@ impl PptxDriver {
             // Only report reorder if no adds/removes/modifications
             changes.push(SemanticChange::Modified {
                 path: "/slide_order".into(),
-                old_value: format!("{:?}", base_order),
-                new_value: format!("{:?}", new_order),
+                old_value: format!("{base_order:?}"),
+                new_value: format!("{new_order:?}"),
             });
         }
 
@@ -348,23 +348,12 @@ impl PptxDriver {
                     }
                 }
 
-                // Removed by ours, present in theirs
-                (true, false, true) => {
+                (true, false, true | false) | (true, true, false) | (false, false, false) => {
                     // Deleted by ours, kept by theirs — non-conflicting delete
+                    // Kept by ours, removed by theirs
+                    // Removed by both
+                    // Not in any (shouldn't happen with HashSet logic)
                 }
-
-                // Kept by ours, removed by theirs
-                (true, true, false) => {
-                    // Deleted by theirs, kept by ours — non-conflicting delete
-                }
-
-                // Removed by both
-                (true, false, false) => {
-                    // Both deleted — omit
-                }
-
-                // Not in any (shouldn't happen with HashSet logic)
-                (false, false, false) => {}
             }
         }
 
@@ -378,10 +367,8 @@ impl PptxDriver {
             let in_theirs = theirs_by_id.contains_key(&slide.slide_id);
 
             let deleted = match (in_ours, in_theirs) {
-                (true, true) => false,  // Both kept
-                (true, false) => false, // Ours kept (theirs deleted — non-conflicting)
-                (false, true) => false, // Theirs kept (ours deleted — non-conflicting)
-                (false, false) => true, // Both deleted
+                (true | false, true) | (true, false) => false,
+                (false, false) => true,
             };
 
             if !deleted {
@@ -459,22 +446,19 @@ fn part_path_to_rels_path(part_path: &str) -> String {
         None => ("", part_path),
     };
     if dir.is_empty() {
-        format!("_rels/{}.rels", name)
+        format!("_rels/{name}.rels")
     } else {
-        format!("{}/_rels/{}.rels", dir, name)
+        format!("{dir}/_rels/{name}.rels")
     }
 }
 
 /// Resolve a relative target path against a base part path.
 fn resolve_relative_path(base_part: &str, target: &str) -> String {
-    let dir = base_part.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
-    if let Some(stripped) = target.strip_prefix('/') {
-        stripped.to_string()
-    } else if dir.is_empty() {
-        target.to_string()
-    } else {
-        format!("{}/{}", dir, target)
-    }
+    let dir = base_part.rsplit_once('/').map_or("", |(d, _)| d);
+    target.strip_prefix('/').map_or_else(
+        || if dir.is_empty() { target.to_owned() } else { format!("{dir}/{target}") },
+        std::borrow::ToOwned::to_owned,
+    )
 }
 
 impl Default for PptxDriver {
@@ -484,7 +468,7 @@ impl Default for PptxDriver {
 }
 
 impl SutureDriver for PptxDriver {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "PPTX"
     }
     fn supported_extensions(&self) -> &[&str] {
@@ -519,25 +503,25 @@ impl SutureDriver for PptxDriver {
     ) -> Result<String, DriverError> {
         let changes = self.diff(base_content, new_content)?;
         if changes.is_empty() {
-            return Ok("no changes".to_string());
+            return Ok("no changes".to_owned());
         }
         let lines: Vec<String> = changes
             .iter()
             .map(|c| match c {
-                SemanticChange::Added { path, value } => format!("  ADDED     {}: {}", path, value),
+                SemanticChange::Added { path, value } => format!("  ADDED     {path}: {value}"),
                 SemanticChange::Removed { path, old_value } => {
-                    format!("  REMOVED   {}: {}", path, old_value)
+                    format!("  REMOVED   {path}: {old_value}")
                 }
                 SemanticChange::Modified {
                     path,
                     old_value,
                     new_value,
-                } => format!("  MODIFIED  {}: {} -> {}", path, old_value, new_value),
+                } => format!("  MODIFIED  {path}: {old_value} -> {new_value}"),
                 SemanticChange::Moved {
                     old_path,
                     new_path,
                     value,
-                } => format!("  MOVED     {} -> {}: {}", old_path, new_path, value),
+                } => format!("  MOVED     {old_path} -> {new_path}: {value}"),
             })
             .collect();
         Ok(lines.join("\n"))
@@ -545,10 +529,7 @@ impl SutureDriver for PptxDriver {
 
     fn merge(&self, base: &str, ours: &str, theirs: &str) -> Result<Option<String>, DriverError> {
         let bytes = self.merge_raw(base.as_bytes(), ours.as_bytes(), theirs.as_bytes())?;
-        match bytes {
-            Some(b) => Ok(Some(bytes_to_string_lossy(b))),
-            None => Ok(None),
-        }
+        Ok(bytes.map(bytes_to_string_lossy))
     }
 
     fn merge_raw(
@@ -568,10 +549,7 @@ impl SutureDriver for PptxDriver {
         let ours_slides = Self::extract_slides(&ours_doc)?;
         let theirs_slides = Self::extract_slides(&theirs_doc)?;
 
-        let merged = match Self::merge_slides(&base_slides, &ours_slides, &theirs_slides) {
-            Some(m) => m,
-            None => return Ok(None),
-        };
+        let Some(merged) = Self::merge_slides(&base_slides, &ours_slides, &theirs_slides) else { return Ok(None) };
 
         // Build the merged document starting from base
         let mut doc =
@@ -580,7 +558,7 @@ impl SutureDriver for PptxDriver {
         // Update presentation.xml with the new slide ID list
         let pres_path = doc
             .main_document_path()
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
             .ok_or_else(|| DriverError::ParseError("no presentation.xml".into()))?;
 
         if let Some(part) = doc.parts.get_mut(&pres_path) {
@@ -595,19 +573,7 @@ impl SutureDriver for PptxDriver {
             base_slides.iter().map(|s| (s.slide_id, s)).collect();
 
         for slide in &merged {
-            if !base_by_id.contains_key(&slide.slide_id) {
-                // New slide — copy from whichever source has it
-                let ours_by_id: HashMap<u32, &SlideRef> =
-                    ours_slides.iter().map(|s| (s.slide_id, s)).collect();
-                let theirs_by_id: HashMap<u32, &SlideRef> =
-                    theirs_slides.iter().map(|s| (s.slide_id, s)).collect();
-
-                if let Some(src_slide) = ours_by_id.get(&slide.slide_id) {
-                    Self::copy_slide_parts(src_slide, &ours_doc, &mut doc);
-                } else if let Some(src_slide) = theirs_by_id.get(&slide.slide_id) {
-                    Self::copy_slide_parts(src_slide, &theirs_doc, &mut doc);
-                }
-            } else {
+            if base_by_id.contains_key(&slide.slide_id) {
                 // Modified slide — copy the updated version
                 let ours_by_id: HashMap<u32, &SlideRef> =
                     ours_slides.iter().map(|s| (s.slide_id, s)).collect();
@@ -626,6 +592,18 @@ impl SutureDriver for PptxDriver {
                     {
                         Self::copy_slide_parts(src_slide, &theirs_doc, &mut doc);
                     }
+                }
+            } else {
+                // New slide — copy from whichever source has it
+                let ours_by_id: HashMap<u32, &SlideRef> =
+                    ours_slides.iter().map(|s| (s.slide_id, s)).collect();
+                let theirs_by_id: HashMap<u32, &SlideRef> =
+                    theirs_slides.iter().map(|s| (s.slide_id, s)).collect();
+
+                if let Some(src_slide) = ours_by_id.get(&slide.slide_id) {
+                    Self::copy_slide_parts(src_slide, &ours_doc, &mut doc);
+                } else if let Some(src_slide) = theirs_by_id.get(&slide.slide_id) {
+                    Self::copy_slide_parts(src_slide, &theirs_doc, &mut doc);
                 }
             }
         }
@@ -658,15 +636,13 @@ impl PptxDriver {
         let sld_ids: String = slides
             .iter()
             .map(|s| format!(r#"<p:sldId id="{}" r:id="{}"/>"#, s.slide_id, s.rel_id))
-            .collect::<Vec<_>>()
-            .join("");
+            .collect();
 
         format!(
             r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <p:presentation xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
-  <p:sldIdLst>{}</p:sldIdLst>
-</p:presentation>"#,
-            sld_ids
+  <p:sldIdLst>{sld_ids}</p:sldIdLst>
+</p:presentation>"#
         )
     }
 
@@ -698,16 +674,15 @@ impl PptxDriver {
 
         // Add other relationships first
         for (rid, target) in &other_rels {
-            rels_xml.push_str(&format!(
+            let _ = write!(rels_xml, 
                 r#"
-  <Relationship Id="{}" Type="{}" Target="{}"/>"#,
-                rid, slide_rel_type, target
-            ));
+  <Relationship Id="{rid}" Type="{slide_rel_type}" Target="{target}"/>"#
+            );
         }
 
         // Add slide relationships
         for slide in slides {
-            rels_xml.push_str(&format!(
+            let _ = write!(rels_xml, 
                 r#"
   <Relationship Id="{}" Type="{}" Target="{}"/>"#,
                 slide.rel_id,
@@ -717,13 +692,13 @@ impl PptxDriver {
                     .part_path
                     .strip_prefix("ppt/")
                     .unwrap_or(&slide.part_path)
-            ));
+            );
         }
 
         rels_xml.push_str("\n</Relationships>");
 
         // Update the rels part
-        let ct = "application/vnd.openxmlformats-package.relationships+xml".to_string();
+        let ct = "application/vnd.openxmlformats-package.relationships+xml".to_owned();
         doc.parts.insert(
             rels_path.clone(),
             suture_ooxml::OoxmlPart {
@@ -744,11 +719,10 @@ impl PptxDriver {
                 slide
                     .part_path
                     .strip_prefix("ppt/")
-                    .unwrap_or(&slide.part_path)
-                    .to_string(),
+                    .unwrap_or(&slide.part_path).to_owned(),
             );
         }
-        doc.part_rels.insert(pres_path.to_string(), new_id_map);
+        doc.part_rels.insert(pres_path.to_owned(), new_id_map);
     }
 
     /// Update [Content_Types].xml to include content type overrides for new slides.
@@ -782,10 +756,9 @@ impl PptxDriver {
                 for slide in slides {
                     let part_name = format!("/{}", slide.part_path);
                     if !content.contains(&part_name) {
-                        overrides.push_str(&format!(
-                            r#"  <Override PartName="{}" ContentType="{}"/>"#,
-                            part_name, slide_ct
-                        ));
+                        let _ = write!(overrides, 
+                            r#"  <Override PartName="{part_name}" ContentType="{slide_ct}"/>"#
+                        );
                         overrides.push('\n');
                     }
                 }

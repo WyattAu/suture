@@ -12,7 +12,7 @@ fuzz_target!(|data: &[u8]| {
     }
 });
 
-fn parse_unified_diff(text: &str) -> Result<usize, Box<dyn std::error::Error>> {
+fn parse_unified_diff(text: &str) -> usize {
     let mut file_count = 0usize;
     let mut in_file = false;
     let mut _hunk_header: Option<(usize, usize, usize, usize)> = None;
@@ -53,5 +53,5 @@ fn parse_unified_diff(text: &str) -> Result<usize, Box<dyn std::error::Error>> {
         file_count += 1;
     }
 
-    Ok(file_count)
+    file_count
 }

@@ -84,11 +84,11 @@ pub fn draw(f: &mut Frame, _app: &App, area: Rect) {
     // Navigation
     lines.push(Line::from(Span::styled("NAVIGATION", header_style)));
     lines.push(Line::from(vec![
-        Span::styled("  [j/↓]    ", key_style),
+        Span::styled("  [j/\u{2193}]    ", key_style),
         Span::styled("Move down / scroll down", desc_style),
     ]));
     lines.push(Line::from(vec![
-        Span::styled("  [k/↑]    ", key_style),
+        Span::styled("  [k/\u{2191}]    ", key_style),
         Span::styled("Move up / scroll up", desc_style),
     ]));
     lines.push(Line::from(vec![
@@ -172,11 +172,11 @@ pub fn draw(f: &mut Frame, _app: &App, area: Rect) {
     // Log tab
     lines.push(Line::from(Span::styled("LOG TAB", header_style)));
     lines.push(Line::from(vec![
-        Span::styled("  [↑/k]  ", key_style),
+        Span::styled("  [\u{2191}/k]  ", key_style),
         Span::styled("Move up", desc_style),
     ]));
     lines.push(Line::from(vec![
-        Span::styled("  [↓/j]  ", key_style),
+        Span::styled("  [\u{2193}/j]  ", key_style),
         Span::styled("Move down", desc_style),
     ]));
     lines.push(Line::from(vec![
@@ -192,11 +192,11 @@ pub fn draw(f: &mut Frame, _app: &App, area: Rect) {
     // Staging tab
     lines.push(Line::from(Span::styled("STAGING TAB", header_style)));
     lines.push(Line::from(vec![
-        Span::styled("  [↑/k]    ", key_style),
+        Span::styled("  [\u{2191}/k]    ", key_style),
         Span::styled("Move up", desc_style),
     ]));
     lines.push(Line::from(vec![
-        Span::styled("  [↓/j]    ", key_style),
+        Span::styled("  [\u{2193}/j]    ", key_style),
         Span::styled("Move down", desc_style),
     ]));
     lines.push(Line::from(vec![
@@ -228,11 +228,11 @@ pub fn draw(f: &mut Frame, _app: &App, area: Rect) {
     // Branches tab
     lines.push(Line::from(Span::styled("BRANCHES TAB", header_style)));
     lines.push(Line::from(vec![
-        Span::styled("  [↑/k]  ", key_style),
+        Span::styled("  [\u{2191}/k]  ", key_style),
         Span::styled("Move up", desc_style),
     ]));
     lines.push(Line::from(vec![
-        Span::styled("  [↓/j]  ", key_style),
+        Span::styled("  [\u{2193}/j]  ", key_style),
         Span::styled("Move down", desc_style),
     ]));
     lines.push(Line::from(vec![
@@ -260,11 +260,11 @@ pub fn draw(f: &mut Frame, _app: &App, area: Rect) {
     // Patch Browser tab
     lines.push(Line::from(Span::styled("PATCH BROWSER TAB", header_style)));
     lines.push(Line::from(vec![
-        Span::styled("  [↑/k]     ", key_style),
+        Span::styled("  [\u{2191}/k]     ", key_style),
         Span::styled("Move up", desc_style),
     ]));
     lines.push(Line::from(vec![
-        Span::styled("  [↓/j]     ", key_style),
+        Span::styled("  [\u{2193}/j]     ", key_style),
         Span::styled("Move down", desc_style),
     ]));
     lines.push(Line::from(vec![
@@ -292,11 +292,11 @@ pub fn draw(f: &mut Frame, _app: &App, area: Rect) {
     // Merge View tab
     lines.push(Line::from(Span::styled("MERGE VIEW TAB", header_style)));
     lines.push(Line::from(vec![
-        Span::styled("  [↑/k]  ", key_style),
+        Span::styled("  [\u{2191}/k]  ", key_style),
         Span::styled("Previous conflict file", desc_style),
     ]));
     lines.push(Line::from(vec![
-        Span::styled("  [↓/j]  ", key_style),
+        Span::styled("  [\u{2193}/j]  ", key_style),
         Span::styled("Next conflict file", desc_style),
     ]));
     lines.push(Line::from(vec![
@@ -315,11 +315,11 @@ pub fn draw(f: &mut Frame, _app: &App, area: Rect) {
 
     lines.push(Line::from(Span::styled("REMOTE TAB", header_style)));
     lines.push(Line::from(vec![
-        Span::styled("  [↑/k]  ", key_style),
+        Span::styled("  [\u{2191}/k]  ", key_style),
         Span::styled("Move up", desc_style),
     ]));
     lines.push(Line::from(vec![
-        Span::styled("  [↓/j]  ", key_style),
+        Span::styled("  [\u{2193}/j]  ", key_style),
         Span::styled("Move down", desc_style),
     ]));
     lines.push(Line::from(vec![
@@ -341,7 +341,7 @@ pub fn draw(f: &mut Frame, _app: &App, area: Rect) {
         header_style,
     )));
     lines.push(Line::from(vec![
-        Span::styled("  [↑/k]  ", key_style),
+        Span::styled("  [\u{2191}/k]  ", key_style),
         Span::styled("Navigate conflicted files", desc_style),
     ]));
     lines.push(Line::from(vec![
@@ -395,11 +395,11 @@ pub fn draw(f: &mut Frame, _app: &App, area: Rect) {
     // Diff tab
     lines.push(Line::from(Span::styled("DIFF TAB", header_style)));
     lines.push(Line::from(vec![
-        Span::styled("  [↑/k]       ", key_style),
+        Span::styled("  [\u{2191}/k]       ", key_style),
         Span::styled("Scroll up", desc_style),
     ]));
     lines.push(Line::from(vec![
-        Span::styled("  [↓/j]       ", key_style),
+        Span::styled("  [\u{2193}/j]       ", key_style),
         Span::styled("Scroll down", desc_style),
     ]));
     lines.push(Line::from(vec![

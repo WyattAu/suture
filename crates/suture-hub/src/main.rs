@@ -106,20 +106,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
     let args = Args::parse();
 
-    let cfg: HubConfig = if let Some(ref config_path) = args.config {
-        match load_config(config_path) {
-            Ok(c) => {
-                tracing::info!("loaded config from {}", config_path);
-                c
+    let cfg: HubConfig = args.config.as_ref().map_or_else(
+        HubConfig::default,
+        |config_path| {
+            match load_config(config_path) {
+                Ok(c) => {
+                    tracing::info!("loaded config from {}", config_path);
+                    c
+                }
+                Err(e) => {
+                    tracing::warn!("failed to load config file {}: {e}", config_path);
+                    HubConfig::default()
+                }
             }
-            Err(e) => {
-                tracing::warn!("failed to load config file {}: {e}", config_path);
-                HubConfig::default()
-            }
-        }
-    } else {
-        HubConfig::default()
-    };
+        },
+    );
 
     let addr = if args.addr == "0.0.0.0:50051" {
         cfg.addr.unwrap_or(args.addr)
@@ -219,9 +220,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "s3-backend feature is not enabled; rebuild with --features s3-backend".into(),
             );
         }
-    } else {
-        tracing::info!("blob backend: sqlite");
     }
+    tracing::info!("blob backend: sqlite");
 
     // Raft consensus setup
     #[cfg(feature = "raft-cluster")]

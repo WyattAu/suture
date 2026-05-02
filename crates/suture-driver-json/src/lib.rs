@@ -24,7 +24,7 @@ impl_structured_driver! {
     wrap_map = |m| Value::Object(m),
     wrap_arr = |v| Value::Array(v),
 
-    key_set = |map| map.keys().map(|s| s.as_str()).collect::<std::collections::HashSet<&str>>(),
+    key_set = |map| map.keys().map(std::string::String::as_str).collect::<std::collections::HashSet<&str>>(),
     map_get = |map, key| Some(&map[*key]),
     map_insert = |map, key, val| { map.insert(key.to_string(), val); },
 

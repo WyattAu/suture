@@ -14,10 +14,10 @@ impl YamlDriver {
     }
 
     fn child_path(parent: &str, key: &Value) -> String {
-        let key_str = match key.as_str() {
-            Some(s) => s.to_string(),
-            None => serde_yaml::to_string(key).unwrap_or_else(|_| format!("{key:#?}")),
-        };
+        let key_str = key.as_str().map_or_else(
+            || serde_yaml::to_string(key).unwrap_or_else(|_| format!("{key:#?}")),
+            str::to_owned,
+        );
         if parent == "/" {
             format!("/{key_str}")
         } else {

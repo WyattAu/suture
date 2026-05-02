@@ -17,10 +17,12 @@ pub struct GrpcServer {
 }
 
 impl GrpcServer {
+    #[must_use] 
     pub fn new(addr: SocketAddr) -> Self {
         Self { addr }
     }
 
+    #[must_use] 
     pub fn addr(&self) -> SocketAddr {
         self.addr
     }
@@ -270,7 +272,7 @@ impl SutureHub for SutureHubService {
         let resp = hub.handle_pull(hub_pull).await;
         if !resp.success {
             return Err(Status::not_found(
-                resp.error.unwrap_or_else(|| "pull failed".to_string()),
+                resp.error.unwrap_or_else(|| "pull failed".to_owned()),
             ));
         }
         let grpc_patches: Vec<pb::PatchInfo> = resp
@@ -342,14 +344,14 @@ impl SutureHub for SutureHubService {
         for repo_id in &repos {
             results.push(pb::SearchResult {
                 repo_id: repo_id.clone(),
-                match_type: "repo".to_string(),
+                match_type: "repo".to_owned(),
                 snippet: format!("repository: {repo_id}"),
             });
             if let Ok(patches) = store.search_patches(repo_id, &req.query) {
                 for p in patches {
                     results.push(pb::SearchResult {
                         repo_id: repo_id.clone(),
-                        match_type: "patch".to_string(),
+                        match_type: "patch".to_owned(),
                         snippet: p.message,
                     });
                 }

@@ -2,6 +2,7 @@ use std::io::{Cursor, Write};
 use suture_driver::{SemanticChange, SutureDriver};
 use suture_driver_xlsx::XlsxDriver;
 
+use std::fmt::Write;
 type Cell = (usize, usize, String);
 
 /// Convert 0-based column index to A1 column letter(s).
@@ -47,13 +48,13 @@ fn make_xlsx(sheets: &[(&str, &[Cell])]) -> String {
                 rows.entry(row).or_default().push((col, val));
             }
             for (row_num, cols) in &rows {
-                xml.push_str(&format!("<row r=\"{}\">\n", row_num));
+                let _ = write!(xml, "<row r=\"{}\">\n", row_num);
                 for (col, val) in cols {
                     let col_letter = col_to_letter(*col);
-                    xml.push_str(&format!(
+                    let _ = write!(xml, 
                         "<c r=\"{}{}\"><v>{}</v></c>\n",
                         col_letter, row_num, val
-                    ));
+                    );
                 }
                 xml.push_str("</row>\n");
             }

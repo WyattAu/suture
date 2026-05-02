@@ -1,4 +1,4 @@
-pub(crate) async fn cmd_rm(
+pub async fn cmd_rm(
     paths: &[String],
     cached: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -17,7 +17,7 @@ pub(crate) async fn cmd_rm(
         } else {
             repo.add(path)?;
         }
-        println!("Removed {}", path);
+        println!("Removed {path}");
     }
     Ok(())
 }

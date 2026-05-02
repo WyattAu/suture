@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-#![allow(clippy::collapsible_match)]
 //! SutureDriver trait and registry for format-specific drivers.
 //!
 //! Drivers translate between file formats and semantic patches,
@@ -90,10 +89,7 @@ pub trait SutureDriver: Send + Sync {
         let base_str = String::from_utf8_lossy(base);
         let ours_str = String::from_utf8_lossy(ours);
         let theirs_str = String::from_utf8_lossy(theirs);
-        match self.merge(&base_str, &ours_str, &theirs_str)? {
-            Some(s) => Ok(Some(s.into_bytes())),
-            None => Ok(None),
-        }
+        Ok(self.merge(&base_str, &ours_str, &theirs_str)?.map(std::string::String::into_bytes))
     }
 
     /// Byte-level semantic diff for binary formats.
@@ -112,7 +108,7 @@ pub trait SutureDriver: Send + Sync {
 }
 
 /// A single semantic change detected by a driver.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SemanticChange {
     /// A value was added at a path (e.g., new key in JSON object).
     Added { path: String, value: String },

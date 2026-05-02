@@ -94,6 +94,7 @@ impl PackIndex {
         Ok(Self { entries })
     }
 
+    #[must_use] 
     pub fn find(&self, hash: &Hash) -> Option<u64> {
         self.entries
             .binary_search_by_key(hash, |e| e.hash)
@@ -101,14 +102,17 @@ impl PackIndex {
             .map(|idx| self.entries[idx].offset)
     }
 
+    #[must_use] 
     pub fn hashes(&self) -> Vec<Hash> {
         self.entries.iter().map(|e| e.hash).collect()
     }
 
+    #[must_use] 
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
@@ -156,8 +160,8 @@ impl PackFile {
         let index_hash = hasher::hash_bytes(&index_data);
         let name = format!("pack-{}", index_hash.to_hex());
 
-        let pack_path = pack_dir.join(format!("{}.pack", name));
-        let idx_path = pack_dir.join(format!("{}.idx", name));
+        let pack_path = pack_dir.join(format!("{name}.pack"));
+        let idx_path = pack_dir.join(format!("{name}.idx"));
 
         fs::write(&pack_path, &pack_data)?;
         fs::write(&idx_path, &index_data)?;
@@ -253,6 +257,7 @@ pub struct PackCache {
 
 #[allow(dead_code)]
 impl PackCache {
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             indices: HashMap::new(),
@@ -276,6 +281,7 @@ impl PackCache {
     }
 
     /// Find a hash across all loaded pack indices, returning the pack path and offset.
+    #[must_use] 
     pub fn find(&self, hash: &Hash) -> Option<(&PathBuf, u64)> {
         for (pack_path, index) in &self.indices {
             if let Some(offset) = index.find(hash) {
@@ -286,6 +292,7 @@ impl PackCache {
     }
 
     /// List all hashes across all loaded pack indices.
+    #[must_use] 
     pub fn all_hashes(&self) -> Vec<Hash> {
         let mut hashes = Vec::new();
         for index in self.indices.values() {
@@ -297,13 +304,15 @@ impl PackCache {
     }
 
     /// Number of pack files loaded.
+    #[must_use] 
     pub fn pack_count(&self) -> usize {
         self.indices.len()
     }
 
     /// Total number of objects across all packs.
+    #[must_use] 
     pub fn object_count(&self) -> usize {
-        self.indices.values().map(|i| i.len()).sum()
+        self.indices.values().map(PackIndex::len).sum()
     }
 }
 

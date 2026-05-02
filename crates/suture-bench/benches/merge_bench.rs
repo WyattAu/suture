@@ -6,6 +6,7 @@ use suture_driver_json::JsonDriver;
 use suture_driver_toml::TomlDriver;
 use suture_driver_yaml::YamlDriver;
 
+use std::fmt::Write;
 fn generate_json(n: usize) -> String {
     let mut map = serde_json::Map::new();
     for i in 0..n {
@@ -20,7 +21,7 @@ fn generate_json(n: usize) -> String {
 fn generate_yaml(n: usize) -> String {
     let mut s = String::new();
     for i in 0..n {
-        s.push_str(&format!("key_{}: value_{}\n", i, i));
+        let _ = write!(s, "key_{}: value_{}\n", i, i);
     }
     s
 }
@@ -28,7 +29,7 @@ fn generate_yaml(n: usize) -> String {
 fn generate_toml(n: usize) -> String {
     let mut s = String::new();
     for i in 0..n {
-        s.push_str(&format!("key_{} = \"value_{}\"\n", i, i));
+        let _ = write!(s, "key_{} = \"value_{}\"\n", i, i);
     }
     s
 }
@@ -36,7 +37,7 @@ fn generate_toml(n: usize) -> String {
 fn generate_csv(n: usize) -> String {
     let mut s = String::from("id,name,value\n");
     for i in 0..n {
-        s.push_str(&format!("{},item_{},{}\n", i, i, i * 10));
+        let _ = write!(s, "{},item_{},{}\n", i, i, i * 10);
     }
     s
 }

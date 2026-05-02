@@ -28,8 +28,8 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
             let graph = graph_rows.get(i);
 
             let commit_prefix =
-                graph.map_or_else(|| "│ ● ".to_string(), |g| g.commit_prefix.clone());
-            let info_prefix = graph.map_or_else(|| "  │ ".to_string(), |g| g.info_prefix.clone());
+                graph.map_or_else(|| "\u{2502} \u{25cf} ".to_owned(), |g| g.commit_prefix.clone());
+            let info_prefix = graph.map_or_else(|| "  \u{2502} ".to_owned(), |g| g.info_prefix.clone());
 
             let branch_tag = if entry.branch_heads.is_empty() {
                 String::new()
@@ -98,7 +98,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
 
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        " [↑/k] Up  [↓/j] Down  [d] Diff  [PgUp/PgDn] Page  [g] Top  [G] Bottom",
+        " [\u{2191}/k] Up  [\u{2193}/j] Down  [d] Diff  [PgUp/PgDn] Page  [g] Top  [G] Bottom",
         Style::default().fg(Color::DarkGray),
     )));
 

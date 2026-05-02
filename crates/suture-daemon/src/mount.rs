@@ -185,7 +185,7 @@ impl MountManager {
             .ok_or(MountError::NotFound)
     }
 
-    pub fn stop_all(&mut self) -> Result<(), MountError> {
+    pub fn stop_all(&mut self) {
         for (_, handle) in self.webdav_handles.drain() {
             handle.abort();
         }
@@ -198,8 +198,6 @@ impl MountManager {
             mount.status = MountStatus::Stopped;
             mount.mounted_at = None;
         }
-
-        Ok(())
     }
 }
 
@@ -294,7 +292,7 @@ mod tests {
 
         assert_eq!(manager.list_mounts().len(), 3);
 
-        manager.stop_all().unwrap();
+        manager.stop_all();
 
         for mount in manager.list_mounts() {
             assert_eq!(mount.status, MountStatus::Stopped);

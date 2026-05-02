@@ -104,7 +104,7 @@ pub fn create_shm_segment(
     // valid for the given length.
     let bytes = unsafe {
         std::slice::from_raw_parts(
-            &status as *const ShmStatus as *const u8,
+            std::ptr::from_ref::<ShmStatus>(&status) as *const u8,
             std::mem::size_of::<ShmStatus>(),
         )
     };
@@ -152,7 +152,7 @@ pub fn update_shm_status(path: &Path, status: &ShmStatus) -> Result<(), anyhow::
     // reference so it is properly aligned and valid for the given length.
     let bytes = unsafe {
         std::slice::from_raw_parts(
-            status as *const ShmStatus as *const u8,
+            std::ptr::from_ref::<ShmStatus>(status) as *const u8,
             std::mem::size_of::<ShmStatus>(),
         )
     };

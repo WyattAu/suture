@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-#![allow(clippy::collapsible_match)]
 use std::collections::{HashMap, HashSet};
 
 use suture_driver::{DriverError, SemanticChange, SutureDriver};
@@ -7,6 +6,7 @@ use suture_driver::{DriverError, SemanticChange, SutureDriver};
 pub struct CsvDriver;
 
 impl CsvDriver {
+    #[must_use] 
     pub fn new() -> Self {
         Self
     }
@@ -19,20 +19,20 @@ impl CsvDriver {
             .headers()
             .map_err(|e| DriverError::ParseError(e.to_string()))?
             .iter()
-            .map(|s| s.to_string())
+            .map(std::borrow::ToOwned::to_owned)
             .collect::<Vec<_>>();
         let mut rows = Vec::new();
         for result in reader.records() {
             let record = result.map_err(|e| DriverError::ParseError(e.to_string()))?;
-            rows.push(record.iter().map(|s| s.to_string()).collect());
+            rows.push(record.iter().map(std::borrow::ToOwned::to_owned).collect());
         }
         Ok((headers, rows))
     }
 
     fn row_key(row: &[String], occurrence: usize) -> String {
-        let base = row.first().map(|s| s.as_str()).unwrap_or("");
+        let base = row.first().map_or("", |s| s.as_str());
         if occurrence == 0 {
-            base.to_string()
+            base.to_owned()
         } else {
             format!("{base}__dup{occurrence}")
         }
@@ -61,8 +61,8 @@ impl CsvDriver {
     ) -> Vec<SemanticChange> {
         let mut changes = Vec::new();
 
-        let old_headers_set: HashSet<&str> = old_headers.iter().map(|s| s.as_str()).collect();
-        let new_headers_set: HashSet<&str> = new_headers.iter().map(|s| s.as_str()).collect();
+        let old_headers_set: HashSet<&str> = old_headers.iter().map(std::string::String::as_str).collect();
+        let new_headers_set: HashSet<&str> = new_headers.iter().map(std::string::String::as_str).collect();
 
         for header in old_headers {
             if !new_headers_set.contains(header.as_str()) {
@@ -90,8 +90,8 @@ impl CsvDriver {
         let (old_order, old_map) = Self::build_keyed_rows(old_rows);
         let (new_order, new_map) = Self::build_keyed_rows(new_rows);
 
-        let old_keys: HashSet<&str> = old_order.iter().map(|s| s.as_str()).collect();
-        let new_keys: HashSet<&str> = new_order.iter().map(|s| s.as_str()).collect();
+        let old_keys: HashSet<&str> = old_order.iter().map(std::string::String::as_str).collect();
+        let new_keys: HashSet<&str> = new_order.iter().map(std::string::String::as_str).collect();
 
         for key in &old_order {
             if !new_keys.contains(key.as_str())
@@ -118,14 +118,14 @@ impl CsvDriver {
         for key in &old_order {
             if let (Some(old_row), Some(new_row)) = (old_map.get(key), new_map.get(key)) {
                 for (col_idx, col_name) in common_headers.iter().enumerate() {
-                    let old_val = old_row.get(col_idx).map(|s| s.as_str()).unwrap_or("");
-                    let new_val = new_row.get(col_idx).map(|s| s.as_str()).unwrap_or("");
+                    let old_val = old_row.get(col_idx).map_or("", |s| s.as_str());
+                    let new_val = new_row.get(col_idx).map_or("", |s| s.as_str());
 
                     if old_val != new_val {
                         changes.push(SemanticChange::Modified {
                             path: format!("/{col_name}:{key}"),
-                            old_value: old_val.to_string(),
-                            new_value: new_val.to_string(),
+                            old_value: old_val.to_owned(),
+                            new_value: new_val.to_owned(),
                         });
                     }
                 }
@@ -145,21 +145,21 @@ impl CsvDriver {
     ) -> Result<Option<String>, DriverError> {
         let base_hc: HashMap<&str, usize> = {
             let mut m = HashMap::new();
-            for h in base_headers.iter() {
+            for h in base_headers {
                 *m.entry(h.as_str()).or_insert(0) += 1;
             }
             m
         };
         let ours_hc: HashMap<&str, usize> = {
             let mut m = HashMap::new();
-            for h in ours_headers.iter() {
+            for h in ours_headers {
                 *m.entry(h.as_str()).or_insert(0) += 1;
             }
             m
         };
         let theirs_hc: HashMap<&str, usize> = {
             let mut m = HashMap::new();
-            for h in theirs_headers.iter() {
+            for h in theirs_headers {
                 *m.entry(h.as_str()).or_insert(0) += 1;
             }
             m
@@ -169,14 +169,14 @@ impl CsvDriver {
         let mut processed: HashMap<&str, usize> = HashMap::new();
 
         for headers in [base_headers, ours_headers, theirs_headers] {
-            for h in headers.iter() {
+            for h in headers {
                 let n = *processed.entry(h.as_str()).or_insert(0);
                 processed.insert(h.as_str(), n + 1);
                 let in_base = n < *base_hc.get(h.as_str()).unwrap_or(&0);
                 let in_ours = n < *ours_hc.get(h.as_str()).unwrap_or(&0);
                 let in_theirs = n < *theirs_hc.get(h.as_str()).unwrap_or(&0);
                 match (in_base, in_ours, in_theirs) {
-                    (true, false, false) | (false, false, false) => {}
+                    (true | false, false, false) => {}
                     _ => merged_headers.push(h.clone()),
                 }
             }
@@ -186,9 +186,9 @@ impl CsvDriver {
         let (ours_order, ours_map) = Self::build_keyed_rows(ours_rows);
         let (theirs_order, theirs_map) = Self::build_keyed_rows(theirs_rows);
 
-        let base_keys: HashSet<&str> = base_order.iter().map(|s| s.as_str()).collect();
-        let ours_keys: HashSet<&str> = ours_order.iter().map(|s| s.as_str()).collect();
-        let theirs_keys: HashSet<&str> = theirs_order.iter().map(|s| s.as_str()).collect();
+        let base_keys: HashSet<&str> = base_order.iter().map(std::string::String::as_str).collect();
+        let ours_keys: HashSet<&str> = ours_order.iter().map(std::string::String::as_str).collect();
+        let theirs_keys: HashSet<&str> = theirs_order.iter().map(std::string::String::as_str).collect();
 
         let mut key_order: Vec<String> = Vec::new();
         let mut seen_keys: HashSet<String> = HashSet::new();
@@ -220,15 +220,15 @@ impl CsvDriver {
                         let max_cols = b.len().max(o.len()).max(t.len());
                         let mut merged_row = Vec::new();
                         for col in 0..max_cols {
-                            let bv = b.get(col).map(|s| s.as_str()).unwrap_or("");
-                            let ov = o.get(col).map(|s| s.as_str()).unwrap_or("");
-                            let tv = t.get(col).map(|s| s.as_str()).unwrap_or("");
+                            let bv = b.get(col).map_or("", |s| s.as_str());
+                            let ov = o.get(col).map_or("", |s| s.as_str());
+                            let tv = t.get(col).map_or("", |s| s.as_str());
                             if ov == tv {
-                                merged_row.push(ov.to_string());
+                                merged_row.push(ov.to_owned());
                             } else if ov == bv {
-                                merged_row.push(tv.to_string());
+                                merged_row.push(tv.to_owned());
                             } else if tv == bv {
-                                merged_row.push(ov.to_string());
+                                merged_row.push(ov.to_owned());
                             } else {
                                 return Ok(None);
                             }
@@ -252,7 +252,7 @@ impl CsvDriver {
                         return Ok(None);
                     }
                 }
-                (true, false, false) => {}
+                (true | false, false, false) => {}
                 (false, true, false) => {
                     merged_rows.push(ours_map[key].clone());
                 }
@@ -268,7 +268,6 @@ impl CsvDriver {
                         return Ok(None);
                     }
                 }
-                (false, false, false) => {}
             }
         }
 
@@ -320,7 +319,7 @@ impl Default for CsvDriver {
 }
 
 impl SutureDriver for CsvDriver {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "CSV"
     }
 
@@ -374,7 +373,7 @@ impl SutureDriver for CsvDriver {
         let changes = self.diff(base_content, new_content)?;
 
         if changes.is_empty() {
-            return Ok("no changes".to_string());
+            return Ok("no changes".to_owned());
         }
 
         let lines: Vec<String> = changes.iter().map(Self::format_change).collect();

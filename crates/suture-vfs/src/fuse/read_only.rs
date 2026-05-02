@@ -43,7 +43,7 @@ impl SutureFilesystem {
         let file_tree = repo.snapshot_head()?;
 
         let paths: Vec<String> = file_tree.paths().into_iter().cloned().collect();
-        let paths_ref: Vec<&str> = paths.iter().map(|s| s.as_str()).collect();
+        let paths_ref: Vec<&str> = paths.iter().map(std::string::String::as_str).collect();
 
         let path_translator = PathTranslator::build(&paths_ref);
 
@@ -129,9 +129,9 @@ impl Filesystem for SutureFilesystem {
         let parent_path = parent_path.ok_or_else(Errno::new_not_exist)?;
 
         let child_path = if parent_path.is_empty() {
-            name_str.to_string()
+            name_str.to_owned()
         } else {
-            format!("{}/{}", parent_path, name_str)
+            format!("{parent_path}/{name_str}")
         };
 
         let inode = self
@@ -145,8 +145,7 @@ impl Filesystem for SutureFilesystem {
             self.inner
                 .file_contents
                 .get(&child_path)
-                .map(|d| d.len() as u64)
-                .unwrap_or(0)
+                .map_or(0, |d| d.len() as u64)
         } else {
             0
         };
@@ -177,8 +176,7 @@ impl Filesystem for SutureFilesystem {
             self.inner
                 .file_contents
                 .get(&entry.path)
-                .map(|d| d.len() as u64)
-                .unwrap_or(0)
+                .map_or(0, |d| d.len() as u64)
         } else {
             0
         };
@@ -238,7 +236,7 @@ impl Filesystem for SutureFilesystem {
     > {
         let parent_path = self.inner.inode_map.get_path(parent);
         let parent_path = match parent_path {
-            Some(p) => p.to_string(),
+            Some(p) => p.to_owned(),
             None => return Err(Errno::new_not_exist()),
         };
 
@@ -262,7 +260,7 @@ impl Filesystem for SutureFilesystem {
                 let size = if dir_entry.is_dir {
                     0u64
                 } else {
-                    file_contents.get(&dir_entry.path).map(|d| d.len() as u64).unwrap_or(0)
+                    file_contents.get(&dir_entry.path).map_or(0, |d| d.len() as u64)
                 };
                 let attr = make_file_attr(entry, inode, size);
 

@@ -19,7 +19,7 @@ impl PatchDag {
     pub fn head(&self) -> Option<(String, PatchId)> {
         self.branches
             .get("main")
-            .map(|id| ("main".to_string(), *id))
+            .map(|id| ("main".to_owned(), *id))
             .or_else(|| {
                 self.branches
                     .iter()
@@ -43,10 +43,10 @@ impl PatchDag {
     ) -> Result<(usize, usize), DagError> {
         let target_a = self
             .get_branch(branch_a)
-            .ok_or_else(|| DagError::BranchNotFound(branch_a.as_str().to_string()))?;
+            .ok_or_else(|| DagError::BranchNotFound(branch_a.as_str().to_owned()))?;
         let target_b = self
             .get_branch(branch_b)
-            .ok_or_else(|| DagError::BranchNotFound(branch_b.as_str().to_string()))?;
+            .ok_or_else(|| DagError::BranchNotFound(branch_b.as_str().to_owned()))?;
 
         // Find the LCA (the most recent common ancestor)
         let lca_id = self

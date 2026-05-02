@@ -1,4 +1,4 @@
-pub(crate) async fn cmd_worktree(
+pub async fn cmd_worktree(
     action: &crate::WorktreeAction,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match action {
@@ -22,7 +22,7 @@ pub(crate) async fn cmd_worktree(
                 repo.add_worktree(wt_name, std::path::Path::new(path), branch.as_deref())?;
             }
 
-            println!("Worktree '{}' created at {}", wt_name, path);
+            println!("Worktree '{wt_name}' created at {path}");
             Ok(())
         }
         crate::WorktreeAction::List => {
@@ -37,7 +37,7 @@ pub(crate) async fn cmd_worktree(
         crate::WorktreeAction::Remove { name } => {
             let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
             repo.remove_worktree(name)?;
-            println!("Worktree '{}' removed", name);
+            println!("Worktree '{name}' removed");
             Ok(())
         }
         crate::WorktreeAction::Prune => {
@@ -59,7 +59,7 @@ pub(crate) async fn cmd_worktree(
             }
 
             if pruned > 0 {
-                println!("Pruned {} stale worktree entries", pruned);
+                println!("Pruned {pruned} stale worktree entries");
             } else {
                 println!("No stale worktree entries found.");
             }

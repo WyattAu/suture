@@ -51,6 +51,7 @@ pub struct MergeResult {
 
 impl MergeResult {
     /// Get all patch IDs that should be in the merged result.
+    #[must_use] 
     pub fn all_patch_ids(&self) -> Vec<PatchId> {
         let mut ids = Vec::with_capacity(
             self.common_patches.len() + self.patches_a_only.len() + self.patches_b_only.len(),
@@ -82,7 +83,7 @@ pub fn merge(
     base_patches: &[PatchId],
     branch_a_patches: &[PatchId],
     branch_b_patches: &[PatchId],
-    all_patches: &HashMap<PatchId, Patch>,
+    #[allow(clippy::implicit_hasher)] all_patches: &HashMap<PatchId, Patch>,
 ) -> Result<MergeResult, MergeError> {
     let base_set: HashSet<&PatchId> = base_patches.iter().collect();
 
@@ -156,6 +157,7 @@ pub fn merge(
 ///
 /// This is useful for showing a preview of what would conflict before
 /// actually committing to a merge.
+#[must_use] 
 pub fn detect_conflicts(patches_a: &[Patch], patches_b: &[Patch]) -> Vec<Conflict> {
     let mut conflicts = Vec::new();
 

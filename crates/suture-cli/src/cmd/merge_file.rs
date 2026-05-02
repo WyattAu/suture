@@ -16,7 +16,7 @@ fn read_file_bytes(path: &str) -> Result<String, Box<dyn std::error::Error>> {
     Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
-pub(crate) async fn cmd_merge_file(
+pub async fn cmd_merge_file(
     base_path: &str,
     ours_path: &str,
     theirs_path: &str,
@@ -42,15 +42,18 @@ pub(crate) async fn cmd_merge_file(
     let registry = crate::driver_registry::builtin_registry();
 
     // Resolve driver: explicit --driver flag > auto-detect by extension > none
-    let driver: Option<&dyn suture_driver::SutureDriver> = match driver_name {
-        Some(name) => {
+    let driver: Option<&dyn suture_driver::SutureDriver> = driver_name.map_or_else(
+        || {
+            registry.get_for_path(StdPath::new(ours_path)).ok()
+        },
+        |name| {
             if name == "auto" {
                 // --driver auto: detect from file extension
                 registry.get_for_path(StdPath::new(ours_path)).ok()
             } else {
                 // Explicit driver: try as extension name (e.g., "json" -> ".json")
                 let ext = if name.starts_with('.') {
-                    name.to_string()
+                    name.to_owned()
                 } else {
                     format!(".{name}")
                 };
@@ -62,33 +65,26 @@ pub(crate) async fn cmd_merge_file(
                     }
                 }
             }
-        }
-        None => {
-            // Auto-detect by file extension
-            registry.get_for_path(StdPath::new(ours_path)).ok()
-        }
-    };
+        },
+    );
 
     // Try semantic merge if a driver is available
     if let Some(driver) = driver {
         match driver.merge(&base_content, &ours_content, &theirs_content) {
             Ok(Some(merged)) => {
                 // Clean semantic merge
-                match output_path {
-                    Some(path) => std::fs::write(path, merged.as_bytes())?,
-                    None => {
-                        // For binary formats, don't print to stdout
-                        let ours_ext = StdPath::new(ours_path)
-                            .extension()
-                            .and_then(|e| e.to_str())
-                            .unwrap_or("");
-                        if is_binary_extension(ours_ext) {
-                            eprintln!(
-                                "{ANSI_YELLOW}Note: merged content is binary ({ours_ext}). Use -o <path> to write output.{ANSI_RESET}"
-                            );
-                        } else {
-                            print!("{merged}");
-                        }
+                if let Some(path) = output_path { std::fs::write(path, merged.as_bytes())? } else {
+                    // For binary formats, don't print to stdout
+                    let ours_ext = StdPath::new(ours_path)
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("");
+                    if is_binary_extension(ours_ext) {
+                        eprintln!(
+                            "{ANSI_YELLOW}Note: merged content is binary ({ours_ext}). Use -o <path> to write output.{ANSI_RESET}"
+                        );
+                    } else {
+                        print!("{merged}");
                     }
                 }
                 eprintln!(

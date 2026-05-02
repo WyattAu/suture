@@ -1,13 +1,13 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LogEntry {
     pub index: u64,
     pub term: u64,
     pub command: Vec<u8>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Snapshot {
     pub data: Vec<u8>,
     pub last_included_index: u64,
@@ -23,6 +23,7 @@ pub struct RaftLog {
 }
 
 impl RaftLog {
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             entries: Vec::new(),
@@ -45,6 +46,7 @@ impl RaftLog {
         self.entries.push(entry);
     }
 
+    #[must_use] 
     pub fn get(&self, index: u64) -> Option<&LogEntry> {
         if index == 0 || index <= self.snapshot_index {
             return None;
@@ -53,17 +55,20 @@ impl RaftLog {
         self.entries.get(local)
     }
 
+    #[must_use] 
     pub fn last_index(&self) -> u64 {
         self.snapshot_index + self.entries.len() as u64
     }
 
+    #[must_use] 
     pub fn last_term(&self) -> u64 {
         if self.entries.is_empty() {
             return self.snapshot_term;
         }
-        self.entries.last().map(|e| e.term).unwrap_or(0)
+        self.entries.last().map_or(0, |e| e.term)
     }
 
+    #[must_use] 
     pub fn term_for(&self, index: u64) -> Option<u64> {
         if index == self.snapshot_index && self.snapshot_index > 0 {
             return Some(self.snapshot_term);
@@ -71,6 +76,7 @@ impl RaftLog {
         self.get(index).map(|e| e.term)
     }
 
+    #[must_use] 
     pub fn entries_from(&self, index: u64) -> &[LogEntry] {
         if index == 0 || self.entries.is_empty() {
             return &[];
@@ -93,10 +99,12 @@ impl RaftLog {
         self.entries.truncate(local);
     }
 
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty() && self.snapshot_index == 0
     }
 
+    #[must_use] 
     pub fn as_slice(&self) -> &[LogEntry] {
         &self.entries
     }
@@ -129,10 +137,12 @@ impl RaftLog {
         }
     }
 
+    #[must_use] 
     pub fn snapshot_index(&self) -> u64 {
         self.snapshot_index
     }
 
+    #[must_use] 
     pub fn snapshot_term(&self) -> u64 {
         self.snapshot_term
     }

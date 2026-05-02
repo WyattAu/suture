@@ -10,11 +10,13 @@ pub struct S3BlobStore {
 }
 
 impl S3BlobStore {
+    #[must_use] 
     pub fn new(config: S3Config) -> Self {
         let client = reqwest::Client::new();
         Self { config, client }
     }
 
+    #[must_use] 
     pub fn object_key(&self, hash: &Hash) -> String {
         let hex = hash.to_hex();
         format!("{}{}", self.config.prefix, hex)
@@ -132,9 +134,9 @@ impl S3BlobStore {
         match response.status().as_u16() {
             200 => {
                 let body = response.text().await?;
-                let hashes = parse_list_response(&body, &self.config.prefix)?;
+                let hashes = parse_list_response(&body, &self.config.prefix);
                 debug!(count = hashes.len(), "LIST blobs succeeded");
-                Ok(hashes)
+    Ok(hashes)
             }
             403 => Err(S3Error::AccessDenied("LIST: access denied".into())),
             status => {
@@ -145,7 +147,7 @@ impl S3BlobStore {
     }
 }
 
-fn parse_list_response(xml: &str, prefix: &str) -> Result<Vec<Hash>, S3Error> {
+fn parse_list_response(xml: &str, prefix: &str) -> Vec<Hash> {
     let mut hashes = Vec::new();
 
     for part in xml.split("<Key>") {
@@ -161,7 +163,7 @@ fn parse_list_response(xml: &str, prefix: &str) -> Result<Vec<Hash>, S3Error> {
         }
     }
 
-    Ok(hashes)
+    hashes
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -170,12 +172,12 @@ fn parse_error_response(xml: &str) -> Option<(String, String)> {
         .split("<Code>")
         .nth(1)
         .and_then(|s| s.split("</Code>").next())
-        .map(|s| s.trim().to_string());
+        .map(|s| s.trim().to_owned());
     let message = xml
         .split("<Message>")
         .nth(1)
         .and_then(|s| s.split("</Message>").next())
-        .map(|s| s.trim().to_string());
+        .map(|s| s.trim().to_owned());
     code.zip(message)
 }
 
@@ -237,7 +239,7 @@ mod tests {
     </Contents>
 </ListBucketResult>"#;
 
-        let hashes = parse_list_response(xml, "suture/blobs/").unwrap();
+        let hashes = parse_list_response(xml, "suture/blobs/");
         assert_eq!(hashes.len(), 2);
 
         let all_a = "a".repeat(64);
@@ -255,7 +257,7 @@ mod tests {
     <KeyCount>0</KeyCount>
 </ListBucketResult>"#;
 
-        let hashes = parse_list_response(xml, "suture/blobs/").unwrap();
+        let hashes = parse_list_response(xml, "suture/blobs/");
         assert!(hashes.is_empty());
     }
 

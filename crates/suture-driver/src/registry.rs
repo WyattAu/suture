@@ -10,6 +10,7 @@ pub struct DriverRegistry {
 }
 
 impl DriverRegistry {
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             extension_map: HashMap::new(),
@@ -19,7 +20,7 @@ impl DriverRegistry {
 
     /// Register a driver for its supported extensions.
     pub fn register(&mut self, driver: Box<dyn SutureDriver>) {
-        let name = driver.name().to_string();
+        let name = driver.name().to_owned();
         for ext in driver.supported_extensions() {
             self.extension_map.insert(ext.to_lowercase(), name.clone());
         }
@@ -48,11 +49,12 @@ impl DriverRegistry {
 
         self.drivers
             .get(driver_name)
-            .map(|d| d.as_ref())
+            .map(std::convert::AsRef::as_ref)
             .ok_or(DriverError::DriverNotFound(ext))
     }
 
     /// List all registered drivers with their extensions.
+    #[must_use] 
     pub fn list(&self) -> Vec<(&str, Vec<&str>)> {
         let mut result: Vec<(&str, Vec<&str>)> = self
             .drivers

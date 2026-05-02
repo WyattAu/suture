@@ -49,6 +49,7 @@ fn make_docx_bytes(paragraphs: &[impl AsRef<str>]) -> Vec<u8> {
     buf
 }
 
+#[must_use] 
 pub fn multi_section_bytes() -> Vec<u8> {
     make_docx_bytes(MULTI_SECTION_PARAGRAPHS)
 }
@@ -58,17 +59,18 @@ pub fn with_modified_paragraph_bytes(
     index: usize,
     new_text: &str,
 ) -> Vec<u8> {
-    let mut modified: Vec<String> = paragraphs.iter().map(|p| p.as_ref().to_string()).collect();
+    let mut modified: Vec<String> = paragraphs.iter().map(|p| p.as_ref().to_owned()).collect();
     if index < modified.len() {
-        modified[index] = new_text.to_string();
+        modified[index] = new_text.to_owned();
     } else {
-        modified.push(new_text.to_string());
+        modified.push(new_text.to_owned());
     }
     make_docx_bytes(&modified)
 }
 
 pub const SIMPLE_PARAGRAPHS: &[&str] = &["This is a simple document with a single paragraph."];
 
+#[must_use] 
 pub fn simple() -> String {
     make_docx(SIMPLE_PARAGRAPHS)
 }
@@ -87,6 +89,7 @@ pub const MULTI_SECTION_PARAGRAPHS: &[&str] = &[
     "We plan to expand into the European market in Q1 2026.",
 ];
 
+#[must_use] 
 pub fn multi_section() -> String {
     make_docx(MULTI_SECTION_PARAGRAPHS)
 }
@@ -105,6 +108,7 @@ pub const STYLED_PARAGRAPHS: &[&str] = &[
     "Three major initiatives were launched this year.",
 ];
 
+#[must_use] 
 pub fn styled() -> String {
     make_docx(STYLED_PARAGRAPHS)
 }
@@ -136,26 +140,27 @@ pub const COMPLEX_PARAGRAPHS: &[&str] = &[
     "Authorized representative, Beta Industries",
 ];
 
+#[must_use] 
 pub fn complex() -> String {
     make_docx(COMPLEX_PARAGRAPHS)
 }
 
+#[must_use] 
 pub fn long_paragraphs() -> Vec<String> {
     let mut paragraphs = Vec::with_capacity(55);
-    paragraphs.push("THE COMPREHENSIVE GUIDE TO MODERN SOFTWARE ARCHITECTURE".to_string());
-    paragraphs.push("Chapter 1: Introduction".to_string());
+    paragraphs.push("THE COMPREHENSIVE GUIDE TO MODERN SOFTWARE ARCHITECTURE".to_owned());
+    paragraphs.push("Chapter 1: Introduction".to_owned());
     paragraphs
-        .push("Software architecture is the fundamental organization of a system.".to_string());
+        .push("Software architecture is the fundamental organization of a system.".to_owned());
     for i in 1..=10 {
         paragraphs.push(format!("Section 1.{i}: Foundation Concepts"));
         paragraphs.push(format!(
             "This section introduces core architectural concepts including modularity and separation of concerns. Example {i} illustrates these principles."
         ));
     }
-    paragraphs.push("Chapter 2: Microservices Architecture".to_string());
+    paragraphs.push("Chapter 2: Microservices Architecture".to_owned());
     paragraphs.push(
-        "Microservices decompose applications into small, independently deployable services."
-            .to_string(),
+        "Microservices decompose applications into small, independently deployable services.".to_owned(),
     );
     for i in 1..=10 {
         paragraphs.push(format!("Section 2.{i}: Microservice Patterns"));
@@ -163,9 +168,9 @@ pub fn long_paragraphs() -> Vec<String> {
             "Pattern {i} demonstrates service boundaries and inter-service communication."
         ));
     }
-    paragraphs.push("Chapter 3: Event-Driven Architecture".to_string());
+    paragraphs.push("Chapter 3: Event-Driven Architecture".to_owned());
     paragraphs.push(
-        "Event-driven architectures use events for communication between components.".to_string(),
+        "Event-driven architectures use events for communication between components.".to_owned(),
     );
     for i in 1..=10 {
         paragraphs.push(format!("Section 3.{i}: Event Processing Patterns"));
@@ -173,9 +178,9 @@ pub fn long_paragraphs() -> Vec<String> {
             "Section 3.{i} covers event sourcing, CQRS, and saga patterns."
         ));
     }
-    paragraphs.push("Chapter 4: Cloud-Native Patterns".to_string());
+    paragraphs.push("Chapter 4: Cloud-Native Patterns".to_owned());
     paragraphs.push(
-        "Cloud-native architectures leverage containerization and orchestration.".to_string(),
+        "Cloud-native architectures leverage containerization and orchestration.".to_owned(),
     );
     for i in 1..=10 {
         paragraphs.push(format!("Section 4.{i}: Cloud Deployment Strategies"));
@@ -183,13 +188,14 @@ pub fn long_paragraphs() -> Vec<String> {
             "Strategy {i} covers progressive delivery and automated rollback."
         ));
     }
-    paragraphs.push("Conclusion".to_string());
+    paragraphs.push("Conclusion".to_owned());
     paragraphs.push(
-        "Modern software architecture requires continuous learning and adaptation.".to_string(),
+        "Modern software architecture requires continuous learning and adaptation.".to_owned(),
     );
     paragraphs
 }
 
+#[must_use] 
 pub fn long() -> String {
     make_docx(&long_paragraphs())
 }
@@ -243,11 +249,11 @@ pub fn with_modified_paragraph(
     index: usize,
     new_text: &str,
 ) -> String {
-    let mut modified: Vec<String> = paragraphs.iter().map(|p| p.as_ref().to_string()).collect();
+    let mut modified: Vec<String> = paragraphs.iter().map(|p| p.as_ref().to_owned()).collect();
     if index < modified.len() {
-        modified[index] = new_text.to_string();
+        modified[index] = new_text.to_owned();
     } else {
-        modified.push(new_text.to_string());
+        modified.push(new_text.to_owned());
     }
     make_docx(&modified)
 }

@@ -17,7 +17,7 @@ use crate::storage::{ReplicationEntry, ReplicationStatus};
 pub use crate::types::*;
 use crate::webhooks::{Webhook, WebhookManager};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Role {
     Admin,
     Member,
@@ -25,20 +25,21 @@ pub enum Role {
 }
 
 impl Role {
+    #[must_use] 
     pub fn parse(s: &str) -> Self {
         match s {
-            "admin" => Role::Admin,
-            "member" => Role::Member,
-            "reader" => Role::Reader,
-            _ => Role::Reader,
+            "admin" => Self::Admin,
+            "member" => Self::Member,
+            _ => Self::Reader,
         }
     }
 
+    #[must_use] 
     pub fn as_str(&self) -> &'static str {
         match self {
-            Role::Admin => "admin",
-            Role::Member => "member",
-            Role::Reader => "reader",
+            Self::Admin => "admin",
+            Self::Member => "member",
+            Self::Reader => "reader",
         }
     }
 }
@@ -104,10 +105,12 @@ impl Default for SutureHubServer {
 }
 
 impl SutureHubServer {
+    #[must_use] 
     pub fn new() -> Self {
         Self::new_in_memory()
     }
 
+    #[must_use] 
     pub fn new_in_memory() -> Self {
         Self {
             storage: Arc::new(RwLock::new(
@@ -120,7 +123,7 @@ impl SutureHubServer {
             max_pulls_per_hour: 1000,
             max_token_creates_per_minute: 5,
             rate_limit_window: std::time::Duration::from_secs(60),
-            replication_role: Arc::new(std::sync::RwLock::new("standalone".to_string())),
+            replication_role: Arc::new(std::sync::RwLock::new("standalone".to_owned())),
             webhook_manager: Arc::new(WebhookManager::new()),
             rate_limit_db: None,
             lfs_data_dir: None,
@@ -147,7 +150,7 @@ impl SutureHubServer {
             max_pulls_per_hour: 1000,
             max_token_creates_per_minute: 5,
             rate_limit_window: std::time::Duration::from_secs(60),
-            replication_role: Arc::new(std::sync::RwLock::new("standalone".to_string())),
+            replication_role: Arc::new(std::sync::RwLock::new("standalone".to_owned())),
             webhook_manager: Arc::new(WebhookManager::new()),
             rate_limit_db: Some(Arc::new(tokio::sync::Mutex::new(rate_limit_conn))),
             lfs_data_dir: None,
@@ -158,10 +161,12 @@ impl SutureHubServer {
         self.no_auth = no_auth;
     }
 
+    #[must_use] 
     pub fn is_no_auth(&self) -> bool {
         self.no_auth
     }
 
+    #[must_use] 
     pub fn storage(&self) -> &Arc<RwLock<HubStorage>> {
         &self.storage
     }
@@ -176,6 +181,7 @@ impl SutureHubServer {
         self.rate_limit_window = window;
     }
 
+    #[must_use]
     pub fn with_lfs_dir(mut self, path: std::path::PathBuf) -> Self {
         if let Err(e) = std::fs::create_dir_all(&path) {
             tracing::warn!("Failed to create directory {}: {}", path.display(), e);
@@ -185,11 +191,12 @@ impl SutureHubServer {
     }
 
     pub fn set_replication_role(&self, role: &str) {
-        *self.replication_role.write().unwrap_or_else(|e| e.into_inner()) = role.to_string();
+        *self.replication_role.write().unwrap_or_else(std::sync::PoisonError::into_inner) = role.to_owned();
     }
 
+    #[must_use] 
     pub fn get_replication_role(&self) -> String {
-        self.replication_role.read().unwrap_or_else(|e| e.into_inner()).clone()
+        self.replication_role.read().unwrap_or_else(std::sync::PoisonError::into_inner).clone()
     }
 
     pub fn set_blob_backend(&mut self, backend: Arc<dyn BlobBackend>) {
@@ -203,13 +210,12 @@ impl SutureHubServer {
         hash_hex: &str,
         data: &[u8],
     ) -> Result<(), String> {
-        if let Some(backend) = &self.blob_backend {
-            backend.store_blob(repo_id, hash_hex, data)
-        } else {
-            store
+        self.blob_backend.as_ref().map_or_else(
+            || store
                 .store_blob(repo_id, hash_hex, data)
-                .map_err(|e| e.to_string())
-        }
+                .map_err(|e| e.to_string()),
+            |backend| backend.store_blob(repo_id, hash_hex, data),
+        )
     }
 
     fn blob_get(
@@ -218,11 +224,10 @@ impl SutureHubServer {
         repo_id: &str,
         hash_hex: &str,
     ) -> Result<Option<Vec<u8>>, String> {
-        if let Some(backend) = &self.blob_backend {
-            backend.get_blob(repo_id, hash_hex)
-        } else {
-            store.get_blob(repo_id, hash_hex).map_err(|e| e.to_string())
-        }
+        self.blob_backend.as_ref().map_or_else(
+            || store.get_blob(repo_id, hash_hex).map_err(|e| e.to_string()),
+            |backend| backend.get_blob(repo_id, hash_hex),
+        )
     }
 
     pub async fn log_write(
@@ -306,9 +311,9 @@ impl SutureHubServer {
             return Ok(());
         }
 
-        let full_key = format!("{}:{}", key, ip);
+        let full_key = format!("{key}:{ip}");
         let now = std::time::Instant::now();
-        let mut limits = self.rate_limits.write().unwrap_or_else(|e| e.into_inner());
+        let mut limits = self.rate_limits.write().unwrap_or_else(std::sync::PoisonError::into_inner);
 
         limits.retain(|_, (_, start)| now.duration_since(*start) < window);
 
@@ -392,7 +397,7 @@ impl SutureHubServer {
                     StatusCode::FORBIDDEN,
                     PushResponse {
                         success: false,
-                        error: Some("authentication required: no signature provided".to_string()),
+                        error: Some("authentication required: no signature provided".to_owned()),
                         existing_patches: vec![],
                     },
                 ));
@@ -652,7 +657,7 @@ impl SutureHubServer {
 
         if !store.repo_exists(repo_id).unwrap_or(false) {
             return RepoInfoResponse {
-                repo_id: repo_id.to_string(),
+                repo_id: repo_id.to_owned(),
                 patch_count: 0,
                 branches: vec![],
                 success: false,
@@ -664,7 +669,7 @@ impl SutureHubServer {
         let branches = store.get_branches(repo_id).unwrap_or_default();
 
         RepoInfoResponse {
-            repo_id: repo_id.to_string(),
+            repo_id: repo_id.to_owned(),
             patch_count,
             branches,
             success: true,
@@ -765,7 +770,7 @@ impl SutureHubServer {
 
         let client = reqwest::Client::new();
         let pull_resp = match client
-            .post(format!("{}/pull", upstream_url))
+            .post(format!("{upstream_url}/pull"))
             .json(&upstream_pull)
             .send()
             .await
@@ -819,10 +824,7 @@ impl SutureHubServer {
 
         for blob in &pull_result.blobs {
             let hex = hash_to_hex(&blob.hash);
-            let data = match base64_decode(&blob.data) {
-                Ok(d) => d,
-                Err(_) => continue,
-            };
+            let Ok(data) = base64_decode(&blob.data) else { continue };
             if let Err(e) = self.blob_store(&store, &local_repo, &hex, &data) {
                 tracing::warn!("Failed to store blob during mirror sync: {}", e);
             }
@@ -971,9 +973,7 @@ impl SutureHubServer {
 
         if req.capabilities.supports_delta {
             for needed_hash in &needed_hashes {
-                let target_data = match self.blob_get(&store, &req.repo_id, needed_hash) {
-                    Ok(Some(d)) => d,
-                    _ => {
+                let Ok(Some(target_data)) = self.blob_get(&store, &req.repo_id, needed_hash) else {
                         if let Ok(b) = store.get_blobs(
                             &req.repo_id,
                             &std::collections::HashSet::from([needed_hash.clone()]),
@@ -982,13 +982,10 @@ impl SutureHubServer {
                             blobs.push(blob);
                         }
                         continue;
-                    }
-                };
+                    };
 
                 if known_hash_set.contains(needed_hash) {
-                    let base_data = match self.blob_get(&store, &req.repo_id, needed_hash) {
-                        Ok(Some(d)) => d,
-                        _ => {
+                    let Ok(Some(base_data)) = self.blob_get(&store, &req.repo_id, needed_hash) else {
                             blobs.push(BlobRef {
                                 hash: HashProto {
                                     value: needed_hash.clone(),
@@ -997,8 +994,7 @@ impl SutureHubServer {
                                 truncated: false,
                             });
                             continue;
-                        }
-                    };
+                        };
 
                     if base_data == target_data {
                         continue;
@@ -1088,7 +1084,7 @@ impl SutureHubServer {
                     StatusCode::FORBIDDEN,
                     PushResponse {
                         success: false,
-                        error: Some("authentication required: no signature provided".to_string()),
+                        error: Some("authentication required: no signature provided".to_owned()),
                         existing_patches: vec![],
                     },
                 ));
@@ -1113,14 +1109,8 @@ impl SutureHubServer {
             if matches!(delta.encoding, DeltaEncoding::BinaryPatch) {
                 let base_hex = hash_to_hex(&delta.base_hash);
                 let target_hex = hash_to_hex(&delta.target_hash);
-                let base_data = match self.blob_get(&store, &req.repo_id, &base_hex) {
-                    Ok(Some(d)) => d,
-                    _ => continue,
-                };
-                let delta_bytes = match base64_decode(&delta.delta_data) {
-                    Ok(d) => d,
-                    Err(_) => continue,
-                };
+                let Ok(Some(base_data)) = self.blob_get(&store, &req.repo_id, &base_hex) else { continue };
+                let Ok(delta_bytes) = base64_decode(&delta.delta_data) else { continue };
                 let reconstructed = suture_protocol::apply_delta(&base_data, &delta_bytes);
                 if let Err(e) = self.blob_store(&store, &req.repo_id, &target_hex, &reconstructed) {
                     return Err((
@@ -1571,7 +1561,7 @@ fn verify_push_signature(
     sig_bytes: &[u8],
 ) -> Result<(), String> {
     if sig_bytes.len() != 64 {
-        return Err("signature must be 64 bytes".to_string());
+        return Err("signature must be 64 bytes".to_owned());
     }
     let signature = Signature::from_bytes(
         sig_bytes
@@ -1596,14 +1586,13 @@ fn verify_push_signature(
                 .map_err(|_| "invalid public key length")?;
             let verifying_key = VerifyingKey::from_bytes(&pub_key_array)
                 .map_err(|e| format!("invalid public key: {e}"))?;
-            match verifying_key.verify(&canonical, &signature) {
-                Ok(()) => return Ok(()),
-                Err(_) => continue,
+            if verifying_key.verify(&canonical, &signature).is_ok() {
+                return Ok(());
             }
         }
     }
 
-    Err("no matching authorized key found for signature".to_string())
+    Err("no matching authorized key found for signature".to_owned())
 }
 
 fn collect_ancestors(
@@ -1819,7 +1808,7 @@ pub async fn push_compressed_handler(
             status,
             Json(PushResponse {
                 success: false,
-                error: Some("authentication failed".to_string()),
+                error: Some("authentication failed".to_owned()),
                 existing_patches: vec![],
             }),
         );
@@ -1870,7 +1859,7 @@ pub async fn pull_compressed_handler(
             status,
             Json(PullResponse {
                 success: false,
-                error: Some("authentication failed".to_string()),
+                error: Some("authentication failed".to_owned()),
                 patches: vec![],
                 branches: vec![],
                 blobs: vec![],
@@ -1880,14 +1869,8 @@ pub async fn pull_compressed_handler(
     let mut resp = hub.handle_pull(req).await;
     if resp.success {
         for blob in &mut resp.blobs {
-            let raw = match base64_decode(&blob.data) {
-                Ok(d) => d,
-                Err(_) => continue,
-            };
-            let compressed = match suture_protocol::compress(&raw) {
-                Ok(c) => c,
-                Err(_) => continue,
-            };
+            let Ok(raw) = base64_decode(&blob.data) else { continue };
+            let Ok(compressed) = suture_protocol::compress(&raw) else { continue };
             blob.data = base64_encode(&compressed);
         }
     }
@@ -1916,7 +1899,7 @@ pub async fn push_handler(
             hdrs,
             Json(PushResponse {
                 success: false,
-                error: Some("rate limit exceeded".to_string()),
+                error: Some("rate limit exceeded".to_owned()),
                 existing_patches: vec![],
             }),
         );
@@ -1928,7 +1911,7 @@ pub async fn push_handler(
             HeaderMap::new(),
             Json(PushResponse {
                 success: false,
-                error: Some("authentication failed".to_string()),
+                error: Some("authentication failed".to_owned()),
                 existing_patches: vec![],
             }),
         );
@@ -1943,7 +1926,7 @@ pub async fn push_handler(
             HeaderMap::new(),
             Json(PushResponse {
                 success: false,
-                error: Some("insufficient permissions: readers cannot push".to_string()),
+                error: Some("insufficient permissions: readers cannot push".to_owned()),
                 existing_patches: vec![],
             }),
         );
@@ -1972,7 +1955,7 @@ pub async fn pull_handler(
             hdrs,
             Json(PullResponse {
                 success: false,
-                error: Some("rate limit exceeded".to_string()),
+                error: Some("rate limit exceeded".to_owned()),
                 patches: vec![],
                 branches: vec![],
                 blobs: vec![],
@@ -1986,7 +1969,7 @@ pub async fn pull_handler(
             HeaderMap::new(),
             Json(PullResponse {
                 success: false,
-                error: Some("authentication failed".to_string()),
+                error: Some("authentication failed".to_owned()),
                 patches: vec![],
                 branches: vec![],
                 blobs: vec![],
@@ -2027,7 +2010,7 @@ pub async fn handshake_handler(
     let compatible = req.client_version == crate::types::PROTOCOL_VERSION;
     Json(crate::types::HandshakeResponse {
         server_version: crate::types::PROTOCOL_VERSION,
-        server_name: "suture-hub".to_string(),
+        server_name: "suture-hub".to_owned(),
         compatible,
     })
 }
@@ -2037,7 +2020,7 @@ pub async fn handshake_handler(
 pub async fn handshake_get_handler() -> Json<crate::types::HandshakeResponse> {
     Json(crate::types::HandshakeResponse {
         server_version: crate::types::PROTOCOL_VERSION,
-        server_name: "suture-hub".to_string(),
+        server_name: "suture-hub".to_owned(),
         compatible: true,
     })
 }
@@ -2122,41 +2105,38 @@ pub async fn create_token_handler(
     }
 
     let user = resolve_user(&hub, &headers).await;
-    match user {
-        Some(u) => {
-            let role = Role::parse(&u.role);
-            if role < Role::Admin {
-                return (
-                    StatusCode::FORBIDDEN,
-                    HeaderMap::new(),
-                    Json(TokenResponse {
-                        token: String::new(),
-                        created_at: 0,
-                    }),
-                );
-            }
+    if let Some(u) = user {
+        let role = Role::parse(&u.role);
+        if role < Role::Admin {
+            return (
+                StatusCode::FORBIDDEN,
+                HeaderMap::new(),
+                Json(TokenResponse {
+                    token: String::new(),
+                    created_at: 0,
+                }),
+            );
         }
-        None => {
-            let store = hub.storage.read().await;
-            let valid_token = if let Some(auth_header) = headers.get("authorization")
-                && let Ok(auth_str) = auth_header.to_str()
-                && let Some(token) = auth_str.strip_prefix("Bearer ")
-            {
-                store.verify_token(token).unwrap_or(false)
-            } else {
-                false
-            };
-            drop(store);
-            if !valid_token {
-                return (
-                    StatusCode::UNAUTHORIZED,
-                    HeaderMap::new(),
-                    Json(TokenResponse {
-                        token: String::new(),
-                        created_at: 0,
-                    }),
-                );
-            }
+    } else {
+        let store = hub.storage.read().await;
+        let valid_token = if let Some(auth_header) = headers.get("authorization")
+            && let Ok(auth_str) = auth_header.to_str()
+            && let Some(token) = auth_str.strip_prefix("Bearer ")
+        {
+            store.verify_token(token).unwrap_or(false)
+        } else {
+            false
+        };
+        drop(store);
+        if !valid_token {
+            return (
+                StatusCode::UNAUTHORIZED,
+                HeaderMap::new(),
+                Json(TokenResponse {
+                    token: String::new(),
+                    created_at: 0,
+                }),
+            );
         }
     }
 
@@ -2235,7 +2215,7 @@ pub async fn mirror_sync_handler(
                     StatusCode::BAD_REQUEST,
                     Json(crate::types::MirrorSyncResponse {
                         success: false,
-                        error: Some("mirror not found by local_repo".to_string()),
+                        error: Some("mirror not found by local_repo".to_owned()),
                         patches_synced: 0,
                         branches_synced: 0,
                     }),
@@ -2310,7 +2290,7 @@ pub async fn repo_patches_handler(
         .cursor
         .as_deref()
         .and_then(decode_cursor)
-        .unwrap_or_else(|| params.offset.unwrap_or(0) as u64);
+        .unwrap_or_else(|| u64::from(params.offset.unwrap_or(0)));
     let limit = params.limit.unwrap_or(50);
     let (patches, next_cursor) = hub
         .handle_repo_patches_cursor(&repo_id, offset, limit)
@@ -2533,7 +2513,7 @@ pub async fn get_blob_handler(
         ),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({"success": false, "error": e.to_string()})),
+            Json(serde_json::json!({"success": false, "error": e})),
         ),
     }
 }
@@ -2707,11 +2687,9 @@ pub async fn lfs_download_handler(
     let is_safe = |s: &str| s.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.');
     if !is_safe(&repo_id) || !is_safe(&oid) {
         let body = axum::body::Body::from("{\"message\":\"invalid repo_id or oid\"}");
-        let response = if let Ok(r) = axum::response::Response::builder().body(body) {
-            r
-        } else {
+        let response = axum::response::Response::builder().body(body).unwrap_or_else(|_| {
             axum::response::Response::new(axum::body::Body::from("{\"message\":\"invalid repo_id or oid\"}"))
-        };
+        });
         return (StatusCode::BAD_REQUEST, response.into_response());
     }
 
@@ -2734,8 +2712,14 @@ pub async fn lfs_download_handler(
         .join(prefix)
         .join(&oid);
 
-    match std::fs::read(&obj_path) {
-        Ok(data) => {
+    std::fs::read(&obj_path).map_or_else(
+        |_| (
+            StatusCode::NOT_FOUND,
+            axum::response::Response::new(axum::body::Body::from(
+                serde_json::json!({"message": "object not found"}).to_string(),
+            )),
+        ),
+        |data| {
             let len = data.len();
             let body = axum::body::Body::from(data);
             let response = axum::response::Response::builder()
@@ -2748,14 +2732,8 @@ pub async fn lfs_download_handler(
                     axum::response::Response::new(axum::body::Body::from("internal error"))
                 });
             (StatusCode::OK, response)
-        }
-        Err(_) => (
-            StatusCode::NOT_FOUND,
-            axum::response::Response::new(axum::body::Body::from(
-                serde_json::json!({"message": "object not found"}).to_string(),
-            )),
-        ),
-    }
+        },
+    )
 }
 
 pub async fn login_handler(
@@ -2885,26 +2863,20 @@ async fn serve_static_file(
     let static_dir = std::path::Path::new("static");
     let file_path = static_dir.join(&path);
 
-    let canonical_static = match tokio::fs::canonicalize(static_dir).await {
-        Ok(p) => p,
-        Err(_) => return StatusCode::NOT_FOUND.into_response(),
-    };
-    let canonical_file = match tokio::fs::canonicalize(&file_path).await {
-        Ok(p) => p,
-        Err(_) => return StatusCode::NOT_FOUND.into_response(),
-    };
+    let Ok(canonical_static) = tokio::fs::canonicalize(static_dir).await else { return StatusCode::NOT_FOUND.into_response() };
+    let Ok(canonical_file) = tokio::fs::canonicalize(&file_path).await else { return StatusCode::NOT_FOUND.into_response() };
 
     if !canonical_file.starts_with(&canonical_static) {
         return StatusCode::FORBIDDEN.into_response();
     }
 
-    match tokio::fs::read_to_string(&canonical_file).await {
-        Ok(contents) => {
+    tokio::fs::read_to_string(&canonical_file).await.map_or_else(
+        |_| StatusCode::NOT_FOUND.into_response(),
+        |contents| {
             let headers = [(axum::http::header::CONTENT_TYPE, content_type)];
             (StatusCode::OK, headers, contents).into_response()
-        }
-        Err(_) => StatusCode::NOT_FOUND.into_response(),
-    }
+        },
+    )
 }
 
 pub async fn register_handler(
@@ -2919,7 +2891,7 @@ pub async fn register_handler(
                 status,
                 Json(crate::types::RegisterResponse {
                     success: false,
-                    error: Some("admin access required".to_string()),
+                    error: Some("admin access required".to_owned()),
                     user: None,
                 }),
             );
@@ -2932,7 +2904,7 @@ pub async fn register_handler(
             StatusCode::BAD_REQUEST,
             Json(crate::types::RegisterResponse {
                 success: false,
-                error: Some("role must be admin, member, or reader".to_string()),
+                error: Some("role must be admin, member, or reader".to_owned()),
                 user: None,
             }),
         );
@@ -2978,7 +2950,7 @@ pub async fn list_users_handler(
                 status,
                 Json(crate::types::ListUsersResponse {
                     success: false,
-                    error: Some("admin access required".to_string()),
+                    error: Some("admin access required".to_owned()),
                     users: vec![],
                 }),
             );
@@ -3025,19 +2997,17 @@ pub async fn get_user_handler(
     let requesting_user = resolve_user(&hub, &headers).await;
     let is_admin = requesting_user
         .as_ref()
-        .map(|u| u.role == "admin")
-        .unwrap_or(false);
+        .is_some_and(|u| u.role == "admin");
     let is_self = requesting_user
         .as_ref()
-        .map(|u| u.username == username)
-        .unwrap_or(false);
+        .is_some_and(|u| u.username == username);
 
     if !is_admin && !is_self {
         return (
             StatusCode::FORBIDDEN,
             Json(crate::types::GetUserResponse {
                 success: false,
-                error: Some("access denied".to_string()),
+                error: Some("access denied".to_owned()),
                 user: None,
             }),
         );
@@ -3063,7 +3033,7 @@ pub async fn get_user_handler(
             StatusCode::NOT_FOUND,
             Json(crate::types::GetUserResponse {
                 success: false,
-                error: Some("user not found".to_string()),
+                error: Some("user not found".to_owned()),
                 user: None,
             }),
         ),
@@ -3091,7 +3061,7 @@ pub async fn update_role_handler(
                 status,
                 Json(crate::types::UpdateRoleResponse {
                     success: false,
-                    error: Some("admin access required".to_string()),
+                    error: Some("admin access required".to_owned()),
                 }),
             );
         }
@@ -3102,7 +3072,7 @@ pub async fn update_role_handler(
             StatusCode::BAD_REQUEST,
             Json(crate::types::UpdateRoleResponse {
                 success: false,
-                error: Some("role must be admin, member, or reader".to_string()),
+                error: Some("role must be admin, member, or reader".to_owned()),
             }),
         );
     }
@@ -3138,7 +3108,7 @@ pub async fn delete_user_handler(
                 status,
                 Json(crate::types::DeleteUserResponse {
                     success: false,
-                    error: Some("admin access required".to_string()),
+                    error: Some("admin access required".to_owned()),
                 }),
             );
         }
@@ -3169,7 +3139,7 @@ pub async fn handshake_v2_handler(
     let compatible = req.client_version == crate::types::PROTOCOL_VERSION_V2;
     Json(crate::types::HandshakeResponseV2 {
         server_version: crate::types::PROTOCOL_VERSION_V2,
-        server_name: "suture-hub".to_string(),
+        server_name: "suture-hub".to_owned(),
         compatible,
         server_capabilities: crate::types::ServerCapabilities {
             supports_delta: true,
@@ -3200,7 +3170,7 @@ pub async fn v2_pull_handler(
             hdrs,
             Json(crate::types::PullResponseV2 {
                 success: false,
-                error: Some("rate limit exceeded".to_string()),
+                error: Some("rate limit exceeded".to_owned()),
                 patches: vec![],
                 branches: vec![],
                 blobs: vec![],
@@ -3216,7 +3186,7 @@ pub async fn v2_pull_handler(
             HeaderMap::new(),
             Json(crate::types::PullResponseV2 {
                 success: false,
-                error: Some("authentication failed".to_string()),
+                error: Some("authentication failed".to_owned()),
                 patches: vec![],
                 branches: vec![],
                 blobs: vec![],
@@ -3252,7 +3222,7 @@ pub async fn v2_push_handler(
             hdrs,
             Json(PushResponse {
                 success: false,
-                error: Some("rate limit exceeded".to_string()),
+                error: Some("rate limit exceeded".to_owned()),
                 existing_patches: vec![],
             }),
         );
@@ -3264,7 +3234,7 @@ pub async fn v2_push_handler(
             HeaderMap::new(),
             Json(PushResponse {
                 success: false,
-                error: Some("authentication failed".to_string()),
+                error: Some("authentication failed".to_owned()),
                 existing_patches: vec![],
             }),
         );
@@ -3279,7 +3249,7 @@ pub async fn v2_push_handler(
             HeaderMap::new(),
             Json(PushResponse {
                 success: false,
-                error: Some("insufficient permissions: readers cannot push".to_string()),
+                error: Some("insufficient permissions: readers cannot push".to_owned()),
                 existing_patches: vec![],
             }),
         );
@@ -3302,7 +3272,7 @@ pub async fn add_peer_handler(
             Json(AddPeerResponse {
                 success: false,
                 peer_id: None,
-                error: Some("only the leader can manage peers".to_string()),
+                error: Some("only the leader can manage peers".to_owned()),
             }),
         );
     }
@@ -3325,7 +3295,7 @@ pub async fn remove_peer_handler(
             StatusCode::FORBIDDEN,
             Json(RemovePeerResponse {
                 success: false,
-                error: Some("only the leader can manage peers".to_string()),
+                error: Some("only the leader can manage peers".to_owned()),
             }),
         );
     }
@@ -3363,7 +3333,7 @@ pub async fn replication_sync_handler(
             Json(SyncResponse {
                 success: false,
                 applied: 0,
-                error: Some("sync endpoint is for followers only".to_string()),
+                error: Some("sync endpoint is for followers only".to_owned()),
             }),
         );
     }
@@ -3393,7 +3363,7 @@ pub async fn batch_push_handler(
             hdrs,
             Json(PushResponse {
                 success: false,
-                error: Some("rate limit exceeded".to_string()),
+                error: Some("rate limit exceeded".to_owned()),
                 existing_patches: vec![],
             }),
         );
@@ -3405,7 +3375,7 @@ pub async fn batch_push_handler(
             HeaderMap::new(),
             Json(PushResponse {
                 success: false,
-                error: Some("authentication failed".to_string()),
+                error: Some("authentication failed".to_owned()),
                 existing_patches: vec![],
             }),
         );
@@ -3458,7 +3428,7 @@ async fn replication_background_task(hub: Arc<SutureHubServer>) {
                 continue;
             }
 
-            let last_seq = entries.last().map(|e| e.seq).unwrap_or(peer.last_sync_seq);
+            let last_seq = entries.last().map_or(peer.last_sync_seq, |e| e.seq);
 
             let client = match reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(10))

@@ -45,9 +45,9 @@ fn draw_search_bar(f: &mut Frame, app: &App, area: Rect) {
         Span::styled("/", Style::default().fg(Color::Yellow)),
         Span::styled(
             if filter.is_empty() {
-                "Search patches (type to filter)...".to_string()
+                "Search patches (type to filter)...".to_owned()
             } else {
-                filter.to_string()
+                filter.to_owned()
             },
             if filter.is_empty() {
                 Style::default().fg(Color::DarkGray)
@@ -58,7 +58,7 @@ fn draw_search_bar(f: &mut Frame, app: &App, area: Rect) {
             },
         ),
         Span::styled(
-            format!("  [{} patches]", total),
+            format!("  [{total} patches]"),
             Style::default().fg(Color::DarkGray),
         ),
     ])];
@@ -94,9 +94,9 @@ fn draw_patch_list(
             .take(end - start)
         {
             let is_selected = i == cursor;
-            let prefix = if is_selected { "▶ " } else { "  " };
+            let prefix = if is_selected { "\u{25b6} " } else { "  " };
 
-            let merge_icon = if entry.is_merge { "◆ " } else { "  " };
+            let merge_icon = if entry.is_merge { "\u{25c6} " } else { "  " };
             let merge_style = if entry.is_merge {
                 Style::default().fg(Color::Magenta)
             } else {
@@ -166,8 +166,7 @@ fn draw_patch_list(
     let sort_label = if sort_desc { "newest first" } else { "oldest first" };
     lines.push(Line::from(Span::styled(
         format!(
-            " [↑/k] Up  [↓/j] Down  [d] Diff  [Enter] Details  [s] Sort ({})  [Esc] Clear filter",
-            sort_label
+            " [↑/k] Up  [↓/j] Down  [d] Diff  [Enter] Details  [s] Sort ({sort_label})  [Esc] Clear filter"
         ),
         Style::default().fg(Color::DarkGray),
     )));

@@ -20,20 +20,20 @@ impl Clone for GitCommit {
     }
 }
 
-pub(crate) enum GitAction {
+pub enum GitAction {
     Import { path: Option<String> },
     Log { path: Option<String> },
     Status { path: Option<String> },
     Driver { action: DriverAction },
 }
 
-pub(crate) enum DriverAction {
+pub enum DriverAction {
     Install,
     Uninstall,
     List,
 }
 
-pub(crate) async fn cmd_git(action: GitAction) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_git(action: GitAction) -> Result<(), Box<dyn std::error::Error>> {
     match action {
         GitAction::Import { path } => git_import(path),
         GitAction::Log { path } => git_log(path),
@@ -89,8 +89,7 @@ fn read_git_object(
     let obj_path = git_dir.join("objects").join(&sha[..2]).join(&sha[2..]);
     let compressed = std::fs::read(&obj_path).map_err(|e| {
         format!(
-            "cannot read git object {}: {} (packed objects are not supported)",
-            sha, e
+            "cannot read git object {sha}: {e} (packed objects are not supported)"
         )
     })?;
     let mut decoder = flate2::read::ZlibDecoder::new(&compressed[..]);
@@ -102,11 +101,11 @@ fn read_git_object(
         .ok_or("invalid git object format")?;
     let header = String::from_utf8_lossy(&decompressed[..null_pos]);
     let content = decompressed[null_pos + 1..].to_vec();
-    let obj_type = header.split(' ').next().unwrap_or("").to_string();
+    let obj_type = header.split(' ').next().unwrap_or("").to_owned();
     Ok((obj_type, content))
 }
 
-fn parse_commit(data: &[u8]) -> Result<GitCommit, Box<dyn std::error::Error>> {
+fn parse_commit(data: &[u8]) -> GitCommit {
     let text = String::from_utf8_lossy(data);
     let mut tree = String::new();
     let mut parents = Vec::new();
@@ -120,21 +119,21 @@ fn parse_commit(data: &[u8]) -> Result<GitCommit, Box<dyn std::error::Error>> {
         } else if line.is_empty() {
             in_message = true;
         } else if let Some(rest) = line.strip_prefix("tree ") {
-            tree = rest.to_string();
+            tree = rest.to_owned();
         } else if let Some(rest) = line.strip_prefix("parent ") {
-            parents.push(rest.to_string());
+            parents.push(rest.to_owned());
         } else if let Some(rest) = line.strip_prefix("author ") {
-            author = rest.to_string();
+            author = rest.to_owned();
         }
     }
 
-    let message = message_lines.join("\n").trim().to_string();
-    Ok(GitCommit {
+    let message = message_lines.join("\n").trim().to_owned();
+    GitCommit {
         tree,
         parents,
         author,
         message,
-    })
+    }
 }
 
 fn parse_tree_entries(data: &[u8]) -> Vec<(String, String, String)> {
@@ -177,13 +176,13 @@ fn flatten_tree(
     let mut files = HashMap::new();
     let (obj_type, data) = read_git_object(git_dir, tree_sha)?;
     if obj_type != "tree" {
-        return Err(format!("expected tree object, got {}", obj_type).into());
+        return Err(format!("expected tree object, got {obj_type}").into());
     }
     for (mode, name, sha) in parse_tree_entries(&data) {
         let path = if prefix.is_empty() {
             name.clone()
         } else {
-            format!("{}/{}", prefix, name)
+            format!("{prefix}/{name}")
         };
         match mode.as_str() {
             "40000" => {
@@ -201,11 +200,11 @@ fn flatten_tree(
 
 fn read_head_sha(git_dir: &Path) -> Result<String, Box<dyn std::error::Error>> {
     let head_path = git_dir.join("HEAD");
-    let content = std::fs::read_to_string(&head_path)?.trim().to_string();
+    let content = std::fs::read_to_string(&head_path)?.trim().to_owned();
     if let Some(ref_path) = content.strip_prefix("ref: ") {
         let full_path = git_dir.join(ref_path);
         if full_path.exists() {
-            return Ok(std::fs::read_to_string(&full_path)?.trim().to_string());
+            return Ok(std::fs::read_to_string(&full_path)?.trim().to_owned());
         }
         let packed = git_dir.join("packed-refs");
         if packed.exists() {
@@ -217,11 +216,11 @@ fn read_head_sha(git_dir: &Path) -> Result<String, Box<dyn std::error::Error>> {
                 if let Some((sha, r)) = line.split_once(' ')
                     && r == ref_path
                 {
-                    return Ok(sha.to_string());
+                    return Ok(sha.to_owned());
                 }
             }
         }
-        return Err(format!("branch ref not found: {}", ref_path).into());
+        return Err(format!("branch ref not found: {ref_path}").into());
     }
     if content.len() == 40 && content.chars().all(|c| c.is_ascii_hexdigit()) {
         return Ok(content);
@@ -229,33 +228,27 @@ fn read_head_sha(git_dir: &Path) -> Result<String, Box<dyn std::error::Error>> {
     Err("invalid HEAD".into())
 }
 
-fn walk_commits(git_dir: &Path) -> Result<Vec<(String, GitCommit)>, Box<dyn std::error::Error>> {
-    let head_sha = match read_head_sha(git_dir) {
-        Ok(sha) => sha,
-        Err(_) => return Ok(Vec::new()),
-    };
+fn walk_commits(git_dir: &Path) -> Vec<(String, GitCommit)> {
+    let Ok(head_sha) = read_head_sha(git_dir) else { return Vec::new() };
     let mut commits = Vec::new();
     let mut current = head_sha;
     let mut seen = std::collections::HashSet::new();
     while !current.is_empty() && seen.insert(current.clone()) {
-        let commit = match read_commit(git_dir, &current) {
-            Ok(c) => c,
-            Err(_) => break,
-        };
+        let Ok(commit) = read_commit(git_dir, &current) else { break };
         let parent = commit.parents.first().cloned().unwrap_or_default();
         commits.push((current.clone(), commit));
         current = parent;
     }
     commits.reverse();
-    Ok(commits)
+    commits
 }
 
 fn read_commit(git_dir: &Path, sha: &str) -> Result<GitCommit, Box<dyn std::error::Error>> {
     let (obj_type, data) = read_git_object(git_dir, sha)?;
     if obj_type != "commit" {
-        return Err(format!("expected commit, got {}", obj_type).into());
+        return Err(format!("expected commit, got {obj_type}").into());
     }
-    parse_commit(&data)
+    Ok(parse_commit(&data))
 }
 
 fn read_reflog(git_dir: &Path) -> Vec<(String, String)> {
@@ -283,7 +276,7 @@ fn read_reflog(git_dir: &Path) -> Vec<(String, String)> {
         let mut parts = header.splitn(3, ' ');
         parts.next();
         let new_sha = match parts.next() {
-            Some(sha) if sha.len() == 40 => sha.to_string(),
+            Some(sha) if sha.len() == 40 => sha.to_owned(),
             _ => continue,
         };
         if seen.insert(new_sha.clone()) {
@@ -309,7 +302,7 @@ fn read_branches(git_dir: &Path) -> Result<Vec<(String, String)>, Box<dyn std::e
             if let Some((sha, ref_name)) = line.split_once(' ')
                 && let Some(name) = ref_name.strip_prefix("refs/heads/")
             {
-                branches.push((name.to_string(), sha.to_string()));
+                branches.push((name.to_owned(), sha.to_owned()));
             }
         }
     }
@@ -332,7 +325,7 @@ fn collect_branches(
                 .unwrap_or(&path)
                 .to_string_lossy()
                 .replace('\\', "/");
-            let sha = std::fs::read_to_string(&path)?.trim().to_string();
+            let sha = std::fs::read_to_string(&path)?.trim().to_owned();
             out.push((name, sha));
         }
     }
@@ -341,7 +334,7 @@ fn collect_branches(
 
 fn truncate_msg(s: &str, max: usize) -> String {
     if s.len() <= max {
-        s.to_string()
+        s.to_owned()
     } else {
         format!("{}...", &s[..max - 3])
     }
@@ -374,7 +367,7 @@ fn gitattributes_patterns() -> &'static str {
 
 fn merge_driver_script() -> &'static str {
     r#"#!/bin/sh
-# Suture merge driver — called by Git with: $LOCAL $BASE $REMOTE
+# Suture merge driver \u{2014} called by Git with: $LOCAL $BASE $REMOTE
 # $LOCAL = ours (current branch version)
 # $BASE = common ancestor
 # $REMOTE = theirs (incoming branch version)
@@ -422,7 +415,7 @@ fn cmd_driver_install() -> Result<(), Box<dyn std::error::Error>> {
         let new_content = if needs_newline {
             format!("{filtered}\n{patterns}")
         } else {
-            patterns.to_string()
+            patterns.to_owned()
         };
         std::fs::write(gitattributes_path, new_content)?;
     } else {
@@ -553,13 +546,11 @@ fn cmd_driver_list() -> Result<(), Box<dyn std::error::Error>> {
     let script_path = std::path::Path::new(SUTURE_DRIVER_SCRIPT_PATH);
     if script_path.exists() {
         println!(
-            "  driver script:     {} (exists)",
-            SUTURE_DRIVER_SCRIPT_PATH
+            "  driver script:     {SUTURE_DRIVER_SCRIPT_PATH} (exists)"
         );
     } else {
         println!(
-            "  driver script:     {} (missing)",
-            SUTURE_DRIVER_SCRIPT_PATH
+            "  driver script:     {SUTURE_DRIVER_SCRIPT_PATH} (missing)"
         );
     }
 
@@ -583,7 +574,7 @@ fn write_blob_to_disk(
 fn git_import(path: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
     let git_path = path.as_deref().unwrap_or(".");
     let git_dir = find_git_dir(Path::new(git_path))?;
-    let commits = walk_commits(&git_dir)?;
+    let commits = walk_commits(&git_dir);
     if commits.is_empty() {
         println!("No commits found in Git repository.");
         return Ok(());
@@ -599,7 +590,7 @@ fn git_import(path: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
         && let Some(patch) = repo.dag().get_patch(&head_id)
         && patch.message == *latest_git_msg
     {
-        println!("Already up to date (latest commit: \"{}\")", latest_git_msg);
+        println!("Already up to date (latest commit: \"{latest_git_msg}\")");
         return Ok(());
     }
 
@@ -617,11 +608,11 @@ fn git_import(path: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
     let total = commits.len();
     let mut imported = 0usize;
 
-    for (_sha, commit) in commits.iter() {
+    for (_sha, commit) in &commits {
         let tree = match flatten_tree(&git_dir, &commit.tree, "") {
             Ok(t) => t,
             Err(e) => {
-                eprintln!("warning: skipping commit (tree read error): {}", e);
+                eprintln!("warning: skipping commit (tree read error): {e}");
                 prev_tree = HashMap::new();
                 continue;
             }
@@ -651,12 +642,12 @@ fn git_import(path: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
 
         for (p, blob_sha) in &to_add {
             if let Err(e) = write_blob_to_disk(&git_dir, p, blob_sha) {
-                eprintln!("warning: cannot write {}: {}", p, e);
+                eprintln!("warning: cannot write {p}: {e}");
             }
         }
         for (p, blob_sha) in &to_modify {
             if let Err(e) = write_blob_to_disk(&git_dir, p, blob_sha) {
-                eprintln!("warning: cannot write {}: {}", p, e);
+                eprintln!("warning: cannot write {p}: {e}");
             }
         }
         for p in &to_delete {
@@ -668,22 +659,22 @@ fn git_import(path: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
 
         for (p, _) in &to_add {
             if let Err(e) = repo.add(p) {
-                eprintln!("warning: cannot stage {}: {}", p, e);
+                eprintln!("warning: cannot stage {p}: {e}");
             }
         }
         for (p, _) in &to_modify {
             if let Err(e) = repo.add(p) {
-                eprintln!("warning: cannot stage {}: {}", p, e);
+                eprintln!("warning: cannot stage {p}: {e}");
             }
         }
         for p in &to_delete {
             if let Err(e) = repo.add(p) {
-                eprintln!("warning: cannot stage {}: {}", p, e);
+                eprintln!("warning: cannot stage {p}: {e}");
             }
         }
 
         let msg = if commit.message.is_empty() {
-            "(no message)".to_string()
+            "(no message)".to_owned()
         } else {
             commit.message.clone()
         };
@@ -711,7 +702,7 @@ fn git_import(path: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
         prev_tree = tree;
     }
 
-    println!("Imported {} commits.", imported);
+    println!("Imported {imported} commits.");
     Ok(())
 }
 
@@ -734,20 +725,14 @@ fn git_log(path: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
     let mut commit_infos: Vec<(String, String, usize, usize, usize)> = Vec::new();
 
     for (sha, _reflog_msg) in &reflog_entries {
-        let commit = match read_commit(&git_dir, sha) {
-            Ok(c) => c,
-            Err(_) => {
-                commit_infos.push((sha.clone(), "(cannot read)".to_string(), 0, 0, 0));
+        let Ok(commit) = read_commit(&git_dir, sha) else {
+                commit_infos.push((sha.clone(), "(cannot read)".to_owned(), 0, 0, 0));
                 continue;
-            }
-        };
-        let tree = match flatten_tree(&git_dir, &commit.tree, "") {
-            Ok(t) => t,
-            Err(_) => {
+            };
+        let Ok(tree) = flatten_tree(&git_dir, &commit.tree, "") else {
                 commit_infos.push((sha.clone(), commit.message.clone(), 0, 0, 0));
                 continue;
-            }
-        };
+            };
 
         let mut added = 0usize;
         let mut modified = 0usize;
@@ -779,22 +764,22 @@ fn git_log(path: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
     let total = commit_infos.len();
     for (pos, (sha, message, added, modified, deleted)) in commit_infos.iter().enumerate().rev() {
         let short = &sha[..8];
-        let branch = sha_to_branch.get(sha).map(|s| s.as_str()).unwrap_or("-");
+        let branch = sha_to_branch.get(sha).map_or("-", std::string::String::as_str);
         let is_head = pos == total - 1;
         let marker = if is_head { " * " } else { "   " };
 
         let change_str = if *added + *modified + *deleted == 0 {
-            "(no changes)".to_string()
+            "(no changes)".to_owned()
         } else {
             let mut parts = Vec::new();
             if *added > 0 {
-                parts.push(format!("{} added", added));
+                parts.push(format!("{added} added"));
             }
             if *modified > 0 {
-                parts.push(format!("{} modified", modified));
+                parts.push(format!("{modified} modified"));
             }
             if *deleted > 0 {
-                parts.push(format!("{} deleted", deleted));
+                parts.push(format!("{deleted} deleted"));
             }
             format!("({})", parts.join(", "))
         };
@@ -809,14 +794,14 @@ fn git_log(path: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
-    println!("\n{} commits", total);
+    println!("\n{total} commits");
     Ok(())
 }
 
 fn git_status(path: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
     let git_path = path.as_deref().unwrap_or(".");
     let git_dir = find_git_dir(Path::new(git_path))?;
-    let commits = walk_commits(&git_dir)?;
+    let commits = walk_commits(&git_dir);
     let branches = read_branches(&git_dir)?;
 
     let file_count = if let Some((_, commit)) = commits.last() {
@@ -827,15 +812,13 @@ fn git_status(path: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
         0
     };
 
-    println!("Git repository: {}", git_path);
+    println!("Git repository: {git_path}");
     println!("  Commits: {}", commits.len());
     println!("  Branches: {}", branches.len());
-    println!("  Files in latest tree: {}", file_count);
+    println!("  Files in latest tree: {file_count}");
 
     let suture_path = std::path::Path::new(".suture");
-    if !suture_path.exists() {
-        println!("  Suture repo: not found (run `suture init` first)");
-    } else {
+    if suture_path.exists() {
         match suture_core::repository::Repository::open(std::path::Path::new(".")) {
             Ok(repo) => {
                 let s = repo.status()?;
@@ -849,6 +832,8 @@ fn git_status(path: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
                 println!("  Suture repo: corrupted or invalid");
             }
         }
+    } else {
+        println!("  Suture repo: not found (run `suture init` first)");
     }
 
     Ok(())
@@ -884,7 +869,7 @@ mod tests {
     #[test]
     fn test_parse_commit_object() {
         let data = b"tree abc123def4567890123456789012345678901234\nparent def4567890123456789012345678901234567890\nauthor Alice <alice@example.com> 1700000000 +0000\ncommitter Alice <alice@example.com> 1700000000 +0000\n\nAdd feature X\n\nDetailed description here.";
-        let commit = parse_commit(data).unwrap();
+        let commit = parse_commit(data);
         assert_eq!(commit.tree, "abc123def4567890123456789012345678901234");
         assert_eq!(commit.parents.len(), 1);
         assert_eq!(
@@ -901,7 +886,7 @@ mod tests {
     #[test]
     fn test_parse_commit_object_root() {
         let data = b"tree abc123def4567890123456789012345678901234\nauthor Bob <bob@example.com> 1700000000 +0000\ncommitter Bob <bob@example.com> 1700000000 +0000\n\nInitial commit";
-        let commit = parse_commit(data).unwrap();
+        let commit = parse_commit(data);
         assert_eq!(commit.parents.len(), 0);
         assert_eq!(commit.message, "Initial commit");
     }
@@ -909,7 +894,7 @@ mod tests {
     #[test]
     fn test_parse_commit_object_merge() {
         let data = b"tree abc123def4567890123456789012345678901234\nparent def4567890123456789012345678901234567890\nparent 1111111111111111111111111111111111111111\nauthor Alice <alice@example.com> 1700000000 +0000\ncommitter Alice <alice@example.com> 1700000000 +0000\n\nMerge feature branch";
-        let commit = parse_commit(data).unwrap();
+        let commit = parse_commit(data);
         assert_eq!(commit.parents.len(), 2);
         assert_eq!(commit.message, "Merge feature branch");
     }
@@ -993,7 +978,7 @@ mod tests {
         std::fs::write(dir.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
 
         let git_dir = find_git_dir(&dir).unwrap();
-        let commits = walk_commits(&git_dir).unwrap();
+        let commits = walk_commits(&git_dir);
         assert!(commits.is_empty(), "empty git repo should have no commits");
 
         let _ = std::fs::remove_dir_all(&dir);

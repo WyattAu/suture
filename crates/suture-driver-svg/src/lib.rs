@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-#![allow(clippy::collapsible_match)]
 use std::collections::{HashMap, HashSet};
 
 use suture_driver::{DriverError, SemanticChange, SutureDriver};
 
+use std::fmt::Write;
 pub struct SvgDriver;
 
 impl SvgDriver {
+    #[must_use] 
     pub fn new() -> Self {
         Self
     }
@@ -19,7 +20,7 @@ impl SvgDriver {
             .replace('\'', "&apos;")
     }
 
-    fn node_id<'a, 'b>(node: roxmltree::Node<'a, 'b>) -> Option<&'a str> {
+    fn node_id<'a>(node: roxmltree::Node<'a, '_>) -> Option<&'a str> {
         node.attribute("id")
     }
 
@@ -44,10 +45,10 @@ impl SvgDriver {
                     }
                     parts.push(format!("{tag}[{idx}]"));
                 } else {
-                    parts.push(tag.to_string());
+                    parts.push(tag.to_owned());
                 }
             } else {
-                parts.push(tag.to_string());
+                parts.push(tag.to_owned());
             }
             current = match current.parent() {
                 Some(p) if p.is_element() => p,
@@ -76,7 +77,7 @@ impl SvgDriver {
 
         let text = node.text().unwrap_or("").trim();
         let element_children: Vec<roxmltree::Node> =
-            node.children().filter(|n| n.is_element()).collect();
+            node.children().filter(roxmltree::Node::is_element).collect();
 
         if element_children.is_empty() && text.is_empty() {
             format!("{pad}<{tag}{attr_str}/>")
@@ -85,17 +86,17 @@ impl SvgDriver {
         } else {
             let mut result = format!("{pad}<{tag}{attr_str}>\n");
             if !text.is_empty() {
-                result.push_str(&format!(
-                    "{}{}\n",
+                let _ = writeln!(result, 
+                    "{}{}",
                     "  ".repeat(indent + 1),
                     Self::escape_xml(text)
-                ));
+                );
             }
             for child in &element_children {
                 result.push_str(&Self::element_to_string(*child, indent + 1));
                 result.push('\n');
             }
-            result.push_str(&format!("{pad}</{tag}>"));
+            let _ = write!(result, "{pad}</{tag}>");
             result
         }
     }
@@ -106,8 +107,8 @@ impl SvgDriver {
         if old.tag_name().name() != new.tag_name().name() {
             changes.push(SemanticChange::Modified {
                 path: Self::node_path(new),
-                old_value: old.tag_name().name().to_string(),
-                new_value: new.tag_name().name().to_string(),
+                old_value: old.tag_name().name().to_owned(),
+                new_value: new.tag_name().name().to_owned(),
             });
             return changes;
         }
@@ -126,7 +127,7 @@ impl SvgDriver {
             if !new_keys.contains(key) {
                 changes.push(SemanticChange::Removed {
                     path: format!("{path}@{key}"),
-                    old_value: old_attrs[key].to_string(),
+                    old_value: old_attrs[key].to_owned(),
                 });
             }
         }
@@ -135,7 +136,7 @@ impl SvgDriver {
             if !old_keys.contains(key) {
                 changes.push(SemanticChange::Added {
                     path: format!("{path}@{key}"),
-                    value: new_attrs[key].to_string(),
+                    value: new_attrs[key].to_owned(),
                 });
             }
         }
@@ -146,8 +147,8 @@ impl SvgDriver {
             {
                 changes.push(SemanticChange::Modified {
                     path: format!("{path}@{key}"),
-                    old_value: old_attrs[key].to_string(),
-                    new_value: new_val.to_string(),
+                    old_value: old_attrs[key].to_owned(),
+                    new_value: new_val.to_owned(),
                 });
             }
         }
@@ -157,25 +158,25 @@ impl SvgDriver {
         if old_text != new_text {
             changes.push(SemanticChange::Modified {
                 path: format!("{path}#text"),
-                old_value: old_text.to_string(),
-                new_value: new_text.to_string(),
+                old_value: old_text.to_owned(),
+                new_value: new_text.to_owned(),
             });
         }
 
         let old_children: Vec<roxmltree::Node> =
-            old.children().filter(|n| n.is_element()).collect();
+            old.children().filter(roxmltree::Node::is_element).collect();
         let new_children: Vec<roxmltree::Node> =
-            new.children().filter(|n| n.is_element()).collect();
+            new.children().filter(roxmltree::Node::is_element).collect();
 
         let old_id_map: HashMap<String, usize> = old_children
             .iter()
             .enumerate()
-            .filter_map(|(i, c)| Self::node_id(*c).map(|id: &str| (id.to_string(), i)))
+            .filter_map(|(i, c)| Self::node_id(*c).map(|id: &str| (id.to_owned(), i)))
             .collect();
         let new_id_map: HashMap<String, usize> = new_children
             .iter()
             .enumerate()
-            .filter_map(|(i, c)| Self::node_id(*c).map(|id: &str| (id.to_string(), i)))
+            .filter_map(|(i, c)| Self::node_id(*c).map(|id: &str| (id.to_owned(), i)))
             .collect();
 
         let mut new_matched: HashSet<usize> = HashSet::new();
@@ -197,7 +198,7 @@ impl SvgDriver {
                 continue;
             }
             #[allow(clippy::unnecessary_to_owned)]
-            if old_id_map.contains_key(&Self::node_id(*new_c).unwrap_or_default().to_string()) {
+            if old_id_map.contains_key(&Self::node_id(*new_c).unwrap_or_default().to_owned()) {
                 continue;
             }
             changes.push(SemanticChange::Added {
@@ -211,7 +212,7 @@ impl SvgDriver {
                 continue;
             }
             #[allow(clippy::unnecessary_to_owned)]
-            if new_id_map.contains_key(&Self::node_id(*old_c).unwrap_or_default().to_string()) {
+            if new_id_map.contains_key(&Self::node_id(*old_c).unwrap_or_default().to_owned()) {
                 continue;
             }
             changes.push(SemanticChange::Removed {
@@ -242,11 +243,11 @@ impl SvgDriver {
         let theirs_text = theirs.text().unwrap_or("").trim();
 
         let merged_text = if ours_text == theirs_text {
-            ours_text.to_string()
+            ours_text.to_owned()
         } else if ours_text == base_text {
-            theirs_text.to_string()
+            theirs_text.to_owned()
         } else if theirs_text == base_text {
-            ours_text.to_string()
+            ours_text.to_owned()
         } else {
             return Ok(None);
         };
@@ -274,57 +275,46 @@ impl SvgDriver {
 
             match (bv, ov, tv) {
                 (_, Some(o), Some(t)) if o == t => {
-                    merged_attrs.push((key.to_string(), o.to_string()));
+                    merged_attrs.push((key.to_string(), o.to_owned()));
                 }
                 (Some(b), Some(o), Some(t)) if o == b => {
-                    merged_attrs.push((key.to_string(), t.to_string()));
+                    merged_attrs.push((key.to_string(), t.to_owned()));
                 }
                 (Some(b), Some(o), Some(t)) if t == b => {
-                    merged_attrs.push((key.to_string(), o.to_string()));
+                    merged_attrs.push((key.to_string(), o.to_owned()));
                 }
-                (Some(_), Some(_), Some(_)) => return Ok(None),
-                (Some(_), None, Some(t)) => {
-                    merged_attrs.push((key.to_string(), t.to_string()));
+                (Some(_) | None, Some(_), Some(_)) => return Ok(None),
+                (Some(_) | None, None, Some(t)) => {
+                    merged_attrs.push((key.to_string(), t.to_owned()));
                 }
-                (Some(_), Some(o), None) => {
-                    merged_attrs.push((key.to_string(), o.to_string()));
+                (Some(_) | None, Some(o), None) => {
+                    merged_attrs.push((key.to_string(), o.to_owned()));
                 }
-                (Some(_), None, None) => {}
-                (None, Some(o), Some(t)) if o == t => {
-                    merged_attrs.push((key.to_string(), o.to_string()));
-                }
-                (None, Some(_), Some(_)) => return Ok(None),
-                (None, Some(o), None) => {
-                    merged_attrs.push((key.to_string(), o.to_string()));
-                }
-                (None, None, Some(t)) => {
-                    merged_attrs.push((key.to_string(), t.to_string()));
-                }
-                (None, None, None) => {}
+                (Some(_) | None, None, None) => {}
             }
         }
 
         let base_children: Vec<roxmltree::Node> =
-            base.children().filter(|n| n.is_element()).collect();
+            base.children().filter(roxmltree::Node::is_element).collect();
         let ours_children: Vec<roxmltree::Node> =
-            ours.children().filter(|n| n.is_element()).collect();
+            ours.children().filter(roxmltree::Node::is_element).collect();
         let theirs_children: Vec<roxmltree::Node> =
-            theirs.children().filter(|n| n.is_element()).collect();
+            theirs.children().filter(roxmltree::Node::is_element).collect();
 
         let base_id_map: HashMap<String, usize> = base_children
             .iter()
             .enumerate()
-            .filter_map(|(i, c)| Self::node_id(*c).map(|id: &str| (id.to_string(), i)))
+            .filter_map(|(i, c)| Self::node_id(*c).map(|id: &str| (id.to_owned(), i)))
             .collect();
         let ours_id_map: HashMap<String, usize> = ours_children
             .iter()
             .enumerate()
-            .filter_map(|(i, c)| Self::node_id(*c).map(|id: &str| (id.to_string(), i)))
+            .filter_map(|(i, c)| Self::node_id(*c).map(|id: &str| (id.to_owned(), i)))
             .collect();
         let theirs_id_map: HashMap<String, usize> = theirs_children
             .iter()
             .enumerate()
-            .filter_map(|(i, c)| Self::node_id(*c).map(|id: &str| (id.to_string(), i)))
+            .filter_map(|(i, c)| Self::node_id(*c).map(|id: &str| (id.to_owned(), i)))
             .collect();
 
         let mut merged_children: Vec<String> = Vec::new();
@@ -369,13 +359,11 @@ impl SvgDriver {
             }
             if let Some(&ti) = theirs_id_map.get(id) {
                 theirs_used.insert(ti);
-                if ours_children[oi].tag_name().name() == theirs_children[ti].tag_name().name()
-                    && Self::element_to_string(ours_children[oi], 0)
-                        == Self::element_to_string(theirs_children[ti], 0)
+                merged_children.push(Self::element_to_string(ours_children[oi], indent + 1));
+                if ours_children[oi].tag_name().name() != theirs_children[ti].tag_name().name()
+                    || Self::element_to_string(ours_children[oi], 0)
+                        != Self::element_to_string(theirs_children[ti], 0)
                 {
-                    merged_children.push(Self::element_to_string(ours_children[oi], indent + 1));
-                } else {
-                    merged_children.push(Self::element_to_string(ours_children[oi], indent + 1));
                     merged_children.push(Self::element_to_string(theirs_children[ti], indent + 1));
                 }
             } else {
@@ -417,17 +405,17 @@ impl SvgDriver {
         } else {
             let mut result = format!("{pad}<{tag}{attr_str}>\n");
             if !merged_text.is_empty() {
-                result.push_str(&format!(
-                    "{}{}\n",
+                let _ = writeln!(result, 
+                    "{}{}",
                     "  ".repeat(indent + 1),
                     Self::escape_xml(&merged_text)
-                ));
+                );
             }
             for child in &merged_children {
                 result.push_str(child);
                 result.push('\n');
             }
-            result.push_str(&format!("{pad}</{tag}>"));
+            let _ = write!(result, "{pad}</{tag}>");
             Ok(Some(result))
         }
     }
@@ -465,7 +453,7 @@ impl Default for SvgDriver {
 }
 
 impl SutureDriver for SvgDriver {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "SVG"
     }
 
@@ -506,7 +494,7 @@ impl SutureDriver for SvgDriver {
         let changes = self.diff(base_content, new_content)?;
 
         if changes.is_empty() {
-            return Ok("no changes".to_string());
+            return Ok("no changes".to_owned());
         }
 
         let lines: Vec<String> = changes.iter().map(Self::format_change).collect();
@@ -523,18 +511,19 @@ impl SutureDriver for SvgDriver {
 
         let mut result = String::new();
         result.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
-        if let Some(merged) = Self::merge_elements(
+        Self::merge_elements(
             base_doc.root_element(),
             ours_doc.root_element(),
             theirs_doc.root_element(),
             0,
-        )? {
-            result.push_str(&merged);
-            result.push('\n');
-            Ok(Some(result))
-        } else {
-            Ok(None)
-        }
+        )?.map_or_else(
+            || Ok(None),
+            |merged| {
+                result.push_str(&merged);
+                result.push('\n');
+                Ok(Some(result))
+            },
+        )
     }
 }
 
@@ -548,7 +537,7 @@ fn collect_all_paths(node: roxmltree::Node, out: &mut Vec<SemanticChange>) {
     for attr in node.attributes() {
         out.push(SemanticChange::Added {
             path: format!("{path}@{}", attr.name()),
-            value: attr.value().to_string(),
+            value: attr.value().to_owned(),
         });
     }
 
@@ -556,7 +545,7 @@ fn collect_all_paths(node: roxmltree::Node, out: &mut Vec<SemanticChange>) {
     if !text.is_empty() {
         out.push(SemanticChange::Added {
             path: format!("{path}#text"),
-            value: text.to_string(),
+            value: text.to_owned(),
         });
     }
 

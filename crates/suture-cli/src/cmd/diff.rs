@@ -31,7 +31,7 @@ fn relative_time(timestamp: u64) -> String {
     let delta = now.saturating_sub(timestamp);
 
     if delta < 60 {
-        "just now".to_string()
+        "just now".to_owned()
     } else if delta < 3600 {
         let mins = delta / 60;
         format!("{mins} minute{} ago", if mins == 1 { "" } else { "s" })
@@ -92,7 +92,7 @@ fn find_latest_patch_for_file(
     }
 
     latest.map(|(author, timestamp)| FileMeta {
-        author: author.to_string(),
+        author: author.to_owned(),
         timestamp,
     })
 }
@@ -101,7 +101,7 @@ fn build_summary_report(
     entries: &[suture_core::engine::diff::DiffEntry],
     repo: &suture_core::repository::Repository,
     from: Option<&str>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) {
     use suture_core::engine::diff::DiffType;
 
     println!("=== Change Summary ===");
@@ -135,10 +135,8 @@ fn build_summary_report(
             }
             DiffType::Modified => {
                 let semantic_detail = extract_semantic_item_count(repo, entry);
-                let label = match semantic_detail {
-                    Some(count) => format!("modified) — {count}"),
-                    None => "modified)".to_string(),
-                };
+                let label = semantic_detail
+                    .map_or_else(|| "modified)".to_owned(), |count| format!("modified) — {count}"));
                 println!("{icon} {} ({label}", entry.path);
                 if let Some(meta) = find_latest_patch_for_file(repo, &entry.path, from) {
                     println!("   by {} — {}", meta.author, relative_time(meta.timestamp));
@@ -147,8 +145,6 @@ fn build_summary_report(
         }
         println!();
     }
-
-    Ok(())
 }
 
 fn extract_semantic_item_count(
@@ -157,10 +153,7 @@ fn extract_semantic_item_count(
 ) -> Option<String> {
     use std::path::Path as StdPath;
 
-    let (old_hash, new_hash) = match (&entry.old_hash, &entry.new_hash) {
-        (Some(o), Some(n)) => (o, n),
-        _ => return None,
-    };
+    let (Some(old_hash), Some(new_hash)) = (&entry.old_hash, &entry.new_hash) else { return None };
 
     let registry = crate::driver_registry::builtin_registry();
     let Ok(driver) = registry.get_for_path(StdPath::new(&entry.path)) else {
@@ -231,7 +224,7 @@ fn parse_item_count_from_semantic(semantic: &str, path: &str) -> Option<String> 
     ))
 }
 
-pub(crate) async fn cmd_diff(
+pub async fn cmd_diff(
     from: Option<&str>,
     to: Option<&str>,
     cached: bool,
@@ -257,7 +250,7 @@ pub(crate) async fn cmd_diff(
     }
 
     if summary {
-        build_summary_report(&entries, &repo, from)?;
+        build_summary_report(&entries, &repo, from);
         return Ok(());
     }
 
@@ -265,7 +258,7 @@ pub(crate) async fn cmd_diff(
         for entry in &entries {
             match &entry.diff_type {
                 DiffType::Renamed { old_path, new_path } => {
-                    println!("{} -> {}", old_path, new_path);
+                    println!("{old_path} -> {new_path}");
                 }
                 _ => {
                     println!("{}", entry.path);
@@ -277,7 +270,7 @@ pub(crate) async fn cmd_diff(
 
     // Integrity analysis mode: show mathematical properties and risk indicators
     if integrity {
-        let report = build_integrity_report(&entries, &repo, from, to, cached)?;
+        let report = build_integrity_report(&entries, &repo, from, to, cached);
         let formatted = suture_core::integrity::format_integrity_report(&report);
         println!("{formatted}");
         return Ok(());
@@ -305,8 +298,7 @@ pub(crate) async fn cmd_diff(
         match &entry.diff_type {
             DiffType::Renamed { old_path, new_path } => {
                 println!(
-                    "{ANSI_BOLD_CYAN}renamed {} → {}{ANSI_RESET}",
-                    old_path, new_path
+                    "{ANSI_BOLD_CYAN}renamed {old_path} → {new_path}{ANSI_RESET}"
                 );
             }
             DiffType::Added => {
@@ -436,7 +428,7 @@ fn build_integrity_report(
     _from: Option<&str>,
     _to: Option<&str>,
     _cached: bool,
-) -> Result<suture_core::integrity::DiffIntegrityReport, Box<dyn std::error::Error>> {
+) -> suture_core::integrity::DiffIntegrityReport {
     use std::collections::HashMap;
     use suture_core::engine::diff::DiffType;
     use suture_core::integrity::{FileIntegrityReport, analyze_file};
@@ -558,8 +550,7 @@ fn build_integrity_report(
     if has_lockfile && !has_manifest {
         warnings.push(
             "Lockfile modified without corresponding manifest change. \
-             Verify no new dependencies were injected."
-                .to_string(),
+             Verify no new dependencies were injected.".to_owned(),
         );
     }
 
@@ -607,11 +598,11 @@ fn build_integrity_report(
         warnings,
     };
 
-    Ok(suture_core::integrity::DiffIntegrityReport {
+    suture_core::integrity::DiffIntegrityReport {
         files,
         old_files,
         summary,
-    })
+    }
 }
 
 /// Get file content from CAS or filesystem.

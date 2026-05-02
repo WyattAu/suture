@@ -69,7 +69,7 @@ fn stripe_key(state: &AppState) -> Result<String, (StatusCode, Json<serde_json::
 
 fn platform_url(state: &AppState) -> String {
     if state.config.platform_url.is_empty() {
-        "http://localhost:8080".to_string()
+        "http://localhost:8080".to_owned()
     } else {
         state.config.platform_url.clone()
     }
@@ -141,7 +141,7 @@ async fn get_or_create_customer(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e.to_string()}))))?;
 
-    let customer_id = customer["id"].as_str().unwrap_or("").to_string();
+    let customer_id = customer["id"].as_str().unwrap_or("").to_owned();
     if customer_id.is_empty() {
         return Err((
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -176,10 +176,10 @@ pub async fn create_checkout_session(
     let base_url = platform_url(&state);
     let success_url = req
         .success_url
-        .unwrap_or_else(|| format!("{}/billing?success=true", base_url));
+        .unwrap_or_else(|| format!("{base_url}/billing?success=true"));
     let cancel_url = req
         .cancel_url
-        .unwrap_or_else(|| format!("{}/billing?canceled=true", base_url));
+        .unwrap_or_else(|| format!("{base_url}/billing?canceled=true"));
 
     let client = reqwest::Client::new();
 
@@ -206,8 +206,8 @@ pub async fn create_checkout_session(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e.to_string()}))))?;
 
-    let url = session["url"].as_str().unwrap_or("").to_string();
-    let session_id = session["id"].as_str().unwrap_or("").to_string();
+    let url = session["url"].as_str().unwrap_or("").to_owned();
+    let session_id = session["id"].as_str().unwrap_or("").to_owned();
 
     if url.is_empty() || session_id.is_empty() {
         return Err((
@@ -248,13 +248,13 @@ pub async fn create_portal_session_inner(
         .map_err(|_| {
             (
                 StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({"error": "no Stripe customer on file — complete a checkout first"})),
+                Json(serde_json::json!({"error": "no Stripe customer on file \u{2014} complete a checkout first"})),
             )
         })?
     };
 
     let base_url = platform_url(state);
-    let return_url = format!("{}/billing", base_url);
+    let return_url = format!("{base_url}/billing");
 
     let client = reqwest::Client::new();
     let resp = client
@@ -270,7 +270,7 @@ pub async fn create_portal_session_inner(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e.to_string()}))))?;
 
-    let url = session["url"].as_str().unwrap_or("").to_string();
+    let url = session["url"].as_str().unwrap_or("").to_owned();
     if url.is_empty() {
         return Err((
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -294,10 +294,15 @@ pub async fn handle_webhook(
         _ => {
             return Ok(Json(serde_json::json!({"received": true, "note": "billing not configured"})));
         }
-    };
+    }
 
     let webhook_secret = std::env::var("STRIPE_WEBHOOK_SECRET").unwrap_or_default();
-    if !webhook_secret.is_empty() {
+    if webhook_secret.is_empty() {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({"error": "STRIPE_WEBHOOK_SECRET not configured"})),
+        ));
+    } else {
         let sig_header = headers
             .get("stripe-signature")
             .and_then(|v| v.to_str().ok())
@@ -309,11 +314,6 @@ pub async fn handle_webhook(
                 Json(serde_json::json!({"error": "invalid webhook signature"})),
             ));
         }
-    } else {
-        return Err((
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({"error": "STRIPE_WEBHOOK_SECRET not configured"})),
-        ));
     }
 
     let event: Result<StripeWebhookEvent, _> = serde_json::from_str(&body);
@@ -364,15 +364,15 @@ fn verify_stripe_signature(payload: &str, sig_header: &str, secret: &str) -> Res
     for part in sig_header.split(',') {
         let part = part.trim();
         if let Some(t) = part.strip_prefix("t=") {
-            timestamp = Some(t.to_string());
+            timestamp = Some(t.to_owned());
         } else if let Some(v) = part.strip_prefix("v1=") {
-            signatures.push(v.to_string());
+            signatures.push(v.to_owned());
         }
     }
 
-    let timestamp = timestamp.ok_or_else(|| "missing timestamp in Stripe-Signature header".to_string())?;
+    let timestamp = timestamp.ok_or_else(|| "missing timestamp in Stripe-Signature header".to_owned())?;
     if signatures.is_empty() {
-        return Err("missing signature in Stripe-Signature header".to_string());
+        return Err("missing signature in Stripe-Signature header".to_owned());
     }
 
     if let Ok(ts) = timestamp.parse::<i64>() {
@@ -381,13 +381,13 @@ fn verify_stripe_signature(payload: &str, sig_header: &str, secret: &str) -> Res
             .unwrap_or_default()
             .as_secs() as i64;
         if (now - ts).abs() > 300 {
-            return Err("webhook timestamp too old (possible replay attack)".to_string());
+            return Err("webhook timestamp too old (possible replay attack)".to_owned());
         }
     }
 
-    let signed_payload = format!("{}.{}", timestamp, payload);
+    let signed_payload = format!("{timestamp}.{payload}");
     let mut mac =
-        HmacSha256::new_from_slice(secret.as_bytes()).map_err(|e| format!("HMAC error: {}", e))?;
+        HmacSha256::new_from_slice(secret.as_bytes()).map_err(|e| format!("HMAC error: {e}"))?;
     mac.update(signed_payload.as_bytes());
     let expected = hex::encode(mac.finalize().into_bytes());
 
@@ -407,7 +407,7 @@ fn verify_stripe_signature(payload: &str, sig_header: &str, secret: &str) -> Res
         }
     }
 
-    Err("signature mismatch".to_string())
+    Err("signature mismatch".to_owned())
 }
 
 async fn handle_checkout_completed(state: &AppState, object: &serde_json::Value) {
@@ -545,7 +545,7 @@ pub async fn get_subscription(
             rusqlite::params![claims.sub],
             |row| row.get(0),
         )
-        .unwrap_or_else(|_| "free".to_string());
+        .unwrap_or_else(|_| "free".to_owned());
 
     let sub_status: Option<String> = conn
         .query_row(
@@ -560,9 +560,9 @@ pub async fn get_subscription(
         tier: tier.clone(),
         status: sub_status.unwrap_or_else(|| {
             if tier == "free" {
-                "inactive".to_string()
+                "inactive".to_owned()
             } else {
-                "active".to_string()
+                "active".to_owned()
             }
         }),
         current_period_end: None,

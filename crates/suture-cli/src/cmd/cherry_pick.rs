@@ -1,7 +1,7 @@
 use crate::ref_utils::resolve_ref;
 use crate::style::run_hook_if_exists;
 
-pub(crate) async fn cmd_cherry_pick(
+pub async fn cmd_cherry_pick(
     commit: &str,
     no_commit: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -12,18 +12,18 @@ pub(crate) async fn cmd_cherry_pick(
 
     let (branch, head_id) = repo
         .head()
-        .unwrap_or_else(|_| ("main".to_string(), suture_common::Hash::ZERO));
+        .unwrap_or_else(|_| ("main".to_owned(), suture_common::Hash::ZERO));
     let mut extra = std::collections::HashMap::new();
-    extra.insert("SUTURE_BRANCH".to_string(), branch);
-    extra.insert("SUTURE_HEAD".to_string(), head_id.to_hex());
-    extra.insert("SUTURE_CHERRY_PICK_TARGET".to_string(), patch_id.to_hex());
+    extra.insert("SUTURE_BRANCH".to_owned(), branch);
+    extra.insert("SUTURE_HEAD".to_owned(), head_id.to_hex());
+    extra.insert("SUTURE_CHERRY_PICK_TARGET".to_owned(), patch_id.to_hex());
     run_hook_if_exists(repo.root(), "pre-cherry-pick", extra)?;
 
     if no_commit {
         let patch = repo
             .dag()
             .get_patch(&patch_id)
-            .ok_or_else(|| format!("patch not found: {}", patch_id))?;
+            .ok_or_else(|| format!("patch not found: {patch_id}"))?;
 
         let old_head = repo
             .head()
@@ -43,13 +43,12 @@ pub(crate) async fn cmd_cherry_pick(
 
         let _ = old_tree;
         println!(
-            "Cherry-picked changes from {} staged (no commit created)",
-            commit
+            "Cherry-picked changes from {commit} staged (no commit created)"
         );
         Ok(())
     } else {
         let new_id = repo.cherry_pick(&patch_id)?;
-        println!("Cherry-picked {} as {}", commit, new_id);
+        println!("Cherry-picked {commit} as {new_id}");
         Ok(())
     }
 }

@@ -1,5 +1,6 @@
 use crate::ClassificationAction;
 
+use std::fmt::Write;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClassificationChange {
     Added(String),
@@ -16,7 +17,7 @@ pub struct ClassificationResult {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
-pub(crate) struct ClassificationEvent {
+pub struct ClassificationEvent {
     pub seq: usize,
     pub timestamp: String,
     pub commit: String,
@@ -69,13 +70,10 @@ fn classification_patterns() -> Vec<(&'static str, &'static str)> {
 fn find_classifications(text: &str) -> Vec<(String, usize)> {
     let mut found = Vec::new();
     for (name, pattern) in classification_patterns() {
-        let re = match regex::Regex::new(pattern) {
-            Ok(r) => r,
-            Err(_) => continue,
-        };
+        let Ok(re) = regex::Regex::new(pattern) else { continue };
         let count = re.find_iter(text).count();
         if count > 0 {
-            found.push((name.to_string(), count));
+            found.push((name.to_owned(), count));
         }
     }
     found
@@ -104,7 +102,7 @@ fn detect_docx_classifications(data: &[u8]) -> Option<(String, usize, usize)> {
             if let Ok(re) = regex::Regex::new(pattern) {
                 let count = re.find_iter(&raw).count();
                 if count > 0 {
-                    return Some((name.to_string(), count, count));
+                    return Some((name.to_owned(), count, count));
                 }
             }
         }
@@ -200,25 +198,25 @@ pub fn format_classification_report(results: &[ClassificationResult]) -> String 
         out.push_str(":\n");
         match &r.change {
             ClassificationChange::Added(marking) => {
-                out.push_str(&format!(
+                let _ = write!(out, 
                     "  OLD: not found\n  NEW: \"{}\" (found in {} location{})\n",
                     marking,
                     r.new_count,
                     if r.new_count == 1 { "" } else { "s" }
-                ));
+                );
                 out.push_str("  ! ADDED: Classification marking added\n\n");
             }
             ClassificationChange::Removed(marking) => {
-                out.push_str(&format!(
+                let _ = write!(out, 
                     "  OLD: \"{}\" (found in {} location{})\n  NEW: not found\n",
                     marking,
                     r.old_count,
                     if r.old_count == 1 { "" } else { "s" }
-                ));
+                );
                 out.push_str("  ! REMOVED: Classification marking removed\n\n");
             }
             ClassificationChange::Upgraded { from, to } => {
-                out.push_str(&format!(
+                let _ = write!(out, 
                     "  OLD: \"{}\" (found in {} location{})\n  NEW: \"{}\" (found in {} location{})\n",
                     from,
                     r.old_count,
@@ -226,11 +224,11 @@ pub fn format_classification_report(results: &[ClassificationResult]) -> String 
                     to,
                     r.new_count,
                     if r.new_count == 1 { "" } else { "s" }
-                ));
-                out.push_str(&format!("  ! UPGRADE: {} -> {}\n\n", from, to));
+                );
+                let _ = write!(out, "  ! UPGRADE: {from} -> {to}\n\n");
             }
             ClassificationChange::Downgraded { from, to } => {
-                out.push_str(&format!(
+                let _ = write!(out, 
                     "  OLD: \"{}\" (found in {} location{})\n  NEW: \"{}\" (found in {} location{})\n",
                     from,
                     r.old_count,
@@ -238,8 +236,8 @@ pub fn format_classification_report(results: &[ClassificationResult]) -> String 
                     to,
                     r.new_count,
                     if r.new_count == 1 { "" } else { "s" }
-                ));
-                out.push_str(&format!("  ! DOWNGRADE: {} -> {}\n\n", from, to));
+                );
+                let _ = write!(out, "  ! DOWNGRADE: {from} -> {to}\n\n");
             }
         }
     }
@@ -273,11 +271,11 @@ fn csv_escape(s: &str) -> String {
     if s.contains(',') || s.contains('"') || s.contains('\n') {
         format!("\"{}\"", s.replace('"', "\"\""))
     } else {
-        s.to_string()
+        s.to_owned()
     }
 }
 
-pub(crate) async fn cmd_classification(
+pub async fn cmd_classification(
     action: &ClassificationAction,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match action {
@@ -328,7 +326,7 @@ async fn cmd_scan(
         let parent_hex = patch
             .parent_ids
             .first()
-            .map(|h| h.to_hex())
+            .map(suture_core::Hash::to_hex)
             .unwrap_or_default();
         let commit_hex = patch.id.to_hex();
         let from_ref = if parent_hex.is_empty() {
@@ -359,7 +357,7 @@ async fn cmd_scan(
                 commit: commit_hex.clone(),
                 author: patch.author.clone(),
                 file: r.path.clone(),
-                event_type: event_type.to_string(),
+                event_type: event_type.to_owned(),
                 from,
                 to,
             });
@@ -465,7 +463,7 @@ async fn cmd_report(output: Option<&str>) -> Result<(), Box<dyn std::error::Erro
         let parent_hex = patch
             .parent_ids
             .first()
-            .map(|h| h.to_hex())
+            .map(suture_core::Hash::to_hex)
             .unwrap_or_default();
         let commit_hex = patch.id.to_hex();
         let from_ref = if parent_hex.is_empty() {
@@ -493,7 +491,7 @@ async fn cmd_report(output: Option<&str>) -> Result<(), Box<dyn std::error::Erro
                 commit: commit_hex.clone(),
                 author: patch.author.clone(),
                 file: r.path.clone(),
-                event_type: event_type.to_string(),
+                event_type: event_type.to_owned(),
                 from: from.clone(),
                 to: to.clone(),
             });
@@ -501,13 +499,10 @@ async fn cmd_report(output: Option<&str>) -> Result<(), Box<dyn std::error::Erro
             *file_change_count.entry(r.path.clone()).or_insert(0) += 1;
 
             match &r.change {
-                ClassificationChange::Added(m) | ClassificationChange::Upgraded { to: m, .. } => {
-                    current_state.insert(r.path.clone(), m.clone());
-                }
                 ClassificationChange::Removed(_) => {
                     current_state.remove(&r.path);
                 }
-                ClassificationChange::Downgraded { to: m, .. } => {
+                ClassificationChange::Added(m) | ClassificationChange::Upgraded { to: m, .. } | ClassificationChange::Downgraded { to: m, .. } => {
                     current_state.insert(r.path.clone(), m.clone());
                 }
             }
@@ -515,7 +510,7 @@ async fn cmd_report(output: Option<&str>) -> Result<(), Box<dyn std::error::Erro
             chain_of_custody.entry(r.path.clone()).or_default().push((
                 short_hash,
                 patch.author.clone(),
-                event_type.to_string(),
+                event_type.to_owned(),
             ));
         }
     }
@@ -542,35 +537,33 @@ async fn cmd_report(output: Option<&str>) -> Result<(), Box<dyn std::error::Erro
 
     let repo_name = std::env::current_dir()
         .unwrap_or_default()
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "unknown".to_string());
+        .file_name().map_or_else(|| "unknown".to_owned(), |n| n.to_string_lossy().to_string());
     let scan_time = chrono::Utc::now().to_rfc3339();
 
     let mut report = String::new();
     report.push_str("============================================\n");
     report.push_str("  CLASSIFICATION COMPLIANCE REPORT\n");
     report.push_str("============================================\n\n");
-    report.push_str(&format!("Repository:   {}\n", repo_name));
-    report.push_str(&format!("Scan Time:    {}\n", scan_time));
-    report.push_str(&format!("Total Commits Scanned: {}\n", total_commits));
-    report.push_str(&format!(
+    let _ = writeln!(report, "Repository:   {repo_name}");
+    let _ = writeln!(report, "Scan Time:    {scan_time}");
+    let _ = writeln!(report, "Total Commits Scanned: {total_commits}");
+    let _ = write!(report, 
         "Total Classification Events: {}\n\n",
         events.len()
-    ));
+    );
 
     report.push_str("--- Event Breakdown ---\n");
-    report.push_str(&format!("  Added:     {}\n", added_count));
-    report.push_str(&format!("  Removed:   {}\n", removed_count));
-    report.push_str(&format!("  Upgraded:  {}\n", upgraded_count));
-    report.push_str(&format!("  Downgraded: {}\n\n", downgraded_count));
+    let _ = writeln!(report, "  Added:     {added_count}");
+    let _ = writeln!(report, "  Removed:   {removed_count}");
+    let _ = writeln!(report, "  Upgraded:  {upgraded_count}");
+    let _ = write!(report, "  Downgraded: {downgraded_count}\n\n");
 
     report.push_str("--- Files with Most Classification Changes ---\n");
     if sorted_files.is_empty() {
         report.push_str("  (none)\n\n");
     } else {
         for (file, count) in sorted_files.iter().take(10) {
-            report.push_str(&format!("  {} ({} changes)\n", file, count));
+            let _ = writeln!(report, "  {file} ({count} changes)");
         }
         report.push('\n');
     }
@@ -580,7 +573,7 @@ async fn cmd_report(output: Option<&str>) -> Result<(), Box<dyn std::error::Erro
         report.push_str("  No files currently classified.\n\n");
     } else {
         for (file, cls) in &current_state {
-            report.push_str(&format!("  {} [{}]\n", file, cls));
+            let _ = writeln!(report, "  {file} [{cls}]");
         }
         report.push('\n');
     }
@@ -590,7 +583,7 @@ async fn cmd_report(output: Option<&str>) -> Result<(), Box<dyn std::error::Erro
         report.push_str("  (none)\n\n");
     } else {
         for (file, cls) in &above_unclassified {
-            report.push_str(&format!("  {} [{}]\n", file, cls));
+            let _ = writeln!(report, "  {file} [{cls}]");
         }
         report.push('\n');
     }
@@ -600,9 +593,9 @@ async fn cmd_report(output: Option<&str>) -> Result<(), Box<dyn std::error::Erro
         report.push_str("  No classification changes recorded.\n\n");
     } else {
         for (file, entries) in &chain_of_custody {
-            report.push_str(&format!("  {}:\n", file));
+            let _ = writeln!(report, "  {file}:");
             for (hash, author, evt) in entries {
-                report.push_str(&format!("    {} — {} ({})\n", hash, author, evt));
+                let _ = writeln!(report, "    {hash} — {author} ({evt})");
             }
         }
         report.push('\n');
@@ -610,7 +603,7 @@ async fn cmd_report(output: Option<&str>) -> Result<(), Box<dyn std::error::Erro
 
     if let Some(output_path) = output {
         std::fs::write(output_path, &report)?;
-        println!("Report written to {}", output_path);
+        println!("Report written to {output_path}");
     } else {
         print!("{report}");
     }

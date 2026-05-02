@@ -1422,7 +1422,7 @@ async fn main() {
     if let Some(path) = &cli.repo_path
         && let Err(e) = std::env::set_current_dir(path)
     {
-        eprintln!("error: cannot change to '{}': {e}", path);
+        eprintln!("error: cannot change to '{path}': {e}");
         std::process::exit(1);
     }
 
@@ -1665,8 +1665,7 @@ async fn main() {
                 ),
                 _ => {
                     eprintln!(
-                        "error: unsupported shell '{}' (supported: bash, zsh, fish, powershell, nushell)",
-                        shell
+                        "error: unsupported shell '{shell}' (supported: bash, zsh, fish, powershell, nushell)"
                     );
                     std::process::exit(1);
                 }
@@ -1737,8 +1736,8 @@ async fn main() {
         Commands::Hook { action } => {
             let hook_action = match action {
                 HookAction::List => cmd::hook::HookAction::List,
-                HookAction::Run { name } => cmd::hook::HookAction::Run { name: name.clone() },
-                HookAction::Edit { name } => cmd::hook::HookAction::Edit { name: name.clone() },
+                HookAction::Run { name } => cmd::hook::HookAction::Run { name },
+                HookAction::Edit { name } => cmd::hook::HookAction::Edit { name },
             };
             cmd::hook::cmd_hook(&hook_action).await
         }
@@ -1748,11 +1747,11 @@ async fn main() {
                     pattern,
                     size_limit,
                 } => cmd::lfs::LfsAction::Track {
-                    pattern: pattern.clone(),
-                    size_limit: size_limit.clone(),
+                    pattern,
+                    size_limit,
                 },
                 LfsAction::Untrack { pattern } => cmd::lfs::LfsAction::Untrack {
-                    pattern: pattern.clone(),
+                    pattern,
                 },
                 LfsAction::List => cmd::lfs::LfsAction::List,
                 LfsAction::Push => cmd::lfs::LfsAction::Push,
@@ -1847,17 +1846,17 @@ async fn main() {
                     format,
                     output,
                 } => cmd::report::ReportType::Change {
-                    from: from.clone(),
-                    to: to.clone(),
-                    format: format.clone(),
-                    output: output.clone(),
+                    from,
+                    to,
+                    format,
+                    output,
                 },
                 ReportType::Activity { days, format } => cmd::report::ReportType::Activity {
                     days,
-                    format: format.clone(),
+                    format,
                 },
                 ReportType::Stats { at } => cmd::report::ReportType::Stats {
-                    at: at.clone().unwrap_or_else(|| "HEAD".to_string()),
+                    at: at.unwrap_or_else(|| "HEAD".to_owned()),
                 },
             };
             cmd::report::cmd_report(&rt).await
@@ -1865,16 +1864,16 @@ async fn main() {
         Commands::Batch { action } => {
             let ba = match action {
                 BatchAction::Stage { pattern } => cmd::batch::BatchAction::Stage {
-                    pattern: pattern.clone(),
+                    pattern,
                 },
                 BatchAction::Commit { pattern, message } => cmd::batch::BatchAction::Commit {
-                    pattern: pattern.clone(),
-                    message: message.clone(),
+                    pattern,
+                    message,
                 },
                 BatchAction::ExportClients { clients, output } => {
                     cmd::batch::BatchAction::ExportClients {
-                        clients: clients.clone(),
-                        output: output.clone(),
+                        clients,
+                        output,
                     }
                 }
             };
@@ -1907,10 +1906,10 @@ fn user_friendly_error(err: &dyn std::error::Error) {
 }
 
 fn clean_error_message(msg: &str) -> String {
-    let mut s = msg.to_string();
+    let mut s = msg.to_owned();
     s = strip_rust_type_paths(&s);
     s = strip_rust_backtrace(&s);
-    s.trim().to_string()
+    s.trim().to_owned()
 }
 
 fn strip_rust_type_paths(s: &str) -> String {
@@ -1920,7 +1919,7 @@ fn strip_rust_type_paths(s: &str) -> String {
         regex::Regex::new(r"[a-z_][a-z0-9_]*(?:::[a-z_][a-z0-9_]*)+::[A-Z][a-zA-Z0-9]*")
             .unwrap()
     });
-    re.replace_all(s, "…").to_string()
+    re.replace_all(s, "\u{2026}").to_string()
 }
 
 fn strip_rust_backtrace(s: &str) -> String {

@@ -1,6 +1,6 @@
 use crate::cmd::user_error;
 
-pub(crate) async fn cmd_checkout(
+pub async fn cmd_checkout(
     branch: Option<&str>,
     new_branch: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -21,17 +21,16 @@ pub(crate) async fn cmd_checkout(
             .map_err(|e| user_error(&format!("failed to create branch '{name}'"), e))?;
         repo.checkout(name)
             .map_err(|e| user_error(&format!("failed to checkout branch '{name}'"), e))?;
-        println!("Created and switched to branch '{}'", name);
+        println!("Created and switched to branch '{name}'");
     } else {
         let target = branch.ok_or("no branch specified (use -b to create one)")?;
 
         let branches: Vec<String> = repo.list_branches().into_iter().map(|(n, _)| n).collect();
-        if !branches.contains(&target.to_string()) && repo.resolve_ref(target).is_err() {
-            let hint = if let Some(suggestion) = crate::fuzzy::suggest(target, &branches) {
-                format!(" (did you mean '{}'?)", suggestion)
-            } else {
-                String::new()
-            };
+        if !branches.contains(&target.to_owned()) && repo.resolve_ref(target).is_err() {
+            let hint = crate::fuzzy::suggest(target, &branches).map_or_else(
+                String::new,
+                |suggestion| format!(" (did you mean '{suggestion}'?)"),
+            );
             return Err(format!(
                 "branch '{target}' not found{hint} (use 'suture branch' to create it)"
             )
@@ -44,7 +43,7 @@ pub(crate) async fn cmd_checkout(
         if repo.is_detached() {
             if let Ok(Some(id)) = repo.get_detached_head() {
                 let short = &id.to_hex()[..12];
-                println!("Note: checking out '{}'.", short);
+                println!("Note: checking out '{short}'.");
                 println!(
                     "You are in 'detached HEAD' state. You can look around, make experimental"
                 );
@@ -54,19 +53,18 @@ pub(crate) async fn cmd_checkout(
                 println!("state without impacting any branches by switching back to a branch.");
             }
         } else {
-            println!("Switched to branch '{}'", target);
+            println!("Switched to branch '{target}'");
         }
     }
 
     match crate::cmd::lfs::resolve_lfs_pointers_in_workdir() {
         Ok((resolved, missing)) => {
             if resolved > 0 {
-                println!("Resolved {} LFS object(s)", resolved);
+                println!("Resolved {resolved} LFS object(s)");
             }
             if missing > 0 {
                 eprintln!(
-                    "{} LFS object(s) not found locally (run `suture lfs pull`)",
-                    missing
+                    "{missing} LFS object(s) not found locally (run `suture lfs pull`)"
                 );
             }
         }

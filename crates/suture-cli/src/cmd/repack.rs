@@ -1,4 +1,4 @@
-pub(crate) async fn cmd_repack(
+pub async fn cmd_repack(
     threshold: usize,
     dry_run: bool,
     force: bool,
@@ -14,32 +14,30 @@ pub(crate) async fn cmd_repack(
 
     let existing_packs = std::fs::read_dir(cas.pack_dir())
         .ok()
-        .map(|entries| {
+        .map_or(0, |entries| {
             entries
-                .filter_map(|e| e.ok())
+                .filter_map(std::result::Result::ok)
                 .filter(|e| e.file_name().to_str().is_some_and(|n| n.ends_with(".pack")))
                 .count()
-        })
-        .unwrap_or(0);
+        });
 
     println!("Repack statistics:");
-    println!("  Loose objects:   {}", loose_count);
-    println!("  Loose size:      {} bytes", loose_size);
-    println!("  Packed objects:  {}", pack_count);
-    println!("  Pack files:      {}", existing_packs);
-    println!("  Threshold:       {} loose objects", threshold);
+    println!("  Loose objects:   {loose_count}");
+    println!("  Loose size:      {loose_size} bytes");
+    println!("  Packed objects:  {pack_count}");
+    println!("  Pack files:      {existing_packs}");
+    println!("  Threshold:       {threshold} loose objects");
 
     if loose_count <= threshold as u64 && !force {
         println!(
-            "\nNothing to pack ({} loose objects <= threshold of {}).",
-            loose_count, threshold
+            "\nNothing to pack ({loose_count} loose objects <= threshold of {threshold})."
         );
         println!("Use --force to pack regardless of threshold.");
         return Ok(());
     }
 
     if dry_run {
-        println!("\nDry run: would pack {} loose objects.", loose_count);
+        println!("\nDry run: would pack {loose_count} loose objects.");
         return Ok(());
     }
 
@@ -51,13 +49,12 @@ pub(crate) async fn cmd_repack(
 
     let new_pack_count = std::fs::read_dir(cas.pack_dir())
         .ok()
-        .map(|entries| {
+        .map_or(0, |entries| {
             entries
-                .filter_map(|e| e.ok())
+                .filter_map(std::result::Result::ok)
                 .filter(|e| e.file_name().to_str().is_some_and(|n| n.ends_with(".pack")))
                 .count()
-        })
-        .unwrap_or(0);
+        });
 
     let new_loose_count = cas.blob_count()?;
     let new_packed_hashes = cas.list_blobs_packed().unwrap_or_default();
@@ -74,10 +71,10 @@ pub(crate) async fn cmd_repack(
         packed,
         new_pack_count - existing_packs
     );
-    println!("  Loose objects remaining:  {}", new_loose_count);
+    println!("  Loose objects remaining:  {new_loose_count}");
     println!("  Total packed objects:     {}", new_packed_hashes.len());
-    println!("  Estimated space freed:    {} bytes", space_saved);
-    println!("  Pack files total:         {}", new_pack_count);
+    println!("  Estimated space freed:    {space_saved} bytes");
+    println!("  Pack files total:         {new_pack_count}");
 
     Ok(())
 }

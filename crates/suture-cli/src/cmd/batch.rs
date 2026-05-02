@@ -1,6 +1,6 @@
 use std::path::Path;
 
-pub(crate) enum BatchAction {
+pub enum BatchAction {
     Stage {
         pattern: String,
     },
@@ -14,7 +14,7 @@ pub(crate) enum BatchAction {
     },
 }
 
-pub(crate) async fn cmd_batch(action: &BatchAction) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_batch(action: &BatchAction) -> Result<(), Box<dyn std::error::Error>> {
     match action {
         BatchAction::Stage { pattern } => cmd_batch_stage(pattern).await,
         BatchAction::Commit { pattern, message } => cmd_batch_commit(pattern, message).await,
@@ -29,20 +29,20 @@ async fn cmd_batch_stage(pattern: &str) -> Result<(), Box<dyn std::error::Error>
     let matched = glob_match_files(".", pattern)?;
 
     if matched.is_empty() {
-        println!("No files matched pattern '{}'", pattern);
+        println!("No files matched pattern '{pattern}'");
         return Ok(());
     }
 
     let mut staged = 0usize;
     for path in &matched {
         if let Err(e) = repo.add(path) {
-            let err_msg = format!("failed to stage '{}': {}", path, e);
+            let err_msg = format!("failed to stage '{path}': {e}");
             return Err(err_msg.into());
         }
         staged += 1;
     }
 
-    println!("Staged {} file(s) matching '{}'", staged, pattern);
+    println!("Staged {staged} file(s) matching '{pattern}'");
     Ok(())
 }
 
@@ -51,7 +51,7 @@ async fn cmd_batch_commit(pattern: &str, message: &str) -> Result<(), Box<dyn st
     let matched = glob_match_files(".", pattern)?;
 
     if matched.is_empty() {
-        println!("No files matched pattern '{}'", pattern);
+        println!("No files matched pattern '{pattern}'");
         return Ok(());
     }
 
@@ -79,29 +79,29 @@ async fn cmd_batch_export_clients(
     }
 
     println!("\nBatch export summary:");
-    println!("{}", "─".repeat(40));
+    println!("{}", "\u{2500}".repeat(40));
 
     let mut ok = 0usize;
     let mut fail = 0usize;
     for client in clients {
-        let client_output = format!("{}/{}", output, client);
+        let client_output = format!("{output}/{client}");
         match crate::cmd::export::cmd_export(&client_output, None, false, None, false, None).await {
             Ok(()) => {
-                println!("  {:<20} OK", client);
+                println!("  {client:<20} OK");
                 ok += 1;
             }
             Err(e) => {
-                println!("  {:<20} FAILED: {}", client, e);
+                println!("  {client:<20} FAILED: {e}");
                 fail += 1;
             }
         }
     }
 
-    println!("{}", "─".repeat(40));
-    println!("{} succeeded, {} failed", ok, fail);
+    println!("{}", "\u{2500}".repeat(40));
+    println!("{ok} succeeded, {fail} failed");
 
     if fail > 0 {
-        let err_msg = format!("{} client export(s) failed", fail);
+        let err_msg = format!("{fail} client export(s) failed");
         return Err(err_msg.into());
     }
 
@@ -120,7 +120,7 @@ fn glob_match_files(
     } else {
         let target = base.join(pattern);
         if target.exists() && target.is_file() {
-            matched.push(pattern.to_string());
+            matched.push(pattern.to_owned());
         }
     }
 
@@ -134,7 +134,7 @@ fn collect_matching_files(
     pattern: &str,
     result: &mut Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let entries: Vec<_> = std::fs::read_dir(current)?.filter_map(|e| e.ok()).collect();
+    let entries: Vec<_> = std::fs::read_dir(current)?.filter_map(std::result::Result::ok).collect();
 
     for entry in &entries {
         let path = entry.path();

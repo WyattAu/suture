@@ -21,6 +21,7 @@ pub enum MergeStrategy {
 /// | < 1 KiB | `FullSemantic` |
 /// | < 100 KiB | `KeyPathOnly` |
 /// | >= 100 KiB | `SectionBased` |
+#[must_use] 
 pub fn optimal_merge_strategy(file_size: usize) -> MergeStrategy {
     if file_size < 1024 {
         MergeStrategy::FullSemantic

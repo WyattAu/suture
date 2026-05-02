@@ -54,11 +54,11 @@ pub fn compose(
     }
 
     // If both modify the same file, use the later payload
-    let composed_path = p2.target_path.clone().or(p1.target_path.clone());
-    let composed_payload = if !p2.payload.is_empty() {
-        p2.payload.clone()
-    } else {
+    let composed_path = p2.target_path.clone().or_else(|| p1.target_path.clone());
+    let composed_payload = if p2.payload.is_empty() {
         p1.payload.clone()
+    } else {
+        p2.payload.clone()
     };
 
     // Determine operation type:
@@ -86,8 +86,8 @@ pub fn compose(
         composed_path,
         composed_payload,
         p1.parent_ids.clone(), // Take p1's parents as the composed patch's parents
-        author.to_string(),
-        message.to_string(),
+        author.to_owned(),
+        message.to_owned(),
     );
 
     Ok(ComposeResult {
@@ -127,10 +127,10 @@ pub fn compose_chain(
             composed_touch.insert(addr.clone());
         }
         if !p.payload.is_empty() {
-            composed_payload = p.payload.clone();
+            composed_payload.clone_from(&p.payload);
         }
         if p.target_path.is_some() {
-            composed_path = p.target_path.clone();
+            composed_path.clone_from(&p.target_path);
         }
         composed_op = match (&composed_op, &p.operation_type) {
             (_, OperationType::Delete) => OperationType::Delete,
@@ -153,8 +153,8 @@ pub fn compose_chain(
         composed_path,
         composed_payload,
         patches[0].parent_ids.clone(),
-        author.to_string(),
-        message.to_string(),
+        author.to_owned(),
+        message.to_owned(),
     );
 
     Ok(ComposeResult {

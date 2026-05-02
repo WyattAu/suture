@@ -77,6 +77,7 @@ pub struct DagNode {
 
 impl DagNode {
     #[inline]
+    #[must_use] 
     pub fn id(&self) -> &PatchId {
         &self.patch.id
     }
@@ -108,6 +109,7 @@ impl Default for PatchDag {
 
 impl PatchDag {
     /// Create a new empty DAG.
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             nodes: HashMap::new(),
@@ -160,7 +162,7 @@ impl PatchDag {
         } else {
             parent_ids
                 .iter()
-                .map(|pid| self.nodes.get(pid).map(|n| n.generation).unwrap_or(0))
+                .map(|pid| self.nodes.get(pid).map_or(0, |n| n.generation))
                 .max()
                 .unwrap_or(0)
                 + 1
@@ -217,8 +219,7 @@ impl PatchDag {
 
         if let Some(node) = self.nodes.get(id) {
             for parent_id in &node.parent_ids {
-                if !ancestors.contains(parent_id) {
-                    ancestors.insert(*parent_id);
+                if ancestors.insert(*parent_id) {
                     queue.push_back(*parent_id);
                 }
             }
@@ -278,7 +279,7 @@ impl PatchDag {
         let mut best_gen: u64 = 0;
 
         for candidate in &common {
-            let candidate_gen = self.nodes.get(candidate).map(|n| n.generation).unwrap_or(0);
+            let candidate_gen = self.nodes.get(candidate).map_or(0, |n| n.generation);
             if candidate_gen > best_gen
                 || (candidate_gen == best_gen
                     && (best.is_none() || candidate < best.as_ref().unwrap()))
@@ -300,13 +301,12 @@ impl PatchDag {
     fn ancestor_depth(&self, id: &PatchId) -> usize {
         self.nodes
             .get(id)
-            .map(|n| n.generation as usize)
-            .unwrap_or(0)
+            .map_or(0, |n| n.generation as usize)
     }
 
     /// Create a new branch pointing to a patch.
     pub fn create_branch(&mut self, name: BranchName, target: PatchId) -> Result<(), DagError> {
-        let name_str = name.as_str().to_string();
+        let name_str = name.as_str().to_owned();
 
         if name_str.is_empty() {
             return Err(DagError::EmptyBranchName);
@@ -332,19 +332,19 @@ impl PatchDag {
     /// Update a branch to point to a new patch.
     pub fn update_branch(&mut self, name: &BranchName, target: PatchId) -> Result<(), DagError> {
         if !self.branches.contains_key(name.as_str()) {
-            return Err(DagError::BranchNotFound(name.as_str().to_string()));
+            return Err(DagError::BranchNotFound(name.as_str().to_owned()));
         }
         if !self.nodes.contains_key(&target) {
             return Err(DagError::PatchNotFound(target.to_hex()));
         }
-        self.branches.insert(name.as_str().to_string(), target);
+        self.branches.insert(name.as_str().to_owned(), target);
         Ok(())
     }
 
     /// Delete a branch.
     pub fn delete_branch(&mut self, name: &BranchName) -> Result<(), DagError> {
         if self.branches.remove(name.as_str()).is_none() {
-            return Err(DagError::BranchNotFound(name.as_str().to_string()));
+            return Err(DagError::BranchNotFound(name.as_str().to_owned()));
         }
         Ok(())
     }
@@ -393,7 +393,7 @@ impl PatchDag {
         // Generation is assigned in add_patch as max(parent generations) + 1,
         // so parents always have strictly lower generation than children.
         let mut sorted: Vec<PatchId> = all.iter().copied().collect();
-        sorted.sort_by_key(|pid| self.nodes.get(pid).map(|n| n.generation).unwrap_or(0));
+        sorted.sort_by_key(|pid| self.nodes.get(pid).map_or(0, |n| n.generation));
 
         sorted
     }

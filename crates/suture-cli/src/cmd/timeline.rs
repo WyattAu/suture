@@ -2,7 +2,7 @@ use std::path::Path as StdPath;
 
 use crate::ref_utils::resolve_ref;
 
-pub(crate) async fn cmd_timeline(
+pub async fn cmd_timeline(
     action: &crate::TimelineAction,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match action {
@@ -47,15 +47,12 @@ async fn timeline_import(
     let filename_str = filename.to_string_lossy().to_string();
     repo.add(&filename_str)?;
 
-    let msg = match message {
-        Some(m) => m.to_string(),
-        None => {
-            let name = parsed.name.as_deref().unwrap_or("unnamed");
-            format!(
-                "Import timeline: {name} ({} clips, {} tracks)",
-                parsed.clip_count, parsed.track_count
-            )
-        }
+    let msg = if let Some(m) = message { m.to_owned() } else {
+        let name = parsed.name.as_deref().unwrap_or("unnamed");
+        format!(
+            "Import timeline: {name} ({} clips, {} tracks)",
+            parsed.clip_count, parsed.track_count
+        )
     };
 
     repo.commit(&msg)?;
@@ -199,10 +196,10 @@ async fn timeline_diff(
     for path in &common {
         let from_hash = from_tree
             .get(path)
-            .ok_or_else(|| format!("hash missing for '{}' in source tree", path))?;
+            .ok_or_else(|| format!("hash missing for '{path}' in source tree"))?;
         let to_hash = to_tree
             .get(path)
-            .ok_or_else(|| format!("hash missing for '{}' in target tree", path))?;
+            .ok_or_else(|| format!("hash missing for '{path}' in target tree"))?;
         if from_hash == to_hash {
             continue;
         }
@@ -299,7 +296,7 @@ fn parse_otio_minimal(content: &str) -> OtioInfo {
     let name = value
         .get("name")
         .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
+        .map(std::borrow::ToOwned::to_owned);
 
     let mut track_count = 0usize;
     let mut video_tracks = 0usize;
@@ -323,14 +320,14 @@ fn parse_otio_minimal(content: &str) -> OtioInfo {
     let duration = value
         .get("global_start_time")
         .and_then(|v| v.get("value"))
-        .and_then(|v| v.as_f64())
+        .and_then(serde_json::Value::as_f64)
         .map(|v| format!("{v:.2}"))
         .or_else(|| {
             value
                 .get("metadata")
                 .and_then(|m| m.get("timing"))
                 .and_then(|t| t.get("duration"))
-                .and_then(|v| v.as_f64())
+                .and_then(serde_json::Value::as_f64)
                 .map(|v| format!("{v:.2}"))
         });
 
@@ -355,7 +352,7 @@ fn count_clips_recursive(
     {
         *clip_count += 1;
         if let Some(name) = value.get("name").and_then(|v| v.as_str()) {
-            clip_names.push(name.to_string());
+            clip_names.push(name.to_owned());
         }
     }
 

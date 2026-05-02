@@ -23,11 +23,11 @@ pub enum DiffType {
 impl fmt::Display for DiffType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            DiffType::Added => write!(f, "added"),
-            DiffType::Modified => write!(f, "modified"),
-            DiffType::Deleted => write!(f, "deleted"),
-            DiffType::Renamed { old_path, new_path } => {
-                write!(f, "renamed {} → {}", old_path, new_path)
+            Self::Added => write!(f, "added"),
+            Self::Modified => write!(f, "modified"),
+            Self::Deleted => write!(f, "deleted"),
+            Self::Renamed { old_path, new_path } => {
+                write!(f, "renamed {old_path} → {new_path}")
             }
         }
     }
@@ -69,7 +69,7 @@ impl fmt::Display for DiffEntry {
                 write!(f, "  - {}", self.path)
             }
             DiffType::Renamed { old_path, new_path } => {
-                write!(f, "  R {} → {}", old_path, new_path)
+                write!(f, "  R {old_path} → {new_path}")
             }
         }
     }
@@ -88,6 +88,7 @@ impl fmt::Display for DiffEntry {
 /// 4. Files in both with different hash → Modified
 /// 5. Heuristic rename detection: a deleted file whose hash matches an
 ///    added file is reported as a rename.
+#[must_use] 
 pub fn diff_trees(old_tree: &FileTree, new_tree: &FileTree) -> Vec<DiffEntry> {
     let mut diffs = Vec::new();
 
@@ -180,6 +181,7 @@ pub fn diff_trees(old_tree: &FileTree, new_tree: &FileTree) -> Vec<DiffEntry> {
 }
 
 /// Check if two trees are identical.
+#[must_use] 
 pub fn trees_equal(a: &FileTree, b: &FileTree) -> bool {
     if a.len() != b.len() {
         return false;

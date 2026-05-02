@@ -5,6 +5,7 @@ use crate::cas::BlobStore;
 use crate::engine::diff::{DiffEntry, DiffType};
 use crate::engine::tree::FileTree;
 
+#[must_use] 
 pub fn shannon_entropy(data: &[u8]) -> f64 {
     if data.is_empty() {
         return 0.0;
@@ -39,14 +40,15 @@ pub enum EntropyCategory {
 }
 
 impl EntropyCategory {
+    #[must_use] 
     pub fn from_entropy(entropy: f64) -> Self {
         match entropy {
-            e if e < 1.0 => EntropyCategory::Uniform,
-            e if e < 3.0 => EntropyCategory::Low,
-            e if e < 6.0 => EntropyCategory::Text,
-            e if e < 7.0 => EntropyCategory::Mixed,
-            e if e < 7.8 => EntropyCategory::High,
-            _ => EntropyCategory::Maximum,
+            e if e < 1.0 => Self::Uniform,
+            e if e < 3.0 => Self::Low,
+            e if e < 6.0 => Self::Text,
+            e if e < 7.0 => Self::Mixed,
+            e if e < 7.8 => Self::High,
+            _ => Self::Maximum,
         }
     }
 }
@@ -54,12 +56,12 @@ impl EntropyCategory {
 impl std::fmt::Display for EntropyCategory {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            EntropyCategory::Uniform => write!(f, "UNIFORM"),
-            EntropyCategory::Low => write!(f, "LOW"),
-            EntropyCategory::Text => write!(f, "TEXT"),
-            EntropyCategory::Mixed => write!(f, "MIXED"),
-            EntropyCategory::High => write!(f, "HIGH"),
-            EntropyCategory::Maximum => write!(f, "MAXIMUM"),
+            Self::Uniform => write!(f, "UNIFORM"),
+            Self::Low => write!(f, "LOW"),
+            Self::Text => write!(f, "TEXT"),
+            Self::Mixed => write!(f, "MIXED"),
+            Self::High => write!(f, "HIGH"),
+            Self::Maximum => write!(f, "MAXIMUM"),
         }
     }
 }
@@ -84,23 +86,23 @@ pub enum RiskIndicator {
 impl std::fmt::Display for RiskIndicator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            RiskIndicator::HighEntropyInSourceFile => write!(f, "HighEntropyInSourceFile"),
-            RiskIndicator::BinaryContentInTextFile => write!(f, "BinaryContentInTextFile"),
-            RiskIndicator::HighNullByteRatio => write!(f, "HighNullByteRatio"),
-            RiskIndicator::SuddenEntropyIncrease => write!(f, "SuddenEntropyIncrease"),
-            RiskIndicator::BuildScriptModified => write!(f, "BuildScriptModified"),
-            RiskIndicator::TestInfrastructureModified => write!(f, "TestInfrastructureModified"),
-            RiskIndicator::ExecutableBitSetOnNewFile => write!(f, "ExecutableBitSetOnNewFile"),
-            RiskIndicator::LargeBinaryBlob => write!(f, "LargeBinaryBlob"),
-            RiskIndicator::LockfileModifiedWithoutSource => {
+            Self::HighEntropyInSourceFile => write!(f, "HighEntropyInSourceFile"),
+            Self::BinaryContentInTextFile => write!(f, "BinaryContentInTextFile"),
+            Self::HighNullByteRatio => write!(f, "HighNullByteRatio"),
+            Self::SuddenEntropyIncrease => write!(f, "SuddenEntropyIncrease"),
+            Self::BuildScriptModified => write!(f, "BuildScriptModified"),
+            Self::TestInfrastructureModified => write!(f, "TestInfrastructureModified"),
+            Self::ExecutableBitSetOnNewFile => write!(f, "ExecutableBitSetOnNewFile"),
+            Self::LargeBinaryBlob => write!(f, "LargeBinaryBlob"),
+            Self::LockfileModifiedWithoutSource => {
                 write!(f, "LockfileModifiedWithoutSource")
             }
-            RiskIndicator::NewDependencyAdded => write!(f, "NewDependencyAdded"),
-            RiskIndicator::Base64EncodedContent => write!(f, "Base64EncodedContent"),
-            RiskIndicator::EmbeddedScriptInNonScriptFile => {
+            Self::NewDependencyAdded => write!(f, "NewDependencyAdded"),
+            Self::Base64EncodedContent => write!(f, "Base64EncodedContent"),
+            Self::EmbeddedScriptInNonScriptFile => {
                 write!(f, "EmbeddedScriptInNonScriptFile")
             }
-            RiskIndicator::CompressedFileModified => write!(f, "CompressedFileModified"),
+            Self::CompressedFileModified => write!(f, "CompressedFileModified"),
         }
     }
 }
@@ -117,11 +119,11 @@ pub enum RiskScore {
 impl RiskScore {
     fn from_indicator_count(count: usize) -> Self {
         match count {
-            0 => RiskScore::None,
-            1 => RiskScore::Low,
-            2..=3 => RiskScore::Medium,
-            4..=5 => RiskScore::High,
-            _ => RiskScore::Critical,
+            0 => Self::None,
+            1 => Self::Low,
+            2..=3 => Self::Medium,
+            4..=5 => Self::High,
+            _ => Self::Critical,
         }
     }
 
@@ -134,11 +136,11 @@ impl RiskScore {
 impl std::fmt::Display for RiskScore {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            RiskScore::None => write!(f, "NONE"),
-            RiskScore::Low => write!(f, "LOW"),
-            RiskScore::Medium => write!(f, "MEDIUM"),
-            RiskScore::High => write!(f, "HIGH"),
-            RiskScore::Critical => write!(f, "CRITICAL"),
+            Self::None => write!(f, "NONE"),
+            Self::Low => write!(f, "LOW"),
+            Self::Medium => write!(f, "MEDIUM"),
+            Self::High => write!(f, "HIGH"),
+            Self::Critical => write!(f, "CRITICAL"),
         }
     }
 }
@@ -319,10 +321,7 @@ fn looks_like_base64(content: &[u8]) -> bool {
         return false;
     }
 
-    let text = match std::str::from_utf8(content) {
-        Ok(t) => t,
-        Err(_) => return false,
-    };
+    let Ok(text) = std::str::from_utf8(content) else { return false };
 
     let lines: Vec<&str> = text.lines().collect();
     if lines.is_empty() {
@@ -377,10 +376,7 @@ fn looks_like_embedded_script(path: &str, content: &[u8]) -> bool {
                 | "cmake"
         )
     {
-        let text = match std::str::from_utf8(content) {
-            Ok(t) => t,
-            Err(_) => return false,
-        };
+        let Ok(text) = std::str::from_utf8(content) else { return false };
 
         let lower = text.to_lowercase();
         let script_patterns = [
@@ -408,6 +404,7 @@ fn looks_like_embedded_script(path: &str, content: &[u8]) -> bool {
     false
 }
 
+#[must_use] 
 pub fn analyze_file(path: &str, content: &[u8]) -> FileIntegrityReport {
     let size_bytes = content.len();
     let entropy = shannon_entropy(content);
@@ -482,7 +479,7 @@ pub fn analyze_file(path: &str, content: &[u8]) -> FileIntegrityReport {
     let risk_score = RiskScore::from_indicator_count(risk_indicators.len());
 
     FileIntegrityReport {
-        path: path.to_string(),
+        path: path.to_owned(),
         size_bytes,
         shannon_entropy: entropy,
         entropy_category,
@@ -533,54 +530,48 @@ pub fn analyze_diff(
         match &entry.diff_type {
             DiffType::Added => {
                 if let Some(hash) = &entry.new_hash {
-                    match cas.get_blob(hash) {
-                        Ok(content) => {
-                            let mut report = analyze_file(&entry.path, &content);
+                    if let Ok(content) = cas.get_blob(hash) {
+                        let mut report = analyze_file(&entry.path, &content);
 
-                            if has_test_changes && !is_test_file(&entry.path) {
-                                report
-                                    .risk_indicators
-                                    .push(RiskIndicator::SuddenEntropyIncrease);
-                            }
+                        if has_test_changes && !is_test_file(&entry.path) {
+                            report
+                                .risk_indicators
+                                .push(RiskIndicator::SuddenEntropyIncrease);
+                        }
 
-                            files.push(report);
-                        }
-                        Err(_) => {
-                            let report = analyze_file(&entry.path, &[]);
-                            files.push(report);
-                        }
+                        files.push(report);
+                    } else {
+                        let report = analyze_file(&entry.path, &[]);
+                        files.push(report);
                     }
                 }
             }
             DiffType::Modified => {
                 if let Some(hash) = &entry.new_hash {
-                    match cas.get_blob(hash) {
-                        Ok(content) => {
-                            let mut report = analyze_file(&entry.path, &content);
+                    if let Ok(content) = cas.get_blob(hash) {
+                        let mut report = analyze_file(&entry.path, &content);
 
-                            if let Some(old_hash) = &entry.old_hash
-                                && let Ok(old_content) = cas.get_blob(old_hash)
-                            {
-                                let old_entropy = shannon_entropy(&old_content);
-                                let new_entropy = shannon_entropy(&content);
-                                if new_entropy > old_entropy + 2.0 {
-                                    report
-                                        .risk_indicators
-                                        .push(RiskIndicator::SuddenEntropyIncrease);
-                                }
-
-                                let old_report = analyze_file(&entry.path, &old_content);
-                                old_files.insert(entry.path.clone(), old_report);
+                        if let Some(old_hash) = &entry.old_hash
+                            && let Ok(old_content) = cas.get_blob(old_hash)
+                        {
+                            let old_entropy = shannon_entropy(&old_content);
+                            let new_entropy = shannon_entropy(&content);
+                            if new_entropy > old_entropy + 2.0 {
+                                report
+                                    .risk_indicators
+                                    .push(RiskIndicator::SuddenEntropyIncrease);
                             }
 
-                            report.risk_score =
-                                RiskScore::from_indicator_count(report.risk_indicators.len());
-                            files.push(report);
+                            let old_report = analyze_file(&entry.path, &old_content);
+                            old_files.insert(entry.path.clone(), old_report);
                         }
-                        Err(_) => {
-                            let report = analyze_file(&entry.path, &[]);
-                            files.push(report);
-                        }
+
+                        report.risk_score =
+                            RiskScore::from_indicator_count(report.risk_indicators.len());
+                        files.push(report);
+                    } else {
+                        let report = analyze_file(&entry.path, &[]);
+                        files.push(report);
                     }
                 }
             }
@@ -594,15 +585,12 @@ pub fn analyze_diff(
             }
             DiffType::Renamed { .. } => {
                 if let Some(hash) = &entry.new_hash {
-                    match cas.get_blob(hash) {
-                        Ok(content) => {
-                            let report = analyze_file(&entry.path, &content);
-                            files.push(report);
-                        }
-                        Err(_) => {
-                            let report = analyze_file(&entry.path, &[]);
-                            files.push(report);
-                        }
+                    if let Ok(content) = cas.get_blob(hash) {
+                        let report = analyze_file(&entry.path, &content);
+                        files.push(report);
+                    } else {
+                        let report = analyze_file(&entry.path, &[]);
+                        files.push(report);
                     }
                 }
                 if let Some(hash) = &entry.old_hash
@@ -661,8 +649,7 @@ pub fn analyze_diff(
     if has_build_changes && has_test_changes {
         warnings.push(
             "Build script modified alongside test infrastructure. \
-             This pattern was used in the XZ Utils backdoor (CVE-2024-3094)."
-                .to_string(),
+             This pattern was used in the XZ Utils backdoor (CVE-2024-3094).".to_owned(),
         );
         let mut paths = test_and_source_paths.clone();
         for report in &files {
@@ -681,8 +668,7 @@ pub fn analyze_diff(
     if has_lockfile_changes && !has_manifest_changes {
         warnings.push(
             "Lockfile modified without corresponding manifest change. \
-             This could indicate a supply chain injection attempt."
-                .to_string(),
+             This could indicate a supply chain injection attempt.".to_owned(),
         );
         warnings.push(format!("Review: {}", lockfile_paths.join(", ")));
     }
@@ -732,6 +718,7 @@ fn is_manifest_file(path: &str) -> bool {
     )
 }
 
+#[must_use] 
 pub fn format_file_integrity(file: &FileIntegrityReport) -> String {
     let mut lines = Vec::new();
 
@@ -752,9 +739,9 @@ pub fn format_file_integrity(file: &FileIntegrityReport) -> String {
     lines.push(format!("    Risk: {}", format_risk_score(file.risk_score)));
 
     if !file.risk_indicators.is_empty() {
-        lines.push("    Indicators:".to_string());
+        lines.push("    Indicators:".to_owned());
         for indicator in &file.risk_indicators {
-            lines.push(format!("      - {}", indicator));
+            lines.push(format!("      - {indicator}"));
         }
     }
 
@@ -763,14 +750,15 @@ pub fn format_file_integrity(file: &FileIntegrityReport) -> String {
 
 fn format_risk_score(score: RiskScore) -> String {
     match score {
-        RiskScore::None => "[OK] NONE".to_string(),
-        RiskScore::Low => "[!] LOW".to_string(),
-        RiskScore::Medium => "[!] MEDIUM".to_string(),
-        RiskScore::High => "[!!] HIGH".to_string(),
-        RiskScore::Critical => "[!!!] CRITICAL".to_string(),
+        RiskScore::None => "[OK] NONE".to_owned(),
+        RiskScore::Low => "[!] LOW".to_owned(),
+        RiskScore::Medium => "[!] MEDIUM".to_owned(),
+        RiskScore::High => "[!!] HIGH".to_owned(),
+        RiskScore::Critical => "[!!!] CRITICAL".to_owned(),
     }
 }
 
+#[must_use] 
 pub fn format_integrity_report(report: &DiffIntegrityReport) -> String {
     let mut lines = Vec::new();
 
@@ -792,7 +780,7 @@ pub fn format_integrity_report(report: &DiffIntegrityReport) -> String {
         border_horiz.repeat(width),
         border_right
     ));
-    lines.push(format!("{}{}{}", border_left, title_padded, border_right));
+    lines.push(format!("{border_left}{title_padded}{border_right}"));
     lines.push(format!(
         "{}{}{}",
         border_mid_l,
@@ -806,8 +794,7 @@ pub fn format_integrity_report(report: &DiffIntegrityReport) -> String {
 
     let risk_label = format!("Risk: {}", report.summary.overall_risk);
     lines.push(format!(
-        "{}  {:<50}{}",
-        border_left, risk_label, border_right
+        "{border_left}  {risk_label:<50}{border_right}"
     ));
     lines.push(format!(
         "{}{}{}",
@@ -824,7 +811,7 @@ pub fn format_integrity_report(report: &DiffIntegrityReport) -> String {
 
     if !report.summary.warnings.is_empty() {
         for warning in &report.summary.warnings {
-            lines.push(format!("[!] WARNING: {}", warning));
+            lines.push(format!("[!] WARNING: {warning}"));
         }
         lines.push(String::new());
     }

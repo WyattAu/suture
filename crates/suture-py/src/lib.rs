@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-#![allow(clippy::collapsible_match)]
 //! Python bindings for Suture version control.
 //!
 //! This module provides a Python-accessible interface to the Suture

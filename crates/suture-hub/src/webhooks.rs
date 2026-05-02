@@ -31,6 +31,7 @@ pub struct WebhookManager {
 }
 
 impl WebhookManager {
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             client: reqwest::Client::new(),
@@ -67,22 +68,19 @@ impl WebhookManager {
             .as_secs();
 
         let payload = WebhookPayload {
-            event: event.to_string(),
-            repo_id: repo_id.to_string(),
+            event: event.to_owned(),
+            repo_id: repo_id.to_owned(),
             timestamp,
             data,
         };
 
-        let payload_json = match serde_json::to_string(&payload) {
-            Ok(j) => j,
-            Err(_) => {
+        let Ok(payload_json) = serde_json::to_string(&payload) else {
                 return WebhookResult {
                     triggered: 0,
                     succeeded: 0,
                     failed: 0,
                 };
-            }
-        };
+            };
 
         let matching: Vec<&Webhook> = webhooks
             .iter()

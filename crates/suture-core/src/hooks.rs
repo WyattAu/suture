@@ -58,6 +58,7 @@ pub struct HookResult {
 }
 
 impl HookResult {
+    #[must_use] 
     pub fn success(&self) -> bool {
         self.exit_code == Some(0)
     }
@@ -74,6 +75,7 @@ pub(crate) struct ResolvedHook {
 /// Priority:
 /// 1. `core.hooksPath` from `.suture/config` (if set)
 /// 2. `.suture/hooks/` (default)
+#[must_use] 
 pub fn hooks_dir(repo_root: &Path) -> PathBuf {
     // Try to read from repo config
     let config_path = repo_root.join(".suture").join("config");
@@ -140,9 +142,9 @@ pub(crate) fn find_hook(repo_root: &Path, hook_name: &str) -> Option<ResolvedHoo
 pub fn run_hook(
     repo_root: &Path,
     hook_name: &str,
-    env: &HashMap<String, String>,
+    #[allow(clippy::implicit_hasher)] env: &HashMap<String, String>,
 ) -> Result<HookResult, HookError> {
-    let hook = find_hook(repo_root, hook_name).ok_or(HookError::NotFound(hook_name.to_string()))?;
+    let hook = find_hook(repo_root, hook_name).ok_or_else(|| HookError::NotFound(hook_name.to_owned()))?;
 
     let start = std::time::Instant::now();
 
@@ -152,7 +154,7 @@ pub fn run_hook(
         .stderr(Stdio::piped())
         .output()
         .map_err(|e| HookError::ExecFailed {
-            hook: hook_name.to_string(),
+            hook: hook_name.to_owned(),
             path: hook.path.display().to_string(),
             error: e.to_string(),
         })?;
@@ -161,7 +163,7 @@ pub fn run_hook(
     let exit_code = output.status.code();
 
     Ok(HookResult {
-        hook_name: hook_name.to_string(),
+        hook_name: hook_name.to_owned(),
         exit_code,
         stdout: String::from_utf8_lossy(&output.stdout).to_string(),
         stderr: String::from_utf8_lossy(&output.stderr).to_string(),
@@ -176,7 +178,7 @@ pub fn run_hook(
 pub fn run_hooks(
     repo_root: &Path,
     hook_name: &str,
-    env: &HashMap<String, String>,
+    #[allow(clippy::implicit_hasher)] env: &HashMap<String, String>,
 ) -> Result<Vec<HookResult>, HookError> {
     let dir = hooks_dir(repo_root);
     let direct_hook = dir.join(hook_name);
@@ -199,15 +201,15 @@ pub fn run_hooks(
     }
 
     // Check for hook directory (e.g., pre-commit.d/)
-    let hook_sub_dir = dir.join(format!("{}.d", hook_name));
+    let hook_sub_dir = dir.join(format!("{hook_name}.d"));
     if hook_sub_dir.is_dir() {
         let mut entries: Vec<_> = std::fs::read_dir(&hook_sub_dir)
             .map_err(|e| HookError::ExecFailed {
-                hook: hook_name.to_string(),
+                hook: hook_name.to_owned(),
                 path: hook_sub_dir.display().to_string(),
                 error: e.to_string(),
             })?
-            .filter_map(|entry| entry.ok())
+            .filter_map(std::result::Result::ok)
             .filter_map(|entry| {
                 let path = entry.path();
                 if path.is_file() { Some(path) } else { None }
@@ -220,7 +222,7 @@ pub fn run_hooks(
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default();
-            let sub_hook_name = format!("{}/{}", hook_name, file_name);
+            let sub_hook_name = format!("{hook_name}/{file_name}");
 
             // Check executable bit (same logic as find_hook)
             #[cfg(unix)]
@@ -273,41 +275,42 @@ pub fn run_hooks(
 ///
 /// The caller should provide `author`, `branch`, and `head_hash` from the
 /// repository when available (e.g. via `repo.head()` and `repo.get_config()`).
+#[must_use] 
 pub fn build_env(
     repo_root: &Path,
     hook_name: &str,
     author: Option<&str>,
     branch: Option<&str>,
     head_hash: Option<&str>,
-    extra: HashMap<String, String>,
+    #[allow(clippy::implicit_hasher)] extra: HashMap<String, String>,
 ) -> HashMap<String, String> {
     let mut env = HashMap::new();
 
     // Standard suture vars
-    env.insert("SUTURE_HOOK".to_string(), hook_name.to_string());
+    env.insert("SUTURE_HOOK".to_owned(), hook_name.to_owned());
     env.insert(
-        "SUTURE_REPO".to_string(),
+        "SUTURE_REPO".to_owned(),
         repo_root.to_string_lossy().to_string(),
     );
     env.insert(
-        "SUTURE_HOOK_DIR".to_string(),
+        "SUTURE_HOOK_DIR".to_owned(),
         hooks_dir(repo_root).to_string_lossy().to_string(),
     );
-    env.insert("SUTURE_OPERATION".to_string(), hook_name.to_string());
+    env.insert("SUTURE_OPERATION".to_owned(), hook_name.to_owned());
 
     // Author
     if let Some(a) = author {
-        env.insert("SUTURE_AUTHOR".to_string(), a.to_string());
+        env.insert("SUTURE_AUTHOR".to_owned(), a.to_owned());
     }
 
     // Branch
     if let Some(b) = branch {
-        env.insert("SUTURE_BRANCH".to_string(), b.to_string());
+        env.insert("SUTURE_BRANCH".to_owned(), b.to_owned());
     }
 
     // HEAD hash
     if let Some(h) = head_hash {
-        env.insert("SUTURE_HEAD".to_string(), h.to_string());
+        env.insert("SUTURE_HEAD".to_owned(), h.to_owned());
     }
 
     // Add any extra env vars
@@ -319,6 +322,7 @@ pub fn build_env(
 }
 
 /// Format hook results for display to the user.
+#[must_use] 
 pub fn format_hook_result(result: &HookResult) -> String {
     let status = if result.success() { "passed" } else { "FAILED" };
     format!(

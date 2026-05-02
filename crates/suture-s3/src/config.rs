@@ -1,5 +1,6 @@
 use crate::error::S3Error;
 
+use std::fmt::Write;
 #[derive(Debug, Clone)]
 pub struct S3Config {
     pub endpoint: String,
@@ -14,12 +15,12 @@ pub struct S3Config {
 impl Default for S3Config {
     fn default() -> Self {
         Self {
-            endpoint: "http://localhost:9000".to_string(),
+            endpoint: "http://localhost:9000".to_owned(),
             bucket: String::new(),
-            region: "us-east-1".to_string(),
+            region: "us-east-1".to_owned(),
             access_key: String::new(),
             secret_key: String::new(),
-            prefix: "suture/blobs/".to_string(),
+            prefix: "suture/blobs/".to_owned(),
             force_path_style: true,
         }
     }
@@ -28,17 +29,17 @@ impl Default for S3Config {
 impl S3Config {
     pub fn from_env() -> Result<Self, S3Error> {
         let endpoint =
-            std::env::var("S3_ENDPOINT").unwrap_or_else(|_| "http://localhost:9000".to_string());
+            std::env::var("S3_ENDPOINT").unwrap_or_else(|_| "http://localhost:9000".to_owned());
         let bucket = std::env::var("S3_BUCKET")
             .map_err(|_| S3Error::InvalidConfig("S3_BUCKET environment variable not set".into()))?;
-        let region = std::env::var("S3_REGION").unwrap_or_else(|_| "us-east-1".to_string());
+        let region = std::env::var("S3_REGION").unwrap_or_else(|_| "us-east-1".to_owned());
         let access_key = std::env::var("S3_ACCESS_KEY").map_err(|_| {
             S3Error::InvalidConfig("S3_ACCESS_KEY environment variable not set".into())
         })?;
         let secret_key = std::env::var("S3_SECRET_KEY").map_err(|_| {
             S3Error::InvalidConfig("S3_SECRET_KEY environment variable not set".into())
         })?;
-        let prefix = std::env::var("S3_PREFIX").unwrap_or_else(|_| "suture/blobs/".to_string());
+        let prefix = std::env::var("S3_PREFIX").unwrap_or_else(|_| "suture/blobs/".to_owned());
         let force_path_style = std::env::var("S3_FORCE_PATH_STYLE")
             .map(|v| v == "true" || v == "1")
             .unwrap_or(true);
@@ -73,6 +74,7 @@ impl S3Config {
         Ok(())
     }
 
+    #[must_use] 
     pub fn build_url(&self, object_key: &str) -> String {
         if self.force_path_style {
             format!(
@@ -95,6 +97,7 @@ impl S3Config {
         }
     }
 
+    #[must_use] 
     pub fn list_url(&self) -> String {
         if self.force_path_style {
             format!(
@@ -130,7 +133,7 @@ fn urlencoding(s: &str) -> String {
                 out.push(byte as char);
             }
             _ => {
-                out.push_str(&format!("%{:02X}", byte));
+                let _ = write!(out, "%{byte:02X}");
             }
         }
     }

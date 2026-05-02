@@ -43,6 +43,7 @@ impl std::fmt::Debug for MountHandle {
 }
 
 impl MountHandle {
+    #[must_use] 
     pub fn info(&self) -> &MountInfo {
         &self.info
     }
@@ -58,6 +59,7 @@ pub struct MountManager {
 }
 
 impl MountManager {
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             mounts: HashMap::new(),
@@ -90,7 +92,7 @@ impl MountManager {
             info: MountInfo {
                 mount_point: mount_point.to_path_buf(),
                 repo_path: repo_path.to_path_buf(),
-                branch: branch.map(|s| s.to_string()),
+                branch: branch.map(std::borrow::ToOwned::to_owned),
                 read_only,
                 mounted_at: std::time::Instant::now(),
             },
@@ -98,7 +100,7 @@ impl MountManager {
         };
 
         self.mounts.insert(key.clone(), handle);
-        Ok(self.mounts.get(&key).unwrap())
+        Ok(&self.mounts[&key])
     }
 
     pub fn unmount(&mut self, mount_point: &Path) -> Result<(), VfsError> {
@@ -110,10 +112,12 @@ impl MountManager {
         handle.unmount()
     }
 
+    #[must_use] 
     pub fn list_mounts(&self) -> Vec<&MountInfo> {
         self.mounts.values().map(|h| &h.info).collect()
     }
 
+    #[must_use] 
     pub fn get_mount(&self, mount_point: &Path) -> Option<&MountHandle> {
         let key = mount_point.to_string_lossy().to_string();
         self.mounts.get(&key)
@@ -123,10 +127,12 @@ impl MountManager {
         self.mounts.clear();
     }
 
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.mounts.is_empty()
     }
 
+    #[must_use] 
     pub fn len(&self) -> usize {
         self.mounts.len()
     }

@@ -19,6 +19,7 @@ pub struct InodeGenerator {
 }
 
 impl InodeGenerator {
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             next: 1,
@@ -45,33 +46,39 @@ impl InodeGenerator {
             inode,
             InodeEntry {
                 kind,
-                path: path.to_string(),
+                path: path.to_owned(),
             },
         );
-        self.path_to_inode.insert(path.to_string(), inode);
+        self.path_to_inode.insert(path.to_owned(), inode);
         inode
     }
 
+    #[must_use] 
     pub fn lookup(&self, path: &str) -> Option<u64> {
         self.path_to_inode.get(path).copied()
     }
 
+    #[must_use] 
     pub fn get(&self, inode: u64) -> Option<&InodeEntry> {
         self.entries.get(&inode)
     }
 
+    #[must_use] 
     pub fn get_path(&self, inode: u64) -> Option<&str> {
         self.entries.get(&inode).map(|e| e.path.as_str())
     }
 
+    #[must_use] 
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 
+    #[must_use] 
     pub fn root_inode(&self) -> Option<u64> {
         self.path_to_inode.get("").copied()
     }

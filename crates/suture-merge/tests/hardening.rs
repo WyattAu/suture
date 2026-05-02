@@ -15,6 +15,7 @@ use suture_merge::*;
 // Helpers
 // ============================================================================
 
+use std::fmt::Write;
 /// Must NOT panic. Returns Ok(merge_result) or Err(error). Both are fine.
 fn no_panic_merge(
     merge_fn: fn(&str, &str, &str) -> Result<MergeResult, MergeError>,
@@ -366,7 +367,7 @@ fn stress_json_deep_nesting_100() {
 fn stress_csv_10000_rows() {
     let mut base = String::from("id,name,value\n");
     for i in 0..10000 {
-        base.push_str(&format!("{},row{},{}\n", i, i, i * 10));
+        let _ = write!(base, "{},row{},{}\n", i, i, i * 10);
     }
     let ours = base.replace("row0", "ROW_ZERO");
     let theirs = base.replace("row9999", "ROW_LAST");
@@ -387,7 +388,7 @@ fn stress_csv_10000_rows() {
 fn stress_xml_500_elements() {
     let mut base = String::from("<root>");
     for i in 0..500 {
-        base.push_str(&format!("<item id=\"{}\">val{}</item>", i, i));
+        let _ = write!(base, "<item id=\"{}\">val{}</item>", i, i);
     }
     base.push_str("</root>");
 
@@ -410,10 +411,10 @@ fn stress_xml_500_elements() {
 fn stress_markdown_200_sections() {
     let mut base = String::new();
     for i in 0..200 {
-        base.push_str(&format!(
+        let _ = write!(base, 
             "# Section {}\n\nContent for section {}.\n\n",
             i, i
-        ));
+        );
     }
     let ours = base.replace("Content for section 0", "MODIFIED section 0");
     let theirs = base.replace("Content for section 199", "MODIFIED section 199");
@@ -430,7 +431,7 @@ fn stress_markdown_200_sections() {
 fn stress_yaml_500_keys() {
     let mut base = String::new();
     for i in 0..500 {
-        base.push_str(&format!("key{}: value{}\n", i, i));
+        let _ = write!(base, "key{}: value{}\n", i, i);
     }
     let ours = base.replace("value0", "MODIFIED_0");
     let theirs = base.replace("value499", "MODIFIED_499");
@@ -448,10 +449,10 @@ fn stress_yaml_500_keys() {
 fn stress_ical_50_events() {
     let mut base = String::from("BEGIN:VCALENDAR\r\nVERSION:2.0\r\n");
     for i in 0..50 {
-        base.push_str(&format!(
+        let _ = write!(base, 
             "BEGIN:VEVENT\r\nSUMMARY:Event {}\r\nUID:event{}@test.com\r\nEND:VEVENT\r\n",
             i, i
-        ));
+        );
     }
     base.push_str("END:VCALENDAR\r\n");
 
@@ -471,10 +472,10 @@ fn stress_ical_50_events() {
 fn stress_feed_50_entries() {
     let mut items = String::new();
     for i in 0..50 {
-        items.push_str(&format!(
+        let _ = write!(items, 
             "    <item><title>Article {}</title><guid>id{}</guid></item>\n",
             i, i
-        ));
+        );
     }
     let base = format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<rss version=\"2.0\">\n  <channel>\n    <title>Feed</title>\n{}\n  </channel>\n</rss>",

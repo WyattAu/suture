@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-#![allow(clippy::collapsible_match)]
 use suture_driver::{DriverError, SemanticChange, SutureDriver};
 
+use std::fmt::Write;
 pub struct PropertiesDriver;
 
 impl Default for PropertiesDriver {
@@ -11,11 +11,12 @@ impl Default for PropertiesDriver {
 }
 
 impl PropertiesDriver {
+    #[must_use] 
     pub fn new() -> Self {
         Self
     }
 
-    fn parse_properties(content: &str) -> Result<Vec<(String, String)>, String> {
+    fn parse_properties(content: &str) -> Vec<(String, String)> {
         let mut entries = Vec::new();
         let mut continuation = String::new();
         let mut current_key = String::new();
@@ -24,7 +25,7 @@ impl PropertiesDriver {
             let trimmed = line.trim();
             if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with('!') {
                 if !current_key.is_empty() {
-                    entries.push((current_key.clone(), continuation.trim_end().to_string()));
+                    entries.push((current_key.clone(), continuation.trim_end().to_owned()));
                     current_key.clear();
                     continuation.clear();
                 }
@@ -33,25 +34,25 @@ impl PropertiesDriver {
 
             if let Some(eq_pos) = trimmed.find('=') {
                 if !current_key.is_empty() {
-                    entries.push((current_key.clone(), continuation.trim_end().to_string()));
+                    entries.push((current_key.clone(), continuation.trim_end().to_owned()));
                 }
-                current_key = trimmed[..eq_pos].trim().to_string();
-                continuation = trimmed[eq_pos + 1..].trim().to_string();
+                current_key = trimmed[..eq_pos].trim().to_owned();
+                continuation = trimmed[eq_pos + 1..].trim().to_owned();
             } else if let Some(stripped) = trimmed.strip_suffix('\\') {
                 continuation.push_str(stripped);
             } else if !current_key.is_empty() {
                 continuation.push_str(trimmed);
-                entries.push((current_key.clone(), continuation.trim_end().to_string()));
+                entries.push((current_key.clone(), continuation.trim_end().to_owned()));
                 current_key.clear();
                 continuation.clear();
             }
         }
 
         if !current_key.is_empty() {
-            entries.push((current_key, continuation.trim_end().to_string()));
+            entries.push((current_key, continuation.trim_end().to_owned()));
         }
 
-        Ok(entries)
+        entries
     }
 
     fn merge_properties(
@@ -98,14 +99,14 @@ impl PropertiesDriver {
                 let theirs_val = theirs_map.get(key.as_str()).copied();
                 let base_val = base_map.get(key.as_str()).copied();
 
-                let merged_val = if ours_val != base_val {
-                    ours_val
-                } else {
+                let merged_val = if ours_val == base_val {
                     theirs_val.or(base_val)
+                } else {
+                    ours_val
                 };
 
                 if let Some(val) = merged_val {
-                    result.push_str(&format!("{}={}\n", key, val));
+                    let _ = writeln!(result, "{key}={val}");
                 }
             }
         }
@@ -114,7 +115,7 @@ impl PropertiesDriver {
             if seen.insert(key.as_str()) {
                 let theirs_val = theirs_map.get(key.as_str()).copied();
                 if let Some(val) = theirs_val {
-                    result.push_str(&format!("{}={}\n", key, val));
+                    let _ = writeln!(result, "{key}={val}");
                 }
             }
         }
@@ -124,7 +125,7 @@ impl PropertiesDriver {
 }
 
 impl SutureDriver for PropertiesDriver {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "properties"
     }
 
@@ -138,9 +139,9 @@ impl SutureDriver for PropertiesDriver {
         new_content: &str,
     ) -> Result<Vec<SemanticChange>, DriverError> {
         let base_entries: Vec<(String, String)> = base_content
-            .map(|c| Self::parse_properties(c).unwrap_or_default())
+            .map(Self::parse_properties)
             .unwrap_or_default();
-        let new_entries = Self::parse_properties(new_content).map_err(DriverError::ParseError)?;
+        let new_entries = Self::parse_properties(new_content);
 
         let base_map: std::collections::HashMap<&str, &str> = base_entries
             .iter()
@@ -156,12 +157,12 @@ impl SutureDriver for PropertiesDriver {
         for (key, val) in &new_entries {
             match base_map.get(key.as_str()) {
                 None => changes.push(SemanticChange::Added {
-                    path: format!("/{}", key),
+                    path: format!("/{key}"),
                     value: val.clone(),
                 }),
                 Some(base_val) if *base_val != val.as_str() => {
                     changes.push(SemanticChange::Modified {
-                        path: format!("/{}", key),
+                        path: format!("/{key}"),
                         old_value: base_val.to_string(),
                         new_value: val.clone(),
                     });
@@ -173,7 +174,7 @@ impl SutureDriver for PropertiesDriver {
         for (key, val) in &base_entries {
             if !new_map.contains_key(key.as_str()) {
                 changes.push(SemanticChange::Removed {
-                    path: format!("/{}", key),
+                    path: format!("/{key}"),
                     old_value: val.clone(),
                 });
             }
@@ -192,14 +193,18 @@ impl SutureDriver for PropertiesDriver {
         for change in &changes {
             match change {
                 SemanticChange::Added { path, value } => {
-                    output.push_str(&format!("+ {} = {}\n", path, value))
+                    let _ = writeln!(output, "+ {path} = {value}");
                 }
-                SemanticChange::Removed { path, .. } => output.push_str(&format!("- {}\n", path)),
+                SemanticChange::Removed { path, .. } => {
+                    let _ = writeln!(output, "- {path}");
+                }
                 SemanticChange::Modified {
                     path,
                     old_value,
                     new_value,
-                } => output.push_str(&format!("~ {} ({} -> {})\n", path, old_value, new_value)),
+                } => {
+                    let _ = writeln!(output, "~ {path} ({old_value} -> {new_value})");
+                }
                 SemanticChange::Moved { .. } => {}
             }
         }
@@ -207,9 +212,9 @@ impl SutureDriver for PropertiesDriver {
     }
 
     fn merge(&self, base: &str, ours: &str, theirs: &str) -> Result<Option<String>, DriverError> {
-        let base_entries = Self::parse_properties(base).map_err(DriverError::ParseError)?;
-        let ours_entries = Self::parse_properties(ours).map_err(DriverError::ParseError)?;
-        let theirs_entries = Self::parse_properties(theirs).map_err(DriverError::ParseError)?;
+        let base_entries = Self::parse_properties(base);
+        let ours_entries = Self::parse_properties(ours);
+        let theirs_entries = Self::parse_properties(theirs);
 
         Ok(Self::merge_properties(
             &base_entries,
@@ -226,7 +231,7 @@ mod tests {
     #[test]
     fn test_parse_properties() {
         let content = "host=localhost\nport=8080\ndb.name=mydb\n";
-        let entries = PropertiesDriver::parse_properties(content).unwrap();
+        let entries = PropertiesDriver::parse_properties(content);
         assert_eq!(entries.len(), 3);
         assert_eq!(entries[0], ("host".to_string(), "localhost".to_string()));
         assert_eq!(entries[1], ("port".to_string(), "8080".to_string()));
@@ -236,7 +241,7 @@ mod tests {
     #[test]
     fn test_parse_properties_with_comments() {
         let content = "# Database configuration\nhost=localhost\n\n# Connection settings\nport=8080\n! legacy comment\ndebug=true\n";
-        let entries = PropertiesDriver::parse_properties(content).unwrap();
+        let entries = PropertiesDriver::parse_properties(content);
         assert_eq!(entries.len(), 3);
         assert_eq!(entries[0], ("host".to_string(), "localhost".to_string()));
         assert_eq!(entries[1], ("port".to_string(), "8080".to_string()));

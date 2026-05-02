@@ -1,24 +1,25 @@
 use std::path::Path;
 
-pub(crate) struct IgnoreRule {
+pub struct IgnoreRule {
     pattern: String,
     is_negation: bool,
     dir_only: bool,
     line_number: usize,
 }
 
-pub(crate) async fn cmd_ignore(args: &IgnoreArgs) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_ignore(args: &IgnoreArgs) -> Result<(), Box<dyn std::error::Error>> {
     match args {
-        IgnoreArgs::List => cmd_ignore_list(),
-        IgnoreArgs::Check { path } => cmd_ignore_check(path),
+        IgnoreArgs::List => { cmd_ignore_list(); }
+        IgnoreArgs::Check { path } => { cmd_ignore_check(path); }
     }
+    Ok(())
 }
 
-fn cmd_ignore_list() -> Result<(), Box<dyn std::error::Error>> {
+fn cmd_ignore_list() {
     let ignore_path = std::path::Path::new(".sutureignore");
     if !ignore_path.exists() {
         println!("No .sutureignore file found.");
-        return Ok(());
+        return;
     }
     let rules = load_ignore_rules(ignore_path);
     if rules.is_empty() {
@@ -34,14 +35,13 @@ fn cmd_ignore_list() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
     }
-    Ok(())
 }
 
-fn cmd_ignore_check(path: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn cmd_ignore_check(path: &str) {
     let ignore_path = std::path::Path::new(".sutureignore");
     if !ignore_path.exists() {
-        println!("{} is NOT ignored (no .sutureignore file)", path);
-        return Ok(());
+        println!("{path} is NOT ignored (no .sutureignore file)");
+        return;
     }
     let rules = load_ignore_rules(ignore_path);
     let result = check_ignored(path, &rules);
@@ -65,10 +65,9 @@ fn cmd_ignore_check(path: &str) -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         None => {
-            println!("{} is NOT ignored", path);
+            println!("{path} is NOT ignored");
         }
     }
-    Ok(())
 }
 
 fn load_ignore_rules(ignore_path: &Path) -> Vec<IgnoreRule> {
@@ -79,11 +78,9 @@ fn load_ignore_rules(ignore_path: &Path) -> Vec<IgnoreRule> {
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }
-        let (is_negation, raw) = if let Some(rest) = trimmed.strip_prefix('!') {
-            (true, rest.trim())
-        } else {
-            (false, trimmed)
-        };
+        let (is_negation, raw) = trimmed
+            .strip_prefix('!')
+            .map_or((false, trimmed), |rest| (true, rest.trim()));
         let (pattern, dir_only) = if raw.ends_with('/') {
             (raw.trim_end_matches('/'), true)
         } else {
@@ -93,7 +90,7 @@ fn load_ignore_rules(ignore_path: &Path) -> Vec<IgnoreRule> {
             continue;
         }
         rules.push(IgnoreRule {
-            pattern: pattern.to_string(),
+            pattern: pattern.to_owned(),
             is_negation,
             dir_only,
             line_number: line_idx + 1,
@@ -103,15 +100,19 @@ fn load_ignore_rules(ignore_path: &Path) -> Vec<IgnoreRule> {
 }
 
 fn pattern_matches(pattern: &str, rel_path: &str) -> bool {
-    if let Some(suffix) = pattern.strip_prefix('*') {
-        rel_path.ends_with(suffix)
-    } else if let Some(prefix) = pattern.strip_suffix('*') {
-        rel_path.starts_with(prefix)
-    } else if pattern.contains('*') {
-        simple_glob_match(pattern, rel_path)
-    } else {
-        rel_path == pattern || rel_path.starts_with(&format!("{}/", pattern))
-    }
+    pattern.strip_prefix('*').map_or_else(
+        || {
+            pattern.strip_suffix('*').map_or_else(
+                || if pattern.contains('*') {
+                    simple_glob_match(pattern, rel_path)
+                } else {
+                    rel_path == pattern || rel_path.starts_with(&format!("{pattern}/"))
+                },
+                |prefix| rel_path.starts_with(prefix),
+            )
+        },
+        |suffix| rel_path.ends_with(suffix),
+    )
 }
 
 fn simple_glob_match(pattern: &str, text: &str) -> bool {
@@ -158,12 +159,12 @@ fn check_ignored<'a>(rel_path: &str, rules: &'a [IgnoreRule]) -> Option<&'a Igno
 }
 
 #[allow(dead_code)]
-pub(crate) fn is_ignored(rel_path: &str, rules: &[IgnoreRule]) -> bool {
+pub fn is_ignored(rel_path: &str, rules: &[IgnoreRule]) -> bool {
     check_ignored(rel_path, rules).is_some_and(|r| !r.is_negation)
 }
 
 #[allow(dead_code)]
-pub(crate) fn load_ignore_patterns(root: &Path) -> Vec<IgnoreRule> {
+pub fn load_ignore_patterns(root: &Path) -> Vec<IgnoreRule> {
     let ignore_file = root.join(".sutureignore");
     if !ignore_file.exists() {
         return Vec::new();
@@ -171,7 +172,7 @@ pub(crate) fn load_ignore_patterns(root: &Path) -> Vec<IgnoreRule> {
     load_ignore_rules(&ignore_file)
 }
 
-pub(crate) enum IgnoreArgs {
+pub enum IgnoreArgs {
     List,
     Check { path: String },
 }

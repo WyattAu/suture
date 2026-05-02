@@ -27,10 +27,10 @@ impl PatchDag {
     ) -> Result<MergeResult, DagError> {
         let target_a = self
             .get_branch(branch_a)
-            .ok_or_else(|| DagError::BranchNotFound(branch_a.as_str().to_string()))?;
+            .ok_or_else(|| DagError::BranchNotFound(branch_a.as_str().to_owned()))?;
         let target_b = self
             .get_branch(branch_b)
-            .ok_or_else(|| DagError::BranchNotFound(branch_b.as_str().to_string()))?;
+            .ok_or_else(|| DagError::BranchNotFound(branch_b.as_str().to_owned()))?;
 
         // Find LCA
         let lca_id = self

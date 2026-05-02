@@ -2,7 +2,7 @@ use crate::cmd::user_error;
 use crate::style::run_hook_if_exists;
 use ed25519_dalek::Signer;
 
-pub(crate) async fn cmd_commit(message: &str, all: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_commit(message: &str, all: bool) -> Result<(), Box<dyn std::error::Error>> {
     if message.trim().is_empty() {
         return Err("commit message cannot be empty".into());
     }
@@ -14,7 +14,7 @@ pub(crate) async fn cmd_commit(message: &str, all: bool) -> Result<(), Box<dyn s
             .add_all()
             .map_err(|e| user_error("failed to stage files", e))?;
         if count > 0 {
-            println!("Staged {} file(s)", count);
+            println!("Staged {count} file(s)");
         }
     }
 
@@ -28,21 +28,21 @@ pub(crate) async fn cmd_commit(message: &str, all: bool) -> Result<(), Box<dyn s
     // Run pre-commit hook
     let (branch, head_id) = repo
         .head()
-        .unwrap_or_else(|_| ("main".to_string(), suture_common::Hash::ZERO));
+        .unwrap_or_else(|_| ("main".to_owned(), suture_common::Hash::ZERO));
     let author = repo
         .get_config("user.name")
         .unwrap_or(None)
         .unwrap_or_default();
     let mut extra = std::collections::HashMap::new();
-    extra.insert("SUTURE_AUTHOR".to_string(), author);
-    extra.insert("SUTURE_BRANCH".to_string(), branch.clone());
-    extra.insert("SUTURE_HEAD".to_string(), head_id.to_hex());
+    extra.insert("SUTURE_AUTHOR".to_owned(), author);
+    extra.insert("SUTURE_BRANCH".to_owned(), branch);
+    extra.insert("SUTURE_HEAD".to_owned(), head_id.to_hex());
     run_hook_if_exists(repo.root(), "pre-commit", extra)?;
 
     let patch_id = repo
         .commit(message)
         .map_err(|e| user_error("failed to create commit", e))?;
-    println!("Committed: {}", patch_id);
+    println!("Committed: {patch_id}");
 
     {
         let author = repo
@@ -59,7 +59,7 @@ pub(crate) async fn cmd_commit(message: &str, all: bool) -> Result<(), Box<dyn s
             .unwrap_or_default();
         let parent_ids: Vec<String> = patch
             .as_ref()
-            .map(|p| p.parent_ids.iter().map(|id| id.to_hex()).collect())
+            .map(|p| p.parent_ids.iter().map(suture_core::Hash::to_hex).collect())
             .unwrap_or_default();
         let details = serde_json::json!({
             "patch_id": patch_id.to_hex(),
@@ -116,10 +116,10 @@ pub(crate) async fn cmd_commit(message: &str, all: bool) -> Result<(), Box<dyn s
         .unwrap_or(None)
         .unwrap_or_default();
     let mut extra = std::collections::HashMap::new();
-    extra.insert("SUTURE_AUTHOR".to_string(), author);
-    extra.insert("SUTURE_BRANCH".to_string(), branch);
-    extra.insert("SUTURE_HEAD".to_string(), head_id.to_hex());
-    extra.insert("SUTURE_COMMIT".to_string(), patch_id.to_hex());
+    extra.insert("SUTURE_AUTHOR".to_owned(), author);
+    extra.insert("SUTURE_BRANCH".to_owned(), branch);
+    extra.insert("SUTURE_HEAD".to_owned(), head_id.to_hex());
+    extra.insert("SUTURE_COMMIT".to_owned(), patch_id.to_hex());
     run_hook_if_exists(repo.root(), "post-commit", extra)?;
 
     Ok(())

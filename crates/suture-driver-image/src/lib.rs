@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-#![allow(clippy::collapsible_match)]
 use suture_driver::{DriverError, SemanticChange, SutureDriver};
 
 /// Convert bytes to String, replacing invalid UTF-8 sequences with the Unicode replacement character.
@@ -12,6 +11,7 @@ fn bytes_to_string_lossy(bytes: Vec<u8>) -> String {
 pub struct ImageDriver;
 
 impl ImageDriver {
+    #[must_use] 
     pub fn new() -> Self {
         Self
     }
@@ -42,12 +42,12 @@ struct ImageMetadata {
 }
 
 impl ImageMetadata {
-    fn diff_fields(&self, other: &ImageMetadata) -> Vec<SemanticChange> {
+    fn diff_fields(&self, other: &Self) -> Vec<SemanticChange> {
         let mut changes = Vec::new();
 
         if self.width != other.width {
             changes.push(SemanticChange::Modified {
-                path: "/width".to_string(),
+                path: "/width".to_owned(),
                 old_value: self.width.to_string(),
                 new_value: other.width.to_string(),
             });
@@ -55,7 +55,7 @@ impl ImageMetadata {
 
         if self.height != other.height {
             changes.push(SemanticChange::Modified {
-                path: "/height".to_string(),
+                path: "/height".to_owned(),
                 old_value: self.height.to_string(),
                 new_value: other.height.to_string(),
             });
@@ -63,7 +63,7 @@ impl ImageMetadata {
 
         if self.color_type != other.color_type {
             changes.push(SemanticChange::Modified {
-                path: "/color_type".to_string(),
+                path: "/color_type".to_owned(),
                 old_value: self.color_type.clone(),
                 new_value: other.color_type.clone(),
             });
@@ -74,7 +74,7 @@ impl ImageMetadata {
 }
 
 impl SutureDriver for ImageDriver {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "Image"
     }
 
@@ -94,15 +94,15 @@ impl SutureDriver for ImageDriver {
         match base_content {
             None => {
                 let mut changes = vec![SemanticChange::Added {
-                    path: "/width".to_string(),
+                    path: "/width".to_owned(),
                     value: new_meta.width.to_string(),
                 }];
                 changes.push(SemanticChange::Added {
-                    path: "/height".to_string(),
+                    path: "/height".to_owned(),
                     value: new_meta.height.to_string(),
                 });
                 changes.push(SemanticChange::Added {
-                    path: "/color_type".to_string(),
+                    path: "/color_type".to_owned(),
                     value: new_meta.color_type,
                 });
                 Ok(changes)
@@ -122,7 +122,7 @@ impl SutureDriver for ImageDriver {
         let changes = self.diff(base_content, new_content)?;
 
         if changes.is_empty() {
-            return Ok("no changes".to_string());
+            return Ok("no changes".to_owned());
         }
 
         let lines: Vec<String> = changes
@@ -155,10 +155,7 @@ impl SutureDriver for ImageDriver {
 
     fn merge(&self, base: &str, ours: &str, theirs: &str) -> Result<Option<String>, DriverError> {
         let bytes = self.merge_raw(base.as_bytes(), ours.as_bytes(), theirs.as_bytes())?;
-        match bytes {
-            Some(b) => Ok(Some(bytes_to_string_lossy(b))),
-            None => Ok(None),
-        }
+        Ok(bytes.map(bytes_to_string_lossy))
     }
 
     fn merge_raw(

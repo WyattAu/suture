@@ -202,7 +202,7 @@ pub async fn merge_files(
     match result {
         Ok(merged) => {
             let conflicts = merged.is_none();
-            let result_len = merged.as_ref().map(|s| s.len()).unwrap_or(0);
+            let result_len = merged.as_ref().map_or(0, std::string::String::len);
             if let Err(e) = analytics::log_merge(
                 &state,
                 &claims.sub,
@@ -212,7 +212,7 @@ pub async fn merge_files(
                 req.theirs.len(),
                 result_len,
                 conflicts,
-                if conflicts { 1 } else { 0 },
+                i64::from(conflicts),
                 merge_time_ms,
             ) {
                 tracing::warn!("failed to log merge: {}", e);
@@ -225,7 +225,7 @@ pub async fn merge_files(
         }
         Err(e) => Err((
             StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({"error": e.to_string()})),
+            Json(serde_json::json!({"error": e})),
         )),
     }
 }

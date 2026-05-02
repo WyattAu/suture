@@ -1,7 +1,7 @@
 use crate::RemoteAction;
 use crate::cmd::user_error;
 
-pub(crate) async fn cmd_remote(
+pub async fn cmd_remote(
     action: &crate::RemoteAction,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))
@@ -17,7 +17,7 @@ pub(crate) async fn cmd_remote(
             }
             repo.add_remote(name, url)
                 .map_err(|e| user_error(&format!("failed to add remote '{name}'"), e))?;
-            println!("Remote '{}' added -> {}", name, url);
+            println!("Remote '{name}' added -> {url}");
         }
         RemoteAction::List => {
             let remotes = repo
@@ -27,7 +27,7 @@ pub(crate) async fn cmd_remote(
                 println!("No remotes configured.");
             } else {
                 for (name, url) in &remotes {
-                    println!("{}\t{}", name, url);
+                    println!("{name}\t{url}");
                 }
             }
         }
@@ -41,7 +41,7 @@ pub(crate) async fn cmd_remote(
             }
             repo.remove_remote(name)
                 .map_err(|e| user_error(&format!("failed to remove remote '{name}'"), e))?;
-            println!("Remote '{}' removed", name);
+            println!("Remote '{name}' removed");
         }
         RemoteAction::Rename { old_name, new_name } => {
             let remotes = repo.list_remotes().unwrap_or_default();
@@ -56,7 +56,7 @@ pub(crate) async fn cmd_remote(
             }
             repo.rename_remote(old_name, new_name)
                 .map_err(|e| user_error(&format!("failed to rename remote '{old_name}'"), e))?;
-            println!("Renamed remote '{}' → '{}'", old_name, new_name);
+            println!("Renamed remote '{old_name}' → '{new_name}'");
         }
         RemoteAction::Login { name } => {
             let remotes = repo.list_remotes().unwrap_or_default();
@@ -70,11 +70,11 @@ pub(crate) async fn cmd_remote(
                 .get_remote_url(name)
                 .map_err(|e| user_error(&format!("failed to get URL for remote '{name}'"), e))?;
 
-            eprintln!("Authenticating with {}...", remote_url);
+            eprintln!("Authenticating with {remote_url}...");
 
             let client = reqwest::Client::new();
             let response = client
-                .post(format!("{}/auth/token", remote_url))
+                .post(format!("{remote_url}/auth/token"))
                 .send()
                 .await
                 .map_err(|e| user_error(&format!("network error connecting to '{name}'"), e))?;
@@ -82,7 +82,7 @@ pub(crate) async fn cmd_remote(
             if !response.status().is_success() {
                 let status = response.status();
                 let body = response.text().await.unwrap_or_default();
-                return Err(format!("login failed (HTTP {}): {}", status, body).into());
+                return Err(format!("login failed (HTTP {status}): {body}").into());
             }
 
             let body: serde_json::Value = response.json().await?;
@@ -90,7 +90,7 @@ pub(crate) async fn cmd_remote(
                 .as_str()
                 .ok_or("invalid response from server")?;
 
-            repo.set_config(&format!("remote.{}.token", name), token)?;
+            repo.set_config(&format!("remote.{name}.token"), token)?;
 
             eprintln!("Authentication successful. Token stored in config.");
         }
@@ -128,7 +128,7 @@ pub(crate) async fn cmd_remote(
             let client = reqwest::Client::new();
 
             let setup_body = MirrorSetupReq {
-                repo_name: local_repo_name.to_string(),
+                repo_name: local_repo_name.to_owned(),
                 upstream_url: url.clone(),
                 upstream_repo: upstream_repo.clone(),
             };
@@ -137,7 +137,7 @@ pub(crate) async fn cmd_remote(
                 .get_remote_url("origin")
                 .unwrap_or_else(|_| url.clone());
             let setup_resp = client
-                .post(format!("{}/mirror/setup", hub_url))
+                .post(format!("{hub_url}/mirror/setup"))
                 .json(&setup_body)
                 .send()
                 .await?;
@@ -146,7 +146,7 @@ pub(crate) async fn cmd_remote(
             if !setup_result.success {
                 return Err(setup_result
                     .error
-                    .unwrap_or_else(|| "mirror setup failed".to_string())
+                    .unwrap_or_else(|| "mirror setup failed".to_owned())
                     .into());
             }
 
@@ -154,7 +154,7 @@ pub(crate) async fn cmd_remote(
             println!("Mirror registered (id: {mirror_id}), syncing...");
 
             let sync_resp = client
-                .post(format!("{}/mirror/sync", hub_url))
+                .post(format!("{hub_url}/mirror/sync"))
                 .json(&MirrorSyncReq { mirror_id })
                 .send()
                 .await?;
@@ -163,7 +163,7 @@ pub(crate) async fn cmd_remote(
             if !sync_result.success {
                 return Err(sync_result
                     .error
-                    .unwrap_or_else(|| "mirror sync failed".to_string())
+                    .unwrap_or_else(|| "mirror sync failed".to_owned())
                     .into());
             }
 

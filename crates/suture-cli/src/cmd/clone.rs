@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use crate::cmd::user_error;
 use crate::remote_proto::do_pull_with_depth;
 
-pub(crate) async fn cmd_clone(
+pub async fn cmd_clone(
     url: &str,
     dir: Option<&str>,
     depth: Option<u32>,
@@ -39,14 +39,14 @@ pub(crate) async fn cmd_clone(
     repo.add_remote("origin", url)
         .map_err(|e| user_error("failed to configure remote 'origin'", e))?;
 
-    eprintln!("Cloning into '{}'...", repo_name);
+    eprintln!("Cloning into '{repo_name}'...");
     let new_patches = do_pull_with_depth(&mut repo, "origin", depth)
         .await
         .map_err(|e| user_error(&format!("failed to clone from '{url}'"), e))?;
 
-    println!("Cloned into '{}'", repo_name);
+    println!("Cloned into '{repo_name}'");
     if new_patches > 0 {
-        println!("  {} patch(es) pulled", new_patches);
+        println!("  {new_patches} patch(es) pulled");
     }
     Ok(())
 }

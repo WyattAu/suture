@@ -1,3 +1,4 @@
+use std::fmt::Write;
 #[derive(Debug, Clone)]
 struct HunkLine {
     kind: HunkLineKind,
@@ -34,7 +35,7 @@ fn strip_path_prefix(p: &str) -> &str {
         .unwrap_or(p)
 }
 
-fn parse_unified_diff(text: &str) -> Result<Vec<FileDiff>, Box<dyn std::error::Error>> {
+fn parse_unified_diff(text: &str) -> Vec<FileDiff> {
     let mut diffs: Vec<FileDiff> = Vec::new();
     let mut old_path = String::new();
     let mut new_path = String::new();
@@ -71,13 +72,13 @@ fn parse_unified_diff(text: &str) -> Result<Vec<FileDiff>, Box<dyn std::error::E
                     });
                 }
             }
-            old_path = strip_path_prefix(rest.trim_end()).to_string();
+            old_path = strip_path_prefix(rest.trim_end()).to_owned();
             new_path = String::new();
             in_file = true;
             continue;
         }
         if let Some(rest) = line.strip_prefix("+++ ") {
-            new_path = strip_path_prefix(rest.trim_end()).to_string();
+            new_path = strip_path_prefix(rest.trim_end()).to_owned();
             continue;
         }
         if let Some(rest) = line.strip_prefix("@@ ") {
@@ -105,8 +106,8 @@ fn parse_unified_diff(text: &str) -> Result<Vec<FileDiff>, Box<dyn std::error::E
                 _ => HunkLineKind::Context,
             };
             let content = match ch {
-                Some('+') | Some('-') => line[1..].to_string(),
-                _ => line.to_string(),
+                Some('+' | '-') => line[1..].to_string(),
+                _ => line.to_owned(),
             };
             hunk_lines.push(HunkLine { kind, content });
         }
@@ -121,7 +122,7 @@ fn parse_unified_diff(text: &str) -> Result<Vec<FileDiff>, Box<dyn std::error::E
         });
     }
 
-    Ok(diffs)
+    diffs
 }
 
 fn apply_hunk(
@@ -152,8 +153,7 @@ fn apply_hunk(
         };
 
         match effective_kind {
-            HunkLineKind::Context => new_lines.push(line.content.clone()),
-            HunkLineKind::Add => new_lines.push(line.content.clone()),
+            HunkLineKind::Context | HunkLineKind::Add => new_lines.push(line.content.clone()),
             HunkLineKind::Remove => {}
         }
     }
@@ -198,23 +198,23 @@ fn stat_for_diffs(diffs: &[FileDiff]) -> String {
             .flat_map(|h| h.lines.iter())
             .filter(|l| l.kind == HunkLineKind::Remove)
             .count();
-        output.push_str(&format!(
-            " {} | {} insertion(s), {} deletion(s)\n",
+        let _ = writeln!(output, 
+            " {} | {} insertion(s), {} deletion(s)",
             diff.new_path, total_add, total_remove
-        ));
+        );
     }
     output
 }
 
-pub(crate) async fn cmd_apply(
+pub async fn cmd_apply(
     patch_file: &str,
     reverse: bool,
     stat: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let content = std::fs::read_to_string(patch_file)
-        .map_err(|e| format!("cannot read patch file '{}': {}", patch_file, e))?;
+        .map_err(|e| format!("cannot read patch file '{patch_file}': {e}"))?;
 
-    let mut diffs = parse_unified_diff(&content)?;
+    let mut diffs = parse_unified_diff(&content);
 
     if reverse {
         for diff in &mut diffs {
@@ -251,7 +251,7 @@ pub(crate) async fn cmd_apply(
             String::new()
         };
 
-        let mut file_lines: Vec<String> = file_content.lines().map(|l| l.to_string()).collect();
+        let mut file_lines: Vec<String> = file_content.lines().map(std::borrow::ToOwned::to_owned).collect();
 
         for hunk in &diff.hunks {
             apply_hunk(&mut file_lines, hunk, reverse)?;
@@ -328,7 +328,7 @@ mod tests {
  line two
  line three
 ";
-        let diffs = parse_unified_diff(diff_text).unwrap();
+        let diffs = parse_unified_diff(diff_text);
         assert_eq!(diffs.len(), 1);
         assert_eq!(diffs[0].old_path, "file.txt");
         assert_eq!(diffs[0].new_path, "file.txt");

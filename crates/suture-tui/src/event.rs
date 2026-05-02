@@ -24,6 +24,7 @@ pub enum Event {
 }
 
 /// Check if a key event matches the given code and modifiers.
+#[must_use] 
 pub fn key_matches(key: KeyEvent, code: KeyCode, mods: KeyModifiers) -> bool {
     key.code == code && key.modifiers == mods
 }

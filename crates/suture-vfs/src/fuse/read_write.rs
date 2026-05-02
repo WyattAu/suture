@@ -62,7 +62,7 @@ impl RwFilesystem {
             .map_err(|e| anyhow::anyhow!("snapshot failed: {e}"))?;
 
         let paths: Vec<String> = file_tree.paths().into_iter().cloned().collect();
-        let paths_ref: Vec<&str> = paths.iter().map(|s| s.as_str()).collect();
+        let paths_ref: Vec<&str> = paths.iter().map(std::string::String::as_str).collect();
 
         let path_translator = PathTranslator::build(&paths_ref);
 
@@ -116,9 +116,9 @@ impl RwFilesystem {
             .get_path(parent)
             .ok_or_else(Errno::new_not_exist)?;
         Ok(if parent_path.is_empty() {
-            name.to_string()
+            name.to_owned()
         } else {
-            format!("{}/{}", parent_path, name)
+            format!("{parent_path}/{name}")
         })
     }
 
@@ -142,11 +142,11 @@ impl RwFilesystem {
         let mut all_paths: Vec<String> = file_contents.keys().cloned().collect();
 
         for dir in pending_dirs.iter() {
-            let marker = format!("{}.d", dir);
+            let marker = format!("{dir}.d");
             all_paths.push(marker);
         }
 
-        let all_paths_ref: Vec<&str> = all_paths.iter().map(|s| s.as_str()).collect();
+        let all_paths_ref: Vec<&str> = all_paths.iter().map(std::string::String::as_str).collect();
         let path_translator = PathTranslator::build(&all_paths_ref);
 
         *self.inner.path_translator.unpoison_lock() = path_translator;
@@ -163,9 +163,9 @@ impl RwFilesystem {
         repo.add(path).map_err(|e| anyhow::anyhow!("stage: {e}"))?;
 
         let msg = if is_new {
-            format!("vfs: create {}", path)
+            format!("vfs: create {path}")
         } else {
-            format!("vfs: modify {}", path)
+            format!("vfs: modify {path}")
         };
         repo.commit(&msg)
             .map_err(|e| anyhow::anyhow!("commit: {e}"))?;
@@ -184,7 +184,7 @@ impl RwFilesystem {
         let mut repo = self.inner.repo.unpoison_lock();
         repo.add(path)
             .map_err(|e| anyhow::anyhow!("stage delete: {e}"))?;
-        repo.commit(&format!("vfs: delete {}", path))
+        repo.commit(&format!("vfs: delete {path}"))
             .map_err(|e| anyhow::anyhow!("commit delete: {e}"))?;
 
         self.rebuild_from_repo(&repo)?;
@@ -216,12 +216,12 @@ impl RwFilesystem {
 
             let pending_dirs = self.inner.pending_dirs.unpoison_lock();
             for dir in pending_dirs.iter() {
-                all_paths.push(format!("{}.d", dir));
+                all_paths.push(format!("{dir}.d"));
             }
             let pending_dirs_list: Vec<String> = pending_dirs.iter().cloned().collect();
             drop(pending_dirs);
 
-            let all_paths_ref: Vec<&str> = all_paths.iter().map(|s| s.as_str()).collect();
+            let all_paths_ref: Vec<&str> = all_paths.iter().map(std::string::String::as_str).collect();
             let path_translator = PathTranslator::build(&all_paths_ref);
 
             let mut inode_map = InodeGenerator::new();
@@ -267,7 +267,7 @@ impl RwFilesystem {
             for dir in pending_dirs.iter() {
                 let parent = parent_of(dir).unwrap_or_default();
                 if parent == dir_path {
-                    let name = dir.rsplit('/').next().unwrap_or(dir).to_string();
+                    let name = dir.rsplit('/').next().unwrap_or(dir).to_owned();
                     if !entries.iter().any(|(n, _, _)| n == &name) {
                         entries.push((name, dir.clone(), true));
                     }
@@ -303,10 +303,7 @@ impl RwFilesystem {
             let existing = file_contents.get(&path).cloned();
             drop(file_contents);
 
-            let changed = match &existing {
-                Some(old) => old != &content,
-                None => true,
-            };
+            let changed = existing.as_ref() != Some(&content);
 
             if changed {
                 self.commit_file_change(&path, &content, is_new)?;
@@ -380,8 +377,7 @@ impl Filesystem for RwFilesystem {
             let file_contents = self.inner.file_contents.unpoison_lock();
             file_contents
                 .get(&child_path)
-                .map(|d| d.len() as u64)
-                .unwrap_or(0)
+                .map_or(0, |d| d.len() as u64)
         } else {
             0
         };
@@ -416,8 +412,7 @@ impl Filesystem for RwFilesystem {
                 let file_contents = self.inner.file_contents.unpoison_lock();
                 file_contents
                     .get(&entry.path)
-                    .map(|d| d.len() as u64)
-                    .unwrap_or(0)
+                    .map_or(0, |d| d.len() as u64)
             })
         } else {
             0
@@ -441,8 +436,7 @@ impl Filesystem for RwFilesystem {
             let file_contents = self.inner.file_contents.unpoison_lock();
             file_contents
                 .get(&entry.path)
-                .map(|d| d.len() as u64)
-                .unwrap_or(0)
+                .map_or(0, |d| d.len() as u64)
         } else {
             0
         };
@@ -474,13 +468,10 @@ impl Filesystem for RwFilesystem {
             .map(|f| f.buffer.clone());
         drop(open_files);
 
-        let data = match data {
-            Some(buf) => buf,
-            None => {
-                let file_contents = self.inner.file_contents.unpoison_lock();
-                file_contents.get(&path).cloned().unwrap_or_default()
-            }
-        };
+        let data = data.unwrap_or_else(|| {
+            let file_contents = self.inner.file_contents.unpoison_lock();
+            file_contents.get(&path).cloned().unwrap_or_default()
+        });
 
         let offset = offset as usize;
         let end = std::cmp::min(offset + size as usize, data.len());
@@ -559,7 +550,7 @@ impl Filesystem for RwFilesystem {
         self.inner
             .pending_files
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .insert(path.clone());
         self.rebuild_path_translator();
 
@@ -573,7 +564,7 @@ impl Filesystem for RwFilesystem {
 
         let entry = InodeEntry {
             kind: InodeKind::File,
-            path: path.clone(),
+            path,
         };
         let attr = make_file_attr(&entry, inode, 0);
 
@@ -674,8 +665,7 @@ impl Filesystem for RwFilesystem {
         let inode_map = self.inner.inode_map.unpoison_lock();
         let parent_path = inode_map
             .get_path(parent)
-            .ok_or_else(Errno::new_not_exist)?
-            .to_string();
+            .ok_or_else(Errno::new_not_exist)?.to_owned();
         drop(inode_map);
 
         let entries = self.list_dir_entries(&parent_path);
@@ -697,7 +687,7 @@ impl Filesystem for RwFilesystem {
                     let size = if *is_dir {
                         0u64
                     } else {
-                        file_contents.get(path).map(|d| d.len() as u64).unwrap_or(0)
+                        file_contents.get(path).map_or(0, |d| d.len() as u64)
                     };
                     let attr = make_file_attr(entry, inode, size);
                     result.push((inode, attr, name.clone().into(), entry_offset));
@@ -755,7 +745,7 @@ impl Filesystem for RwFilesystem {
                 self.inner
                     .file_contents
                     .lock()
-                    .unwrap_or_else(|e| e.into_inner())
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .get(&path)
                     .cloned()
                     .unwrap_or_default()

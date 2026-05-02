@@ -4,14 +4,8 @@ fn verify_status(
     repo: &suture_core::repository::Repository,
     patch: &suture_core::patch::types::Patch,
 ) -> &'static str {
-    let pub_key = match repo.meta().get_public_key(&patch.author) {
-        Ok(Some(k)) => k,
-        _ => return "\u{2014} unsigned",
-    };
-    let sig = match repo.meta().get_signature(&patch.id.to_hex()) {
-        Ok(Some(s)) => s,
-        _ => return "\u{2014} unsigned",
-    };
+    let Ok(Some(pub_key)) = repo.meta().get_public_key(&patch.author) else { return "\u{2014} unsigned" };
+    let Ok(Some(sig)) = repo.meta().get_signature(&patch.id.to_hex()) else { return "\u{2014} unsigned" };
     let pub_key_arr: [u8; 32] = match pub_key.try_into() {
         Ok(k) => k,
         Err(_) => return "\u{2717} INVALID",
@@ -43,7 +37,7 @@ fn relative_time(timestamp: u64) -> String {
         .as_secs();
     let diff = now.saturating_sub(timestamp);
     match diff {
-        0..=60 => "just now".to_string(),
+        0..=60 => "just now".to_owned(),
         61..=3600 => format!("{}m ago", diff / 60),
         3601..=86400 => format!("{}h ago", diff / 3600),
         86401..=2592000 => format!("{}d ago", diff / 86400),
@@ -52,7 +46,7 @@ fn relative_time(timestamp: u64) -> String {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) async fn cmd_log(
+pub async fn cmd_log(
     branch: Option<&str>,
     graph: bool,
     first_parent: bool,
@@ -116,7 +110,7 @@ pub(crate) async fn cmd_log(
             let _branch_name = branch.unwrap_or("HEAD");
             let (_head_branch, head_id) = repo
                 .head()
-                .unwrap_or_else(|_| ("main".to_string(), Hash::ZERO));
+                .unwrap_or_else(|_| ("main".to_owned(), Hash::ZERO));
             let mut chain = Vec::new();
             let mut current = head_id;
             while current != Hash::ZERO {
@@ -237,7 +231,7 @@ pub(crate) async fn cmd_log(
                 let parent_hex = patch
                     .parent_ids
                     .first()
-                    .map(|h| h.to_hex())
+                    .map(suture_core::Hash::to_hex)
                     .unwrap_or_default();
                 let commit_hex = patch.id.to_hex();
                 let from = if parent_hex.is_empty() {
@@ -253,7 +247,7 @@ pub(crate) async fn cmd_log(
                     for entry in &entries {
                         match &entry.diff_type {
                             DiffType::Renamed { old_path, new_path } => {
-                                println!("  renamed {} → {}", old_path, new_path);
+                                println!("  renamed {old_path} → {new_path}");
                             }
                             DiffType::Added => {
                                 println!("  added {}", entry.path);
@@ -347,11 +341,10 @@ pub(crate) async fn cmd_log(
         }
 
         let row_str: String = row.iter().collect();
-        let short_hash = if let Some(pid) = patch_ids.first() {
-            pid.to_hex().chars().take(8).collect()
-        } else {
-            "????????".to_string()
-        };
+        let short_hash = patch_ids.first().map_or_else(
+            || "????????".to_owned(),
+            |pid| pid.to_hex().chars().take(8).collect(),
+        );
 
         let first_patch = patch_ids.first().and_then(|pid| repo.dag().get_patch(pid));
         let author_truncated = first_patch
@@ -360,7 +353,7 @@ pub(crate) async fn cmd_log(
                 if name.len() > 12 {
                     format!("{}...", &name[..12])
                 } else {
-                    name.to_string()
+                    name.to_owned()
                 }
             })
             .unwrap_or_default();
@@ -368,7 +361,7 @@ pub(crate) async fn cmd_log(
             .map(|p| relative_time(p.timestamp))
             .unwrap_or_default();
 
-        let is_merge = first_patch.map(|p| p.parent_ids.len() > 1).unwrap_or(false);
+        let is_merge = first_patch.is_some_and(|p| p.parent_ids.len() > 1);
         let merge_col = patch_ids
             .first()
             .and_then(|pid| col_assign.get(pid).copied())
@@ -379,7 +372,7 @@ pub(crate) async fn cmd_log(
             .filter(|(_, id)| patch_ids.contains(id))
             .map(|(name, _)| {
                 if name == &head_branch {
-                    format!("HEAD -> {}", name)
+                    format!("HEAD -> {name}")
                 } else {
                     name.clone()
                 }
@@ -392,8 +385,7 @@ pub(crate) async fn cmd_log(
         };
 
         println!(
-            "{} {} {} {} {}{}",
-            row_str, short_hash, author_truncated, time_str, message, label_str
+            "{row_str} {short_hash} {author_truncated} {time_str} {message}{label_str}"
         );
 
         if is_merge {
@@ -488,9 +480,9 @@ async fn cmd_audit(
                 timestamp: dt,
                 author: patch.author.clone(),
                 commit: patch.id.to_hex(),
-                parents: patch.parent_ids.iter().map(|h| h.to_hex()).collect(),
+                parents: patch.parent_ids.iter().map(suture_core::Hash::to_hex).collect(),
                 message: patch.message.clone(),
-                files_changed: files_changed.clone(),
+                files_changed,
                 files_added,
                 files_modified,
                 files_deleted,
@@ -573,7 +565,6 @@ fn classify_files_fast(
     match change_type {
         "added" => (files, Vec::new(), Vec::new()),
         "deleted" => (Vec::new(), Vec::new(), files),
-        "modified" => (Vec::new(), files, Vec::new()),
         _ => (Vec::new(), files, Vec::new()),
     }
 }
@@ -586,7 +577,7 @@ fn classify_files(
     let parent_hex = patch
         .parent_ids
         .first()
-        .map(|h| h.to_hex())
+        .map(suture_core::Hash::to_hex)
         .unwrap_or_default();
     let commit_hex = patch.id.to_hex();
     let from = if parent_hex.is_empty() {
@@ -640,6 +631,6 @@ fn csv_escape(s: &str) -> String {
     if s.contains(',') || s.contains('"') || s.contains('\n') {
         format!("\"{}\"", s.replace('"', "\"\""))
     } else {
-        s.to_string()
+        s.to_owned()
     }
 }

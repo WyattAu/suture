@@ -23,62 +23,55 @@ pub enum FileType {
 }
 
 impl FileType {
+    #[must_use] 
     pub fn category(self) -> &'static str {
         match self {
-            FileType::Docx | FileType::Xlsx | FileType::Pptx => "document",
-            FileType::Otio => "video",
-            FileType::Image => "image",
-            FileType::Json | FileType::Yaml | FileType::Toml | FileType::Csv | FileType::Xml => {
-                "data"
-            }
-            FileType::Svg => "image",
-            FileType::Markdown => "document",
-            FileType::Sql => "data",
-            FileType::Ical => "data",
-            FileType::Pdf => "document",
-            FileType::Html => "document",
-            FileType::Feed => "data",
-            FileType::Unknown => "unknown",
+            Self::Docx | Self::Xlsx | Self::Pptx | Self::Markdown | Self::Pdf | Self::Html => "document",
+            Self::Otio => "video",
+            Self::Image | Self::Svg => "image",
+            Self::Json | Self::Yaml | Self::Toml | Self::Csv | Self::Xml | Self::Sql | Self::Ical | Self::Feed => "data",
+            Self::Unknown => "unknown",
         }
     }
 
+    #[must_use] 
     pub fn icon(self) -> &'static str {
         match self {
-            FileType::Docx | FileType::Markdown | FileType::Pdf => "\u{1F4C4}",
-            FileType::Xlsx | FileType::Csv => "\u{1F4CA}",
-            FileType::Pptx => "\u{1F3A5}",
-            FileType::Otio => "\u{1F3AC}",
-            FileType::Image | FileType::Svg => "\u{1F5BC}",
-            FileType::Json | FileType::Yaml | FileType::Toml | FileType::Xml | FileType::Sql => {
+            Self::Docx | Self::Markdown | Self::Pdf | Self::Html => "\u{1F4C4}",
+            Self::Xlsx | Self::Csv => "\u{1F4CA}",
+            Self::Pptx => "\u{1F3A5}",
+            Self::Otio => "\u{1F3AC}",
+            Self::Image | Self::Svg => "\u{1F5BC}",
+            Self::Json | Self::Yaml | Self::Toml | Self::Xml | Self::Sql => {
                 "\u{1F4CB}"
             }
-            FileType::Ical => "\u{1F4C5}",
-            FileType::Html => "\u{1F4C4}",
-            FileType::Feed => "\u{1F4E1}",
-            FileType::Unknown => "",
+            Self::Ical => "\u{1F4C5}",
+            Self::Feed => "\u{1F4E1}",
+            Self::Unknown => "",
         }
     }
 
+    #[must_use] 
     pub fn driver_name(self) -> &'static str {
         match self {
-            FileType::Docx => "DOCX",
-            FileType::Xlsx => "XLSX",
-            FileType::Pptx => "PPTX",
-            FileType::Pdf => "PDF",
-            FileType::Otio => "OTIO",
-            FileType::Image => "Image",
-            FileType::Json => "JSON",
-            FileType::Yaml => "YAML",
-            FileType::Toml => "TOML",
-            FileType::Csv => "CSV",
-            FileType::Xml => "XML",
-            FileType::Svg => "SVG",
-            FileType::Markdown => "Markdown",
-            FileType::Sql => "SQL",
-            FileType::Ical => "ICAL",
-            FileType::Html => "HTML",
-            FileType::Feed => "FEED",
-            FileType::Unknown => "",
+            Self::Docx => "DOCX",
+            Self::Xlsx => "XLSX",
+            Self::Pptx => "PPTX",
+            Self::Pdf => "PDF",
+            Self::Otio => "OTIO",
+            Self::Image => "Image",
+            Self::Json => "JSON",
+            Self::Yaml => "YAML",
+            Self::Toml => "TOML",
+            Self::Csv => "CSV",
+            Self::Xml => "XML",
+            Self::Svg => "SVG",
+            Self::Markdown => "Markdown",
+            Self::Sql => "SQL",
+            Self::Ical => "ICAL",
+            Self::Html => "HTML",
+            Self::Feed => "FEED",
+            Self::Unknown => "",
         }
     }
 }
@@ -89,6 +82,7 @@ impl std::fmt::Display for FileType {
     }
 }
 
+#[must_use] 
 pub fn detect_file_type(path: &Path) -> FileType {
     let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
         return FileType::Unknown;
@@ -96,6 +90,7 @@ pub fn detect_file_type(path: &Path) -> FileType {
     detect_from_extension(ext)
 }
 
+#[must_use] 
 pub fn detect_from_extension(ext: &str) -> FileType {
     match ext.to_lowercase().as_str() {
         "docx" => FileType::Docx,
@@ -127,27 +122,30 @@ pub enum RepoType {
 }
 
 impl RepoType {
+    #[must_use] 
     pub fn from_str_value(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
-            "video" => Some(RepoType::Video),
-            "document" => Some(RepoType::Document),
-            "data" => Some(RepoType::Data),
+            "video" => Some(Self::Video),
+            "document" => Some(Self::Document),
+            "data" => Some(Self::Data),
             _ => None,
         }
     }
 
+    #[must_use] 
     pub fn as_str(self) -> &'static str {
         match self {
-            RepoType::Video => "video",
-            RepoType::Document => "document",
-            RepoType::Data => "data",
+            Self::Video => "video",
+            Self::Document => "document",
+            Self::Data => "data",
         }
     }
 
+    #[must_use] 
     pub fn matches_file_type(self, ft: FileType) -> bool {
         match self {
-            RepoType::Video => ft == FileType::Otio,
-            RepoType::Document => matches!(
+            Self::Video => ft == FileType::Otio,
+            Self::Document => matches!(
                 ft,
                 FileType::Docx
                     | FileType::Xlsx
@@ -155,7 +153,7 @@ impl RepoType {
                     | FileType::Pdf
                     | FileType::Markdown
             ),
-            RepoType::Data => matches!(
+            Self::Data => matches!(
                 ft,
                 FileType::Csv
                     | FileType::Json
@@ -170,6 +168,7 @@ impl RepoType {
     }
 }
 
+#[must_use] 
 pub fn auto_detect_repo_type(dir: &Path) -> Option<RepoType> {
     let mut scores = [
         (RepoType::Video, 0usize),

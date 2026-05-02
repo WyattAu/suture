@@ -585,19 +585,19 @@ impl HubStorage {
             return Ok(vec![]);
         }
 
-        let placeholders: Vec<String> = hashes.iter().map(|_| "?".to_string()).collect();
+        let placeholders: Vec<String> = hashes.iter().map(|_| "?".to_owned()).collect();
         let sql = format!(
             "SELECT blob_hash, data FROM blobs WHERE repo_id = ?1 AND blob_hash IN ({})",
             placeholders.join(",")
         );
 
         let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-        params_vec.push(Box::new(repo_id.to_string()));
+        params_vec.push(Box::new(repo_id.to_owned()));
         for h in hashes {
             params_vec.push(Box::new(h.clone()));
         }
         let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-            params_vec.iter().map(|p| p.as_ref()).collect();
+            params_vec.iter().map(std::convert::AsRef::as_ref).collect();
 
         let conn = self
             .conn
@@ -660,15 +660,12 @@ impl HubStorage {
             return Ok(true);
         }
 
-        let mut current = descendant_id.to_string();
+        let mut current = descendant_id.to_owned();
         let mut visited = std::collections::HashSet::new();
 
         while !visited.contains(&current) {
             visited.insert(current.clone());
-            let patch = match self.get_patch(repo_id, &current)? {
-                Some(p) => p,
-                None => return Ok(false),
-            };
+            let Some(patch) = self.get_patch(repo_id, &current)? else { return Ok(false) };
             if patch.parent_ids.is_empty() {
                 return Ok(false);
             }
@@ -1123,8 +1120,8 @@ impl HubStorage {
     ) -> Result<Vec<PatchProto>, StorageError> {
         let mut visited = std::collections::HashSet::new();
         let mut queue = std::collections::VecDeque::new();
-        queue.push_back(tip_id.to_string());
-        visited.insert(tip_id.to_string());
+        queue.push_back(tip_id.to_owned());
+        visited.insert(tip_id.to_owned());
 
         while let Some(current_id) = queue.pop_front() {
             if let Some(patch) = self.get_patch(repo_id, &current_id)? {
@@ -1153,10 +1150,7 @@ impl HubStorage {
     ) -> Result<Vec<crate::types::TreeEntry>, StorageError> {
         use crate::types::TreeEntry;
 
-        let tip_id = match self.get_branch_target(repo_id, branch)? {
-            Some(id) => id,
-            None => return Ok(Vec::new()),
-        };
+        let Some(tip_id) = self.get_branch_target(repo_id, branch)? else { return Ok(Vec::new()) };
 
         let mut patches = self.get_patches_at(repo_id, &tip_id)?;
         patches.sort_by_key(|p| p.timestamp);
@@ -1431,7 +1425,7 @@ impl HubStorage {
                 events_json,
                 webhook.secret,
                 webhook.created_at as i64,
-                webhook.active as i32,
+                i32::from(webhook.active),
             ],
         )?;
         Ok(())
@@ -1487,7 +1481,7 @@ impl HubStorage {
                 })
             },
         ).map_err(|e| match e {
-            rusqlite::Error::QueryReturnedNoRows => StorageError::WebhookNotFound(id.to_string()),
+            rusqlite::Error::QueryReturnedNoRows => StorageError::WebhookNotFound(id.to_owned()),
             e => StorageError::Database(e),
         })
     }
@@ -1499,7 +1493,7 @@ impl HubStorage {
             .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
         let changes = conn.execute("DELETE FROM webhooks WHERE id = ?1", params![id])?;
         if changes == 0 {
-            return Err(StorageError::WebhookNotFound(id.to_string()));
+            return Err(StorageError::WebhookNotFound(id.to_owned()));
         }
         Ok(())
     }
