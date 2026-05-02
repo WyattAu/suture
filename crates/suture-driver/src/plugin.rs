@@ -228,8 +228,27 @@ impl WasmDriverPlugin {
 
         let mut store = wasmtime::Store::new(&engine, ());
         let mut linker = wasmtime::Linker::new(&engine);
-        // TODO: Add `suture.alloc` host import for WASM memory allocation.
-        // WASM modules that call `suture.alloc` will fail at link time until this is implemented.
+
+        // Provide `suture.alloc` host import for WASM memory allocation.
+        // Plugins call this to request the host to grow their memory and return a pointer.
+        linker
+            .func_wrap("suture", "alloc", |mut caller: wasmtime::Caller<'_, ()>, size: i32| -> i32 {
+                let size = if size <= 0 { return -1 };
+                let size = size as usize;
+                let memory = match caller.get_export("memory") {
+                    Some(wasmtime::Extern::Memory(mem)) => mem,
+                    _ => return -1,
+                };
+                let current_size = memory.data_size(&mut caller);
+                let old_pages = memory.data_size(&mut caller) / 65536;
+                // Grow by at least enough pages to accommodate `size` bytes
+                let needed_pages = (size.saturating_sub(current_size % 65536) + 65535) / 65536;
+                match memory.grow(&mut caller, needed_pages) {
+                    Ok(_) => current_size as i32,
+                    Err(_) => -1,
+                }
+            })
+            .map_err(|e| PluginError::LoadFailed(format!("failed to define suture.alloc: {e}")))?;
 
         let instance = linker
             .instantiate(&mut store, &module)

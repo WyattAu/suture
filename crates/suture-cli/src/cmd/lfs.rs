@@ -4,10 +4,10 @@ const LFS_POINTER_HEADER: &str = "version https://suture.dev/lfs/1";
 const DEFAULT_THRESHOLD: u64 = 10 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct LfsPointer {
     pub oid: String,
     pub size: u64,
+    #[allow(dead_code)] // Deserialized from pointer, read in tests
     pub name: String,
 }
 

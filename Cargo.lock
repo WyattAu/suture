@@ -4543,6 +4543,7 @@ dependencies = [
  "suture-core",
  "suture-hub",
  "suture-protocol",
+ "suture-vfs",
  "tempfile",
  "tokio",
  "tracing",

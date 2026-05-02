@@ -569,47 +569,6 @@ fn classify_files_fast(
     }
 }
 
-#[allow(dead_code)]
-fn classify_files(
-    repo: &suture_core::repository::Repository,
-    patch: &suture_core::patch::types::Patch,
-) -> (Vec<String>, Vec<String>, Vec<String>) {
-    let parent_hex = patch
-        .parent_ids
-        .first()
-        .map(suture_core::Hash::to_hex)
-        .unwrap_or_default();
-    let commit_hex = patch.id.to_hex();
-    let from = if parent_hex.is_empty() {
-        None
-    } else {
-        Some(parent_hex.as_str())
-    };
-
-    let entries = repo
-        .diff(from, Some(commit_hex.as_str()))
-        .unwrap_or_default();
-
-    use suture_core::engine::diff::DiffType;
-    let mut added = Vec::new();
-    let mut modified = Vec::new();
-    let mut deleted = Vec::new();
-
-    for entry in &entries {
-        match &entry.diff_type {
-            DiffType::Added => added.push(entry.path.clone()),
-            DiffType::Modified => modified.push(entry.path.clone()),
-            DiffType::Deleted => deleted.push(entry.path.clone()),
-            DiffType::Renamed { old_path, new_path } => {
-                deleted.push(old_path.clone());
-                added.push(new_path.clone());
-            }
-        }
-    }
-
-    (added, modified, deleted)
-}
-
 fn classify_file_label(
     file: &str,
     added: &[String],

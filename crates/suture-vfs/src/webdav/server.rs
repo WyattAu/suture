@@ -259,6 +259,11 @@ async fn handle_put(
         return StatusCode::CONFLICT.into_response();
     }
 
+    // Reject path traversal attempts
+    if clean.contains("..") {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+
     {
         let mut dirs = state.dirs.unpoison_lock();
         ensure_parent_dirs(&mut dirs, &clean);

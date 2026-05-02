@@ -23,7 +23,7 @@ struct FileDiff {
 struct Hunk {
     old_start: usize,
     old_count: usize,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Parsed for completeness, read in tests
     new_start: usize,
     new_count: usize,
     lines: Vec<HunkLine>,

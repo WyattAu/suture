@@ -804,6 +804,7 @@ impl LanguageServer for SutureLsp {
 mod tests {
     use super::*;
     use tower_lsp::LspService;
+    use tower_lsp::lsp_types::{TextDocumentPositionParams, TextDocumentIdentifier, WorkDoneProgressParams, TextDocumentItem};
 
     fn create_service() -> LspService<SutureLsp> {
         let (service, _) = LspService::new(SutureLsp::new);

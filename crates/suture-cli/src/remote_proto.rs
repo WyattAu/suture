@@ -49,9 +49,7 @@ pub struct PushRequest {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PushResponse {
     pub success: bool,
-    #[allow(dead_code)]
     pub error: Option<String>,
-    #[allow(dead_code)]
     pub existing_patches: Vec<HashProto>,
 }
 

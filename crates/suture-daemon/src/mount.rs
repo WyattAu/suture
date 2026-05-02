@@ -9,7 +9,7 @@ pub enum MountType {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)]
+#[allow(dead_code)] // Variants used in tests and by consumers
 pub enum MountStatus {
     Pending,
     Active,
@@ -18,7 +18,7 @@ pub enum MountStatus {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
+#[allow(dead_code)] // Fields used in tests and by consumers
 pub struct MountPoint {
     pub id: String,
     pub repo_path: PathBuf,
@@ -30,7 +30,7 @@ pub struct MountPoint {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)]
+#[allow(dead_code)] // Variants used in tests and by consumers
 pub enum MountError {
     NotFound,
     AlreadyMounted,
@@ -56,16 +56,18 @@ impl std::error::Error for MountError {}
 pub struct MountManager {
     mounts: HashMap<String, MountPoint>,
     webdav_handles: HashMap<String, tokio::task::JoinHandle<()>>,
+    fuse_manager: suture_vfs::fuse::MountManager,
     repo_path: PathBuf,
     next_id: u64,
 }
 
-#[allow(dead_code)]
+#[allow(dead_code)] // Methods used in tests and by consumers
 impl MountManager {
     pub fn new(repo_path: PathBuf) -> Self {
         Self {
             mounts: HashMap::new(),
             webdav_handles: HashMap::new(),
+            fuse_manager: suture_vfs::fuse::MountManager::new(),
             repo_path,
             next_id: 1,
         }
@@ -88,16 +90,11 @@ impl MountManager {
             }
         }
 
+        self.fuse_manager
+            .mount(&self.repo_path, mount_path, None, true)
+            .map_err(|e| MountError::MountFailed(e.to_string()))?;
+
         let id = self.generate_id();
-
-        std::fs::create_dir_all(mount_path).map_err(|e| {
-            MountError::MountFailed(format!("failed to create mount directory: {e}"))
-        })?;
-
-        let placeholder = mount_path.join(".suture_mount");
-        std::fs::write(&placeholder, &id).map_err(|e| {
-            MountError::MountFailed(format!("failed to create mount placeholder: {e}"))
-        })?;
 
         let mount_point = MountPoint {
             id: id.clone(),
@@ -125,10 +122,12 @@ impl MountManager {
         }
 
         let id = self.generate_id();
+        let repo_path_str = self.repo_path.to_string_lossy().to_string();
+        let serve_addr = mount_addr.clone();
 
         let handle = tokio::spawn(async move {
-            loop {
-                tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+            if let Err(e) = suture_vfs::webdav::serve_webdav(&repo_path_str, &serve_addr).await {
+                tracing::error!("WebDAV server error: {e}");
             }
         });
 
@@ -152,8 +151,9 @@ impl MountManager {
 
         match mount.mount_type {
             MountType::Fuse => {
-                let placeholder = mount.mount_path.join(".suture_mount");
-                let _ = std::fs::remove_file(&placeholder);
+                self.fuse_manager
+                    .unmount(&mount.mount_path)
+                    .map_err(|e| MountError::UnmountFailed(e.to_string()))?;
             }
             MountType::WebDav => {
                 if let Some(handle) = self.webdav_handles.remove(mount_id) {
@@ -190,11 +190,9 @@ impl MountManager {
             handle.abort();
         }
 
+        self.fuse_manager.unmount_all();
+
         for mount in self.mounts.values_mut() {
-            if mount.mount_type == MountType::Fuse {
-                let placeholder = mount.mount_path.join(".suture_mount");
-                let _ = std::fs::remove_file(&placeholder);
-            }
             mount.status = MountStatus::Stopped;
             mount.mounted_at = None;
         }
@@ -207,28 +205,6 @@ mod tests {
 
     fn create_temp_dir() -> tempfile::TempDir {
         tempfile::tempdir().unwrap()
-    }
-
-    #[tokio::test]
-    async fn test_mount_fuse_create_and_stop() {
-        let tmp = create_temp_dir();
-        let repo_path = create_temp_dir().path().to_path_buf();
-        let mut manager = MountManager::new(repo_path);
-        let mount_path = tmp.path().join("fuse_mount");
-
-        let id = manager.mount_fuse(&mount_path).unwrap();
-        assert!(id.starts_with("mnt-"));
-
-        let mount = manager.get_mount(&id).unwrap();
-        assert_eq!(mount.mount_type, MountType::Fuse);
-        assert_eq!(mount.status, MountStatus::Active);
-        assert!(mount.mounted_at.is_some());
-        assert!(mount.pid.is_some());
-        assert!(mount_path.join(".suture_mount").exists());
-
-        manager.unmount(&id).unwrap();
-        assert_eq!(manager.status(&id).unwrap(), MountStatus::Stopped);
-        assert!(!mount_path.join(".suture_mount").exists());
     }
 
     #[tokio::test]
@@ -252,20 +228,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_mounts() {
-        let tmp = create_temp_dir();
         let repo_path = create_temp_dir().path().to_path_buf();
         let mut manager = MountManager::new(repo_path);
 
-        let fuse_path = tmp.path().join("fuse");
-        let id1 = manager.mount_fuse(&fuse_path).unwrap();
         let id2 = manager.mount_webdav(18081).unwrap();
 
         let mounts = manager.list_mounts();
-        assert_eq!(mounts.len(), 2);
-        assert!(mounts.iter().any(|m| m.id == id1));
+        assert_eq!(mounts.len(), 1);
         assert!(mounts.iter().any(|m| m.id == id2));
 
-        manager.unmount(&id1).unwrap();
         manager.unmount(&id2).unwrap();
     }
 
@@ -280,17 +251,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_stop_all() {
-        let tmp = create_temp_dir();
         let repo_path = create_temp_dir().path().to_path_buf();
         let mut manager = MountManager::new(repo_path);
 
-        let fuse_path1 = tmp.path().join("fuse1");
-        let fuse_path2 = tmp.path().join("fuse2");
-        manager.mount_fuse(&fuse_path1).unwrap();
         manager.mount_webdav(18082).unwrap();
-        manager.mount_fuse(&fuse_path2).unwrap();
 
-        assert_eq!(manager.list_mounts().len(), 3);
+        assert_eq!(manager.list_mounts().len(), 1);
 
         manager.stop_all();
 
@@ -298,21 +264,12 @@ mod tests {
             assert_eq!(mount.status, MountStatus::Stopped);
             assert!(mount.mounted_at.is_none());
         }
-
-        assert!(!fuse_path1.join(".suture_mount").exists());
-        assert!(!fuse_path2.join(".suture_mount").exists());
     }
 
     #[tokio::test]
     async fn test_duplicate_mount_id() {
-        let tmp = create_temp_dir();
         let repo_path = create_temp_dir().path().to_path_buf();
         let mut manager = MountManager::new(repo_path);
-
-        let fuse_path = tmp.path().join("fuse_dup");
-        manager.mount_fuse(&fuse_path).unwrap();
-        let result = manager.mount_fuse(&fuse_path);
-        assert!(matches!(result, Err(MountError::AlreadyMounted)));
 
         manager.mount_webdav(18083).unwrap();
         let result = manager.mount_webdav(18083);

@@ -158,20 +158,6 @@ fn check_ignored<'a>(rel_path: &str, rules: &'a [IgnoreRule]) -> Option<&'a Igno
     last_negation
 }
 
-#[allow(dead_code)]
-pub fn is_ignored(rel_path: &str, rules: &[IgnoreRule]) -> bool {
-    check_ignored(rel_path, rules).is_some_and(|r| !r.is_negation)
-}
-
-#[allow(dead_code)]
-pub fn load_ignore_patterns(root: &Path) -> Vec<IgnoreRule> {
-    let ignore_file = root.join(".sutureignore");
-    if !ignore_file.exists() {
-        return Vec::new();
-    }
-    load_ignore_rules(&ignore_file)
-}
-
 pub enum IgnoreArgs {
     List,
     Check { path: String },
