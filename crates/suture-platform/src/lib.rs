@@ -30,6 +30,8 @@ pub struct Config {
     pub stripe_key: Option<String>,
     #[serde(default)]
     pub platform_url: String,
+    #[serde(default)]
+    pub cors_origins: Vec<String>,
 }
 
 pub async fn run(config: Config) -> anyhow::Result<()> {

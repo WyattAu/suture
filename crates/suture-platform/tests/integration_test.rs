@@ -25,6 +25,7 @@ fn test_config(
         jwt_secret: "test-secret".to_string(),
         stripe_key: None,
         platform_url: String::new(),
+        cors_origins: Vec::new(),
     };
     (config, port, db_file, hub_db_file)
 }

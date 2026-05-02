@@ -75,6 +75,21 @@ pub async fn optional_auth(
     next.run(request).await
 }
 
-pub fn cors_layer() -> tower_http::cors::CorsLayer {
-    tower_http::cors::CorsLayer::permissive()
+pub fn cors_layer(allowed_origins: &[&str]) -> tower_http::cors::CorsLayer {
+    use tower_http::cors::AllowOrigin;
+
+    if allowed_origins.is_empty() || allowed_origins.contains(&"*") {
+        tower_http::cors::CorsLayer::permissive()
+    } else {
+        tower_http::cors::CorsLayer::new()
+            .allow_origin(
+                AllowOrigin::list(
+                    allowed_origins
+                        .iter()
+                        .filter_map(|o| o.parse().ok()),
+                ),
+            )
+            .allow_methods(tower_http::cors::Any)
+            .allow_headers(tower_http::cors::Any)
+    }
 }

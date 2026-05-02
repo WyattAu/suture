@@ -76,12 +76,12 @@ pub async fn upload_plugin(
     match state.plugins.lock().unwrap_or_else(std::sync::PoisonError::into_inner).load(&name, &data) {
         Ok(()) => {
             let plugin_path = format!("plugins/{}.wasm", name.replace(".wasm", ""));
-            let data_ref = &data;
-            tokio::task::block_in_place(|| {
-                if let Err(e) = std::fs::create_dir_all("plugins") {
-                    tracing::warn!("Failed to create plugins directory: {e}");
-                }
-                if let Err(e) = std::fs::write(&plugin_path, data_ref) {
+            let data_clone = data.clone();
+            tokio::spawn(async move {
+                if let Err(e) = tokio::task::spawn_blocking(move || {
+                    std::fs::create_dir_all("plugins")?;
+                    std::fs::write(&plugin_path, &data_clone)
+                }).await.unwrap_or_else(|e| Err(std::io::Error::other(e))) {
                     tracing::warn!("Failed to persist plugin: {e}");
                 }
             });

@@ -118,11 +118,14 @@ pub async fn start(config: Config) -> anyhow::Result<()> {
         ));
 
     let addr = state.config.addr.clone();
+    let cors_origins: Vec<String> = state.config.cors_origins.clone();
     let app = public_routes
         .merge(protected_routes)
         .merge(auth_routes)
         .with_state(state)
-        .layer(crate::middleware::cors_layer())
+        .layer(crate::middleware::cors_layer(
+            &cors_origins.iter().map(String::as_str).collect::<Vec<_>>(),
+        ))
         .layer(tower_http::trace::TraceLayer::new_for_http());
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
