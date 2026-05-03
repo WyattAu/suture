@@ -15,6 +15,10 @@ pub async fn cmd_grep(
         .snapshot_head()
         .unwrap_or_else(|_| suture_core::engine::tree::FileTree::empty());
 
+    if pattern.len() > 1024 {
+        return Err(format!("regex pattern too long ({} bytes, max 1024)", pattern.len()).into());
+    }
+
     let re: Regex = if fixed_string {
         let escaped = regex::escape(pattern);
         if ignore_case {

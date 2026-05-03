@@ -269,8 +269,12 @@ impl WasmPlugin {
 
         let mem_data = memory.data(&store);
 
-        let result_len_bytes = &mem_data[result_ptr as usize..result_ptr as usize + 4];
-        let result_len = u32::from_le_bytes(result_len_bytes.try_into().unwrap());
+        let result_start = result_ptr as usize;
+        let result_end = result_start + 4;
+        if result_end > mem_data.len() {
+            anyhow::bail!("plugin result pointer out of bounds");
+        }
+        let result_len = u32::from_le_bytes(mem_data[result_start..result_end].try_into().unwrap());
 
         if result_len == 0xFFFFFFFF {
             Ok(PluginMergeResult {
@@ -279,9 +283,12 @@ impl WasmPlugin {
                 error: None,
             })
         } else {
-            let result_start = result_ptr as usize + 4;
-            let result_end = result_start + result_len as usize;
-            let merged = String::from_utf8(mem_data[result_start..result_end].to_vec())
+            let data_start = result_end;
+            let data_end = data_start + result_len as usize;
+            if data_end > mem_data.len() {
+                anyhow::bail!("plugin result data out of bounds");
+            }
+            let merged = String::from_utf8(mem_data[data_start..data_end].to_vec())
                 .unwrap_or_else(|_| format!("<invalid utf8: {result_len} bytes>"));
 
             Ok(PluginMergeResult {

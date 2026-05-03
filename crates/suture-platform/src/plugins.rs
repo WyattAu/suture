@@ -53,6 +53,9 @@ pub async fn upload_plugin(
         };
 
     let name = field.file_name().map_or_else(|| "unknown".into(), |s| s.replace(['/', '\\', '\0'], "_").replace("..", "_"));
+    if !name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '.') {
+        return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "plugin name must contain only alphanumeric characters, hyphens, underscores, and dots"}))));
+    }
     let data = field.bytes().await.map_err(|e| {
         (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e.to_string()})))
     })?;

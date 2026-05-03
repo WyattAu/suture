@@ -1,4 +1,4 @@
-use std::io::{Cursor, Write};
+use std::io::{Cursor, Write as IoWrite};
 use suture_driver::{SemanticChange, SutureDriver};
 use suture_driver_xlsx::XlsxDriver;
 

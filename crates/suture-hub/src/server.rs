@@ -274,7 +274,10 @@ impl SutureHubServer {
     pub async fn handle_list_peers(&self) -> ListPeersResponse {
         let store = self.storage.read().await;
         ListPeersResponse {
-            peers: store.list_replication_peers().unwrap_or_default(),
+            peers: store.list_replication_peers().unwrap_or_else(|e| {
+                tracing::warn!("store list_replication_peers failed: {e}");
+                Default::default()
+            }),
         }
     }
 
@@ -346,7 +349,10 @@ impl SutureHubServer {
         limit: u32,
     ) -> (Vec<PatchProto>, Option<String>) {
         let store = self.storage.read().await;
-        let patches = store.get_all_patches(repo_id).unwrap_or_default();
+        let patches = store.get_all_patches(repo_id).unwrap_or_else(|e| {
+            tracing::warn!("store get_all_patches failed: {e}");
+            Default::default()
+        });
         let limit = limit.min(200) as usize;
         let offset = offset as usize;
         let mut collected: Vec<PatchProto> =
@@ -557,7 +563,10 @@ impl SutureHubServer {
         tokio::spawn(async move {
             let hooks = {
                 let store = storage.read().await;
-                store.list_webhooks(&repo_id).unwrap_or_default()
+                store.list_webhooks(&repo_id).unwrap_or_else(|e| {
+                    tracing::warn!("store list_webhooks failed: {e}");
+                    Default::default()
+                })
             };
             if !hooks.is_empty() {
                 let result = manager.trigger(&hooks, "push", &repo_id, patch_data).await;
@@ -587,7 +596,10 @@ impl SutureHubServer {
             };
         }
 
-        let all_patches = store.get_all_patches(&req.repo_id).unwrap_or_default();
+        let all_patches = store.get_all_patches(&req.repo_id).unwrap_or_else(|e| {
+            tracing::warn!("store get_all_patches failed: {e}");
+            Default::default()
+        });
         let client_ancestors = collect_ancestors(&all_patches, &req.known_branches);
         let mut new_patches = collect_new_patches(&all_patches, &client_ancestors);
 
@@ -595,7 +607,10 @@ impl SutureHubServer {
             new_patches.truncate(depth as usize);
         }
 
-        let branches = store.get_branches(&req.repo_id).unwrap_or_default();
+        let branches = store.get_branches(&req.repo_id).unwrap_or_else(|e| {
+            tracing::warn!("store get_branches failed: {e}");
+            Default::default()
+        });
 
         let mut needed_hashes: std::collections::HashSet<String> = std::collections::HashSet::new();
         for patch in &new_patches {
@@ -634,7 +649,10 @@ impl SutureHubServer {
         }
         let blobs = store
             .get_blobs(&req.repo_id, &needed_hashes)
-            .unwrap_or_default();
+            .unwrap_or_else(|e| {
+                tracing::warn!("store get_blobs failed: {e}");
+                Default::default()
+            });
 
         PullResponse {
             success: true,
@@ -647,9 +665,14 @@ impl SutureHubServer {
 
     pub async fn handle_list_repos(&self) -> ListReposResponse {
         let store = self.storage.read().await;
-        ListReposResponse {
-            repo_ids: store.list_repos().unwrap_or_default(),
-        }
+        let repo_ids = match store.list_repos() {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::error!("Failed to list repos: {e}");
+                return ListReposResponse { repo_ids: vec![] };
+            }
+        };
+        ListReposResponse { repo_ids }
     }
 
     pub async fn handle_repo_info(&self, repo_id: &str) -> RepoInfoResponse {
@@ -666,7 +689,10 @@ impl SutureHubServer {
         }
 
         let patch_count = store.patch_count(repo_id).unwrap_or(0);
-        let branches = store.get_branches(repo_id).unwrap_or_default();
+        let branches = store.get_branches(repo_id).unwrap_or_else(|e| {
+            tracing::warn!("store get_branches failed: {e}");
+            Default::default()
+        });
 
         RepoInfoResponse {
             repo_id: repo_id.to_owned(),
@@ -867,7 +893,10 @@ impl SutureHubServer {
     ) -> crate::types::MirrorStatusResponse {
         let store = self.storage.read().await;
 
-        let mirrors = store.list_mirrors().unwrap_or_default();
+        let mirrors = store.list_mirrors().unwrap_or_else(|e| {
+            tracing::warn!("store list_mirrors failed: {e}");
+            Default::default()
+        });
 
         let entries: Vec<crate::types::MirrorStatusEntry> = mirrors
             .into_iter()
@@ -919,7 +948,10 @@ impl SutureHubServer {
             };
         }
 
-        let all_patches = store.get_all_patches(&req.repo_id).unwrap_or_default();
+        let all_patches = store.get_all_patches(&req.repo_id).unwrap_or_else(|e| {
+            tracing::warn!("store get_all_patches failed: {e}");
+            Default::default()
+        });
         let client_ancestors = collect_ancestors(&all_patches, &req.known_branches);
         let mut new_patches = collect_new_patches(&all_patches, &client_ancestors);
 
@@ -927,7 +959,10 @@ impl SutureHubServer {
             new_patches.truncate(depth as usize);
         }
 
-        let branches = store.get_branches(&req.repo_id).unwrap_or_default();
+        let branches = store.get_branches(&req.repo_id).unwrap_or_else(|e| {
+            tracing::warn!("store get_branches failed: {e}");
+            Default::default()
+        });
 
         let mut needed_hashes: std::collections::HashSet<String> = std::collections::HashSet::new();
         for patch in &new_patches {
@@ -1289,7 +1324,10 @@ impl SutureHubServer {
         tokio::spawn(async move {
             let hooks = {
                 let store = storage.read().await;
-                store.list_webhooks(&repo_id).unwrap_or_default()
+                store.list_webhooks(&repo_id).unwrap_or_else(|e| {
+                    tracing::warn!("store list_webhooks failed: {e}");
+                    Default::default()
+                })
             };
             if !hooks.is_empty() {
                 let result = manager.trigger(&hooks, "push", &repo_id, patch_data).await;
@@ -1443,7 +1481,10 @@ impl SutureHubServer {
         tokio::spawn(async move {
             let hooks = {
                 let store = storage.read().await;
-                store.list_webhooks(&repo_id).unwrap_or_default()
+                store.list_webhooks(&repo_id).unwrap_or_else(|e| {
+                    tracing::warn!("store list_webhooks failed: {e}");
+                    Default::default()
+                })
             };
             if !hooks.is_empty() {
                 let result = manager.trigger(&hooks, "push", &repo_id, patch_data).await;
@@ -2277,7 +2318,10 @@ pub async fn repo_branches_handler(
     Path(repo_id): Path<String>,
 ) -> (StatusCode, Json<Vec<BranchProto>>) {
     let store = hub.storage.read().await;
-    let branches = store.get_branches(&repo_id).unwrap_or_default();
+        let branches = store.get_branches(&repo_id).unwrap_or_else(|e| {
+            tracing::warn!("store get_branches failed: {e}");
+            Default::default()
+        });
     (StatusCode::OK, Json(branches))
 }
 
@@ -2428,7 +2472,10 @@ pub async fn create_branch_handler(
             tokio::spawn(async move {
                 let hooks = {
                     let store = storage.read().await;
-                    store.list_webhooks(&rid).unwrap_or_default()
+                    store.list_webhooks(&rid).unwrap_or_else(|e| {
+                        tracing::warn!("store list_webhooks failed: {e}");
+                        Default::default()
+                    })
                 };
                 if !hooks.is_empty() {
                     let result = manager
@@ -2473,7 +2520,10 @@ pub async fn delete_branch_handler(
             tokio::spawn(async move {
                 let hooks = {
                     let store = storage.read().await;
-                    store.list_webhooks(&rid).unwrap_or_default()
+                    store.list_webhooks(&rid).unwrap_or_else(|e| {
+                        tracing::warn!("store list_webhooks failed: {e}");
+                        Default::default()
+                    })
                 };
                 if !hooks.is_empty() {
                     let result = manager
@@ -2546,7 +2596,10 @@ pub async fn lfs_batch_handler(
 
     let repo_dir = lfs_dir.join(&req.repo_id);
     let obj_dir = repo_dir.join("objects");
-    if let Err(e) = std::fs::create_dir_all(&obj_dir) {
+    let obj_dir_clone = obj_dir.clone();
+    if let Err(e) = tokio::task::spawn_blocking(move || std::fs::create_dir_all(obj_dir_clone))
+        .await.unwrap_or_else(|e| Err(std::io::Error::other(e.to_string())))
+    {
         tracing::warn!("Failed to create directory {}: {}", obj_dir.display(), e);
     }
 
@@ -2656,12 +2709,19 @@ pub async fn lfs_upload_handler(
         .join("objects")
         .join(prefix)
         .join(&oid);
-    if let Some(parent) = obj_path.parent()
-        && let Err(e) = std::fs::create_dir_all(parent)
-    {
-        tracing::warn!("Failed to create directory {}: {}", parent.display(), e);
+    if let Some(parent) = obj_path.parent() {
+        let parent_owned = parent.to_owned();
+        if let Err(e) = tokio::task::spawn_blocking(move || std::fs::create_dir_all(parent_owned))
+            .await.unwrap_or_else(|e| Err(std::io::Error::other(e.to_string())))
+        {
+            tracing::warn!("Failed to create directory {}: {}", parent.display(), e);
+        }
     }
-    match std::fs::write(&obj_path, &body) {
+    match tokio::task::spawn_blocking({
+        let obj_path = obj_path.clone();
+        let body = body.clone();
+        move || std::fs::write(obj_path, body)
+    }).await.unwrap_or_else(|e| Err(std::io::Error::other(e.to_string()))) {
         Ok(()) => (
             StatusCode::OK,
             Json(serde_json::json!({
@@ -2712,14 +2772,17 @@ pub async fn lfs_download_handler(
         .join(prefix)
         .join(&oid);
 
-    std::fs::read(&obj_path).map_or_else(
-        |_| (
+    match tokio::task::spawn_blocking({
+        let obj_path = obj_path.clone();
+        move || std::fs::read(obj_path)
+    }).await.unwrap_or_else(|e| Err(std::io::Error::other(e.to_string()))) {
+        Err(_) => (
             StatusCode::NOT_FOUND,
             axum::response::Response::new(axum::body::Body::from(
                 serde_json::json!({"message": "object not found"}).to_string(),
             )),
         ),
-        |data| {
+        Ok(data) => {
             let len = data.len();
             let body = axum::body::Body::from(data);
             let response = axum::response::Response::builder()
@@ -2733,7 +2796,7 @@ pub async fn lfs_download_handler(
                 });
             (StatusCode::OK, response)
         },
-    )
+    }
 }
 
 pub async fn login_handler(
@@ -2766,7 +2829,16 @@ pub async fn search_handler(
     Query(params): Query<crate::types::SearchParams>,
 ) -> (StatusCode, Json<serde_json::Value>) {
     let store = hub.storage.read().await;
-    let repos = store.search_repos(&params.q).unwrap_or_default();
+    let repos = match store.search_repos(&params.q) {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!("Failed to search repos: {e}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": "database error"})),
+            );
+        }
+    };
     let mut patches = Vec::new();
     for repo_id in &repos {
         if let Ok(p) = store.search_patches(repo_id, &params.q) {
@@ -2796,7 +2868,10 @@ pub async fn activity_handler(
         .unwrap_or(0);
     let limit = params.limit.unwrap_or(50).min(200) as usize;
     let store = hub.storage.read().await;
-    let entries = store.get_replication_log(0).unwrap_or_default();
+    let entries = store.get_replication_log(0).unwrap_or_else(|e| {
+        tracing::warn!("store get_replication_log failed: {e}");
+        Default::default()
+    });
     let mut collected: Vec<_> = entries
         .into_iter()
         .skip(offset as usize)

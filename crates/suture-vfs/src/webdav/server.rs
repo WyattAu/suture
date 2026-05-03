@@ -277,14 +277,23 @@ async fn handle_put(
 
     tracing::info!("PUT {} ({} bytes)", clean, body.len());
 
-    if let Ok(mut repo) = Repository::open(&state.repo_path) {
-        let full_path = state.repo_path.join(&clean);
-        if let Some(parent) = full_path.parent() {
-            let _ = std::fs::create_dir_all(parent);
+    let repo_path = &state.repo_path;
+    let full_path = repo_path.join(&clean);
+    if let Some(parent) = full_path.parent() {
+        let parent_owned = parent.to_owned();
+        if let Err(e) = tokio::task::spawn_blocking(move || std::fs::create_dir_all(parent_owned)).await {
+            tracing::warn!("spawn_blocking panicked in WebDAV PUT create_dir: {e}");
         }
-        if let Err(e) = std::fs::write(&full_path, &body) {
-            tracing::warn!("WebDAV PUT failed to write file {}: {}", full_path.display(), e);
-        }
+    }
+    let fp = full_path.clone();
+    let body_data = body.to_vec();
+    match tokio::task::spawn_blocking(move || std::fs::write(fp, body_data)).await {
+        Ok(Ok(())) => {},
+        Ok(Err(e)) => tracing::warn!("WebDAV PUT failed to write file {}: {}", full_path.display(), e),
+        Err(e) => tracing::warn!("spawn_blocking panicked in WebDAV PUT write: {e}"),
+    }
+
+    if let Ok(mut repo) = Repository::open(repo_path) {
         if let Err(e) = repo.add(&clean) {
             tracing::warn!("WebDAV PUT failed to git add {}: {}", clean, e);
         }
@@ -325,15 +334,23 @@ async fn handle_delete(
 
     tracing::info!("DELETE {}", clean);
 
-    if let Ok(mut repo) = Repository::open(&state.repo_path) {
-        let full_path = state.repo_path.join(clean);
-        if full_path.exists() && let Err(e) = std::fs::remove_file(&full_path) {
-            tracing::warn!("WebDAV DELETE failed to remove file {}: {}", full_path.display(), e);
+    let repo_path = &state.repo_path;
+    let full_path = repo_path.join(clean);
+    let clean_owned = clean.to_owned();
+    if full_path.exists() {
+        let fp = full_path.clone();
+        match tokio::task::spawn_blocking(move || std::fs::remove_file(fp)).await {
+            Ok(Ok(())) => {},
+            Ok(Err(e)) => tracing::warn!("WebDAV DELETE failed to remove file {}: {}", full_path.display(), e),
+            Err(e) => tracing::warn!("spawn_blocking panicked in WebDAV DELETE: {e}"),
         }
-        if let Err(e) = repo.add(clean) {
+    }
+
+    if let Ok(mut repo) = Repository::open(repo_path) {
+        if let Err(e) = repo.add(&clean_owned) {
             tracing::warn!("WebDAV DELETE failed to git add: {}", e);
         }
-        if let Err(e) = repo.commit(&format!("webdav: delete {clean}")) {
+        if let Err(e) = repo.commit(&format!("webdav: delete {clean_owned}")) {
             tracing::warn!("WebDAV DELETE failed to commit: {}", e);
         }
     }

@@ -100,7 +100,7 @@ pub async fn start(config: Config) -> anyhow::Result<()> {
         .route("/billing/webhook", post(crate::stripe::handle_webhook))
         .layer(middleware::from_fn_with_state(
             state.clone(),
-            crate::middleware::optional_auth,
+            crate::middleware::require_auth,
         ))
         .layer(middleware::from_fn_with_state(
             state.clone(),
