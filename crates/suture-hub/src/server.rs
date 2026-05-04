@@ -64,6 +64,14 @@ pub struct PaginationParams {
     pub cursor: Option<String>,
 }
 
+#[derive(serde::Deserialize)]
+pub struct AuditQueryParams {
+    pub actor: Option<String>,
+    pub action: Option<String>,
+    pub limit: Option<usize>,
+    pub offset: Option<usize>,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct CursorData {
     offset: u64,
@@ -82,7 +90,7 @@ fn encode_cursor(offset: u64) -> String {
 }
 
 pub struct SutureHubServer {
-    storage: Arc<RwLock<HubStorage>>,
+    pub(crate) storage: Arc<RwLock<HubStorage>>,
     blob_backend: Option<Arc<dyn BlobBackend>>,
     no_auth: bool,
     rate_limits:
@@ -4058,6 +4066,32 @@ pub async fn sso_callback_handler(
     })))
 }
 
+pub async fn audit_log_handler(
+    State(hub): State<Arc<SutureHubServer>>,
+    headers: HeaderMap,
+    Query(params): Query<AuditQueryParams>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    if let Err(status) = check_auth(&hub, &headers).await {
+        return (status, Json(serde_json::json!({"error": "unauthorized"})));
+    }
+    let store = hub.storage.read().await;
+    let entries = store
+        .query_audit_log(
+            params.actor.as_deref(),
+            params.action.as_deref(),
+            params.limit.unwrap_or(100),
+            params.offset.unwrap_or(0),
+        )
+        .unwrap_or_default();
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "entries": entries,
+            "count": entries.len(),
+        })),
+    )
+}
+
 pub async fn run_server(
     hub: SutureHubServer,
     addr: &str,
@@ -4209,6 +4243,11 @@ pub async fn run_server(
         )
         .route("/sso/authorize", axum::routing::post(sso_authorize_handler))
         .route("/sso/callback", axum::routing::post(sso_callback_handler))
+        .route("/audit/log", axum::routing::get(audit_log_handler))
+        .layer(axum::middleware::from_fn_with_state(
+            Arc::clone(&hub),
+            crate::audit::audit_middleware,
+        ))
         .with_state(Arc::clone(&hub))
         .layer(set_request_id)
         .layer(propagate_request_id);

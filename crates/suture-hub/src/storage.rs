@@ -222,6 +222,22 @@ impl HubStorage {
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 updated_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
+
+            CREATE TABLE IF NOT EXISTS audit_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+                actor TEXT NOT NULL DEFAULT '',
+                action TEXT NOT NULL,
+                resource_type TEXT NOT NULL DEFAULT '',
+                resource_id TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'success',
+                details TEXT NOT NULL DEFAULT '',
+                request_id TEXT NOT NULL DEFAULT '',
+                client_ip TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp ON audit_log(timestamp);
+            CREATE INDEX IF NOT EXISTS idx_audit_log_actor ON audit_log(actor);
+            CREATE INDEX IF NOT EXISTS idx_audit_log_action ON audit_log(action);
             ",
         )?;
 
@@ -1740,6 +1756,83 @@ impl HubStorage {
         )?;
         Ok(affected > 0)
     }
+
+    // === Audit Logging ===
+
+    /// Write an audit log entry.
+    #[allow(clippy::too_many_arguments)]
+    pub fn write_audit_entry(
+        &self,
+        actor: &str,
+        action: &str,
+        resource_type: &str,
+        resource_id: &str,
+        status: &str,
+        details: &str,
+        request_id: &str,
+        client_ip: &str,
+    ) -> Result<(), StorageError> {
+        let conn = self.conn.lock().map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        conn.execute(
+            "INSERT INTO audit_log (actor, action, resource_type, resource_id, status, details, request_id, client_ip) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![actor, action, resource_type, resource_id, status, details, request_id, client_ip],
+        )?;
+        Ok(())
+    }
+
+    /// Query audit log entries with optional filters.
+    pub fn query_audit_log(
+        &self,
+        actor: Option<&str>,
+        action: Option<&str>,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<AuditEntry>, StorageError> {
+        let conn = self.conn.lock().map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let effective_limit: i64 = limit.clamp(1, 1000) as i64;
+        let effective_offset: i64 = offset as i64;
+
+        let mut sql = String::from(
+            "SELECT id, timestamp, actor, action, resource_type, resource_id, status, details, request_id, client_ip FROM audit_log WHERE 1=1",
+        );
+        let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+
+        if let Some(a) = actor {
+            sql.push_str(" AND actor = ?");
+            param_values.push(Box::new(a.to_owned()));
+        }
+        if let Some(a) = action {
+            sql.push_str(" AND action = ?");
+            param_values.push(Box::new(a.to_owned()));
+        }
+        sql.push_str(" ORDER BY id DESC LIMIT ? OFFSET ?");
+        param_values.push(Box::new(effective_limit));
+        param_values.push(Box::new(effective_offset));
+
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> = param_values.iter().map(|b| b.as_ref()).collect();
+
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(param_refs.as_slice(), |row| {
+            Ok(AuditEntry {
+                id: row.get(0)?,
+                timestamp: row.get(1)?,
+                actor: row.get(2)?,
+                action: row.get(3)?,
+                resource_type: row.get(4)?,
+                resource_id: row.get(5)?,
+                status: row.get(6)?,
+                details: row.get(7)?,
+                request_id: row.get(8)?,
+                client_ip: row.get(9)?,
+            })
+        })?;
+
+        let mut entries = Vec::new();
+        for row in rows {
+            entries.push(row?);
+        }
+        Ok(entries)
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -1767,6 +1860,21 @@ pub struct ReplicationStatus {
     pub current_seq: i64,
     pub peer_count: usize,
     pub peers: Vec<ReplicationPeer>,
+}
+
+/// A single audit log entry.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AuditEntry {
+    pub id: i64,
+    pub timestamp: String,
+    pub actor: String,
+    pub action: String,
+    pub resource_type: String,
+    pub resource_id: String,
+    pub status: String,
+    pub details: String,
+    pub request_id: String,
+    pub client_ip: String,
 }
 
 fn base64_encode(data: &[u8]) -> String {
