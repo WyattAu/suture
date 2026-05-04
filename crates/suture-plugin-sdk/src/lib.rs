@@ -147,7 +147,7 @@ pub fn set_error(msg: &str) {
 }
 
 thread_local! {
-    static ERROR_BUFFER: std::cell::RefCell<Vec<u8>> = std::cell::RefCell::new(Vec::new());
+    static ERROR_BUFFER: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
 // ---------------------------------------------------------------------------
