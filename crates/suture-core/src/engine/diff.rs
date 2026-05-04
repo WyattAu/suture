@@ -122,29 +122,35 @@ pub fn diff_trees(old_tree: &FileTree, new_tree: &FileTree) -> Vec<DiffEntry> {
         }
     }
 
-    // Rename detection: match deleted files with added files by hash
+    // Rename detection: build a hash→path index from added files for O(1) lookup
+    let mut hash_to_added: std::collections::HashMap<Hash, Vec<&str>> =
+        std::collections::HashMap::with_capacity(added_paths.len());
+    for (add_path, add_hash) in &added_paths {
+        hash_to_added.entry(*add_hash).or_default().push(add_path);
+    }
+
     let mut matched_deletes: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut matched_adds: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     for (del_path, del_hash) in old_tree.iter() {
-        if !new_tree.contains(del_path) {
-            // Look for a matching added file
-            for (add_path, add_hash) in &added_paths {
-                if del_hash == add_hash
-                    && !matched_adds.contains(add_path)
+        if !new_tree.contains(del_path)
+            && let Some(candidates) = hash_to_added.get(del_hash)
+        {
+            for add_path in candidates {
+                if !matched_adds.contains(*add_path)
                     && !matched_deletes.contains(del_path)
                 {
                     diffs.push(DiffEntry {
-                        path: add_path.clone(),
+                        path: add_path.to_string(),
                         diff_type: DiffType::Renamed {
                             old_path: del_path.clone(),
-                            new_path: add_path.clone(),
+                            new_path: add_path.to_string(),
                         },
                         old_hash: Some(*del_hash),
-                        new_hash: Some(*add_hash),
+                        new_hash: Some(*del_hash),
                     });
                     matched_deletes.insert(del_path.clone());
-                    matched_adds.insert(add_path.clone());
+                    matched_adds.insert(add_path.to_string());
                     break;
                 }
             }

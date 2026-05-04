@@ -356,17 +356,16 @@ impl SutureHubServer {
         limit: u32,
     ) -> (Vec<PatchProto>, Option<String>) {
         let store = self.storage.read().await;
-        let patches = store.get_all_patches(repo_id).unwrap_or_else(|e| {
+        let effective_limit = limit.min(200) as usize;
+        let offset = offset as usize;
+        let patches = store.get_all_patches(repo_id, offset, effective_limit + 1).unwrap_or_else(|e| {
             tracing::warn!("store get_all_patches failed: {e}");
             Default::default()
         });
-        let limit = limit.min(200) as usize;
-        let offset = offset as usize;
-        let mut collected: Vec<PatchProto> =
-            patches.into_iter().skip(offset).take(limit + 1).collect();
-        let has_more = collected.len() > limit;
+        let has_more = patches.len() > effective_limit;
+        let mut collected = patches;
         if has_more {
-            collected.truncate(limit);
+            collected.truncate(effective_limit);
         }
         let next_cursor = if has_more {
             Some(encode_cursor(offset as u64 + limit as u64))
@@ -644,7 +643,7 @@ impl SutureHubServer {
             };
         }
 
-        let all_patches = store.get_all_patches(&req.repo_id).unwrap_or_else(|e| {
+        let all_patches = store.get_all_patches_unbounded(&req.repo_id).unwrap_or_else(|e| {
             tracing::warn!("store get_all_patches failed: {e}");
             Default::default()
         });
@@ -1030,7 +1029,7 @@ impl SutureHubServer {
             };
         }
 
-        let all_patches = store.get_all_patches(&req.repo_id).unwrap_or_else(|e| {
+        let all_patches = store.get_all_patches_unbounded(&req.repo_id).unwrap_or_else(|e| {
             tracing::warn!("store get_all_patches failed: {e}");
             Default::default()
         });

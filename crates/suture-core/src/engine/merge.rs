@@ -22,9 +22,15 @@ impl LineChange {
     }
 }
 
+/// Maximum line count for the O(m×n) DP table approach.
+/// Above this threshold, we fall back to the linear-space approach.
+const LCS_DP_THRESHOLD: usize = 2000;
+
 /// Compute the diff between two line sequences using LCS.
 ///
 /// Returns a list of changes that transform `base` into `modified`.
+/// For files under 2000 lines, uses the O(m×n) DP table for exact results.
+/// For larger files, uses a linear-space hash-based approach.
 #[must_use] 
 pub fn diff_lines(base: &[&str], modified: &[&str]) -> Vec<LineChange> {
     if base.is_empty() && modified.is_empty() {
@@ -41,6 +47,16 @@ pub fn diff_lines(base: &[&str], modified: &[&str]) -> Vec<LineChange> {
         )];
     }
 
+    if base.len() <= LCS_DP_THRESHOLD && modified.len() <= LCS_DP_THRESHOLD {
+        diff_lines_dp(base, modified)
+    } else {
+        diff_lines_linear(base, modified)
+    }
+}
+
+/// O(m×n) DP table LCS — exact but O(m×n) memory.
+/// Used for files under LCS_DP_THRESHOLD lines.
+fn diff_lines_dp(base: &[&str], modified: &[&str]) -> Vec<LineChange> {
     let m = base.len();
     let n = modified.len();
 
@@ -77,6 +93,85 @@ pub fn diff_lines(base: &[&str], modified: &[&str]) -> Vec<LineChange> {
 
     changes.reverse();
     coalesce_changes(changes)
+}
+
+/// Linear-space diff using a hash-based LCS approach.
+/// Uses O(m+n) memory instead of O(m×n). Slightly less optimal on edit
+/// distance but handles files of arbitrary size without memory pressure.
+fn diff_lines_linear(base: &[&str], modified: &[&str]) -> Vec<LineChange> {
+    // Build index: for each unique line in modified, record all positions
+    let mut mod_positions: std::collections::HashMap<&str, Vec<usize>> =
+        std::collections::HashMap::with_capacity(modified.len().min(10_000));
+    for (i, line) in modified.iter().enumerate() {
+        mod_positions.entry(line).or_default().push(i);
+    }
+
+    // Find LCS using patience-like matching: for each line in base (in order),
+    // find the first unmatched position in modified.
+    let mut matched_base: Vec<usize> = Vec::with_capacity(base.len().min(modified.len()));
+    let mut matched_mod: std::collections::HashSet<usize> =
+        std::collections::HashSet::with_capacity(base.len().min(modified.len()));
+
+    for line in base {
+        if let Some(positions) = mod_positions.get(line) {
+            for &pos in positions {
+                if !matched_mod.contains(&pos) {
+                    matched_base.push(matched_base.len());
+                    matched_mod.insert(pos);
+                    break;
+                }
+            }
+        }
+    }
+
+    // Now build the diff from the matching
+    // Build matched pairs: for each line in base, find the first unmatched position in modified
+    let mut matched_pairs: Vec<(usize, usize)> = Vec::new();
+    let mut used_mod: std::collections::HashSet<usize> = std::collections::HashSet::new();
+    for (bi, line) in base.iter().enumerate() {
+        if let Some(positions) = mod_positions.get(line) {
+            for &mi in positions {
+                if !used_mod.contains(&mi) {
+                    matched_pairs.push((bi, mi));
+                    used_mod.insert(mi);
+                    break;
+                }
+            }
+        }
+    }
+
+    let mut changes_list: Vec<LineChange> = Vec::new();
+    let mut bi = 0usize;
+    let mut mi = 0usize;
+
+    for &(base_pos, mod_pos) in &matched_pairs {
+        // Emit deletions for base lines before this match
+        while bi < base_pos {
+            changes_list.push(LineChange::Deleted(vec![base[bi].to_owned()]));
+            bi += 1;
+        }
+        // Emit insertions for modified lines before this match
+        while mi < mod_pos {
+            changes_list.push(LineChange::Inserted(vec![modified[mi].to_owned()]));
+            mi += 1;
+        }
+        // Emit the match
+        changes_list.push(LineChange::Unchanged(vec![base[base_pos].to_owned()]));
+        bi += 1;
+        mi += 1;
+    }
+
+    // Remaining lines
+    while bi < base.len() {
+        changes_list.push(LineChange::Deleted(vec![base[bi].to_owned()]));
+        bi += 1;
+    }
+    while mi < modified.len() {
+        changes_list.push(LineChange::Inserted(vec![modified[mi].to_owned()]));
+        mi += 1;
+    }
+
+    coalesce_changes(changes_list)
 }
 
 /// Try to extend the last change in `result` with `change` if they're the same variant.
