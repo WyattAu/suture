@@ -1,0 +1,11 @@
+[package]
+name = "suture-plugin-sdk"
+version = "0.1.0"
+edition = "2021"
+description = "SDK for writing Suture WASM merge plugins — safe Rust wrappers for the host-function ABI v1"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/WyattAu/suture"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

@@ -4,13 +4,33 @@
 //! a simple interface: `merge(base, ours, theirs) -> Option<result>`.
 //!
 //! Two runtime modes are supported:
-//! - **[`WasmPlugin`]**: Memory-passthrough ABI — writes input directly into
-//!   the WASM linear memory and reads results from a pointer. Suitable for
-//!   plugins compiled with `wasm32-unknown-unknown`.
-//! - **[`WasmPluginHost`]**: Host-function ABI — the host exposes I/O helpers
-//!   (`env_get_input_byte`, `env_set_output_byte`, …) that the plugin calls
+//! - **[`WasmPlugin`]** (deprecated): Memory-passthrough ABI — writes input directly into
+//!   the WASM linear memory and reads results from a pointer.
+//! - **[`WasmPluginHost`]**: Host-function ABI (recommended) — the host exposes I/O helpers
+//!   (`get_input_len`, `get_input_byte`, …) that the plugin calls
 //!   to read its JSON input and write its merge output. Fuel-based timeouts
 //!   and memory limits are enforced.
+//!
+//! # Stable ABI v1 Contract (host-function ABI)
+//!
+//! ## Plugin must import from `"env"`:
+//! - `get_input_len() -> i32` — length of JSON input buffer
+//! - `get_input_byte(offset: i32) -> i32` — read one byte (returns -1 if OOB)
+//! - `set_output_byte(offset: i32, byte: i32)` — write one byte to output
+//! - `set_output_len(len: i32)` — resize output buffer
+//! - `host_log(level: i32, msg_ptr: i32, msg_len: i32)` — log a message
+//!
+//! ## Plugin must export:
+//! - `suture_merge() -> i32` — perform merge (0=success, 1=conflict, -1=error)
+//! - `suture_abi_version() -> i32` — must return `1`
+//! - `suture_plugin_name() -> *const u8` — plugin name (not null-terminated)
+//! - `suture_plugin_name_len() -> i32` — length of name
+//! - `suture_plugin_version() -> *const u8` — plugin version (not null-terminated)
+//! - `suture_plugin_version_len() -> i32` — length of version
+//! - `suture_extensions() -> *const u8` — comma-separated extensions (e.g. "json,yaml")
+//! - `suture_extensions_len() -> i32` — length of extensions string
+//! - `suture_error_msg() -> *const u8` — error message (set before returning -1)
+//! - `suture_error_msg_len() -> i32` — length of error message
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -390,8 +410,49 @@ impl WasmPluginHost {
             caller.data_mut().output_buffer.resize(len as usize, 0);
         }).map_err(|e| PluginError::Compilation(e.to_string()))?;
 
+        linker.func_wrap("env", "host_log", |mut caller: Caller<'_, PluginState>, level: i32, msg_ptr: i32, msg_len: i32| {
+            let memory = caller.get_export("memory")
+                .and_then(|e| e.into_memory());
+            let msg = match memory {
+                Some(mem) => {
+                    let data = mem.data(&caller);
+                    let start = msg_ptr as usize;
+                    let end = start + msg_len as usize;
+                    if end <= data.len() {
+                        String::from_utf8_lossy(&data[start..end]).into_owned()
+                    } else {
+                        "<invalid msg pointer>".to_owned()
+                    }
+                }
+                None => "<no memory>".to_owned(),
+            };
+            match level {
+                0 => tracing::trace!("[plugin] {}", msg),
+                1 => tracing::debug!("[plugin] {}", msg),
+                2 => tracing::info!("[plugin] {}", msg),
+                3 => tracing::warn!("[plugin] {}", msg),
+                _ => tracing::error!("[plugin] {}", msg),
+            }
+        }).map_err(|e| PluginError::Compilation(e.to_string()))?;
+
         let instance = linker.instantiate(&mut store, &module)
             .map_err(|e| PluginError::Runtime(e.to_string()))?;
+
+        // Check ABI version
+        {
+            let abi_version_fn = instance
+                .get_typed_func::<(), i32>(&mut store, "suture_abi_version")
+                .ok();
+            if let Some(abi_fn) = abi_version_fn {
+                let version = abi_fn.call(&mut store, ())
+                    .map_err(|e| PluginError::Interface(format!("suture_abi_version call failed: {e}")))?;
+                if version != PLUGIN_ABI_VERSION as i32 {
+                    return Err(PluginError::Interface(format!(
+                        "plugin ABI version {version} does not match host ABI version {PLUGIN_ABI_VERSION}"
+                    )));
+                }
+            }
+        }
 
         let metadata = extract_metadata_host(&instance, &mut store);
 
@@ -453,7 +514,15 @@ impl WasmPluginHost {
                 Ok(Some(output))
             }
             1 => Ok(None),
-            -1 => Err(PluginError::Runtime("Plugin returned error".to_owned())),
+            -1 => {
+                // Read error message from plugin if available
+                let error_msg = read_plugin_error(&instance, &mut store);
+                Err(PluginError::Runtime(if error_msg.is_empty() {
+                    "Plugin returned error".to_owned()
+                } else {
+                    format!("Plugin error: {error_msg}")
+                }))
+            }
             _ => Err(PluginError::Runtime(format!("Unknown result code: {result_code}"))),
         }
     }
@@ -471,7 +540,7 @@ impl WasmPluginHost {
 }
 
 /// Read metadata from a host-function-ABI plugin by calling its name/version
-/// exports and reading null-terminated strings from WASM memory.
+/// exports and reading strings from WASM memory.
 fn extract_metadata_host(
     instance: &Instance,
     store: &mut Store<PluginState>,
@@ -508,7 +577,17 @@ fn extract_metadata_host(
     let name = read_string(store, "suture_plugin_name", "suture_plugin_name_len");
     let version = read_string(store, "suture_plugin_version", "suture_plugin_version_len");
 
-    let extensions = vec![];
+    // Read extensions — comma-separated list like "json,yaml,toml"
+    let extensions_str = read_string(store, "suture_extensions", "suture_extensions_len");
+    let extensions: Vec<String> = if extensions_str.is_empty() {
+        Vec::new()
+    } else {
+        extensions_str
+            .split(',')
+            .map(|s| s.trim().to_owned())
+            .filter(|s| !s.is_empty())
+            .collect()
+    };
 
     PluginMetadata {
         driver_name: format!("wasm-plugin-{name}"),
@@ -518,6 +597,29 @@ fn extract_metadata_host(
         extensions,
         description: String::new(),
         author: String::new(),
+    }
+}
+
+/// Read the error message from a plugin that returned -1.
+fn read_plugin_error(instance: &Instance, store: &mut Store<PluginState>) -> String {
+    let memory = instance.get_memory(&mut *store, "memory");
+    let ptr_fn = instance.get_typed_func::<(), i32>(&mut *store, "suture_error_msg").ok();
+    let len_fn = instance.get_typed_func::<(), i32>(&mut *store, "suture_error_msg_len").ok();
+    match (ptr_fn, len_fn, memory) {
+        (Some(pf), Some(lf), Some(mem)) => {
+            let ptr = pf.call(&mut *store, ()).unwrap_or(0);
+            let len = lf.call(&mut *store, ()).unwrap_or(0) as usize;
+            if len == 0 {
+                return String::new();
+            }
+            let data: &[u8] = mem.data(&*store);
+            if ptr as usize + len <= data.len() {
+                String::from_utf8_lossy(&data[ptr as usize..ptr as usize + len]).into_owned()
+            } else {
+                String::new()
+            }
+        }
+        _ => String::new(),
     }
 }
 

@@ -4927,6 +4927,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "suture-plugin-sdk"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "suture-protocol"
 version = "5.1.0"
 dependencies = [
