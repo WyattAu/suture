@@ -244,6 +244,9 @@ pub async fn cmd_apply(
         if target_path.is_empty() || target_path == "/dev/null" {
             continue;
         }
+        if target_path.contains("..") {
+            return Err(format!("error: path traversal not allowed: {target_path}").into());
+        }
 
         let file_content = if std::path::Path::new(target_path).exists() {
             std::fs::read_to_string(target_path)?

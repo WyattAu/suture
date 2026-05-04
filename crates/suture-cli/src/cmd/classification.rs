@@ -531,11 +531,12 @@ async fn cmd_report(output: Option<&str>) -> Result<(), Box<dyn std::error::Erro
         .collect();
     sorted_files.sort_by_key(|b| std::cmp::Reverse(b.1));
 
-    let above_unclassified: Vec<(String, String)> = current_state
+    let mut above_unclassified: Vec<(String, String)> = current_state
         .iter()
         .filter(|(_, cls)| classification_level(cls) > 1)
         .map(|(f, c)| (f.clone(), c.clone()))
         .collect();
+    above_unclassified.sort();
 
     let repo_name = std::env::current_dir()
         .unwrap_or_default()
@@ -574,7 +575,9 @@ async fn cmd_report(output: Option<&str>) -> Result<(), Box<dyn std::error::Erro
     if current_state.is_empty() {
         report.push_str("  No files currently classified.\n\n");
     } else {
-        for (file, cls) in &current_state {
+        let mut sorted: Vec<_> = current_state.iter().collect();
+        sorted.sort_by_key(|(f, _)| f.as_str());
+        for (file, cls) in sorted {
             let _ = writeln!(report, "  {file} [{cls}]");
         }
         report.push('\n');
@@ -594,7 +597,9 @@ async fn cmd_report(output: Option<&str>) -> Result<(), Box<dyn std::error::Erro
     if chain_of_custody.is_empty() {
         report.push_str("  No classification changes recorded.\n\n");
     } else {
-        for (file, entries) in &chain_of_custody {
+        let mut sorted: Vec<_> = chain_of_custody.iter().collect();
+        sorted.sort_by_key(|(f, _)| f.as_str());
+        for (file, entries) in sorted {
             let _ = writeln!(report, "  {file}:");
             for (hash, author, evt) in entries {
                 let _ = writeln!(report, "    {hash} — {author} ({evt})");

@@ -77,7 +77,8 @@ pub async fn start(config: Config) -> anyhow::Result<()> {
         .route("/auth/oauth/start", get(crate::oauth::start_oauth))
         .route("/auth/google/callback", get(crate::oauth::google_callback))
         .route("/auth/github/callback", get(crate::oauth::github_callback))
-        .route("/api/drivers", get(crate::merge_api::list_drivers));
+        .route("/api/drivers", get(crate::merge_api::list_drivers))
+        .route("/billing/webhook", post(crate::stripe::handle_webhook));
 
     let protected_routes = Router::new()
         .route("/auth/me", get(crate::auth::me_handler))
@@ -98,7 +99,6 @@ pub async fn start(config: Config) -> anyhow::Result<()> {
         .route("/billing/checkout", post(crate::stripe::create_checkout_session))
         .route("/billing/subscription", get(crate::stripe::get_subscription))
         .route("/billing/portal", post(portal_handler))
-        .route("/billing/webhook", post(crate::stripe::handle_webhook))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             crate::middleware::require_auth,

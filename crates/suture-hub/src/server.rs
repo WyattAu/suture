@@ -2765,14 +2765,22 @@ pub async fn lfs_batch_handler(
 
         let action = match req.operation {
             suture_protocol::LfsOperation::Upload => {
-                if obj_path.exists() {
+                let op = obj_path.clone();
+                let exists = tokio::task::spawn_blocking(move || op.exists())
+                    .await
+                    .unwrap_or(false);
+                if exists {
                     suture_protocol::LfsAction::None
                 } else {
                     suture_protocol::LfsAction::Upload
                 }
             }
             suture_protocol::LfsOperation::Download => {
-                if obj_path.exists() {
+                let op = obj_path.clone();
+                let exists = tokio::task::spawn_blocking(move || op.exists())
+                    .await
+                    .unwrap_or(false);
+                if exists {
                     suture_protocol::LfsAction::Download
                 } else {
                     suture_protocol::LfsAction::None

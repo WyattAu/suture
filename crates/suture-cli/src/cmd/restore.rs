@@ -11,6 +11,12 @@ pub async fn cmd_restore(
 
     let repo = suture_core::repository::Repository::open(StdPath::new("."))?;
 
+    for path in paths {
+        if path.contains("..") {
+            return Err(format!("error: path traversal not allowed: {path}").into());
+        }
+    }
+
     if staged {
         let head_tree = repo.snapshot_head()?;
         for path in paths {

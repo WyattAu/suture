@@ -84,6 +84,9 @@ fn export_as_dir(
         if path.starts_with(".suture/") && !include_meta {
             continue;
         }
+        if path.contains("..") {
+            continue;
+        }
         let full_path = dest.join(path);
         if let Some(parent) = full_path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -124,6 +127,9 @@ fn export_as_zip(
     let mut file_count = 0usize;
     for (path, hash) in tree.iter() {
         if path.starts_with(".suture/") && !include_meta {
+            continue;
+        }
+        if path.contains("..") {
             continue;
         }
         let data = repo.cas().get_blob(hash).map_err(|e| e.to_string())?;

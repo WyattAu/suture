@@ -138,7 +138,9 @@ pub struct WasmPlugin {
 impl WasmPlugin {
     /// Load a plugin from Wasm bytes.
     pub fn from_bytes(name: &str, wasm_bytes: &[u8]) -> Result<Self> {
-        let engine = Engine::default();
+        let mut config = wasmtime::Config::new();
+        config.consume_fuel(true);
+        let engine = Engine::new(&config)?;
 
         let module = Module::new(&engine, wasm_bytes)
             .context("failed to compile Wasm module")?;
@@ -206,6 +208,9 @@ impl WasmPlugin {
         theirs: &str,
     ) -> Result<PluginMergeResult> {
         let mut store = Store::new(&self.engine, ());
+        // Fuel-based timeout: 1 billion fuel units (~1-2 seconds of compute)
+        store.set_fuel(1_000_000_000)
+            .context("failed to set fuel for WasmPlugin")?;
 
         let mut linker = Linker::new(&self.engine);
 
@@ -364,8 +369,14 @@ impl WasmPluginHost {
         }).map_err(|e| PluginError::Compilation(e.to_string()))?;
 
         linker.func_wrap("env", "set_output_byte", |mut caller: Caller<'_, PluginState>, offset: i32, byte: i32| {
+            if offset < 0 {
+                return;
+            }
             let state = caller.data_mut();
             let offset = offset as usize;
+            if state.output_buffer.len() >= 16 * 1024 * 1024 {
+                return;
+            }
             if offset >= state.output_buffer.len() {
                 state.output_buffer.resize(offset + 1, 0);
             }
@@ -373,6 +384,9 @@ impl WasmPluginHost {
         }).map_err(|e| PluginError::Compilation(e.to_string()))?;
 
         linker.func_wrap("env", "set_output_len", |mut caller: Caller<'_, PluginState>, len: i32| {
+            if len < 0 || len as usize > 16 * 1024 * 1024 {
+                return;
+            }
             caller.data_mut().output_buffer.resize(len as usize, 0);
         }).map_err(|e| PluginError::Compilation(e.to_string()))?;
 

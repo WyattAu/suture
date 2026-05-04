@@ -311,6 +311,9 @@ async fn handle_delete(
     AxumPath(path): AxumPath<String>,
 ) -> impl IntoResponse {
     let clean = path.trim_start_matches('/');
+    if clean.contains("..") {
+        return (StatusCode::BAD_REQUEST, "path traversal not allowed").into_response();
+    }
 
     let mut removed = false;
 
@@ -367,7 +370,7 @@ async fn handle_mkcol(
         .trim_start_matches('/')
         .trim_end_matches('/').to_owned();
 
-    if clean.is_empty() {
+    if clean.is_empty() || clean.contains("..") {
         return StatusCode::FORBIDDEN.into_response();
     }
 
