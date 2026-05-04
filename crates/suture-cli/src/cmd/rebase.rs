@@ -125,6 +125,9 @@ async fn cmd_rebase_interactive(
     std::fs::write(&todo_path, &todo_content)?;
 
     // Open editor
+    // SECURITY: Editor is read from env vars (SUTURE_EDITOR > EDITOR).
+    // This matches git's behavior. In untrusted environments, set SUTURE_EDITOR
+    // to an explicit path. The editor is executed directly (not via shell).
     let editor = std::env::var("SUTURE_EDITOR")
         .or_else(|_| std::env::var("EDITOR"))
         .unwrap_or_else(|_| "vim".to_owned());

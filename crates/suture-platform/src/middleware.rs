@@ -39,7 +39,7 @@ pub async fn require_auth(
 
     match crate::auth::verify_jwt(token, &state.config.jwt_secret) {
         Ok(claims) => {
-            if crate::auth::is_token_revoked(&state.db, &claims.sub) {
+            if crate::auth::is_token_revoked(&state.db, &claims.jti) {
                 return (
                     StatusCode::UNAUTHORIZED,
                     Json(json!({"error": "token has been revoked"})),
@@ -68,7 +68,7 @@ pub async fn optional_auth(
         .and_then(|h| h.to_str().ok())
         .and_then(|h| h.strip_prefix("Bearer "))
         && let Ok(claims) = crate::auth::verify_jwt(token, &state.config.jwt_secret)
-        && !crate::auth::is_token_revoked(&state.db, &claims.sub)
+        && !crate::auth::is_token_revoked(&state.db, &claims.jti)
     {
         request.extensions_mut().insert(claims);
     }

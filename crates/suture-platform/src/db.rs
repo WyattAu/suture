@@ -24,7 +24,7 @@ impl PlatformDb {
     }
 
     fn init_schema(&self) -> anyhow::Result<()> {
-        let conn = self.conn.lock().map_err(|e| anyhow::anyhow!("{e}"))?;
+        let conn = self.conn.lock().map_err(|e| anyhow::anyhow!("failed to acquire db lock for schema init: {e}"))?;
         conn.execute_batch(
             "
             CREATE TABLE IF NOT EXISTS accounts (

@@ -39,7 +39,13 @@ impl SutureLsp {
 
     async fn get_repo_and_relative(&self, uri: &Url) -> Option<(Repository, String, PathBuf)> {
         let root = self.root_path.read().await.clone()?;
-        let repo = Repository::open(&root).ok()?;
+        let repo = match Repository::open(&root) {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::debug!("Failed to open repository at {}: {e}", root.display());
+                return None;
+            }
+        };
         let file_path = uri.to_file_path().ok()?;
         let relative = file_path.strip_prefix(&root).ok()?;
         let relative_str = relative.to_string_lossy().to_string();
@@ -52,7 +58,7 @@ impl SutureLsp {
                 return;
             };
 
-            let mut diagnostics: Vec<Diagnostic> = Vec::new();
+            let mut diagnostics: Vec<Diagnostic> = Vec::with_capacity(8);
 
             let head_tree = repo.snapshot_head().ok();
             let is_tracked = head_tree
@@ -124,7 +130,7 @@ impl SutureLsp {
     }
 
     fn check_merge_conflicts(content: &str) -> Vec<Diagnostic> {
-        let mut diagnostics = Vec::new();
+        let mut diagnostics = Vec::with_capacity(8);
         let lines: Vec<&str> = content.lines().collect();
         let mut in_conflict = false;
         let mut conflict_start = 0;
@@ -323,7 +329,7 @@ impl SutureLsp {
             Err(_) => return Vec::new(),
         };
 
-        let mut items = Vec::new();
+        let mut items = Vec::with_capacity(8);
         collect_toml_keys(&table, String::new(), &mut items);
         items
     }
@@ -365,7 +371,7 @@ impl SutureLsp {
     }
 
     fn document_symbols_yaml(content: &str) -> Vec<DocumentSymbol> {
-        let mut symbols = Vec::new();
+        let mut symbols = Vec::with_capacity(8);
         for (i, line) in content.lines().enumerate() {
             let trimmed = line.trim();
             if trimmed.is_empty()
@@ -415,7 +421,7 @@ impl SutureLsp {
             Err(_) => return Vec::new(),
         };
 
-        let mut symbols = Vec::new();
+        let mut symbols = Vec::with_capacity(8);
         collect_toml_symbols(&table, content, String::new(), &mut symbols);
         symbols
     }

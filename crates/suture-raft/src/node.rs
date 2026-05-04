@@ -324,7 +324,10 @@ impl RaftNode {
             "starting pre-vote"
         );
 
-        if self.pre_vote.as_ref().unwrap().votes_received.len() >= self.majority() {
+        let Some(pre_vote) = self.pre_vote.as_ref() else {
+            return Vec::new();
+        };
+        if pre_vote.votes_received.len() >= self.majority() {
             self.pre_vote = None;
             return self.start_election();
         }

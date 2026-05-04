@@ -314,8 +314,9 @@ fn collect_branches(
     dir: &Path,
     out: &mut Vec<(String, String)>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    for entry in std::fs::read_dir(dir)? {
-        let entry = entry?;
+    let mut entries: Vec<_> = std::fs::read_dir(dir)?.collect::<Result<Vec<_>, _>>()?;
+    entries.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+    for entry in entries {
         let path = entry.path();
         if path.is_dir() {
             collect_branches(base, &path, out)?;

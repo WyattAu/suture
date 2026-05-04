@@ -93,6 +93,9 @@ fn write_tar(
     let entries = collect_entries(repo, tree);
     for (path, data_result) in &entries {
         let data = data_result.as_ref().map_err(std::string::ToString::to_string)?;
+        if path.contains("..") {
+            continue;
+        }
         let archive_path = format!("{prefix}/{path}");
         let mut header = tar::Header::new_gnu();
         header.set_size(data.len() as u64);
@@ -118,6 +121,9 @@ fn write_tar_gz(
     let entries = collect_entries(repo, tree);
     for (path, data_result) in &entries {
         let data = data_result.as_ref().map_err(std::string::ToString::to_string)?;
+        if path.contains("..") {
+            continue;
+        }
         let archive_path = format!("{prefix}/{path}");
         let mut header = tar::Header::new_gnu();
         header.set_size(data.len() as u64);
@@ -148,6 +154,9 @@ fn write_zip(
     let entries = collect_entries(repo, tree);
     for (path, data_result) in &entries {
         let data = data_result.as_ref().map_err(std::string::ToString::to_string)?;
+        if path.contains("..") {
+            continue;
+        }
         let full_path = prefix_dir.join(path);
         if let Some(parent) = full_path.parent() {
             std::fs::create_dir_all(parent)?;

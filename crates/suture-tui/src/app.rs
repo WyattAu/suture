@@ -407,7 +407,9 @@ impl App {
         let Ok(entries) = std::fs::read_dir(current) else {
             return;
         };
-        for entry in entries.flatten() {
+        let mut entries: Vec<_> = entries.flatten().collect();
+        entries.sort_by_key(|a| a.file_name());
+        for entry in entries {
             let path = entry.path();
             if path.is_dir() {
                 if path.file_name().is_some_and(|n| n == ".suture") {

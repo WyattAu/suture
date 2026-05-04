@@ -1,3 +1,4 @@
+use anyhow::Context;
 use crate::fuse::inode::{InodeEntry, InodeGenerator, InodeKind};
 use crate::path_translation::PathTranslator;
 use async_stream::try_stream;
@@ -34,7 +35,7 @@ pub struct SutureFilesystem {
 impl SutureFilesystem {
     pub async fn new(repo_path: &Path, branch: Option<&str>) -> anyhow::Result<Self> {
         let mut repo = Repository::open(repo_path)
-            .map_err(|e| anyhow::anyhow!("failed to open repository: {e}"))?;
+            .context("failed to open repository")?;
 
         if let Some(branch_name) = branch {
             repo.checkout(branch_name)?;
@@ -323,7 +324,7 @@ pub async fn mount(
     let _session = fuse3::raw::Session::new(mount_options)
         .mount(fs, &mountpoint)
         .await
-        .map_err(|e| anyhow::anyhow!("FUSE mount failed: {e}"))?;
+        .context("FUSE mount failed")?;
 
     tracing::info!("FUSE mount ready at {}", mountpoint.display());
     _session.unmount().await?;

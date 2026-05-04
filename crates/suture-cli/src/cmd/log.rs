@@ -92,7 +92,7 @@ pub async fn cmd_log(
         let mut patches = if all {
             let branches = repo.list_branches();
             let mut seen = std::collections::HashSet::new();
-            let mut all_patches = Vec::new();
+            let mut all_patches = Vec::with_capacity(32);
             for (_, tip_id) in &branches {
                 let chain = repo.dag().patch_chain(tip_id);
                 for pid in &chain {
@@ -111,7 +111,7 @@ pub async fn cmd_log(
             let (_head_branch, head_id) = repo
                 .head()
                 .unwrap_or_else(|_| ("main".to_owned(), Hash::ZERO));
-            let mut chain = Vec::new();
+            let mut chain = Vec::with_capacity(32);
             let mut current = head_id;
             while current != Hash::ZERO {
                 chain.push(current);
@@ -121,7 +121,7 @@ pub async fn cmd_log(
                     break;
                 }
             }
-            let mut patches = Vec::new();
+            let mut patches = Vec::with_capacity(32);
             for pid in &chain {
                 if let Some(patch) = repo.dag().get_patch(pid) {
                     patches.push(patch.clone());
@@ -277,7 +277,7 @@ pub async fn cmd_log(
     let head_branch = repo.head().map(|(name, _)| name).unwrap_or_default();
 
     let all_patches = repo.all_patches_ref();
-    let mut commit_groups: Vec<(Vec<suture_core::patch::types::PatchId>, String, u64)> = Vec::new();
+    let mut commit_groups: Vec<(Vec<suture_core::patch::types::PatchId>, String, u64)> = Vec::with_capacity(32);
     let mut seen_messages: std::collections::HashMap<(String, u64), usize> =
         std::collections::HashMap::new();
 
@@ -437,7 +437,7 @@ async fn cmd_audit(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let branches = repo.list_branches();
     let mut seen = std::collections::HashSet::new();
-    let mut all_patches = Vec::new();
+    let mut all_patches = Vec::with_capacity(32);
 
     for (_, tip_id) in &branches {
         let chain = repo.dag().patch_chain(tip_id);

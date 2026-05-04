@@ -64,6 +64,9 @@ pub async fn cmd_clean(
 
     let mut removed = 0usize;
     for path in &untracked {
+        if !crate::util::is_path_within_repo(repo_dir, StdPath::new(path)) {
+            continue;
+        }
         let full_path = repo_dir.join(path);
         if std::fs::remove_file(&full_path).is_ok() {
             removed += 1;

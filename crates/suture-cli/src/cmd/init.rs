@@ -105,6 +105,10 @@ pub async fn cmd_init(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let repo_path = PathBuf::from(path);
 
+    if path.contains("..") {
+        return Err("path must not contain '..'".into());
+    }
+
     if repo_path.join(".suture").exists() {
         return Err("already a suture repository (use 'suture doctor' to check health)".into());
     }

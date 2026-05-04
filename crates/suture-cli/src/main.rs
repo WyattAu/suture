@@ -17,6 +17,7 @@ mod fuzzy;
 mod ref_utils;
 mod remote_proto;
 mod style;
+mod util;
 
 #[derive(Parser)]
 #[command(

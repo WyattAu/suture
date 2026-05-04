@@ -255,7 +255,9 @@ fn get_content(
     {
         return blob;
     }
-    std::fs::read(repo.root().join(path)).unwrap_or_default()
+    let full_path = crate::util::safe_path(repo.root(), std::path::Path::new(path))
+        .unwrap_or_default();
+    std::fs::read(full_path).unwrap_or_default()
 }
 
 fn change_to_event_type(change: &ClassificationChange) -> (&'static str, String, String) {

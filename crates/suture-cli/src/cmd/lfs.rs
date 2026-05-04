@@ -37,8 +37,21 @@ fn load_lfs_config() -> LfsConfig {
     if !path.exists() {
         return LfsConfig::default();
     }
-    let content = std::fs::read_to_string(&path).unwrap_or_default();
-    toml::from_str(&content).unwrap_or_default()
+    let content = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => {
+            eprintln!("warning: failed to read LFS config: {e}");
+            String::new()
+        }
+    };
+    match toml::from_str(&content) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("warning: failed to parse LFS config: {e}");
+            LfsConfig::default()
+        }
+    }
 }
 
 fn save_lfs_config(config: &LfsConfig) -> Result<(), Box<dyn std::error::Error>> {

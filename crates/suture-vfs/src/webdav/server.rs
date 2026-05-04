@@ -1,3 +1,4 @@
+use anyhow::Context;
 use crate::UnpoisonMutex;
 use axum::{
     Router,
@@ -405,11 +406,11 @@ type FileContents = HashMap<String, Vec<u8>>;
 
 fn load_repo(repo_path: &Path) -> anyhow::Result<(FileContents, Vec<String>)> {
     let repo = Repository::open(repo_path)
-        .map_err(|e| anyhow::anyhow!("failed to open repository: {e}"))?;
+        .context("failed to open repository")?;
 
     let file_tree = repo
         .snapshot_head()
-        .map_err(|e| anyhow::anyhow!("snapshot failed: {e}"))?;
+        .context("failed to snapshot repository")?;
 
     let mut file_contents = HashMap::new();
     let mut dirs = vec![String::new()];

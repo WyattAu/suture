@@ -71,7 +71,14 @@ fn cmd_ignore_check(path: &str) {
 }
 
 fn load_ignore_rules(ignore_path: &Path) -> Vec<IgnoreRule> {
-    let contents = std::fs::read_to_string(ignore_path).unwrap_or_default();
+    let contents = match std::fs::read_to_string(ignore_path) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => {
+            eprintln!("warning: failed to read .sutureignore: {e}");
+            String::new()
+        }
+    };
     let mut rules = Vec::new();
     for (line_idx, line) in contents.lines().enumerate() {
         let trimmed = line.trim();

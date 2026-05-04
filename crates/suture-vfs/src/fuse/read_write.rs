@@ -2,6 +2,7 @@
 // FUSE filesystems are inherently single-threaded per mount; the Arc is used for
 // shared ownership across callback closures dispatched by the FUSE library.
 
+use anyhow::Context;
 use crate::UnpoisonMutex;
 use crate::fuse::inode::{InodeEntry, InodeGenerator, InodeKind};
 use crate::path_translation::PathTranslator;
@@ -51,7 +52,7 @@ pub struct RwFilesystem {
 impl RwFilesystem {
     pub async fn new(repo_path: &Path, branch: Option<&str>) -> anyhow::Result<Self> {
         let mut repo = Repository::open(repo_path)
-            .map_err(|e| anyhow::anyhow!("failed to open repository: {e}"))?;
+            .context("failed to open repository")?;
 
         if let Some(branch_name) = branch {
             repo.checkout(branch_name)?;
@@ -59,7 +60,7 @@ impl RwFilesystem {
 
         let file_tree = repo
             .snapshot_head()
-            .map_err(|e| anyhow::anyhow!("snapshot failed: {e}"))?;
+            .context("failed to snapshot repository")?;
 
         let paths: Vec<String> = file_tree.paths().into_iter().cloned().collect();
         let paths_ref: Vec<&str> = paths.iter().map(std::string::String::as_str).collect();
@@ -160,7 +161,7 @@ impl RwFilesystem {
         std::fs::write(&full_path, content)?;
 
         let mut repo = self.inner.repo.unpoison_lock();
-        repo.add(path).map_err(|e| anyhow::anyhow!("stage: {e}"))?;
+        repo.add(path).context("failed to stage file")?;
 
         let msg = if is_new {
             format!("vfs: create {path}")
@@ -168,7 +169,7 @@ impl RwFilesystem {
             format!("vfs: modify {path}")
         };
         repo.commit(&msg)
-            .map_err(|e| anyhow::anyhow!("commit: {e}"))?;
+            .context("failed to commit file change")?;
 
         self.inner.pending_files.unpoison_lock().remove(path);
         self.rebuild_from_repo(&repo)?;
@@ -183,9 +184,9 @@ impl RwFilesystem {
 
         let mut repo = self.inner.repo.unpoison_lock();
         repo.add(path)
-            .map_err(|e| anyhow::anyhow!("stage delete: {e}"))?;
+            .context("failed to stage file deletion")?;
         repo.commit(&format!("vfs: delete {path}"))
-            .map_err(|e| anyhow::anyhow!("commit delete: {e}"))?;
+            .context("failed to commit file deletion")?;
 
         self.rebuild_from_repo(&repo)?;
         Ok(())
@@ -194,7 +195,7 @@ impl RwFilesystem {
     fn rebuild_from_repo(&self, repo: &Repository) -> anyhow::Result<()> {
         let file_tree = repo
             .snapshot_head()
-            .map_err(|e| anyhow::anyhow!("snapshot: {e}"))?;
+            .context("failed to snapshot repository for rebuild")?;
 
         {
             let pending_files = self.inner.pending_files.unpoison_lock();
@@ -824,7 +825,7 @@ pub async fn mount_rw(
     let _session = fuse3::raw::Session::new(mount_options)
         .mount(fs, &mountpoint)
         .await
-        .map_err(|e| anyhow::anyhow!("FUSE mount failed: {e}"))?;
+        .context("FUSE mount failed")?;
 
     tracing::info!("FUSE read-write mount ready at {}", mountpoint.display());
     _session.unmount().await?;

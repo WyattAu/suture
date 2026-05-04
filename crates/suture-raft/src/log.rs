@@ -114,7 +114,9 @@ impl RaftLog {
             return;
         }
         if last_index >= self.last_index() {
-            let last_entry = self.entries.last().unwrap();
+            let Some(last_entry) = self.entries.last() else {
+                return;
+            };
             self.snapshot_index = last_entry.index;
             self.snapshot_term = last_entry.term;
             self.entries.clear();

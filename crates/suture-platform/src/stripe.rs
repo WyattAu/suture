@@ -292,7 +292,10 @@ pub async fn handle_webhook(
             let _ = key;
         }
         _ => {
-            return Ok(Json(serde_json::json!({"received": true, "note": "billing not configured"})));
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"error": "Stripe not configured"})),
+            ));
         }
     }
 

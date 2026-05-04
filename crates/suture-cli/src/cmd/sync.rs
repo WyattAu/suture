@@ -137,6 +137,9 @@ fn detect_changed_files(
     let disk_files = crate::display::walk_repo_files(repo_dir);
 
     for rel_path in &disk_files {
+        if !crate::util::is_path_within_repo(repo_dir, Path::new(rel_path)) {
+            continue;
+        }
         let full_path = repo_dir.join(rel_path);
         if let Ok(data) = std::fs::read(&full_path) {
             let current_hash = suture_common::Hash::from_data(&data);

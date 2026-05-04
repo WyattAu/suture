@@ -283,13 +283,20 @@ impl SutureHubServer {
 
     pub async fn handle_replication_status(&self) -> ReplicationStatusResponse {
         let store = self.storage.read().await;
-        ReplicationStatusResponse {
-            status: store.get_replication_status().unwrap_or(ReplicationStatus {
-                current_seq: 0,
-                peer_count: 0,
-                peers: vec![],
-            }),
-        }
+        let status = match store.get_replication_status() {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::error!("Failed to get replication status: {e}");
+                return ReplicationStatusResponse {
+                    status: ReplicationStatus {
+                        current_seq: 0,
+                        peer_count: 0,
+                        peers: vec![],
+                    },
+                };
+            }
+        };
+        ReplicationStatusResponse { status }
     }
 
     pub async fn handle_replication_sync(&self, entries: Vec<ReplicationEntry>) -> SyncResponse {
@@ -384,7 +391,21 @@ impl SutureHubServer {
     ) -> Result<PushResponse, (StatusCode, PushResponse)> {
         if let Some(ref sig_bytes) = req.signature {
             let store = self.storage.read().await;
-            if store.has_authorized_keys().unwrap_or(false)
+            let has_keys = match store.has_authorized_keys() {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::error!("Failed to check authorized keys: {e}");
+                    return Err((
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        PushResponse {
+                            success: false,
+                            error: Some("database error".to_owned()),
+                            existing_patches: vec![],
+                        },
+                    ));
+                }
+            };
+            if has_keys
                 && let Err(e) = verify_push_signature(&store, &req, sig_bytes)
             {
                 return Err((
@@ -398,7 +419,15 @@ impl SutureHubServer {
             }
         } else if !self.no_auth {
             let store = self.storage.read().await;
-            if store.has_authorized_keys().unwrap_or(false) || store.has_tokens().unwrap_or(false) {
+            let has_keys = store.has_authorized_keys().unwrap_or_else(|e| {
+                tracing::error!("Failed to check authorized keys: {e}");
+                true
+            });
+            let has_tokens = store.has_tokens().unwrap_or_else(|e| {
+                tracing::error!("Failed to check tokens: {e}");
+                true
+            });
+            if has_keys || has_tokens {
                 return Err((
                     StatusCode::FORBIDDEN,
                     PushResponse {
@@ -489,7 +518,10 @@ impl SutureHubServer {
                         store.get_branch_target(&req.repo_id, &branch.name)
                     && !store
                         .is_ancestor(&req.repo_id, &current_target, &target_hex)
-                        .unwrap_or(false)
+                        .unwrap_or_else(|e| {
+                            tracing::warn!("Failed to check ancestry: {e}");
+                            true
+                        })
                 {
                     return Err((
                         StatusCode::CONFLICT,
@@ -507,7 +539,10 @@ impl SutureHubServer {
 
             if store
                 .is_branch_protected(&req.repo_id, &branch.name)
-                .unwrap_or(false)
+                .unwrap_or_else(|e| {
+                    tracing::warn!("Failed to check branch protection: {e}");
+                    false
+                })
             {
                 let push_authors: std::collections::HashSet<&str> =
                     req.patches.iter().map(|p| p.author.as_str()).collect();
@@ -586,7 +621,20 @@ impl SutureHubServer {
     pub async fn handle_pull(&self, req: PullRequest) -> PullResponse {
         let store = self.storage.read().await;
 
-        if !store.repo_exists(&req.repo_id).unwrap_or(false) {
+        let exists = match store.repo_exists(&req.repo_id) {
+            Ok(e) => e,
+            Err(e) => {
+                tracing::error!("Failed to check repo existence: {e}");
+                return PullResponse {
+                    success: false,
+                    error: Some(format!("database error: {e}")),
+                    patches: vec![],
+                    branches: vec![],
+                    blobs: vec![],
+                };
+            }
+        };
+        if !exists {
             return PullResponse {
                 success: false,
                 error: Some(format!("repo not found: {}", req.repo_id)),
@@ -678,7 +726,20 @@ impl SutureHubServer {
     pub async fn handle_repo_info(&self, repo_id: &str) -> RepoInfoResponse {
         let store = self.storage.read().await;
 
-        if !store.repo_exists(repo_id).unwrap_or(false) {
+        let exists = match store.repo_exists(repo_id) {
+            Ok(e) => e,
+            Err(e) => {
+                tracing::error!("Failed to check repo existence: {e}");
+                return RepoInfoResponse {
+                    repo_id: repo_id.to_owned(),
+                    patch_count: 0,
+                    branches: vec![],
+                    success: false,
+                    error: Some(format!("database error: {e}")),
+                };
+            }
+        };
+        if !exists {
             return RepoInfoResponse {
                 repo_id: repo_id.to_owned(),
                 patch_count: 0,
@@ -688,7 +749,10 @@ impl SutureHubServer {
             };
         }
 
-        let patch_count = store.patch_count(repo_id).unwrap_or(0);
+        let patch_count = store.patch_count(repo_id).unwrap_or_else(|e| {
+            tracing::error!("Failed to get patch count: {e}");
+            0
+        });
         let branches = store.get_branches(repo_id).unwrap_or_else(|e| {
             tracing::warn!("store get_branches failed: {e}");
             Default::default()
@@ -857,7 +921,10 @@ impl SutureHubServer {
         }
 
         for patch in &pull_result.patches {
-            let inserted = store.insert_patch(&local_repo, patch).unwrap_or(false);
+            let inserted = store.insert_patch(&local_repo, patch).unwrap_or_else(|e| {
+                tracing::warn!("Failed to insert patch during mirror sync: {e}");
+                false
+            });
             if inserted {
                 patches_synced += 1;
             }
@@ -936,7 +1003,22 @@ impl SutureHubServer {
     ) -> crate::types::PullResponseV2 {
         let store = self.storage.read().await;
 
-        if !store.repo_exists(&req.repo_id).unwrap_or(false) {
+        let exists = match store.repo_exists(&req.repo_id) {
+            Ok(e) => e,
+            Err(e) => {
+                tracing::error!("Failed to check repo existence: {e}");
+                return crate::types::PullResponseV2 {
+                    success: false,
+                    error: Some(format!("database error: {e}")),
+                    patches: vec![],
+                    branches: vec![],
+                    blobs: vec![],
+                    deltas: vec![],
+                    protocol_version: crate::types::PROTOCOL_VERSION_V2,
+                };
+            }
+        };
+        if !exists {
             return crate::types::PullResponseV2 {
                 success: false,
                 error: Some(format!("repo not found: {}", req.repo_id)),
@@ -1071,7 +1153,10 @@ impl SutureHubServer {
         } else {
             blobs = store
                 .get_blobs(&req.repo_id, &needed_hashes)
-                .unwrap_or_default();
+                .unwrap_or_else(|e| {
+                    tracing::error!("Failed to get blobs for repo {}: {e}", req.repo_id);
+                    Default::default()
+                });
         }
 
         crate::types::PullResponseV2 {
@@ -1091,7 +1176,21 @@ impl SutureHubServer {
     ) -> Result<PushResponse, (StatusCode, PushResponse)> {
         if let Some(ref sig_bytes) = req.signature {
             let store = self.storage.read().await;
-            if store.has_authorized_keys().unwrap_or(false) {
+            let has_keys = match store.has_authorized_keys() {
+                Ok(v) => v,
+                Err(e) => {
+                    tracing::error!("Failed to check authorized keys: {e}");
+                    return Err((
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        PushResponse {
+                            success: false,
+                            error: Some("database error".to_owned()),
+                            existing_patches: vec![],
+                        },
+                    ));
+                }
+            };
+            if has_keys {
                 let v1_req = PushRequest {
                     repo_id: req.repo_id.clone(),
                     patches: req.patches.clone(),
@@ -1114,7 +1213,15 @@ impl SutureHubServer {
             }
         } else if !self.no_auth {
             let store = self.storage.read().await;
-            if store.has_authorized_keys().unwrap_or(false) || store.has_tokens().unwrap_or(false) {
+            let has_keys = store.has_authorized_keys().unwrap_or_else(|e| {
+                tracing::error!("Failed to check authorized keys: {e}");
+                true
+            });
+            let has_tokens = store.has_tokens().unwrap_or_else(|e| {
+                tracing::error!("Failed to check tokens: {e}");
+                true
+            });
+            if has_keys || has_tokens {
                 return Err((
                     StatusCode::FORBIDDEN,
                     PushResponse {
@@ -1250,7 +1357,10 @@ impl SutureHubServer {
                         store.get_branch_target(&req.repo_id, &branch.name)
                     && !store
                         .is_ancestor(&req.repo_id, &current_target, &target_hex)
-                        .unwrap_or(false)
+                        .unwrap_or_else(|e| {
+                            tracing::warn!("Failed to check ancestry: {e}");
+                            true
+                        })
                 {
                     return Err((
                         StatusCode::CONFLICT,
@@ -1268,7 +1378,10 @@ impl SutureHubServer {
 
             if store
                 .is_branch_protected(&req.repo_id, &branch.name)
-                .unwrap_or(false)
+                .unwrap_or_else(|e| {
+                    tracing::warn!("Failed to check branch protection: {e}");
+                    false
+                })
             {
                 let push_authors: std::collections::HashSet<&str> =
                     req.patches.iter().map(|p| p.author.as_str()).collect();
@@ -1423,7 +1536,10 @@ impl SutureHubServer {
 
             if store
                 .is_branch_protected(&req.repo_id, &branch.name)
-                .unwrap_or(false)
+                .unwrap_or_else(|e| {
+                    tracing::warn!("Failed to check branch protection: {e}");
+                    false
+                })
             {
                 let push_authors: std::collections::HashSet<&str> =
                     req.patches.iter().map(|p| p.author.as_str()).collect();
@@ -1618,18 +1734,24 @@ fn verify_push_signature(
     }
 
     for author in &authors {
-        if let Some(pub_key_bytes) = store.get_authorized_key(author).unwrap_or(None) {
-            if pub_key_bytes.len() != 32 {
+        let pub_key_bytes = match store.get_authorized_key(author) {
+            Ok(Some(bytes)) => bytes,
+            Ok(None) => continue,
+            Err(e) => {
+                tracing::warn!("Failed to get authorized key for '{}': {e}", author);
                 continue;
             }
-            let pub_key_array: [u8; 32] = pub_key_bytes
-                .try_into()
-                .map_err(|_| "invalid public key length")?;
-            let verifying_key = VerifyingKey::from_bytes(&pub_key_array)
-                .map_err(|e| format!("invalid public key: {e}"))?;
-            if verifying_key.verify(&canonical, &signature).is_ok() {
-                return Ok(());
-            }
+        };
+        if pub_key_bytes.len() != 32 {
+            continue;
+        }
+        let pub_key_array: [u8; 32] = pub_key_bytes
+            .try_into()
+            .map_err(|_| "invalid public key length")?;
+        let verifying_key = VerifyingKey::from_bytes(&pub_key_array)
+            .map_err(|e| format!("invalid public key: {e}"))?;
+        if verifying_key.verify(&canonical, &signature).is_ok() {
+            return Ok(());
         }
     }
 
@@ -1774,8 +1896,14 @@ async fn check_auth(hub: &SutureHubServer, headers: &HeaderMap) -> Result<(), St
     }
 
     let store = hub.storage.read().await;
-    let auth_keys_configured = store.has_authorized_keys().unwrap_or(false);
-    let tokens_exist = store.has_tokens().unwrap_or(false);
+    let auth_keys_configured = store.has_authorized_keys().unwrap_or_else(|e| {
+        tracing::error!("Failed to check authorized keys: {e}");
+        true
+    });
+    let tokens_exist = store.has_tokens().unwrap_or_else(|e| {
+        tracing::error!("Failed to check tokens: {e}");
+        true
+    });
     drop(store);
 
     if !auth_keys_configured && !tokens_exist {
@@ -1787,7 +1915,10 @@ async fn check_auth(hub: &SutureHubServer, headers: &HeaderMap) -> Result<(), St
         && let Some(token) = auth_str.strip_prefix("Bearer ")
     {
         let store = hub.storage.read().await;
-        if store.verify_token(token).unwrap_or(false) {
+        if store.verify_token(token).unwrap_or_else(|e| {
+            tracing::error!("Failed to verify token: {e}");
+            false
+        }) {
             return Ok(());
         }
     }
@@ -1801,7 +1932,14 @@ async fn resolve_user(hub: &SutureHubServer, headers: &HeaderMap) -> Option<User
         && let Some(token) = auth_str.strip_prefix("Bearer ")
     {
         let store = hub.storage.read().await;
-        return store.get_user_by_token(token).ok().flatten();
+        return match store.get_user_by_token(token) {
+            Ok(Some(user)) => Some(user),
+            Ok(None) => None,
+            Err(e) => {
+                tracing::warn!("Failed to get user by token: {e}");
+                None
+            }
+        };
     }
     None
 }
@@ -2117,9 +2255,18 @@ pub async fn create_token_handler(
     }
 
     let store = hub.storage.read().await;
-    let tokens_exist = store.has_tokens().unwrap_or(false);
-    let users_exist = store.has_users().unwrap_or(false);
-    let auth_keys_configured = store.has_authorized_keys().unwrap_or(false);
+    let tokens_exist = store.has_tokens().unwrap_or_else(|e| {
+        tracing::error!("Failed to check tokens: {e}");
+        true
+    });
+    let users_exist = store.has_users().unwrap_or_else(|e| {
+        tracing::error!("Failed to check users: {e}");
+        true
+    });
+    let auth_keys_configured = store.has_authorized_keys().unwrap_or_else(|e| {
+        tracing::error!("Failed to check authorized keys: {e}");
+        true
+    });
     drop(store);
 
     if !tokens_exist && !users_exist && !auth_keys_configured {
@@ -2164,7 +2311,10 @@ pub async fn create_token_handler(
             && let Ok(auth_str) = auth_header.to_str()
             && let Some(token) = auth_str.strip_prefix("Bearer ")
         {
-            store.verify_token(token).unwrap_or(false)
+            store.verify_token(token).unwrap_or_else(|e| {
+                tracing::error!("Failed to verify token: {e}");
+                false
+            })
         } else {
             false
         };
@@ -2189,10 +2339,8 @@ pub async fn create_token_handler(
     let expires_at = (created_at + (30 * 24 * 60 * 60)) as i64;
 
     let store = hub.storage.write().await;
-    if store
-        .store_token(&token, created_at, "cli-generated", expires_at)
-        .is_err()
-    {
+    if let Err(e) = store.store_token(&token, created_at, "cli-generated", expires_at) {
+        tracing::error!("Failed to store auth token: {e}");
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             HeaderMap::new(),
@@ -2222,7 +2370,10 @@ pub async fn verify_token_handler(
     let valid = match &auth_req.method {
         crate::types::AuthMethod::Token(token) => {
             let store = hub.storage.read().await;
-            store.verify_token(token).unwrap_or(false)
+            store.verify_token(token).unwrap_or_else(|e| {
+                tracing::warn!("Failed to verify token: {e}");
+                false
+            })
         }
         _ => false,
     };
@@ -2603,7 +2754,7 @@ pub async fn lfs_batch_handler(
         tracing::warn!("Failed to create directory {}: {}", obj_dir.display(), e);
     }
 
-    let mut actions = Vec::new();
+    let mut actions = Vec::with_capacity(req.objects.len());
     for obj in &req.objects {
         let oid = &obj.oid;
         if !oid.chars().all(|c| c.is_ascii_hexdigit()) || oid.len() > 128 {
@@ -2804,14 +2955,24 @@ pub async fn login_handler(
     Json(req): Json<crate::types::LoginRequest>,
 ) -> (StatusCode, Json<serde_json::Value>) {
     let store = hub.storage.read().await;
-    let valid = store.verify_token(&req.token).unwrap_or(false);
+    let valid = store.verify_token(&req.token).unwrap_or_else(|e| {
+        tracing::warn!("Failed to verify token: {e}");
+        false
+    });
     if !valid {
         return (
             StatusCode::UNAUTHORIZED,
             Json(serde_json::json!({"success": false, "error": "invalid token"})),
         );
     }
-    let user = store.get_user_by_token(&req.token).ok().flatten();
+    let user = match store.get_user_by_token(&req.token) {
+        Ok(Some(u)) => Some(u),
+        Ok(None) => None,
+        Err(e) => {
+            tracing::error!("Failed to get user by token: {e}");
+            None
+        }
+    };
     match user {
         Some(u) => (
             StatusCode::OK,
@@ -2990,7 +3151,14 @@ pub async fn register_handler(
     let store = hub.storage.write().await;
     match store.create_user(&req.username, &req.display_name, role, &api_token) {
         Ok(()) => {
-            let mut user = store.get_user(&req.username).ok().flatten();
+            let mut user = match store.get_user(&req.username) {
+                Ok(Some(u)) => Some(u),
+                Ok(None) => None,
+                Err(e) => {
+                    tracing::error!("Failed to get user after creation: {e}");
+                    None
+                }
+            };
             if let Some(ref mut u) = user {
                 u.api_token = Some(api_token);
             }

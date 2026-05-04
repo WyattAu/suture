@@ -151,6 +151,9 @@ fn cmd_hook_edit(hooks_dir: &Path, name: &str) -> Result<(), Box<dyn std::error:
         println!("Created new hook: {}", hook_path.display());
     }
 
+    // SECURITY: Editor is read from env vars (VISUAL > EDITOR).
+    // This matches git's behavior. In untrusted environments, set VISUAL
+    // to an explicit path. The editor is executed directly (not via shell).
     let editor = std::env::var("VISUAL")
         .or_else(|_| std::env::var("EDITOR"))
         .unwrap_or_else(|_| "vi".to_owned());

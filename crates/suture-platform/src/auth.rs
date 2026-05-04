@@ -25,6 +25,8 @@ pub struct Claims {
     pub role: String,
     pub exp: usize,
     pub iat: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub jti: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -87,6 +89,7 @@ pub fn create_jwt(
         role: role.to_owned(),
         exp,
         iat: now.timestamp() as usize,
+        jti: Some(uuid::Uuid::new_v4().to_string()),
     };
     let token = encode(
         &Header::default(),
@@ -117,7 +120,7 @@ pub fn register_user(db: &PlatformDb, req: &RegisterRequest) -> anyhow::Result<(
     let password_hash = hash_password(&req.password)?;
     let display_name = req.display_name.clone().unwrap_or_default();
 
-    let conn = db.conn().map_err(|e| anyhow::anyhow!("{e}"))?;
+    let conn = db.conn().map_err(|e| anyhow::anyhow!("failed to get db connection for user registration: {e}"))?;
     conn.execute(
         "INSERT INTO accounts (user_id, email, password_hash, display_name) VALUES (?1, ?2, ?3, ?4)",
         rusqlite::params![user_id, req.email, password_hash, display_name],
@@ -142,7 +145,7 @@ pub fn register_user(db: &PlatformDb, req: &RegisterRequest) -> anyhow::Result<(
 }
 
 pub fn login_user(db: &PlatformDb, req: &LoginRequest) -> anyhow::Result<(String, UserInfo)> {
-    let conn = db.conn().map_err(|e| anyhow::anyhow!("{e}"))?;
+    let conn = db.conn().map_err(|e| anyhow::anyhow!("failed to get db connection for user login: {e}"))?;
     let mut stmt = conn.prepare(
         "SELECT user_id, email, password_hash, display_name, tier, created_at FROM accounts WHERE email = ?1",
     )?;
@@ -173,7 +176,7 @@ pub fn login_user(db: &PlatformDb, req: &LoginRequest) -> anyhow::Result<(String
 }
 
 pub fn get_user_by_id(db: &PlatformDb, user_id: &str) -> anyhow::Result<UserInfo> {
-    let conn = db.conn().map_err(|e| anyhow::anyhow!("{e}"))?;
+    let conn = db.conn().map_err(|e| anyhow::anyhow!("failed to get db connection for user lookup: {e}"))?;
     let mut stmt = conn.prepare(
         "SELECT user_id, email, display_name, tier, created_at FROM accounts WHERE user_id = ?1",
     )?;
@@ -194,17 +197,21 @@ use crate::server::AppState;
 
 pub fn revoke_jwt(db: &PlatformDb, token: &str, secret: &str) -> anyhow::Result<()> {
     let claims = verify_jwt(token, secret)?;
-    let conn = db.conn().map_err(|e| anyhow::anyhow!("{e}"))?;
+    let jti = claims.jti.as_ref().ok_or_else(|| anyhow::anyhow!("token has no jti claim"))?;
+    let conn = db.conn().map_err(|e| anyhow::anyhow!("failed to get db connection for token revocation: {e}"))?;
     conn.execute(
         "INSERT OR IGNORE INTO revoked_tokens (jti, expires_at) VALUES (?1, ?2)",
-        rusqlite::params![claims.sub, chrono::DateTime::from_timestamp(claims.exp as i64, 0)
+        rusqlite::params![jti, chrono::DateTime::from_timestamp(claims.exp as i64, 0)
             .unwrap_or_else(chrono::Utc::now)
             .to_rfc3339()],
     )?;
     Ok(())
 }
 
-pub fn is_token_revoked(db: &PlatformDb, user_id: &str) -> bool {
+pub fn is_token_revoked(db: &PlatformDb, jti: &Option<String>) -> bool {
+    let Some(jti) = jti else {
+        return false;
+    };
     if let Ok(conn) = db.conn() {
         if let Err(e) = conn.execute(
             "DELETE FROM revoked_tokens WHERE expires_at < datetime('now')",
@@ -214,7 +221,7 @@ pub fn is_token_revoked(db: &PlatformDb, user_id: &str) -> bool {
         }
         let result: Result<bool, _> = conn.query_row(
             "SELECT 1 FROM revoked_tokens WHERE jti = ?1 LIMIT 1",
-            rusqlite::params![user_id],
+            rusqlite::params![jti],
             |_| Ok(true),
         );
         return result.is_ok();
@@ -345,8 +352,24 @@ pub async fn list_users_handler(
     Ok(Json(users))
 }
 
+pub fn revoke_jwt_by_jti(db: &PlatformDb, jti: &str, exp: usize) -> anyhow::Result<()> {
+    let conn = db.conn().map_err(|e| anyhow::anyhow!("failed to get db connection for token revocation: {e}"))?;
+    conn.execute(
+        "INSERT OR IGNORE INTO revoked_tokens (jti, expires_at) VALUES (?1, ?2)",
+        rusqlite::params![jti, chrono::DateTime::from_timestamp(exp as i64, 0)
+            .unwrap_or_else(chrono::Utc::now)
+            .to_rfc3339()],
+    )?;
+    Ok(())
+}
+
 pub async fn logout_handler(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let jti = claims.jti.clone().unwrap_or_default();
+    if let Err(e) = crate::auth::revoke_jwt_by_jti(&state.db, &jti, claims.exp) {
+        tracing::warn!("failed to revoke token on logout: {e}");
+    }
     Ok(Json(serde_json::json!({"logged_out": true})))
 }

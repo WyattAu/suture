@@ -29,7 +29,7 @@ pub fn log_merge(
     conflict_count: i64,
     merge_time_ms: i64,
 ) -> anyhow::Result<()> {
-    let conn = state.db.conn().map_err(|e| anyhow::anyhow!("{e}"))?;
+    let conn = state.db.conn().map_err(|e| anyhow::anyhow!("failed to get db connection for logging merge: {e}"))?;
     conn.execute(
         "INSERT INTO merge_logs (user_id, driver, base_size, ours_size, theirs_size, result_size, has_conflict, conflict_count, merge_time_ms)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
