@@ -3856,6 +3856,208 @@ pub async fn health_check() -> Json<serde_json::Value> {
     Json(serde_json::json!({"status": "ok"}))
 }
 
+// === SSO / OIDC Handlers ===
+
+/// List all configured OIDC providers.
+pub async fn sso_list_providers_handler(
+    State(hub): State<Arc<SutureHubServer>>,
+    headers: HeaderMap,
+) -> (StatusCode, Json<serde_json::Value>) {
+    if let Err(status) = check_auth(&hub, &headers).await {
+        return (status, Json(serde_json::json!({"error": "unauthorized"})));
+    }
+    let store = hub.storage.read().await;
+    match store.list_oidc_configs() {
+        Ok(configs) => {
+            let names: Vec<&str> = configs.iter().map(|c| c.provider_name.as_str()).collect();
+            (StatusCode::OK, Json(serde_json::json!({"providers": names})))
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e.to_string()})),
+        ),
+    }
+}
+
+/// Configure (create or update) an OIDC provider.
+pub async fn sso_configure_provider_handler(
+    State(hub): State<Arc<SutureHubServer>>,
+    headers: HeaderMap,
+    Json(config): Json<crate::sso::OidcConfig>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    if let Err(status) = check_auth(&hub, &headers).await {
+        return (status, Json(serde_json::json!({"error": "unauthorized"})));
+    }
+    // Validate required fields
+    if config.provider_name.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "provider_name is required"})),
+        );
+    }
+    if config.issuer_url.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "issuer_url is required"})),
+        );
+    }
+    if config.client_id.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "client_id is required"})),
+        );
+    }
+    let store = hub.storage.read().await;
+    match store.set_oidc_config(&config) {
+        Ok(()) => (
+            StatusCode::OK,
+            Json(serde_json::json!({"success": true, "provider": config.provider_name})),
+        ),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e.to_string()})),
+        ),
+    }
+}
+
+/// Delete an OIDC provider configuration.
+pub async fn sso_delete_provider_handler(
+    State(hub): State<Arc<SutureHubServer>>,
+    headers: HeaderMap,
+    Path(provider_name): Path<String>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    if let Err(status) = check_auth(&hub, &headers).await {
+        return (status, Json(serde_json::json!({"error": "unauthorized"})));
+    }
+    let store = hub.storage.read().await;
+    match store.delete_oidc_config(&provider_name) {
+        Ok(true) => (StatusCode::OK, Json(serde_json::json!({"success": true}))),
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": format!("provider '{provider_name}' not found")})),
+        ),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e.to_string()})),
+        ),
+    }
+}
+
+/// Initiate an OIDC authorization flow — returns the redirect URL.
+pub async fn sso_authorize_handler(
+    State(hub): State<Arc<SutureHubServer>>,
+    headers: HeaderMap,
+    Json(body): Json<serde_json::Value>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    if let Err(status) = check_auth(&hub, &headers).await {
+        return (status, Json(serde_json::json!({"error": "unauthorized"})));
+    }
+    let provider_name = match body.get("provider") {
+        Some(v) => match v.as_str() {
+            Some(s) => s.to_owned(),
+            None => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({"error": "provider must be a string"})),
+                );
+            }
+        },
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "provider is required"})),
+            );
+        }
+    };
+
+    let store = hub.storage.read().await;
+    let config = match store.get_oidc_config(&provider_name) {
+        Ok(Some(c)) => c,
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"error": format!("provider '{provider_name}' not configured")})),
+            );
+        }
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": e.to_string()})),
+            );
+        }
+    };
+    drop(store);
+
+    let state = crate::sso::generate_state();
+    let nonce = crate::sso::generate_nonce();
+    let url = crate::sso::authorization_url(&config, &state, &nonce);
+
+    (StatusCode::OK, Json(serde_json::json!({
+        "authorization_url": url,
+        "state": state,
+        "nonce": nonce,
+    })))
+}
+
+/// Handle an OIDC callback — exchange the authorization code for tokens.
+/// This is a placeholder that returns instructions for the client to implement.
+pub async fn sso_callback_handler(
+    State(hub): State<Arc<SutureHubServer>>,
+    headers: HeaderMap,
+    Json(body): Json<serde_json::Value>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    if let Err(status) = check_auth(&hub, &headers).await {
+        return (status, Json(serde_json::json!({"error": "unauthorized"})));
+    }
+    let provider_name = body.get("provider").and_then(|v| v.as_str()).unwrap_or("");
+    let _code = body.get("code").and_then(|v| v.as_str()).unwrap_or("");
+    let _state = body.get("state").and_then(|v| v.as_str()).unwrap_or("");
+
+    if provider_name.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "provider is required"})),
+        );
+    }
+    if _code.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "code is required"})),
+        );
+    }
+
+    let store = hub.storage.read().await;
+    let _config = match store.get_oidc_config(provider_name) {
+        Ok(Some(c)) => c,
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"error": format!("provider '{provider_name}' not configured")})),
+            );
+        }
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": e.to_string()})),
+            );
+        }
+    };
+
+    // TODO: In a full implementation, this would:
+    // 1. Validate the `state` parameter against the stored value (CSRF protection)
+    // 2. Exchange the authorization code for tokens via POST to the provider's token endpoint
+    // 3. Validate the ID token (signature, nonce, audience, issuer)
+    // 4. Extract user info from the ID token or userinfo endpoint
+    // 5. Create or update a local user session
+    // For now, return a placeholder indicating the flow is configured but token exchange
+    // requires an HTTP client to the OIDC provider (e.g., reqwest).
+
+    (StatusCode::OK, Json(serde_json::json!({
+        "status": "configured",
+        "message": "SSO callback received. Full token exchange requires HTTP client integration.",
+    })))
+}
+
 pub async fn run_server(
     hub: SutureHubServer,
     addr: &str,
@@ -3995,6 +4197,18 @@ pub async fn run_server(
             "/lfs/objects/{repo_id}/{oid}",
             axum::routing::get(lfs_download_handler),
         )
+        // SSO / OIDC routes
+        .route("/sso/providers", axum::routing::get(sso_list_providers_handler))
+        .route(
+            "/sso/providers",
+            axum::routing::post(sso_configure_provider_handler),
+        )
+        .route(
+            "/sso/providers/{provider_name}",
+            axum::routing::delete(sso_delete_provider_handler),
+        )
+        .route("/sso/authorize", axum::routing::post(sso_authorize_handler))
+        .route("/sso/callback", axum::routing::post(sso_callback_handler))
         .with_state(Arc::clone(&hub))
         .layer(set_request_id)
         .layer(propagate_request_id);

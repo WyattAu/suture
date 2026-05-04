@@ -4,6 +4,7 @@ pub mod blob_backend;
 pub mod grpc;
 pub mod middleware;
 pub mod server;
+pub mod sso;
 pub mod storage;
 pub mod types;
 pub mod webhooks;

@@ -215,6 +215,13 @@ impl HubStorage {
             );
 
             CREATE INDEX IF NOT EXISTS idx_webhooks_repo ON webhooks(repo_id);
+
+            CREATE TABLE IF NOT EXISTS sso_providers (
+                provider_name TEXT PRIMARY KEY,
+                config_json TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
             ",
         )?;
 
@@ -1674,6 +1681,64 @@ impl HubStorage {
             return Err(StorageError::WebhookNotFound(id.to_owned()));
         }
         Ok(())
+    }
+
+    // === SSO / OIDC Configuration ===
+
+    /// Store an OIDC provider configuration.
+    pub fn set_oidc_config(&self, config: &crate::sso::OidcConfig) -> Result<(), StorageError> {
+        let conn = self.conn.lock().map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let json = serde_json::to_string(config)
+            .map_err(|e| StorageError::PoisonedLock(format!("failed to serialize OIDC config: {e}")))?;
+        conn.execute(
+            "INSERT OR REPLACE INTO sso_providers (provider_name, config_json, updated_at) VALUES (?1, ?2, datetime('now'))",
+            params![config.provider_name, json],
+        )?;
+        Ok(())
+    }
+
+    /// Get an OIDC provider configuration by name.
+    pub fn get_oidc_config(&self, provider_name: &str) -> Result<Option<crate::sso::OidcConfig>, StorageError> {
+        let conn = self.conn.lock().map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let result = conn.query_row(
+            "SELECT config_json FROM sso_providers WHERE provider_name = ?1",
+            params![provider_name],
+            |row| row.get::<_, String>(0),
+        );
+        match result {
+            Ok(json) => {
+                let config: crate::sso::OidcConfig = serde_json::from_str(&json)
+                    .map_err(|e| StorageError::PoisonedLock(format!("failed to deserialize OIDC config: {e}")))?;
+                Ok(Some(config))
+            }
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(StorageError::Database(e)),
+        }
+    }
+
+    /// List all configured OIDC providers.
+    pub fn list_oidc_configs(&self) -> Result<Vec<crate::sso::OidcConfig>, StorageError> {
+        let conn = self.conn.lock().map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let mut stmt = conn.prepare("SELECT config_json FROM sso_providers ORDER BY provider_name")?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        let mut configs = Vec::new();
+        for row in rows {
+            let json = row?;
+            let config: crate::sso::OidcConfig = serde_json::from_str(&json)
+                .map_err(|e| StorageError::PoisonedLock(format!("failed to deserialize OIDC config: {e}")))?;
+            configs.push(config);
+        }
+        Ok(configs)
+    }
+
+    /// Delete an OIDC provider configuration.
+    pub fn delete_oidc_config(&self, provider_name: &str) -> Result<bool, StorageError> {
+        let conn = self.conn.lock().map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let affected = conn.execute(
+            "DELETE FROM sso_providers WHERE provider_name = ?1",
+            params![provider_name],
+        )?;
+        Ok(affected > 0)
     }
 }
 
