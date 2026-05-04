@@ -390,6 +390,7 @@ const INDEX_HTML: &str = r##"<!DOCTYPE html>
     <div id="modal-root"></div>
 
     <script>
+    function escapeHtml(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
     var APP = {
         user: null,
         token: localStorage.getItem('suture_token'),
@@ -433,7 +434,7 @@ const INDEX_HTML: &str = r##"<!DOCTYPE html>
                 '<a href="#/api" data-nav="api"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg><span class="nav-label">API</span></a>' +
                 '<a href="#/billing" data-nav="billing"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg><span class="nav-label">Billing</span></a>' +
                 '<a href="#/settings" data-nav="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg><span class="nav-label">Settings</span></a>' +
-                '<span style="color:var(--text-muted);font-size:0.85rem;display:flex;align-items:center;gap:0.35rem">' + APP.user.email + ' ' + tierBadge(APP.user.tier) + '</span>' +
+                '<span style="color:var(--text-muted);font-size:0.85rem;display:flex;align-items:center;gap:0.35rem">' + escapeHtml(APP.user.email) + ' ' + tierBadge(APP.user.tier) + '</span>' +
                 '<a href="#" onclick="logout();return false" class="btn btn-sm btn-ghost">Sign Out</a>';
         } else {
             links.innerHTML =
@@ -661,7 +662,7 @@ const INDEX_HTML: &str = r##"<!DOCTYPE html>
         el.innerHTML =
         '<div class="container">' +
             '<div class="page-header">' +
-                '<h2>Welcome back, ' + (APP.user.email || 'User') + '</h2>' +
+                '<h2>Welcome back, ' + escapeHtml(APP.user.email || 'User') + '</h2>' +
                 tierBadge(APP.user.tier) +
             '</div>' +
             '<div class="quick-actions">' +

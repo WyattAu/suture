@@ -2382,8 +2382,13 @@ pub async fn verify_token_handler(
 
 pub async fn mirror_setup_handler(
     State(hub): State<Arc<SutureHubServer>>,
+    headers: HeaderMap,
     Json(req): Json<crate::types::MirrorSetupRequest>,
 ) -> (StatusCode, Json<crate::types::MirrorSetupResponse>) {
+    if let Err(status) = check_auth(&hub, &headers).await {
+        let resp = crate::types::MirrorSetupResponse { success: false, mirror_id: None, error: Some("unauthorized".to_owned()) };
+        return (status, Json(resp));
+    }
     let resp = hub.handle_mirror_setup(req).await;
     let status = if resp.success {
         StatusCode::OK
@@ -2395,8 +2400,13 @@ pub async fn mirror_setup_handler(
 
 pub async fn mirror_sync_handler(
     State(hub): State<Arc<SutureHubServer>>,
+    headers: HeaderMap,
     Json(req): Json<crate::types::MirrorSyncRequest>,
 ) -> (StatusCode, Json<crate::types::MirrorSyncResponse>) {
+    if let Err(status) = check_auth(&hub, &headers).await {
+        let resp = crate::types::MirrorSyncResponse { success: false, error: Some("unauthorized".to_owned()), patches_synced: 0, branches_synced: 0 };
+        return (status, Json(resp));
+    }
     let store = hub.storage.read().await;
     let actual_mirror_id = if req.mirror_id == 0 {
         let repo_name = req.local_repo.clone().unwrap_or_default();
@@ -2529,8 +2539,12 @@ pub async fn repo_tree_handler(
 
 pub async fn protect_branch_handler(
     State(hub): State<Arc<SutureHubServer>>,
+    headers: HeaderMap,
     Path((repo_id, branch)): Path<(String, String)>,
 ) -> (StatusCode, Json<serde_json::Value>) {
+    if let Err(status) = check_auth(&hub, &headers).await {
+        return (status, Json(serde_json::json!({"success": false, "error": "unauthorized"})));
+    }
     let store = hub.storage.write().await;
     match store.protect_branch(&repo_id, &branch) {
         Ok(()) => (StatusCode::OK, Json(serde_json::json!({"success": true}))),
@@ -2543,8 +2557,12 @@ pub async fn protect_branch_handler(
 
 pub async fn unprotect_branch_handler(
     State(hub): State<Arc<SutureHubServer>>,
+    headers: HeaderMap,
     Path((repo_id, branch)): Path<(String, String)>,
 ) -> (StatusCode, Json<serde_json::Value>) {
+    if let Err(status) = check_auth(&hub, &headers).await {
+        return (status, Json(serde_json::json!({"success": false, "error": "unauthorized"})));
+    }
     let store = hub.storage.write().await;
     match store.unprotect_branch(&repo_id, &branch) {
         Ok(()) => (StatusCode::OK, Json(serde_json::json!({"success": true}))),
@@ -2817,9 +2835,13 @@ pub async fn lfs_batch_handler(
 
 pub async fn lfs_upload_handler(
     State(hub): State<Arc<SutureHubServer>>,
+    headers: HeaderMap,
     Path((repo_id, oid)): Path<(String, String)>,
     body: bytes::Bytes,
 ) -> (StatusCode, Json<serde_json::Value>) {
+    if let Err(status) = check_auth(&hub, &headers).await {
+        return (status, Json(serde_json::json!({ "message": "unauthorized" })));
+    }
     // Validate repo_id and oid to prevent path traversal
     let is_safe = |s: &str| s.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.');
     if !is_safe(&repo_id) || !is_safe(&oid) {
@@ -3514,8 +3536,12 @@ pub async fn v2_push_handler(
 
 pub async fn add_peer_handler(
     State(hub): State<Arc<SutureHubServer>>,
+    headers: HeaderMap,
     Json(req): Json<AddPeerRequest>,
 ) -> (StatusCode, Json<AddPeerResponse>) {
+    if let Err(status) = check_auth(&hub, &headers).await {
+        return (status, Json(AddPeerResponse { success: false, peer_id: None, error: Some("unauthorized".to_owned()) }));
+    }
     let role = hub.get_replication_role();
     if role != "leader" {
         return (
@@ -3538,8 +3564,12 @@ pub async fn add_peer_handler(
 
 pub async fn remove_peer_handler(
     State(hub): State<Arc<SutureHubServer>>,
+    headers: HeaderMap,
     Path(id): Path<i64>,
 ) -> (StatusCode, Json<RemovePeerResponse>) {
+    if let Err(status) = check_auth(&hub, &headers).await {
+        return (status, Json(RemovePeerResponse { success: false, error: Some("unauthorized".to_owned()) }));
+    }
     let role = hub.get_replication_role();
     if role != "leader" {
         return (

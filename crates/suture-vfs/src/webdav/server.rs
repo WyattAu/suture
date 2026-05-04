@@ -147,6 +147,13 @@ async fn handle_propfind_path(
     AxumPath(path): AxumPath<String>,
 ) -> impl IntoResponse {
     let clean = path.trim_start_matches('/').trim_end_matches('/');
+    if clean.contains("..") {
+        return (
+            StatusCode::BAD_REQUEST,
+            [(header::CONTENT_TYPE, "application/xml; charset=utf-8")],
+            "<d:error xmlns:d=\"DAV:\"><s:message>path traversal not allowed</s:message></d:error>".to_owned(),
+        );
+    }
 
     let dirs = state.dirs.unpoison_lock();
     let is_dir = clean.is_empty() || dirs.contains(&clean.to_owned());
@@ -181,10 +188,11 @@ async fn handle_get_root(State(state): State<Arc<WebDavState>>) -> impl IntoResp
     let html = entries
         .iter()
         .map(|(name, is_dir)| {
+            let escaped = html_escape::encode_text(name);
             if *is_dir {
-                format!("<li><a href=\"{name}/\">{name}/</a></li>")
+                format!("<li><a href=\"{escaped}/\">{escaped}/</a></li>")
             } else {
-                format!("<li><a href=\"{name}\">{name}</a></li>")
+                format!("<li><a href=\"{escaped}\">{escaped}</a></li>")
             }
         })
         .collect::<Vec<_>>()
@@ -205,6 +213,9 @@ async fn handle_get_file(
     AxumPath(path): AxumPath<String>,
 ) -> Response {
     let clean = path.trim_start_matches('/');
+    if clean.contains("..") {
+        return (StatusCode::BAD_REQUEST, "path traversal not allowed").into_response();
+    }
 
     let data: Option<Vec<u8>> = {
         let files = state.file_contents.unpoison_lock();

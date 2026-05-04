@@ -3128,7 +3128,7 @@ impl Repository {
             }
         }
 
-        to_replay.sort_by_key(|p| p.timestamp);
+        to_replay.sort_by(|a, b| a.timestamp.cmp(&b.timestamp).then_with(|| a.id.cmp(&b.id)));
 
         let branch = BranchName::new(&head_branch)?;
         let old_tree = self.snapshot_head().unwrap_or_else(|_| FileTree::empty());
@@ -3209,9 +3209,9 @@ impl Repository {
             return Vec::new();
         }
 
-        // Sort oldest first
+        // Sort oldest first, stable by patch ID
         let mut sorted: Vec<Patch> = patches.to_vec();
-        sorted.sort_by_key(|p| p.timestamp);
+        sorted.sort_by(|a, b| a.timestamp.cmp(&b.timestamp).then_with(|| a.id.cmp(&b.id)));
 
         let mut groups: Vec<Vec<Patch>> = Vec::new();
         let mut current_group: Vec<Patch> = Vec::new();

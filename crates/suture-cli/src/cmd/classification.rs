@@ -317,7 +317,7 @@ async fn cmd_scan(
         all_patches.retain(|p| repo.dag().patch_chain(&since_id).contains(&p.id));
     }
 
-    all_patches.sort_by_key(|a| a.timestamp);
+    all_patches.sort_by(|a, b| a.timestamp.cmp(&b.timestamp).then_with(|| a.id.cmp(&b.id)));
 
     let mut events: Vec<ClassificationEvent> = Vec::new();
     let mut commits_with_events = std::collections::HashSet::new();

@@ -1153,7 +1153,7 @@ impl HubStorage {
         let Some(tip_id) = self.get_branch_target(repo_id, branch)? else { return Ok(Vec::new()) };
 
         let mut patches = self.get_patches_at(repo_id, &tip_id)?;
-        patches.sort_by_key(|p| p.timestamp);
+        patches.sort_by(|a, b| a.timestamp.cmp(&b.timestamp).then_with(|| a.id.value.cmp(&b.id.value)));
 
         let mut tree: std::collections::HashMap<String, String> = std::collections::HashMap::new();
 
