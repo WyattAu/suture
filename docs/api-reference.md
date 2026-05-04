@@ -1,10 +1,10 @@
-# Suture API Reference v5.1.0
+# Suture Platform API Reference
 
 ## Base URL
 
 ```
-Platform: https://api.suture.dev
-Hub:      https://hub.suture.dev
+Platform:  https://api.suture.dev
+Hub:       https://hub.suture.dev
 Self-hosted: configured via --addr flag
 ```
 
@@ -18,73 +18,86 @@ Authorization: Bearer <jwt_token>
 
 Tokens are obtained via `/auth/login` or OAuth callbacks. Token expiry: 7 days.
 
+All protected endpoints are rate-limited.
+
 ---
 
-## Authentication Endpoints
+## Endpoints
 
-### POST /auth/register
+### Health
 
-Create a new account.
+#### `GET /healthz`
+
+Health check endpoint.
 
 **Auth:** None
 
-**Request body:**
+**Response:** `200 OK`
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `email` | `string` | Yes | Valid email (max 254 chars, must contain `@`) |
-| `password` | `string` | Yes | Min 8 characters |
-| `display_name` | `string` | No | Display name (defaults to empty) |
+```json
+"ok"
+```
+
+---
+
+### Auth
+
+#### `POST /auth/register`
+
+Register a new account.
+
+**Auth:** None
+
+**Request:**
 
 ```json
 {
   "email": "user@example.com",
-  "password": "securepassword",
-  "display_name": "Jane Doe"
+  "password": "at-least-8-chars",
+  "display_name": "Alice"
 }
 ```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `email` | string | yes | Valid email (max 254 chars) |
+| `password` | string | yes | Min 8 characters |
+| `display_name` | string | no | Display name |
 
 **Response:** `201 Created`
 
 ```json
 {
-  "token": "eyJhbGciOiJIUzI1NiIs...",
+  "token": "eyJ...",
   "user": {
-    "user_id": "uuid-v4",
+    "user_id": "uuid",
     "email": "user@example.com",
-    "display_name": "Jane Doe",
+    "display_name": "Alice",
     "tier": "free",
-    "created_at": "2026-05-01T00:00:00+00:00"
+    "created_at": "2026-01-01T00:00:00+00:00"
   }
 }
 ```
 
-**Error codes:**
+**Error Codes:**
 
-| Status | Error |
-|--------|-------|
+| Status | Description |
+|--------|-------------|
 | 400 | Invalid email or password too short |
-| 500 | Internal server error |
+| 409 | Email already registered |
 
----
-
-### POST /auth/login
+#### `POST /auth/login`
 
 Authenticate and receive a JWT.
 
 **Auth:** None
 
-**Request body:**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `email` | `string` | Yes | Registered email |
-| `password` | `string` | Yes | Account password |
+**Request:**
 
 ```json
 {
   "email": "user@example.com",
-  "password": "securepassword"
+  "password": "secret"
 }
 ```
 
@@ -92,33 +105,85 @@ Authenticate and receive a JWT.
 
 ```json
 {
-  "token": "eyJhbGciOiJIUzI1NiIs...",
+  "token": "eyJ...",
   "user": {
-    "user_id": "uuid-v4",
+    "user_id": "uuid",
     "email": "user@example.com",
-    "display_name": "Jane Doe",
-    "tier": "pro",
-    "created_at": "2026-04-15T00:00:00+00:00"
+    "display_name": "Alice",
+    "tier": "free",
+    "created_at": "2026-01-01T00:00:00+00:00"
   }
 }
 ```
 
-**Error codes:**
+**Error Codes:**
 
-| Status | Error |
-|--------|-------|
+| Status | Description |
+|--------|-------------|
 | 401 | Invalid email or password |
-| 500 | Internal server error |
 
----
+#### `GET /auth/oauth/start?provider=<provider>`
 
-### POST /auth/logout
+Start an OAuth flow.
 
-Revoke the current token.
+**Auth:** None
 
-**Auth:** Optional (JWT)
+**Query Parameters:**
 
-**Request body:** None
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `provider` | string | `google` or `github` |
+
+**Response:** `200 OK`
+
+```json
+{
+  "url": "https://accounts.google.com/o/oauth2/v2/auth?..."
+}
+```
+
+#### `GET /auth/google/callback`
+
+Google OAuth callback. Redirects with JWT on success.
+
+**Auth:** None
+
+#### `GET /auth/github/callback`
+
+GitHub OAuth callback. Redirects with JWT on success.
+
+**Auth:** None
+
+#### `GET /auth/me`
+
+Get the current authenticated user.
+
+**Auth:** Bearer token required
+
+**Response:** `200 OK`
+
+```json
+{
+  "user_id": "uuid",
+  "email": "user@example.com",
+  "display_name": "Alice",
+  "tier": "free",
+  "created_at": "2026-01-01T00:00:00+00:00"
+}
+```
+
+**Error Codes:**
+
+| Status | Description |
+|--------|-------------|
+| 401 | Missing or invalid token |
+| 404 | User not found |
+
+#### `POST /auth/logout`
+
+Revoke the current JWT.
+
+**Auth:** Bearer token required
 
 **Response:** `200 OK`
 
@@ -130,149 +195,11 @@ Revoke the current token.
 
 ---
 
-### GET /auth/me
+### Merge
 
-Get the current authenticated user's info.
+#### `GET /api/drivers`
 
-**Auth:** Optional (JWT — returns 401 if not authenticated)
-
-**Response:** `200 OK`
-
-```json
-{
-  "user_id": "uuid-v4",
-  "email": "user@example.com",
-  "display_name": "Jane Doe",
-  "tier": "pro",
-  "created_at": "2026-04-15T00:00:00+00:00"
-}
-```
-
-**Error codes:**
-
-| Status | Error |
-|--------|-------|
-| 401 | Missing or invalid token |
-| 404 | User not found |
-
----
-
-### POST /auth/github
-
-GitHub OAuth login. This is a two-step flow:
-
-**Step 1: Start OAuth**
-
-`GET /auth/oauth/start?provider=github`
-
-**Auth:** None
-
-**Response:** `200 OK`
-
-```json
-{
-  "url": "https://github.com/login/oauth/authorize?client_id=...&redirect_uri=...&scope=user:email&state=uuid-v4"
-}
-```
-
-**Step 2: Callback**
-
-`GET /auth/github/callback?code=<auth_code>&state=<csrf_state>`
-
-**Auth:** None
-
-The CSRF state token is validated (one-time use, 10-minute expiry, prevents CSRF attacks). On success, creates or links a user account.
-
-**Response:** `200 OK`
-
-```json
-{
-  "token": "eyJhbGciOiJIUzI1NiIs...",
-  "user": {
-    "user_id": "uuid-v4",
-    "email": "user@example.com",
-    "display_name": "jane",
-    "tier": "free",
-    "created_at": "2026-05-01T00:00:00+00:00"
-  }
-}
-```
-
-**Error codes:**
-
-| Status | Error |
-|--------|-------|
-| 400 | Missing/expired state parameter, CSRF detected |
-| 503 | GitHub OAuth not configured |
-| 502 | GitHub API error |
-
-**Google OAuth** follows the same pattern with `provider=google`.
-
----
-
-## Merge API
-
-### POST /api/merge
-
-Perform a three-way semantic merge.
-
-**Auth:** Optional (JWT — required for usage tracking and billing limits)
-
-**Request body:**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `driver` | `string` | Yes | Driver name or file extension (e.g., `json`, `yaml`, `docx`, `otio`) |
-| `base` | `string` | Yes | Base version content |
-| `ours` | `string` | Yes | Our version content |
-| `theirs` | `string` | Yes | Their version content |
-
-```json
-{
-  "driver": "json",
-  "base": "{\"name\": \"Alice\", \"age\": 30}",
-  "ours": "{\"name\": \"Alice\", \"age\": 31}",
-  "theirs": "{\"name\": \"Alice\", \"role\": \"admin\"}"
-}
-```
-
-**Response (clean merge):** `200 OK`
-
-```json
-{
-  "result": "{\"name\": \"Alice\", \"age\": 31, \"role\": \"admin\"}",
-  "driver": "json",
-  "conflicts": false
-}
-```
-
-**Response (conflict):** `200 OK`
-
-```json
-{
-  "result": null,
-  "driver": "json",
-  "conflicts": true
-}
-```
-
-**Supported drivers:** `json`, `yaml`/`yml`, `toml`, `xml`, `csv`, `sql`, `properties`, `html`/`htm`, `markdown`/`md`/`mdown`/`mkd`, `svg`, `docx`, `feed`/`rss`/`atom`, `ical`/`ics`/`ifb`, `image`/`png`/`jpg`/`jpeg`/`gif`/`bmp`/`webp`/`tiff`/`tif`/`ico`/`avif`, `otio`, `pdf`, `pptx`, `xlsx`
-
-**Error codes:**
-
-| Status | Error |
-|--------|-------|
-| 400 | Unsupported driver or merge error |
-| 403 | Merge limit reached for billing period |
-| 500 | Internal server error |
-
-**Rate limits:** Counts against monthly merge quota.
-
----
-
-### GET /api/drivers
-
-List all supported merge drivers.
+List all available merge drivers.
 
 **Auth:** None
 
@@ -288,149 +215,182 @@ List all supported merge drivers.
     {
       "name": "YAML",
       "extensions": [".yaml", ".yml"]
-    },
-    {
-      "name": "DOCX",
-      "extensions": [".docx"]
     }
   ]
 }
 ```
 
-Returns 18 driver entries (JSON, YAML, TOML, XML, CSV, SQL, Properties, HTML, Markdown, SVG, DOCX, Feed, iCal, Image, OpenTimelineIO, PDF, PPTX, XLSX).
+#### `POST /api/merge`
+
+Perform a semantic three-way merge.
+
+**Auth:** Bearer token required. Subject to billing limits.
+
+**Request:**
+
+```json
+{
+  "driver": "json",
+  "base": "{\"name\": \"base\", \"version\": 1}",
+  "ours": "{\"name\": \"ours\", \"version\": 2}",
+  "theirs": "{\"name\": \"theirs\", \"version\": 1}"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `driver` | string | yes | Driver name (`json`, `yaml`, `toml`, `xml`, `csv`, `sql`, `html`, `markdown`, `svg`, `docx`, `xlsx`, `pptx`, `pdf`, `feed`, `ical`, `image`, `otio`, `properties`) |
+| `base` | string | yes | Ancestor (common base) content |
+| `ours` | string | yes | Current branch content |
+| `theirs` | string | yes | Incoming branch content |
+
+**Response:** `200 OK`
+
+```json
+{
+  "result": "{\"name\":\"ours\",\"version\":2}",
+  "driver": "json",
+  "conflicts": false
+}
+```
+
+When conflicts cannot be automatically resolved, `conflicts` is `true` and
+`result` is `null`.
+
+**Error Codes:**
+
+| Status | Description |
+|--------|-------------|
+| 400 | Invalid driver name or malformed input |
+| 403 | Merge limit reached for billing period |
 
 ---
 
-### GET /api/usage
+### Usage
+
+#### `GET /api/usage`
 
 Get current usage and billing limits.
 
-**Auth:** Optional (JWT)
+**Auth:** Bearer token required
 
 **Response:** `200 OK`
 
 ```json
 {
   "tier": "free",
-  "merges_used": 47,
+  "merges_used": 42,
   "merges_limit": 100,
-  "storage_bytes": 52428800,
+  "storage_bytes": 5242880,
   "storage_limit": 104857600,
-  "repos_count": 3,
+  "repos_count": 2,
   "repos_limit": 5,
-  "api_calls": 1200,
-  "period": "2026-05",
-  "utilization_percent": 47.0
+  "api_calls": 150,
+  "period": "2026-01",
+  "utilization_percent": 42.0
 }
 ```
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `tier` | `string` | `free`, `pro`, or `enterprise` |
-| `merges_used` | `integer` | Merges used this billing period |
-| `merges_limit` | `integer` | Monthly merge limit (-1 = unlimited) |
-| `storage_bytes` | `integer` | Storage used in bytes |
-| `storage_limit` | `integer` | Storage limit in bytes |
-| `repos_count` | `integer` | Number of repositories |
-| `repos_limit` | `integer` | Repository limit (-1 = unlimited) |
-| `api_calls` | `integer` | API calls this period |
-| `period` | `string` | Billing period (YYYY-MM) |
-| `utilization_percent` | `float` | Merge utilization percentage |
-
-**Error codes:**
-
-| Status | Error |
-|--------|-------|
-| 500 | Internal server error |
+Tier limits (`merges_limit`, `repos_limit`) are `-1` for unlimited (Pro/Enterprise).
 
 ---
 
-## Organization API
+### Analytics
 
-### POST /api/orgs
+#### `GET /api/analytics`
 
-Create a new organization.
+Get merge analytics. **Pro tier or higher required.**
 
-**Auth:** Optional (JWT)
+**Auth:** Bearer token required (Pro+)
 
-**Request body:**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `name` | `string` | Yes | 2-39 alphanumeric chars, hyphens and underscores allowed |
-| `display_name` | `string` | No | Human-readable name (defaults to `name`) |
+**Response:** `200 OK`
 
 ```json
 {
-  "name": "my-team",
-  "display_name": "My Team"
+  "total_merges": 1234,
+  "merges_today": 15,
+  "merges_this_week": 87,
+  "merges_by_driver": {
+    "json": 500,
+    "yaml": 300,
+    "toml": 200
+  },
+  "merges_by_day": [
+    {"date": "2026-01-28", "count": 12},
+    {"date": "2026-01-29", "count": 15}
+  ],
+  "conflicts_resolved": 1100,
+  "conflicts_detected": 134,
+  "avg_merge_time_ms": 2.5,
+  "active_users_today": 3
 }
 ```
+
+**Error Codes:**
+
+| Status | Description |
+|--------|-------------|
+| 403 | Analytics available on Pro plan |
+
+---
+
+### Organizations
+
+#### `POST /api/orgs`
+
+Create an organization.
+
+**Auth:** Bearer token required
+
+**Request:**
+
+```json
+{
+  "name": "my-org",
+  "display_name": "My Organization"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | yes | 2-39 alphanumeric chars, hyphens/underscores |
+| `display_name` | string | no | Human-readable name |
 
 **Response:** `201 Created`
 
 ```json
 {
-  "org_id": "uuid-v4",
-  "name": "my-team",
-  "display_name": "My Team",
+  "org_id": "uuid",
+  "name": "my-org",
+  "display_name": "My Organization",
   "tier": "free",
   "member_count": 1,
   "is_owner": true
 }
 ```
 
-**Error codes:**
+**Error Codes:**
 
-| Status | Error |
-|--------|-------|
+| Status | Description |
+|--------|-------------|
 | 400 | Invalid org name |
 | 409 | Organization name already taken |
-| 500 | Internal server error |
 
----
+#### `GET /api/orgs`
 
-### GET /api/orgs
+List organizations the current user belongs to.
 
-List organizations the authenticated user belongs to.
+**Auth:** Bearer token required
 
-**Auth:** Optional (JWT)
+**Response:** `200 OK` — array of `OrgInfo` objects.
 
-**Response:** `200 OK`
+#### `POST /api/orgs/{org_id}/invite`
 
-```json
-[
-  {
-    "org_id": "uuid-v4",
-    "name": "my-team",
-    "display_name": "My Team",
-    "tier": "pro",
-    "member_count": 5,
-    "is_owner": true
-  }
-]
-```
+Invite a member or directly add an existing user.
 
----
+**Auth:** Bearer token required (org admin/owner)
 
-### POST /api/orgs/{org_id}/invite
-
-Invite a member to an organization (admin/owner only).
-
-**Auth:** Optional (JWT — requires admin or owner role)
-
-**Path parameters:**
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `org_id` | `string` | Organization UUID |
-
-**Request body:**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `email` | `string` | Yes | Email of user to invite |
-| `role` | `string` | Yes | One of: `owner`, `admin`, `member`, `viewer` |
+**Request:**
 
 ```json
 {
@@ -439,100 +399,69 @@ Invite a member to an organization (admin/owner only).
 }
 ```
 
-**Response:** `200 OK`
+Valid roles: `owner`, `admin`, `member`, `viewer`.
 
-If the user already has an account:
+**Response:** `200 OK`
 
 ```json
 {
   "status": "added",
-  "user_id": "uuid-v4",
+  "user_id": "uuid",
   "email": "newuser@example.com"
 }
 ```
 
-If the user does not exist (invitation sent):
+If the email is not registered, `status` is `"invited"` and `user_id` is `null`.
 
-```json
-{
-  "status": "invited",
-  "user_id": null,
-  "email": "newuser@example.com"
-}
-```
+**Error Codes:**
 
-**Error codes:**
-
-| Status | Error |
-|--------|-------|
-| 400 | Invalid role |
-| 403 | Not an admin of this organization |
-| 404 | Organization not found |
+| Status | Description |
+|--------|-------------|
+| 403 | Not an org admin |
 | 409 | User is already a member |
-| 500 | Internal server error |
 
----
-
-### GET /api/orgs/{org_id}/members
+#### `GET /api/orgs/{org_id}/members`
 
 List organization members.
 
-**Auth:** Optional (JWT — requires member role)
+**Auth:** Bearer token required (org member)
 
-**Path parameters:**
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `org_id` | `string` | Organization UUID |
-
-**Response:** `200 OK`
+**Response:** `200 OK` — array of `MemberInfo` objects:
 
 ```json
 [
   {
-    "user_id": "uuid-v4",
+    "user_id": "uuid",
     "role": "owner",
-    "joined_at": "2026-04-01T00:00:00+00:00",
-    "email": "admin@example.com",
-    "display_name": "Admin User"
-  },
-  {
-    "user_id": "uuid-v4",
-    "role": "member",
-    "joined_at": "2026-04-15T00:00:00+00:00",
-    "email": "member@example.com",
-    "display_name": "Team Member"
+    "joined_at": "2026-01-01T00:00:00+00:00",
+    "email": "owner@example.com",
+    "display_name": "Owner"
   }
 ]
 ```
 
-**Error codes:**
+#### `DELETE /api/orgs/{org_id}/members/{user_id}`
 
-| Status | Error |
-|--------|-------|
-| 403 | Not a member of this organization |
-| 500 | Internal server error |
+Remove a member from an organization.
 
----
+**Auth:** Bearer token required (org admin/owner)
 
-### PUT /api/orgs/{org_id}/members/{user_id}/role
+**Response:** `204 No Content`
 
-Update a member's role (admin/owner only).
+**Error Codes:**
 
-**Auth:** Optional (JWT — requires admin or owner role)
+| Status | Description |
+|--------|-------------|
+| 403 | Not an org admin, or attempting to remove the last admin |
+| 404 | Member not found |
 
-**Path parameters:**
+#### `PUT /api/orgs/{org_id}/members/{user_id}/role`
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `org_id` | `string` | Organization UUID |
-| `user_id` | `string` | Target user UUID |
+Update a member's role.
 
-**Request body:**
+**Auth:** Bearer token required (org admin/owner)
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `role` | `string` | Yes | One of: `owner`, `admin`, `member`, `viewer` |
+**Request:**
 
 ```json
 {
@@ -542,173 +471,149 @@ Update a member's role (admin/owner only).
 
 **Response:** `204 No Content`
 
-**Error codes:**
+#### `GET /api/invitations`
 
-| Status | Error |
-|--------|-------|
-| 400 | Invalid role |
-| 403 | Not an admin of this organization |
-| 404 | Member not found in organization |
-| 500 | Internal server error |
+List pending invitations (sent by user or received by user).
 
----
+**Auth:** Bearer token required
 
-### DELETE /api/orgs/{org_id}/members/{user_id}
+**Response:** `200 OK` — array of `InvitationInfo` objects.
 
-Remove a member from the organization (admin/owner only).
+#### `POST /api/invitations/{invite_id}/accept`
 
-**Auth:** Optional (JWT — requires admin or owner role)
+Accept an invitation.
 
-**Path parameters:**
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `org_id` | `string` | Organization UUID |
-| `user_id` | `string` | Target user UUID |
-
-**Request body:** None
+**Auth:** Bearer token required (email must match invitation)
 
 **Response:** `204 No Content`
 
-**Error codes:**
+**Error Codes:**
 
-| Status | Error |
-|--------|-------|
-| 403 | Not an admin, or attempting to remove the last admin |
-| 404 | Organization not found |
-| 409 | Cannot remove the last admin |
-| 500 | Internal server error |
+| Status | Description |
+|--------|-------------|
+| 400 | Email does not match invitation |
+| 404 | Invitation not found or expired |
 
 ---
 
-### GET /api/invitations
+### Plugins
 
-List pending and sent invitations.
+#### `GET /api/plugins`
 
-**Auth:** Optional (JWT — shows invitations where user is admin/owner or is the invited email)
+List loaded WASM plugins.
+
+**Auth:** None
 
 **Response:** `200 OK`
 
 ```json
-[
-  {
-    "invite_id": "inv_uuid-v4",
-    "org_id": "uuid-v4",
-    "org_name": "My Team",
-    "email": "newuser@example.com",
-    "role": "member",
-    "invited_by": "uuid-v4",
-    "created_at": "2026-05-01T00:00:00+00:00",
-    "expires_at": "2026-05-08T00:00:00+00:00",
-    "accepted_at": null
-  }
-]
+{
+  "plugins": [
+    {
+      "name": "custom-driver",
+      "version": "1.0.0"
+    }
+  ],
+  "count": 1
+}
 ```
 
+#### `POST /api/plugins/upload`
+
+Upload a WASM plugin. **Enterprise tier required.**
+
+**Auth:** Bearer token required (Enterprise)
+
+**Request:** `multipart/form-data` with a `.wasm` file field.
+
+**Response:** `201 Created`
+
+```json
+{
+  "name": "custom-driver.wasm",
+  "status": "loaded",
+  "driver": "plugin-custom-driver"
+}
+```
+
+**Error Codes:**
+
+| Status | Description |
+|--------|-------------|
+| 400 | Invalid Wasm module or malformed filename |
+| 403 | Plugin uploads require enterprise tier |
+
+#### `POST /api/plugins/merge`
+
+Merge using a custom plugin driver.
+
+**Auth:** Bearer token required
+
+**Request:**
+
+```json
+{
+  "driver": "plugin-custom-driver",
+  "base": "...",
+  "ours": "...",
+  "theirs": "..."
+}
+```
+
+**Response:** Same shape as `POST /api/merge`.
+
+**Error Codes:**
+
+| Status | Description |
+|--------|-------------|
+| 404 | Plugin not loaded |
+
 ---
 
-### POST /api/invitations/{invite_id}/accept
+### Billing
 
-Accept an organization invitation.
+#### `POST /billing/checkout`
 
-**Auth:** Optional (JWT — invite email must match authenticated user's email)
+Create a Stripe Checkout session for upgrading.
 
-**Path parameters:**
+**Auth:** Bearer token required
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `invite_id` | `string` | Invitation ID (`inv_*`) |
-
-**Request body:** None
-
-**Response:** `204 No Content`
-
-**Error codes:**
-
-| Status | Error |
-|--------|-------|
-| 400 | Email mismatch or invalid invitation |
-| 404 | Invitation not found or expired |
-| 500 | Internal server error |
-
----
-
-## Billing API
-
-### POST /billing/checkout
-
-Create a Stripe checkout session for subscription purchase.
-
-**Auth:** Optional (JWT)
-
-**Request body:**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `tier` | `string` | Yes | `pro` or `enterprise` |
-| `success_url` | `string` | No | Redirect on success (defaults to `{base}/billing?success=true`) |
-| `cancel_url` | `string` | No | Redirect on cancel (defaults to `{base}/billing?canceled=true`) |
+**Request:**
 
 ```json
 {
   "tier": "pro",
-  "success_url": "https://app.example.com/billing?success=true"
+  "success_url": "https://example.com/success",
+  "cancel_url": "https://example.com/cancel"
 }
 ```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `tier` | string | yes | `pro` or `enterprise` |
+| `success_url` | string | no | Redirect after payment |
+| `cancel_url` | string | no | Redirect on cancel |
 
 **Response:** `200 OK`
 
 ```json
 {
-  "url": "https://checkout.stripe.com/c/pay/cs_live_..."
+  "url": "https://checkout.stripe.com/c/pay/cs_test_..."
 }
 ```
 
-Redirect the user to this URL to complete payment.
+**Error Codes:**
 
-**Error codes:**
-
-| Status | Error |
-|--------|-------|
+| Status | Description |
+|--------|-------------|
 | 400 | Invalid tier |
-| 500 | Failed to create Stripe customer or checkout session |
-| 503 | Billing not configured (STRIPE_KEY not set) |
-
-**Rate limits:** Standard tier-based limits apply.
-
----
-
-### POST /billing/portal
-
-Create a Stripe customer portal session for managing subscriptions.
-
-**Auth:** Optional (JWT)
-
-**Request body:** None
-
-**Response:** `200 OK`
-
-```json
-{
-  "url": "https://billing.stripe.com/p/session_..."
-}
-```
-
-**Error codes:**
-
-| Status | Error |
-|--------|-------|
-| 400 | No Stripe customer on file |
-| 500 | Failed to create portal session |
 | 503 | Billing not configured |
 
----
+#### `GET /billing/subscription`
 
-### GET /billing/subscription
+Get current subscription status.
 
-Get current subscription info.
-
-**Auth:** Optional (JWT)
+**Auth:** Bearer token required
 
 **Response:** `200 OK`
 
@@ -721,35 +626,35 @@ Get current subscription info.
 }
 ```
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `tier` | `string` | Current tier: `free`, `pro`, or `enterprise` |
-| `status` | `string` | `active`, `inactive`, `past_due`, `canceled`, `trialing` |
-| `current_period_end` | `string or null` | End of current billing period |
-| `cancel_at_period_end` | `boolean` | Whether subscription cancels at period end |
+#### `POST /billing/portal`
 
----
+Create a Stripe Customer Portal session for managing subscriptions.
 
-### POST /billing/webhook
+**Auth:** Bearer token required
 
-Stripe webhook endpoint. Not called directly by users — Stripe sends events here.
+**Response:** `200 OK`
 
-**Auth:** None (HMAC-SHA256 signature verification via `Stripe-Signature` header)
+```json
+{
+  "url": "https://billing.stripe.com/p/session_..."
+}
+```
 
-**Handled events:**
+**Error Codes:**
 
-| Event | Action |
-|-------|--------|
-| `checkout.session.completed` | Upgrade user tier, create subscription record |
-| `customer.subscription.updated` | Update tier based on subscription status |
-| `customer.subscription.deleted` | Downgrade to free tier |
-| `invoice.payment_failed` | Set 7-day payment grace period |
+| Status | Description |
+|--------|-------------|
+| 400 | No Stripe customer on file |
+| 503 | Billing not configured |
 
-**Security:**
+#### `POST /billing/webhook`
 
-- HMAC-SHA256 signature verification (when `STRIPE_WEBHOOK_SECRET` is set)
-- Timestamp replay protection: rejects webhooks older than 300 seconds
-- Logs warning if webhook secret is not configured
+Receive Stripe webhook events. Called by Stripe, not by clients.
+
+**Auth:** Stripe-Signature header verification (HMAC-SHA256)
+
+Handles: `checkout.session.completed`, `customer.subscription.updated`,
+`customer.subscription.deleted`, `invoice.payment_failed`.
 
 **Response:** `200 OK`
 
@@ -761,182 +666,27 @@ Stripe webhook endpoint. Not called directly by users — Stripe sends events he
 
 ---
 
-## Analytics API
+### Admin
 
-### GET /api/analytics
+#### `GET /admin/users`
 
-Get usage analytics. **Pro and Enterprise tiers only.**
+List all users. **Admin role required.**
 
-**Auth:** Optional (JWT — requires Pro or Enterprise tier)
+**Auth:** Bearer token required (admin)
 
-**Response:** `200 OK`
+**Response:** `200 OK` — array of `UserInfo` objects.
 
-```json
-{
-  "total_merges": 4521,
-  "merges_today": 12,
-  "merges_this_week": 87,
-  "merges_by_driver": {
-    "json": 2100,
-    "yaml": 1200,
-    "docx": 500,
-    "xlsx": 400,
-    "toml": 321
-  },
-  "merges_by_day": [
-    {"date": "2026-04-25", "count": 15},
-    {"date": "2026-04-26", "count": 22},
-    {"date": "2026-04-27", "count": 8}
-  ],
-  "conflicts_resolved": 3900,
-  "conflicts_detected": 621,
-  "avg_merge_time_ms": 3.42,
-  "active_users_today": 1
-}
-```
+**Error Codes:**
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `total_merges` | `integer` | Lifetime merge count |
-| `merges_today` | `integer` | Merges today |
-| `merges_this_week` | `integer` | Merges in the last 7 days |
-| `merges_by_driver` | `object` | Merge counts grouped by driver name |
-| `merges_by_day` | `array` | Daily merge counts for the last 30 days |
-| `conflicts_resolved` | `integer` | Clean merges |
-| `conflicts_detected` | `integer` | Merges with conflicts |
-| `avg_merge_time_ms` | `float` | Average merge time in milliseconds |
-| `active_users_today` | `integer` | Active users today (org-wide) |
-
-**Error codes:**
-
-| Status | Error |
-|--------|-------|
-| 403 | Analytics available on Pro plan |
-| 500 | Internal server error |
-
----
-
-## Plugin API
-
-### GET /api/plugins
-
-List currently loaded WASM plugins.
-
-**Auth:** None
-
-**Response:** `200 OK`
-
-```json
-{
-  "count": 2,
-  "plugins": [
-    {
-      "name": "custom-merge-driver",
-      "driver_name": "Custom Merge Driver",
-      "version": "1.0.0",
-      "extensions": [".custom"]
-    }
-  ]
-}
-```
-
----
-
-### POST /api/plugins/upload
-
-Upload a WASM plugin. **Enterprise tier only.**
-
-**Auth:** Optional (JWT — requires Enterprise tier)
-
-**Request body:** `multipart/form-data`
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| File | `binary` | Yes | `.wasm` file |
-
-**Response:** `201 Created`
-
-```json
-{
-  "name": "custom-driver.wasm",
-  "status": "loaded",
-  "driver": "Custom Merge Driver"
-}
-```
-
-**Error codes:**
-
-| Status | Error |
-|--------|-------|
-| 400 | No file uploaded, invalid Wasm module, or failed to load |
-| 403 | Plugin uploads require enterprise tier |
-| 500 | Internal server error |
-
----
-
-### POST /api/plugins/merge
-
-Merge using a loaded WASM plugin.
-
-**Auth:** Optional (JWT)
-
-**Request body:** Same as `POST /api/merge`, but `driver` must match a loaded plugin name.
-
-```json
-{
-  "driver": "plugin-custom-merge-driver",
-  "base": "...",
-  "ours": "...",
-  "theirs": "..."
-}
-```
-
-**Response:** Same format as `POST /api/merge`.
-
-**Error codes:**
-
-| Status | Error |
-|--------|-------|
-| 404 | Plugin not loaded |
-| 500 | Plugin execution error |
-
----
-
-## Rate Limiting
-
-All endpoints are subject to rate limiting. Limits are applied per-user (authenticated) or per-IP (anonymous) using a 60-second sliding window.
-
-| Tier | Requests/minute |
-|------|----------------|
-| Anonymous (per IP) | 10 |
-| Free | 30 |
-| Pro | 300 |
-| Enterprise | 3,000 |
-
-Rate limit information is returned in response headers:
-
-| Header | Description |
+| Status | Description |
 |--------|-------------|
-| `X-RateLimit-Limit` | Maximum requests per window |
-| `X-RateLimit-Remaining` | Remaining requests in current window |
-| `X-RateLimit-Reset` | Seconds until window resets |
-| `Retry-After` | Seconds to wait (only on 429 responses) |
-
-**Response on limit exceeded:** `429 Too Many Requests`
-
-```json
-{
-  "error": "rate limit exceeded",
-  "retry_after_seconds": 42,
-  "limit": 30
-}
-```
+| 403 | Admin only |
 
 ---
 
 ## Error Response Format
 
-All errors follow a consistent format:
+All errors return a consistent JSON body:
 
 ```json
 {
@@ -944,55 +694,20 @@ All errors follow a consistent format:
 }
 ```
 
-Some errors include additional context:
+## Rate Limiting
 
-```json
-{
-  "error": "merge limit reached for this billing period",
-  "tier": "free",
-  "upgrade_url": "/billing"
-}
-```
+All protected endpoints are rate-limited. Responses include standard
+`RateLimit-*` headers when limits are approached or exceeded.
 
-```json
-{
-  "error": "billing is not configured",
-  "hint": "set STRIPE_KEY environment variable"
-}
-```
+## Tier Limits
 
----
-
-## Billing Tiers
-
-| Feature | Free | Pro ($9/seat/mo) | Enterprise ($29/seat/mo) |
-|---------|------|-------------------|--------------------------|
+| Feature | Free | Pro | Enterprise |
+|---------|------|-----|------------|
 | Merges/month | 100 | 10,000 | Unlimited |
 | Storage | 100 MB | 10 GB | 100 GB |
-| Repositories | 5 | Unlimited | Unlimited |
-| API rate limit | 30/min | 300/min | 3,000/min |
-| Analytics | No | Yes | Yes |
-| WASM plugins | No | No | Yes |
-| Drivers | 5 | Unlimited | Unlimited |
-
----
-
-## CORS
-
-The platform exposes a permissive CORS policy (`CorsLayer::permissive()`). For production deployments, this should be configured to specific origins.
-
----
-
-## Health Check
-
-### GET /healthz
-
-**Auth:** None
-
-**Response:** `200 OK`
-
-```
-ok
-```
-
-Available on both platform and hub.
+| Repos | 5 | Unlimited | Unlimited |
+| Core drivers | 5 | All | All |
+| Analytics | — | Yes | Yes |
+| WASM plugins | — | — | Yes |
+| SSO/Audit/SLA | — | — | Yes |
+| Price | $0 | $9/user/mo | $29/user/mo |

@@ -1,18 +1,16 @@
 app = "suture-platform"
-primary_region = "syd"
+primary_region = "iad"
 
 [build]
-  dockerfile = "Dockerfile"
 
 [env]
-  PORT = "3000"
+  PORT = "8080"
   RUST_LOG = "info"
 
 [http_service]
-  internal_port = 3000
+  internal_port = 8080
   force_https = true
-  auto_stop_machines = "stop"
-  auto_start_machines = true
+  auto_stop_machines = true
   min_machines_running = 0
   processes = ["app"]
 
@@ -20,3 +18,7 @@ primary_region = "syd"
   memory = "512mb"
   cpu_kind = "shared"
   cpus = 1
+
+[[statics]]
+  guest_path = "/usr/local/bin/suture-platform"
+  url_prefix = "/"

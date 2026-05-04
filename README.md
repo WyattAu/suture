@@ -1,10 +1,11 @@
 <div align="center">
   <h1>Suture</h1>
   <p><strong>Semantic merge for every format.</strong></p>
-  <p>Automatically resolve merge conflicts in JSON, YAML, TOML, XML, CSV, and 12+ more structured file formats.</p>
+  <p>Automatically resolve merge conflicts in JSON, YAML, TOML, XML, CSV, and 13+ more structured file formats.</p>
   
-  [Try the Demo](https://suture.dev/#/merge) · [Install](#installation) · [Docs](https://suture.dev/#/api) · [Pricing](https://suture.dev/#/billing)
+  [Install](#installation) · [Quick Start](#quick-start) · [Docs](docs/user-guide.md) · [API](docs/api-reference.md) · [Pricing](#pricing)
   
+  [![Tests](https://github.com/WyattAu/suture/actions/workflows/ci.yml/badge.svg)](https://github.com/WyattAu/suture/actions/workflows/ci.yml)
   [![crates.io](https://img.shields.io/crates/v/suture-merge-driver.svg)](https://crates.io/crates/suture-merge-driver)
   [![npm](https://img.shields.io/npm/v/suture-merge-driver.svg)](https://www.npmjs.com/package/suture-merge-driver)
   [![PyPI](https://img.shields.io/pypi/v/suture-merge-driver.svg)](https://pypi.org/project/suture-merge-driver/)
@@ -36,7 +37,21 @@ Git's merge is line-based. When two branches change different keys in a JSON fil
 }
 ```
 
-## Install as Git Merge Driver (5 seconds)
+## Installation
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/WyattAu/suture/main/install.sh | sh
+```
+
+| Method | Command |
+|--------|---------|
+| **Cargo** | `cargo install suture-cli` |
+| **Homebrew** | `brew install WyattAu/suture-merge-driver/suture-merge-driver` |
+| **npm** | `npm install -g suture-merge-driver` |
+| **PyPI** | `pip install suture-merge-driver` |
+| **Binary** | [GitHub Releases](https://github.com/WyattAu/suture/releases) |
+
+## Git Merge Driver (5 seconds)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/WyattAu/suture/main/scripts/install-merge-driver.sh | bash
@@ -45,67 +60,58 @@ curl -fsSL https://raw.githubusercontent.com/WyattAu/suture/main/scripts/install
 That's it. Git will now automatically merge:
 `*.json` `*.yaml` `*.yml` `*.toml` `*.xml` `*.csv`
 
-## Installation
+## Quick Start
 
-| Method | Command |
-|--------|---------|
-| **Cargo** | `cargo install suture-merge-driver` |
-| **Homebrew** | `brew install WyattAu/suture-merge-driver/suture-merge-driver` |
-| **npm** | `npm install -g suture-merge-driver` |
-| **PyPI** | `pip install suture-merge-driver` |
-| **Binary** | [GitHub Releases](https://github.com/WyattAu/suture/releases) |
+```bash
+suture init my-project && cd my-project
+suture branch feature/json-config
+suture checkout feature/json-config
+# ... edit config.json ...
+suture add config.json
+suture commit "update config"
+suture merge main          # structured conflicts resolved automatically
+suture remote add origin http://localhost:50051/my-project
+suture push origin
+```
 
 ## Supported Formats
 
-| Format | Extensions | Features |
+| Format | Extensions | Strategy |
 |--------|-----------|----------|
-| JSON | `.json` | Deep merge, arrays, conflicts |
-| YAML | `.yaml` `.yml` | Mappings, anchors, arrays |
-| TOML | `.toml` | Tables, arrays, inline tables |
-| XML | `.xml` | Elements, attributes |
-| CSV | `.csv` | Row-based by key column |
-| SQL | `.sql` | Statement-level |
-| HTML | `.html` | DOM tree merge |
-| Markdown | `.md` | Section-based |
+| JSON | `.json` | Key-value merge |
+| YAML | `.yaml` `.yml` | Mapping merge |
+| TOML | `.toml` | Table merge |
+| XML | `.xml` | Element merge |
+| CSV | `.csv` | Row-column merge |
+| SQL | `.sql` | Statement merge |
+| HTML | `.html` `.htm` | DOM tree merge |
+| Markdown | `.md` `.markdown` | Section merge |
 | SVG | `.svg` | Element merge |
-| Properties | `.properties` `.ini` | Key-value |
-| DOCX | `.docx` | Binary (merge_raw) |
-| XLSX | `.xlsx` | Binary (merge_raw) |
-| PPTX | `.pptx` | Binary (merge_raw) |
-| PDF | `.pdf` | Binary (merge_raw) |
-| Image | `.png` `.jpg` | Binary (merge_raw) |
+| DOCX | `.docx` | OOXML merge |
+| XLSX | `.xlsx` | Sheet merge |
+| PPTX | `.pptx` | Slide merge |
+| PDF | `.pdf` | Page merge |
+| Image | `.png` `.jpg` `.jpeg` `.gif` `.webp` | Metadata merge |
 | RSS/Atom | `.rss` `.atom` | Feed merge |
-| iCal | `.ics` | Calendar merge |
+| iCalendar | `.ics` | Event merge |
 | OTIO | `.otio` | Timeline merge |
+| Properties | `.properties` `.ini` | Key-value merge |
 
-## CLI
+## CLI Commands
+
+`init` · `clone` · `status` · `add` · `rm` · `mv` · `commit` · `log` · `diff` · `show` · `branch` · `checkout` · `merge` · `rebase` · `tag` · `stash` · `push` · `pull` · `fetch` · `remote` · `lfs` · `blame` · `grep` · `cherry-pick` · `revert` · `reset` · `bisect` · `worktree` · `config` · `doctor` · `key` · `verify` · `export` · `archive` · `tui` · `git import` · `sync`
 
 ```bash
-# Initialize a repository
-suture init my-project
-cd my-project
-
-# Create and switch branches
-suture branch feature/json-config
-suture checkout feature/json-config
-
-# Make changes, then commit
-suture add config.json
-suture commit "update config"
-
-# Merge automatically resolves conflicts
-suture merge main
-
-# Push/pull to a hub
-suture remote add origin https://hub.example.com
-suture push origin
-suture pull origin
+suture --help          # full command list
+suture drivers         # list available merge drivers
+suture completions bash > ~/.bash_completion.d/suture
 ```
 
 ## API
 
 ```bash
-curl -X POST https://merge.suture.dev/api/merge \
+curl -X POST https://api.suture.dev/api/merge \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "driver": "json",
@@ -115,7 +121,36 @@ curl -X POST https://merge.suture.dev/api/merge \
   }'
 ```
 
-[Full API Documentation](https://suture.dev/#/api)
+[Full API Reference](docs/api-reference.md)
+
+## Pricing
+
+| Plan | Price | Merges | Storage | Features |
+|------|-------|--------|---------|----------|
+| Free | $0 | 100/mo | 100 MB | 5 core drivers |
+| Pro | $9/user/mo | 10,000/mo | 10 GB | All drivers, analytics |
+| Enterprise | $29/user/mo | Unlimited | 100 GB | SSO, audit, WASM plugins, SLA |
+
+Self-hosted is always free (AGPL-3.0).
+
+## Platform Features
+
+- **Semantic merge API** — REST endpoint for all 18 format drivers
+- **WASM plugin system** — custom merge drivers in any language
+- **OAuth** — Google and GitHub sign-in
+- **Organizations** — teams with role-based access (owner/admin/member/viewer)
+- **Analytics** — merge metrics, conflict rates, driver usage
+- **Stripe billing** — checkout sessions, customer portal, webhook handling
+- **Rate limiting** — per-endpoint protection
+
+## Self-Hosted Hub
+
+```bash
+docker compose up -d
+# Hub available at http://localhost:8080
+```
+
+See [Self-Hosting Guide](docs/self-hosting.md) for Docker, binary, Kubernetes, and systemd deployment.
 
 ## GitHub Actions
 
@@ -128,45 +163,25 @@ curl -X POST https://merge.suture.dev/api/merge \
     base-ref: ${{ github.event.pull_request.base.sha }}
 ```
 
-## Self-Hosted Hub
-
-```bash
-docker compose up -d
-# Hub available at http://localhost:8080
-```
-
-See [Self-Hosting Guide](docs/self-hosting.md) for Docker, binary, Kubernetes, and systemd deployment.
-
-## Platform
-
-[merge.suture.dev](https://suture.dev) — Hosted semantic merge API
-
-| Plan | Price | Merges | Storage | Features |
-|------|-------|--------|---------|----------|
-| Free | $0 | 100/mo | 100 MB | 5 core drivers |
-| Pro | $9/user/mo | 10,000/mo | 10 GB | All drivers, analytics |
-| Enterprise | $29/user/mo | Unlimited | 100 GB | SSO, audit, SLA |
-
-Self-hosted is always free (AGPL-3.0).
-
 ## VS Code Extension
 
 Install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=WyattAu.suture):
+conflict highlighting, one-click auto-merge, status bar integration.
 
-- Conflict highlighting
-- One-click auto-merge
-- Status bar integration
+## Documentation
+
+[User Guide](docs/user-guide.md) · [API Reference](docs/api-reference.md) · [Self-Hosting](docs/self-hosting.md) · [Deployment](docs/deploy-runbook.md) · [CI Integration](docs/ci-integration.md)
 
 ## Architecture
 
 ```
-suture/                          # Monorepo root
+suture/
 ├── crates/
 │   ├── suture-core/            # Merge engine (342 tests)
 │   ├── suture-driver-*/        # 18 format drivers
 │   ├── suture-cli/             # CLI (115 tests)
 │   ├── suture-hub/             # Coordination server (50 tests)
-│   ├── suture-platform/        # Hosted SaaS
+│   ├── suture-platform/        # Hosted SaaS (REST API, billing, auth)
 │   ├── suture-raft/            # Consensus (48 tests)
 │   ├── suture-vfs/             # FUSE filesystem
 │   ├── suture-wasm-plugin/     # WASM plugin system
@@ -176,8 +191,7 @@ suture/                          # Monorepo root
 ├── vscode-extension/           # VS Code extension
 ├── templates/                  # .gitattributes templates
 ├── scripts/                    # Install scripts
-├── deploy/                     # Helm chart, Docker
-└── docs/                       # Guides, blog, SEO
+└── deploy/                     # Helm chart, Docker
 ```
 
 ## License

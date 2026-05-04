@@ -1,0 +1,43 @@
+name: Performance Regression
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: bench-${{ runner.os }}
+
+      - name: Run benchmarks (PR)
+        run: cargo bench --package suture-bench -- --quick 2>&1 | tee benchmark-results.txt
+
+      - name: Run benchmarks (main baseline)
+        run: |
+          git fetch origin main
+          git checkout main -- Cargo.lock crates/suture-bench/
+          cargo bench --package suture-bench -- --quick 2>&1 | tee baseline-results.txt
+          git checkout -
+
+      - name: Compare results
+        run: |
+          echo "## Benchmark Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Current PR" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          grep -E "^test .+benchmark" benchmark-results.txt >> $GITHUB_STEP_SUMMARY || echo "No benchmark results" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Baseline (main)" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          grep -E "^test .+benchmark" baseline-results.txt >> $GITHUB_STEP_SUMMARY || echo "No baseline results" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
