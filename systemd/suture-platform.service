@@ -1,22 +1,22 @@
 [Unit]
 Description=Suture Platform
-After=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 User=suture
 Group=suture
-WorkingDirectory=/opt/suture
-ExecStart=/usr/local/bin/suture-platform --addr 0.0.0.0:3000
+WorkingDirectory=/var/lib/suture
+Environment=RUST_LOG=info
+Environment=SUTURE_DATA_DIR=/var/lib/suture
+EnvironmentFile=-/etc/suture/env
+ExecStart=/usr/local/bin/suture-platform --addr 0.0.0.0:8080
 Restart=always
 RestartSec=5
-Environment=DATABASE_URL=/opt/suture/data/platform.db
-Environment=JWT_SECRET=CHANGE_ME
-Environment=RUST_LOG=info
-
-NoNewPrivileges=true
+LimitNOFILE=65536
 ProtectSystem=strict
-ReadWritePaths=/opt/suture/data
+NoNewPrivileges=true
 PrivateTmp=true
 
 [Install]

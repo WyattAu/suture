@@ -1,51 +1,43 @@
 services:
-  # Suture Hub (coordination server — gRPC + HTTP)
-  suture-hub:
+  suture:
     build:
       context: .
-      dockerfile: Dockerfile
-    ports:
-      - "8080:8080"
-    volumes:
-      - suture-data:/data
-    environment:
-      - RUST_LOG=info,suture_hub=debug
-    command: ["suture-hub", "--addr", "0.0.0.0:8080", "--db", "/data/hub.db"]
+      dockerfile: Dockerfile.build
+    image: ghcr.io/wyattau/suture-platform:latest
+    container_name: suture-platform
     restart: unless-stopped
-
-  # Suture Platform (hosted SaaS — web UI + API)
-  suture-platform:
-    build:
-      context: .
-      dockerfile: Dockerfile
     ports:
-      - "3000:3000"
-    volumes:
-      - suture-data:/data
+      - "${SUTURE_PORT:-8080}:8080"
     environment:
-      - RUST_LOG=info,suture_platform=debug
-      - SUTURE_JWT_SECRET=${SUTURE_JWT_SECRET:-dev-secret-change-in-production}
-      - SUTURE_STRIPE_KEY=${SUTURE_STRIPE_KEY:-}
-      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID:-}
-      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-}
-      - GITHUB_REDIRECT_URL=http://localhost:3000/auth/github/callback
+      - SUTURE_DATA_DIR=/data
+      - SUTURE_ADDR=0.0.0.0:8080
+      - RUST_LOG=${RUST_LOG:-info}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET is required}
+      - STRIPE_KEY=${STRIPE_KEY:-}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
+      - STRIPE_PRO_PRICE_ID=${STRIPE_PRO_PRICE_ID:-}
+      - STRIPE_ENTERPRISE_PRICE_ID=${STRIPE_ENTERPRISE_PRICE_ID:-}
+      - PLATFORM_URL=${PLATFORM_URL:-}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
-    command:
-      [
-        "suture-platform",
-        "--addr", "0.0.0.0:3000",
-        "--db", "/data/platform.db",
-        "--hub-db", "/data/hub.db",
-        "--jwt-secret", "${SUTURE_JWT_SECRET:-dev-secret-change-in-production}",
-      ]
-    depends_on: []
-    restart: unless-stopped
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID:-}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-}
+      - CORS_ORIGINS=${CORS_ORIGINS:-}
+    volumes:
+      - suture-data:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/healthz"]
+      test: ["CMD", "/usr/local/bin/suture-platform", "--healthcheck"]
       interval: 30s
       timeout: 5s
       retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
 
 volumes:
   suture-data:
+    driver: local

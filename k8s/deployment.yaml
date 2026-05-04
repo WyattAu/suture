@@ -1,0 +1,136 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: suture-platform
+  namespace: suture
+  labels:
+    app: suture-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: suture-platform
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: suture-platform
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        readOnlyRootFilesystem: true
+        allowPrivilegeEscalation: false
+        seccompProfile:
+          type: RuntimeDefault
+        capabilities:
+          drop: ["ALL"]
+      containers:
+        - name: suture
+          image: ghcr.io/wyattau/suture-platform:latest
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: SUTURE_DATA_DIR
+              value: /data
+            - name: RUST_LOG
+              value: "info"
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: suture-secrets
+                  key: jwt-secret
+            - name: STRIPE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: suture-secrets
+                  key: stripe-key
+                  optional: true
+            - name: STRIPE_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: suture-secrets
+                  key: stripe-webhook-secret
+                  optional: true
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            readOnlyRootFilesystem: true
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: suture-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: suture-platform
+  namespace: suture
+spec:
+  selector:
+    app: suture-platform
+  ports:
+    - port: 80
+      targetPort: 8080
+      name: http
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: suture-platform
+  namespace: suture
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: suture.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: suture-platform
+                port:
+                  number: 80
+  tls:
+    - hosts:
+        - suture.example.com
+      secretName: suture-tls
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: suture-data
+  namespace: suture
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi

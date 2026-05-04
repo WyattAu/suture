@@ -70,6 +70,7 @@ pub async fn start(config: Config) -> anyhow::Result<()> {
     let public_routes = Router::new()
         .route("/", get(crate::web_ui::serve_index))
         .route("/static/{*path}", get(crate::web_ui::serve_static))
+        .route("/health", get(health_check))
         .route("/healthz", get(health_check))
         .route("/auth/register", post(crate::auth::register_handler))
         .route("/auth/login", post(crate::auth::login_handler))
