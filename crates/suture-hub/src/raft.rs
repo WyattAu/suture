@@ -72,7 +72,7 @@ impl RaftHub {
         self.node.tick()
     }
 
-    pub fn handle_message(&mut self, from: u64, msg: RaftMessage) -> Option<RaftMessage> {
+    pub fn handle_message(&mut self, from: u64, msg: RaftMessage) -> Vec<(u64, RaftMessage)> {
         self.node.handle_message(from, msg)
     }
 

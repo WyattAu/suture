@@ -104,6 +104,10 @@ pub struct SutureHubServer {
     #[allow(dead_code)]
     rate_limit_db: Option<Arc<tokio::sync::Mutex<rusqlite::Connection>>>,
     lfs_data_dir: Option<std::path::PathBuf>,
+    #[cfg(feature = "raft-cluster")]
+    raft_node: Arc<tokio::sync::Mutex<suture_raft::RaftNode>>,
+    #[cfg(feature = "raft-cluster")]
+    raft_node_id: u64,
 }
 
 impl Default for SutureHubServer {
@@ -135,6 +139,10 @@ impl SutureHubServer {
             webhook_manager: Arc::new(WebhookManager::new()),
             rate_limit_db: None,
             lfs_data_dir: None,
+            #[cfg(feature = "raft-cluster")]
+            raft_node: Arc::new(tokio::sync::Mutex::new(suture_raft::RaftNode::new(1, vec![]))),
+            #[cfg(feature = "raft-cluster")]
+            raft_node_id: 1,
         }
     }
 
@@ -162,6 +170,10 @@ impl SutureHubServer {
             webhook_manager: Arc::new(WebhookManager::new()),
             rate_limit_db: Some(Arc::new(tokio::sync::Mutex::new(rate_limit_conn))),
             lfs_data_dir: None,
+            #[cfg(feature = "raft-cluster")]
+            raft_node: Arc::new(tokio::sync::Mutex::new(suture_raft::RaftNode::new(1, vec![]))),
+            #[cfg(feature = "raft-cluster")]
+            raft_node_id: 1,
         })
     }
 
@@ -180,7 +192,63 @@ impl SutureHubServer {
     }
 
     pub fn shutdown(&self) {
-        tracing::info!("shutting down suture-hub");
+        tracing::info!("Hub server shutting down");
+    }
+
+    /// Check if this node is the Raft leader (or standalone).
+    ///
+    /// Returns `true` if:
+    /// - Raft is not enabled (standalone mode), or
+    /// - Raft is enabled and this node is the leader
+    #[cfg(feature = "raft-cluster")]
+    pub async fn is_leader(&self) -> bool {
+        let raft = self.raft_node.lock().await;
+        matches!(raft.state(), suture_raft::NodeState::Leader)
+    }
+
+    /// Check if this node is the leader (no-op when Raft is disabled).
+    #[cfg(not(feature = "raft-cluster"))]
+    pub async fn is_leader(&self) -> bool {
+        true // standalone mode — always leader
+    }
+
+    /// Get the current Raft leader ID, if known.
+    #[cfg(feature = "raft-cluster")]
+    pub async fn raft_leader(&self) -> Option<u64> {
+        self.raft_node.lock().await.leader()
+    }
+
+    /// Get this node's Raft state.
+    #[cfg(feature = "raft-cluster")]
+    pub async fn raft_state(&self) -> String {
+        let raft = self.raft_node.lock().await;
+        match raft.state() {
+            suture_raft::NodeState::Leader => "leader".to_owned(),
+            suture_raft::NodeState::Follower => "follower".to_owned(),
+            suture_raft::NodeState::Candidate => "candidate".to_owned(),
+            suture_raft::NodeState::PreCandidate => "pre-candidate".to_owned(),
+        }
+    }
+
+    /// Propose a Raft command (must be called on leader).
+    #[cfg(feature = "raft-cluster")]
+    pub async fn raft_propose(&self, command: Vec<u8>) -> Result<(), suture_raft::RaftError> {
+        let mut raft = self.raft_node.lock().await;
+        raft.propose(command)
+    }
+
+    /// Get committed but unapplied Raft entries.
+    #[cfg(feature = "raft-cluster")]
+    pub async fn raft_committed_entries(&self) -> Vec<suture_raft::LogEntry> {
+        let raft = self.raft_node.lock().await;
+        raft.committed_entries().to_vec()
+    }
+
+    /// Advance the Raft applied index.
+    #[cfg(feature = "raft-cluster")]
+    pub async fn raft_advance_applied(&self, count: usize) {
+        let mut raft = self.raft_node.lock().await;
+        raft.advance_applied(count);
     }
 
     pub fn set_rate_limit_config(&mut self, pushes: u32, pulls: u32, window: std::time::Duration) {
@@ -4092,6 +4160,48 @@ pub async fn audit_log_handler(
     )
 }
 
+/// Raft cluster status endpoint.
+pub async fn raft_status_handler(
+    State(hub): State<Arc<SutureHubServer>>,
+    headers: HeaderMap,
+) -> (StatusCode, Json<serde_json::Value>) {
+    if let Err(status) = check_auth(&hub, &headers).await {
+        return (status, Json(serde_json::json!({"error": "unauthorized"})));
+    }
+
+    #[cfg(feature = "raft-cluster")]
+    {
+        let state = hub.raft_state().await;
+        let leader = hub.raft_leader().await;
+        let term = {
+            let raft = hub.raft_node.lock().await;
+            raft.term()
+        };
+        let node_id = hub.raft_node_id;
+        let is_leader = hub.is_leader().await;
+
+        let response = serde_json::json!({
+            "raft_enabled": true,
+            "node_id": node_id,
+            "state": state,
+            "term": term,
+            "leader": leader,
+            "is_leader": is_leader,
+        });
+        (StatusCode::OK, Json(response))
+    }
+
+    #[cfg(not(feature = "raft-cluster"))]
+    {
+        let response = serde_json::json!({
+            "raft_enabled": false,
+            "state": "standalone",
+            "is_leader": true,
+        });
+        (StatusCode::OK, Json(response))
+    }
+}
+
 pub async fn run_server(
     hub: SutureHubServer,
     addr: &str,
@@ -4244,6 +4354,8 @@ pub async fn run_server(
         .route("/sso/authorize", axum::routing::post(sso_authorize_handler))
         .route("/sso/callback", axum::routing::post(sso_callback_handler))
         .route("/audit/log", axum::routing::get(audit_log_handler))
+        // Raft cluster endpoints (only available with raft-cluster feature)
+        .route("/raft/status", axum::routing::get(raft_status_handler))
         .layer(axum::middleware::from_fn_with_state(
             Arc::clone(&hub),
             crate::audit::audit_middleware,
@@ -4263,6 +4375,51 @@ pub async fn run_server(
         tracing::info!("received ctrl-c, initiating graceful shutdown");
         let _ = shutdown_tx_ctrlc.send(());
     });
+
+    // Spawn Raft tick loop when raft-cluster feature is enabled
+    #[cfg(feature = "raft-cluster")]
+    {
+        let raft_node = Arc::clone(&hub.raft_node);
+        let hub_for_raft = Arc::clone(&hub);
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(
+                std::time::Duration::from_millis(10), // tick every 10ms
+            );
+            loop {
+                interval.tick().await;
+                let messages = {
+                    let mut raft = raft_node.lock().await;
+                    raft.tick()
+                };
+                // In a real multi-node deployment, these messages would be sent
+                // to peers via HTTP. For now, we log state transitions.
+                if !messages.is_empty() {
+                    tracing::trace!(
+                        "[raft] tick produced {} messages",
+                        messages.len()
+                    );
+                }
+                // Apply committed entries to replication log
+                let entries = hub_for_raft.raft_committed_entries().await;
+                if !entries.is_empty() {
+                    let count = entries.len();
+                    let store = hub_for_raft.storage.read().await;
+                    for entry in &entries {
+                        // Deserialize the command: expected format is JSON
+                        // {"operation": "insert|update|delete", "table": "...", "data": "..."}
+                        if let Ok(cmd) = serde_json::from_slice::<serde_json::Value>(&entry.command) {
+                            let op = cmd.get("operation").and_then(|v| v.as_str()).unwrap_or("unknown");
+                            let table = cmd.get("table").and_then(|v| v.as_str()).unwrap_or("");
+                            let data = cmd.get("data").and_then(|v| v.as_str()).unwrap_or("");
+                            let _ = store.log_operation(op, table, &entry.index.to_string(), Some(data));
+                        }
+                    }
+                    drop(store);
+                    hub_for_raft.raft_advance_applied(count).await;
+                }
+            }
+        });
+    }
 
     let server = axum::serve(
         listener,

@@ -228,6 +228,7 @@ mod tests {
                 candidate_id: 42,
                 last_log_index: 10,
                 last_log_term: 5,
+                is_pre_vote: false,
             },
         };
 
@@ -259,10 +260,12 @@ mod tests {
                 candidate_id: 3,
                 last_log_index: 7,
                 last_log_term: 2,
+                is_pre_vote: false,
             },
             RaftMessage::RequestVoteResponse {
                 term: 2,
                 vote_granted: false,
+                is_pre_vote: false,
             },
         ];
 
@@ -305,6 +308,7 @@ mod tests {
                     candidate_id: 1,
                     last_log_index: 0,
                     last_log_term: 0,
+                    is_pre_vote: false,
                 },
             )
             .await;

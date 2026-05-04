@@ -74,14 +74,15 @@ impl RaftRuntime {
                             match result {
                                 Ok((from, msg)) => {
                                     // Lock hub, process message, get response, DROP lock, then send
-                                    let response = {
+                                    let responses = {
                                         let mut hub = hub_for_rx.lock().unwrap_or_else(|e| e.into_inner());
                                         hub.handle_message(from, msg)
                                     };
-                                    if let Some(resp) = response
-                                        && let Err(e) = trans_clone.send_to_peer(from, resp).await
-                                    {
-                                        warn!("raft: failed to send response to {from}: {e}");
+                                    for (target, resp) in responses {
+                                        if let Err(e) = trans_clone.send_to_peer(target, resp).await
+                                        {
+                                            warn!("raft: failed to send response to {target}: {e}");
+                                        }
                                     }
                                 }
                                 Err(e) => {
