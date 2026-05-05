@@ -163,7 +163,7 @@ impl WasmPlugin {
         let engine = Engine::new(&config)?;
 
         let module = Module::new(&engine, wasm_bytes)
-            .context("failed to compile Wasm module")?;
+            .map_err(|e| anyhow::anyhow!("failed to compile Wasm module: {e}"))?;
 
         let exports: Vec<_> = module.exports().collect();
         let export_names: Vec<&str> = exports.iter().map(wasmtime::ExportType::name).collect();
@@ -194,7 +194,7 @@ impl WasmPlugin {
         let linker = Linker::new(module.engine());
         let _instance = linker
             .instantiate(&mut store, module)
-            .context("failed to instantiate plugin")?;
+            .map_err(|e| anyhow::anyhow!("failed to instantiate plugin: {e}"))?;
 
         let driver_name = format!("plugin-{name}");
         let extensions = vec![];
@@ -230,7 +230,7 @@ impl WasmPlugin {
         let mut store = Store::new(&self.engine, ());
         // Fuel-based timeout: 1 billion fuel units (~1-2 seconds of compute)
         store.set_fuel(1_000_000_000)
-            .context("failed to set fuel for WasmPlugin")?;
+            .map_err(|e| anyhow::anyhow!("failed to set fuel for WasmPlugin: {e}"))?;
 
         let mut linker = Linker::new(&self.engine);
 
@@ -245,7 +245,7 @@ impl WasmPlugin {
 
         let instance = linker
             .instantiate(&mut store, &self.module)
-            .context("failed to instantiate plugin for merge")?;
+            .map_err(|e| anyhow::anyhow!("failed to instantiate plugin for merge: {e}"))?;
 
         let memory = instance
             .get_memory(&mut store, "memory")
@@ -262,7 +262,7 @@ impl WasmPlugin {
         if ptr_offset + total_size > current_size {
             let needed = (ptr_offset + total_size).div_ceil(65536);
             memory.grow(&mut store, needed as u64)
-                .context("failed to grow plugin memory")?;
+                .map_err(|e| anyhow::anyhow!("failed to grow plugin memory: {e}"))?;
         }
 
         let mem_data = memory.data_mut(&mut store);
@@ -282,7 +282,7 @@ impl WasmPlugin {
 
         let merge_fn = instance
             .get_typed_func::<(i32, i32, i32), i32>(&mut store, "merge")
-            .context("merge export has wrong signature (expected (i32,i32,i32) -> i32)")?;
+            .map_err(|e| anyhow::anyhow!("merge export has wrong signature (expected (i32,i32,i32) -> i32): {e}"))?;
 
         let base_ptr = ptr_offset as i32;
         let ours_ptr = (ptr_offset + 4 + base_bytes.len()) as i32;
@@ -290,7 +290,7 @@ impl WasmPlugin {
 
         let result_ptr = merge_fn
             .call(&mut store, (base_ptr, ours_ptr, theirs_ptr))
-            .context("plugin merge() panicked or faulted")?;
+            .map_err(|e| anyhow::anyhow!("plugin merge() panicked or faulted: {e}"))?;
 
         let mem_data = memory.data(&store);
 
@@ -837,11 +837,11 @@ pub fn validate_plugin(wasm_bytes: &[u8]) -> Result<Vec<String>> {
     let engine = Engine::default();
 
     let module = Module::new(&engine, wasm_bytes)
-        .context("invalid Wasm module")?;
+        .map_err(|e| anyhow::anyhow!("invalid Wasm module: {e}"))?;
 
     let exports: Vec<String> = module
         .exports()
-        .map(|e| e.name().to_owned())
+        .map(|e: wasmtime::ExportType| e.name().to_owned())
         .collect();
 
     let mut warnings = Vec::new();

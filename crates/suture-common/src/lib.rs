@@ -109,6 +109,16 @@ pub type PatchId = Hash;
 pub struct BranchName(pub String);
 
 impl BranchName {
+    /// Return the default branch name ("main"). Never fails.
+    #[must_use]
+    pub fn main() -> Self {
+        // SAFETY: "main" passes all validation rules in `new()`.
+        match Self::new("main") {
+            Ok(b) => b,
+            Err(_) => unreachable!("hardcoded \"main\" is always a valid branch name"),
+        }
+    }
+
     pub fn new(name: impl Into<String>) -> Result<Self, CommonError> {
         let s = name.into();
         if s.is_empty() {

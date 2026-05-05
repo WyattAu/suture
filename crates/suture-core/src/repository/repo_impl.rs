@@ -469,7 +469,7 @@ impl Repository {
         meta.store_patch(&root_patch)?;
 
         // Create default branch
-        let main_branch = BranchName::new("main").expect("hardcoded 'main' is always valid");
+        let main_branch = BranchName::main();
         dag.create_branch(main_branch.clone(), root_id)?;
         meta.set_branch(&main_branch, &root_id)?;
 
@@ -699,7 +699,7 @@ impl Repository {
         let root_id = dag.add_patch(root_patch.clone(), vec![])?;
         meta.store_patch(&root_patch)?;
 
-        let main_branch = BranchName::new("main").expect("hardcoded 'main' is always valid");
+        let main_branch = BranchName::main();
         dag.create_branch(main_branch.clone(), root_id)?;
         meta.set_branch(&main_branch, &root_id)?;
         meta.set_config("author", "suture")?;

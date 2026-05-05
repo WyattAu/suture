@@ -280,7 +280,8 @@ impl PatchDag {
 
         for candidate in &common {
             let candidate_gen = self.nodes.get(candidate).map_or(0, |n| n.generation);
-            if candidate_gen > best_gen
+            if best.is_none()
+                || candidate_gen > best_gen
                 || (candidate_gen == best_gen
                     && best.is_some_and(|b| candidate < &b))
             {
