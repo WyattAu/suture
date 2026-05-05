@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -25,10 +25,15 @@ pub struct PreVote {
     pub votes_received: HashSet<NodeId>,
 }
 
+/// Cluster membership configuration.
+///
+/// Uses `BTreeSet` (not `HashSet`) so that JSON serialization is
+/// deterministic across nodes — required for byte-level config comparison
+/// in Raft log replication.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClusterConfig {
-    pub nodes: HashSet<NodeId>,
-    pub transition: Option<HashSet<NodeId>>,
+    pub nodes: BTreeSet<NodeId>,
+    pub transition: Option<BTreeSet<NodeId>>,
 }
 
 pub struct ReadIndex {
@@ -69,7 +74,7 @@ impl RaftNode {
         } else {
             0
         };
-        let all_nodes: HashSet<NodeId> = std::iter::once(id).chain(peers.iter().copied()).collect();
+        let all_nodes: BTreeSet<NodeId> = std::iter::once(id).chain(peers.iter().copied()).collect();
         Self {
             id,
             state: NodeState::Follower,
@@ -821,7 +826,7 @@ impl RaftNode {
 
         let current_nodes = self.config.nodes.clone();
 
-        let mut joint: HashSet<NodeId> = current_nodes;
+        let mut joint: BTreeSet<NodeId> = current_nodes;
         joint.extend(new_nodes.iter().copied());
 
         self.config.transition = Some(new_nodes.into_iter().collect());
@@ -1789,7 +1794,7 @@ mod tests {
 
         let config = leader.config();
         assert!(config.transition.is_none());
-        assert_eq!(config.nodes, HashSet::from([2, 3, 4]));
+        assert_eq!(config.nodes, BTreeSet::from([2, 3, 4]));
     }
 
     #[test]

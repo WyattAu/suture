@@ -50,3 +50,7 @@ harness = false
 [[bench]]
 name = "comprehensive_merge"
 harness = false
+
+[[bench]]
+name = "scale_perf"
+harness = false

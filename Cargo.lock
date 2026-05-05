@@ -4525,6 +4525,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "suture-connector-gsheets"
+version = "0.1.0"
+dependencies = [
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "suture-connector-notion"
 version = "0.1.0"
 dependencies = [

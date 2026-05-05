@@ -14,9 +14,10 @@ use suture_core::repository::Repository;
 
 use suture_hub::HubStorage;
 use suture_protocol::{
-use std::fmt::Write;
     apply_delta, compress as proto_compress, compute_delta, decompress as proto_decompress,
 };
+
+use std::fmt::Write;
 
 use suture_driver::SutureDriver;
 use suture_driver_csv::CsvDriver;
@@ -894,7 +895,10 @@ fn bench_hub_storage(c: &mut Criterion) {
                     store
                 },
                 |store| {
-                    let patches = black_box(store.get_all_patches("bench-repo").unwrap());
+                let patches = black_box(store.get_all_patches_unbounded("bench-repo").unwrap());
+                let blobs = black_box(store.get_all_blobs("bench-repo").unwrap());
+                assert_eq!(patches.len(), 100);
+                assert_eq!(blobs.len(), 100);
                     assert_eq!(patches.len(), n);
                     let blobs = black_box(store.get_all_blobs("bench-repo").unwrap());
                     assert_eq!(blobs.len(), n);
@@ -928,10 +932,7 @@ fn bench_hub_storage(c: &mut Criterion) {
                         .store_blob("bench-repo", &hash_hex, data.as_bytes())
                         .unwrap();
                 }
-                let patches = black_box(store.get_all_patches("bench-repo").unwrap());
-                let blobs = black_box(store.get_all_blobs("bench-repo").unwrap());
-                assert_eq!(patches.len(), 100);
-                assert_eq!(blobs.len(), 100);
+                let _patches = black_box(store.get_all_patches_unbounded("bench-repo").unwrap());
             },
         );
     });

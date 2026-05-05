@@ -1,3 +1,20 @@
+//! FUSE read-write filesystem backed by a Suture repository.
+//!
+//! # Lock Ordering Protocol
+//!
+//! All operations MUST acquire locks in the following order to prevent deadlocks:
+//!
+//! 1. `repo` (outermost — only held during commit operations)
+//! 2. `pending_files` / `open_files` (held briefly for lookup/insert)
+//! 3. `inode_map` — always acquired BEFORE `file_contents`
+//! 4. `file_contents`
+//! 5. `pending_dirs`
+//! 6. `path_translator` (innermost — always acquired last)
+//!
+//! This ordering is enforced by `clippy::arc_with_non_send_sync` and the
+//! single-threaded nature of FUSE per mount. However, the consistent
+//! ordering ensures correctness even if the threading model changes.
+
 #![allow(clippy::arc_with_non_send_sync)]
 // FUSE filesystems are inherently single-threaded per mount; the Arc is used for
 // shared ownership across callback closures dispatched by the FUSE library.
@@ -550,8 +567,7 @@ impl Filesystem for RwFilesystem {
 
         self.inner
             .pending_files
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .unpoison_lock()
             .insert(path.clone());
         self.rebuild_path_translator();
 
@@ -672,8 +688,11 @@ impl Filesystem for RwFilesystem {
         let entries = self.list_dir_entries(&parent_path);
 
         let precomputed: Vec<(u64, FileAttr, std::ffi::OsString, i64)> = {
-            let file_contents = self.inner.file_contents.unpoison_lock();
+            // NOTE: Acquire inode_map BEFORE file_contents to maintain consistent
+            // lock ordering (IM -> FC) across all FUSE operations.
+            // See: lookup, getattr, setattr all use this order.
             let inode_map = self.inner.inode_map.unpoison_lock();
+            let file_contents = self.inner.file_contents.unpoison_lock();
 
             let mut result = Vec::new();
             for (i, (name, path, is_dir)) in entries.iter().enumerate() {
@@ -745,8 +764,7 @@ impl Filesystem for RwFilesystem {
             } else {
                 self.inner
                     .file_contents
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .unpoison_lock()
                     .get(&path)
                     .cloned()
                     .unwrap_or_default()

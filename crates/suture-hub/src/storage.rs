@@ -238,6 +238,23 @@ impl HubStorage {
             CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp ON audit_log(timestamp);
             CREATE INDEX IF NOT EXISTS idx_audit_log_actor ON audit_log(actor);
             CREATE INDEX IF NOT EXISTS idx_audit_log_action ON audit_log(action);
+
+            CREATE TABLE IF NOT EXISTS sso_states (
+                state TEXT PRIMARY KEY,
+                provider_name TEXT NOT NULL,
+                nonce TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_sso_states_created ON sso_states(created_at);
+
+            CREATE TABLE IF NOT EXISTS sso_user_mappings (
+                provider_name TEXT NOT NULL,
+                provider_sub TEXT NOT NULL,
+                username TEXT NOT NULL,
+                linked_at INTEGER NOT NULL,
+                PRIMARY KEY (provider_name, provider_sub),
+                FOREIGN KEY (username) REFERENCES users(username)
+            );
             ",
         )?;
 
@@ -1755,6 +1772,147 @@ impl HubStorage {
             params![provider_name],
         )?;
         Ok(affected > 0)
+    }
+
+    // === SSO State Management ===
+
+    /// Store an SSO authorization state for CSRF validation.
+    ///
+    /// Returns `Err` if the state already exists (unlikely collision).
+    pub fn store_sso_state(
+        &self,
+        state: &str,
+        provider_name: &str,
+        nonce: &str,
+    ) -> Result<(), StorageError> {
+        let created_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let conn = self.conn.lock().map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        conn.execute(
+            "INSERT INTO sso_states (state, provider_name, nonce, created_at) VALUES (?1, ?2, ?3, ?4)",
+            params![state, provider_name, nonce, created_at],
+        )?;
+        Ok(())
+    }
+
+    /// Consume an SSO authorization state.
+    ///
+    /// Returns the stored provider name and nonce if the state is valid.
+    /// The state is deleted after retrieval (one-time use).
+    /// Returns `None` if the state does not exist or has expired (10 minutes).
+    pub fn consume_sso_state(&self, state: &str) -> Result<Option<(String, String)>, StorageError> {
+        let conn = self.conn.lock().map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let result = conn.query_row(
+            "SELECT provider_name, nonce, created_at FROM sso_states WHERE state = ?1",
+            params![state],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, i64>(2)?)),
+        );
+        match result {
+            Ok((provider_name, nonce, created_at)) => {
+                // Delete the state (one-time use).
+                let _ = conn.execute("DELETE FROM sso_states WHERE state = ?1", params![state]);
+                // Check expiry (10 minutes).
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs() as i64;
+                let max_age = 10 * 60; // 10 minutes
+                if now - created_at > max_age {
+                    return Ok(None);
+                }
+                Ok(Some((provider_name, nonce)))
+            }
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(StorageError::Database(e)),
+        }
+    }
+
+    /// Clean up expired SSO states older than 10 minutes.
+    pub fn cleanup_expired_sso_states(&self) -> Result<usize, StorageError> {
+        let cutoff = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64
+            - (10 * 60);
+        let conn = self.conn.lock().map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let affected = conn.execute(
+            "DELETE FROM sso_states WHERE created_at < ?1",
+            params![cutoff],
+        )?;
+        Ok(affected)
+    }
+
+    /// Look up a local username by SSO provider + subject.
+    pub fn get_sso_user_mapping(
+        &self,
+        provider_name: &str,
+        provider_sub: &str,
+    ) -> Result<Option<String>, StorageError> {
+        let conn = self.conn.lock().map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let result = conn.query_row(
+            "SELECT username FROM sso_user_mappings WHERE provider_name = ?1 AND provider_sub = ?2",
+            params![provider_name, provider_sub],
+            |row| row.get::<_, String>(0),
+        );
+        match result {
+            Ok(username) => Ok(Some(username)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(StorageError::Database(e)),
+        }
+    }
+
+    /// Create or update a user from SSO authentication.
+    ///
+    /// If a user already exists with the same username, updates their display name.
+    /// If the user doesn't exist, creates a new one with the "member" role.
+    /// Also creates/updates the SSO user mapping.
+    pub fn upsert_sso_user(
+        &self,
+        provider_name: &str,
+        provider_sub: &str,
+        username: &str,
+        display_name: &str,
+    ) -> Result<String, StorageError> {
+        let conn = self.conn.lock().map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let created_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        // Upsert the user (create if not exists, update display name if exists).
+        conn.execute(
+            "INSERT INTO users (username, display_name, role, api_token, created_at) VALUES (?1, ?2, 'member', NULL, ?3)
+             ON CONFLICT(username) DO UPDATE SET display_name = ?2",
+            params![username, display_name, created_at],
+        )?;
+
+        // Upsert the SSO mapping.
+        conn.execute(
+            "INSERT INTO sso_user_mappings (provider_name, provider_sub, username, linked_at) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(provider_name, provider_sub) DO UPDATE SET username = ?3, linked_at = ?4",
+            params![provider_name, provider_sub, username, created_at],
+        )?;
+
+        Ok(username.to_owned())
+    }
+
+    /// Look up a local user by SSO provider + email.
+    ///
+    /// Falls back to searching by username if the email matches a username.
+    pub fn get_user_by_email(&self, email: &str) -> Result<Option<UserInfo>, StorageError> {
+        self.get_user(email)
+    }
+
+    /// Update a user's API token.
+    pub fn update_user_token(&self, username: &str, token_hash: &str) -> Result<(), StorageError> {
+        let conn = self.conn.lock().map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        conn.execute(
+            "UPDATE users SET api_token = ?1 WHERE username = ?2",
+            params![token_hash, username],
+        )?;
+        Ok(())
     }
 
     // === Audit Logging ===

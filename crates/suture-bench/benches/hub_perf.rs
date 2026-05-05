@@ -75,7 +75,7 @@ fn bench_hub_push_pull_50_patches(c: &mut Criterion) {
                 store
             },
             |store| {
-                let patches = black_box(store.get_all_patches("bench-repo").unwrap());
+                let patches = black_box(store.get_all_patches_unbounded("bench-repo").unwrap());
                 assert_eq!(patches.len(), 50);
             },
         );
@@ -86,7 +86,7 @@ fn bench_hub_push_pull_50_patches(c: &mut Criterion) {
             || HubStorage::open_in_memory().unwrap(),
             |store| {
                 insert_50_patches(&store);
-                let patches = black_box(store.get_all_patches("bench-repo").unwrap());
+                let patches = black_box(store.get_all_patches_unbounded("bench-repo").unwrap());
                 assert_eq!(patches.len(), 50);
             },
         );

@@ -1,3 +1,4 @@
+use sha2::Digest;
 use axum::{
     Json,
     extract::{ConnectInfo, Path, Query, State},
@@ -1896,26 +1897,30 @@ fn collect_new_patches(
         }
     }
 
-    let mut new_ids: HashSet<String> = HashSet::new();
-    let mut stack: Vec<String> = reachable
+    let mut new_ids: Vec<String> = reachable
         .into_iter()
         .filter(|id| !client_ancestors.contains(id))
         .collect();
+    // Sort to ensure deterministic ordering for topological sort input.
+    new_ids.sort();
+
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut stack: Vec<String> = new_ids;
 
     while let Some(id_hex) = stack.pop() {
-        if new_ids.insert(id_hex.clone())
+        if seen.insert(id_hex.clone())
             && let Some(patch) = patch_map.get(&id_hex)
         {
             for parent in &patch.parent_ids {
                 let parent_hex = hash_to_hex(parent);
-                if !client_ancestors.contains(&parent_hex) && !new_ids.contains(&parent_hex) {
+                if !client_ancestors.contains(&parent_hex) && !seen.contains(&parent_hex) {
                     stack.push(parent_hex);
                 }
             }
         }
     }
 
-    let mut result: Vec<PatchProto> = new_ids
+    let mut result: Vec<PatchProto> = seen
         .into_iter()
         .filter_map(|id| patch_map.get(&id).map(|p| (*p).clone()))
         .collect();
@@ -4066,17 +4071,27 @@ pub async fn sso_authorize_handler(
 
     let state = crate::sso::generate_state();
     let nonce = crate::sso::generate_nonce();
+
+    // Store state and nonce for CSRF/replay validation during callback.
+    let store = hub.storage.read().await;
+    if let Err(e) = store.store_sso_state(&state, &provider_name, &nonce) {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": format!("failed to store SSO state: {e}")})),
+        );
+    }
+    drop(store);
+
     let url = crate::sso::authorization_url(&config, &state, &nonce);
 
     (StatusCode::OK, Json(serde_json::json!({
         "authorization_url": url,
         "state": state,
-        "nonce": nonce,
     })))
 }
 
-/// Handle an OIDC callback — exchange the authorization code for tokens.
-/// This is a placeholder that returns instructions for the client to implement.
+/// Handle an OIDC callback — exchange the authorization code for tokens,
+/// validate the ID token, and create/update a local user session.
 pub async fn sso_callback_handler(
     State(hub): State<Arc<SutureHubServer>>,
     headers: HeaderMap,
@@ -4085,9 +4100,9 @@ pub async fn sso_callback_handler(
     if let Err(status) = check_auth(&hub, &headers).await {
         return (status, Json(serde_json::json!({"error": "unauthorized"})));
     }
-    let provider_name = body.get("provider").and_then(|v| v.as_str()).unwrap_or("");
-    let _code = body.get("code").and_then(|v| v.as_str()).unwrap_or("");
-    let _state = body.get("state").and_then(|v| v.as_str()).unwrap_or("");
+    let provider_name = body.get("provider").and_then(|v| v.as_str()).unwrap_or("").to_owned();
+    let code = body.get("code").and_then(|v| v.as_str()).unwrap_or("").to_owned();
+    let state = body.get("state").and_then(|v| v.as_str()).unwrap_or("").to_owned();
 
     if provider_name.is_empty() {
         return (
@@ -4095,15 +4110,48 @@ pub async fn sso_callback_handler(
             Json(serde_json::json!({"error": "provider is required"})),
         );
     }
-    if _code.is_empty() {
+    if code.is_empty() {
         return (
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({"error": "code is required"})),
         );
     }
+    if state.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "state is required"})),
+        );
+    }
 
+    // Validate state (CSRF protection) and get the nonce.
     let store = hub.storage.read().await;
-    let _config = match store.get_oidc_config(provider_name) {
+    let (stored_provider, nonce) = match store.consume_sso_state(&state) {
+        Ok(Some((p, n))) => (p, n),
+        Ok(None) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "invalid or expired state parameter"})),
+            );
+        }
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": e.to_string()})),
+            );
+        }
+    };
+
+    if stored_provider != provider_name {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "state/provider mismatch"})),
+        );
+    }
+    drop(store);
+
+    // Get the OIDC provider config.
+    let store = hub.storage.read().await;
+    let config = match store.get_oidc_config(&provider_name) {
         Ok(Some(c)) => c,
         Ok(None) => {
             return (
@@ -4118,20 +4166,71 @@ pub async fn sso_callback_handler(
             );
         }
     };
+    drop(store);
 
-    // TODO: In a full implementation, this would:
-    // 1. Validate the `state` parameter against the stored value (CSRF protection)
-    // 2. Exchange the authorization code for tokens via POST to the provider's token endpoint
-    // 3. Validate the ID token (signature, nonce, audience, issuer)
-    // 4. Extract user info from the ID token or userinfo endpoint
-    // 5. Create or update a local user session
-    // For now, return a placeholder indicating the flow is configured but token exchange
-    // requires an HTTP client to the OIDC provider (e.g., reqwest).
+    // Complete the OIDC callback flow: discover, exchange code, validate token.
+    let result = match crate::sso::complete_callback(&config, &code, &state, &nonce).await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!("SSO callback failed for provider '{provider_name}': {e}");
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({"error": format!("SSO authentication failed: {e}")})),
+            );
+        }
+    };
 
-    (StatusCode::OK, Json(serde_json::json!({
-        "status": "configured",
-        "message": "SSO callback received. Full token exchange requires HTTP client integration.",
-    })))
+    // Create or update the local user from SSO identity.
+    let user_sub = result.user.sub.clone();
+    let user_email = result.user.email.clone();
+    let user_name = result.user.name.clone();
+    let username = user_email
+        .as_deref()
+        .unwrap_or("")
+        .to_owned();
+    let username = if username.is_empty() {
+        format!("{}:{}", provider_name, user_sub)
+    } else {
+        username
+    };
+    let display_name = user_name
+        .as_deref()
+        .unwrap_or(&username)
+        .to_owned();
+
+    let store = hub.storage.read().await;
+    match store.upsert_sso_user(
+        &provider_name,
+        &user_sub,
+        &username,
+        &display_name,
+    ) {
+        Ok(created_username) => {
+            // Set the session token as the user's API token.
+            let token_hash =
+                format!("{:x}", sha2::Sha256::digest(result.session_token.as_bytes()));
+            if let Err(e) = store.update_user_token(&created_username, &token_hash) {
+                tracing::warn!("failed to set SSO session token: {e}");
+            }
+            drop(store);
+
+            (StatusCode::OK, Json(serde_json::json!({
+                "status": "authenticated",
+                "username": created_username,
+                "display_name": display_name,
+                "provider": provider_name,
+                "session_token": result.session_token,
+                "email": user_email,
+            })))
+        }
+        Err(e) => {
+            tracing::warn!("failed to upsert SSO user: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": format!("failed to create user: {e}")})),
+            )
+        }
+    }
 }
 
 pub async fn audit_log_handler(
