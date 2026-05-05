@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 
 use suture_driver::{DriverError, SemanticChange, SutureDriver};
 
@@ -123,8 +123,8 @@ impl HtmlDriver {
         let new_attrs: HashMap<&str, &str> =
             new.attributes().map(|a| (a.name(), a.value())).collect();
 
-        let old_keys: HashSet<&str> = old_attrs.keys().copied().collect();
-        let new_keys: HashSet<&str> = new_attrs.keys().copied().collect();
+        let old_keys: BTreeSet<&str> = old_attrs.keys().copied().collect();
+        let new_keys: BTreeSet<&str> = new_attrs.keys().copied().collect();
 
         for key in &old_keys {
             if !new_keys.contains(key) {
@@ -231,7 +231,7 @@ impl HtmlDriver {
         let theirs_attrs: HashMap<&str, &str> =
             theirs.attributes().map(|a| (a.name(), a.value())).collect();
 
-        let all_attr_keys: HashSet<&str> = base_attrs
+        let all_attr_keys: BTreeSet<&str> = base_attrs
             .keys()
             .chain(ours_attrs.keys())
             .chain(theirs_attrs.keys())

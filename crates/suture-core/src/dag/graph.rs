@@ -282,7 +282,7 @@ impl PatchDag {
             let candidate_gen = self.nodes.get(candidate).map_or(0, |n| n.generation);
             if candidate_gen > best_gen
                 || (candidate_gen == best_gen
-                    && (best.is_none() || candidate < best.as_ref().unwrap()))
+                    && best.is_some_and(|b| candidate < &b))
             {
                 best_gen = candidate_gen;
                 best = Some(*candidate);

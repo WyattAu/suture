@@ -762,13 +762,13 @@ fn format_risk_score(score: RiskScore) -> String {
 pub fn format_integrity_report(report: &DiffIntegrityReport) -> String {
     let mut lines = Vec::new();
 
-    let border_top = String::from_utf8(vec![0xE2, 0x95, 0x94]).unwrap();
-    let border_horiz = String::from_utf8(vec![0xE2, 0x95, 0x90]).unwrap();
-    let border_right = String::from_utf8(vec![0xE2, 0x95, 0x97]).unwrap();
-    let border_left = String::from_utf8(vec![0xE2, 0x95, 0x91]).unwrap();
-    let border_mid_l = String::from_utf8(vec![0xE2, 0x95, 0xA0]).unwrap();
-    let border_mid_r = String::from_utf8(vec![0xE2, 0x95, 0x9D]).unwrap();
-    let border_bottom = String::from_utf8(vec![0xE2, 0x95, 0x9A]).unwrap();
+    let border_top = '╔'.to_string();
+    let border_horiz = '═'.to_string();
+    let border_right = '╗'.to_string();
+    let border_left = '║'.to_string();
+    let border_mid_l = '╠'.to_string();
+    let border_mid_r = '╝'.to_string();
+    let border_bottom = '╚'.to_string();
 
     let title = " INTEGRITY ANALYSIS - Supply Chain Transparency ";
     let width = 54;
