@@ -58,7 +58,7 @@ pub struct HookResult {
 }
 
 impl HookResult {
-    #[must_use] 
+    #[must_use]
     pub fn success(&self) -> bool {
         self.exit_code == Some(0)
     }
@@ -75,7 +75,7 @@ pub(crate) struct ResolvedHook {
 /// Priority:
 /// 1. `core.hooksPath` from `.suture/config` (if set)
 /// 2. `.suture/hooks/` (default)
-#[must_use] 
+#[must_use]
 pub fn hooks_dir(repo_root: &Path) -> PathBuf {
     // Try to read from repo config
     let config_path = repo_root.join(".suture").join("config");
@@ -144,7 +144,8 @@ pub fn run_hook(
     hook_name: &str,
     #[allow(clippy::implicit_hasher)] env: &HashMap<String, String>,
 ) -> Result<HookResult, HookError> {
-    let hook = find_hook(repo_root, hook_name).ok_or_else(|| HookError::NotFound(hook_name.to_owned()))?;
+    let hook =
+        find_hook(repo_root, hook_name).ok_or_else(|| HookError::NotFound(hook_name.to_owned()))?;
 
     let start = std::time::Instant::now();
 
@@ -275,7 +276,7 @@ pub fn run_hooks(
 ///
 /// The caller should provide `author`, `branch`, and `head_hash` from the
 /// repository when available (e.g. via `repo.head()` and `repo.get_config()`).
-#[must_use] 
+#[must_use]
 pub fn build_env(
     repo_root: &Path,
     hook_name: &str,
@@ -322,7 +323,7 @@ pub fn build_env(
 }
 
 /// Format hook results for display to the user.
-#[must_use] 
+#[must_use]
 pub fn format_hook_result(result: &HookResult) -> String {
     let status = if result.success() { "passed" } else { "FAILED" };
     format!(

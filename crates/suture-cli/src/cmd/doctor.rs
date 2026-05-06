@@ -53,9 +53,7 @@ pub async fn cmd_doctor(fix: bool) -> Result<(), Box<dyn std::error::Error>> {
             repo.set_config("user.name", &name)?;
             repo.set_config("user.email", &email)?;
             if name_default || email_default {
-                println!(
-                    "✓ Set user config to defaults (name='{name}', email='{email}')"
-                );
+                println!("✓ Set user config to defaults (name='{name}', email='{email}')");
                 println!("  Update with: suture config user.name \"Your Name\"");
             } else {
                 println!("✓ Set user config (name='{name}', email='{email}')");
@@ -98,9 +96,7 @@ pub async fn cmd_doctor(fix: bool) -> Result<(), Box<dyn std::error::Error>> {
                         fixed += 1;
                     }
                     Err(e2) => {
-                        println!(
-                            "✗ HEAD is corrupted (cache invalidation did not help): {e2}"
-                        );
+                        println!("✗ HEAD is corrupted (cache invalidation did not help): {e2}");
                         issues += 1;
                         remaining += 1;
                     }
@@ -309,9 +305,7 @@ target/
     } else if issues == 0 {
         println!("Repository is functional with {warnings} warning(s).");
     } else {
-        println!(
-            "Repository has {issues} issue(s) and {warnings} warning(s)."
-        );
+        println!("Repository has {issues} issue(s) and {warnings} warning(s).");
     }
     if fix && (fixed > 0 || remaining > 0) {
         println!();

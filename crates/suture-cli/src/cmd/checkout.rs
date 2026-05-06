@@ -27,10 +27,10 @@ pub async fn cmd_checkout(
 
         let branches: Vec<String> = repo.list_branches().into_iter().map(|(n, _)| n).collect();
         if !branches.contains(&target.to_owned()) && repo.resolve_ref(target).is_err() {
-            let hint = crate::fuzzy::suggest(target, &branches).map_or_else(
-                String::new,
-                |suggestion| format!(" (did you mean '{suggestion}'?)"),
-            );
+            let hint = crate::fuzzy::suggest(target, &branches)
+                .map_or_else(String::new, |suggestion| {
+                    format!(" (did you mean '{suggestion}'?)")
+                });
             return Err(format!(
                 "branch '{target}' not found{hint} (use 'suture branch' to create it)"
             )
@@ -63,9 +63,7 @@ pub async fn cmd_checkout(
                 println!("Resolved {resolved} LFS object(s)");
             }
             if missing > 0 {
-                eprintln!(
-                    "{missing} LFS object(s) not found locally (run `suture lfs pull`)"
-                );
+                eprintln!("{missing} LFS object(s) not found locally (run `suture lfs pull`)");
             }
         }
         Err(e) => {

@@ -57,8 +57,6 @@ pub enum DagError {
 
     #[error("DAG merge error: {0}")]
     MergeFailed(String),
-
-
 }
 
 /// A node in the Patch-DAG.
@@ -77,7 +75,7 @@ pub struct DagNode {
 
 impl DagNode {
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn id(&self) -> &PatchId {
         &self.patch.id
     }
@@ -109,7 +107,7 @@ impl Default for PatchDag {
 
 impl PatchDag {
     /// Create a new empty DAG.
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             nodes: HashMap::new(),
@@ -267,7 +265,11 @@ impl PatchDag {
         }
 
         // Find common ancestors
-        let common: Vec<PatchId> = ancestors_a.iter().filter(|id| ancestors_b.contains(id)).copied().collect();
+        let common: Vec<PatchId> = ancestors_a
+            .iter()
+            .filter(|id| ancestors_b.contains(id))
+            .copied()
+            .collect();
 
         if common.is_empty() {
             return None;
@@ -282,8 +284,7 @@ impl PatchDag {
             let candidate_gen = self.nodes.get(candidate).map_or(0, |n| n.generation);
             if best.is_none()
                 || candidate_gen > best_gen
-                || (candidate_gen == best_gen
-                    && best.is_some_and(|b| candidate < &b))
+                || (candidate_gen == best_gen && best.is_some_and(|b| candidate < &b))
             {
                 best_gen = candidate_gen;
                 best = Some(*candidate);
@@ -291,18 +292,6 @@ impl PatchDag {
         }
 
         best
-    }
-
-    /// Compute the "depth" of a patch using its precomputed generation number.
-    ///
-    /// For a linear chain, this equals the number of ancestors.
-    /// For DAGs with merges, the generation is the length of the longest
-    /// path from root to this node.
-    #[allow(dead_code)]
-    fn ancestor_depth(&self, id: &PatchId) -> usize {
-        self.nodes
-            .get(id)
-            .map_or(0, |n| n.generation as usize)
     }
 
     /// Create a new branch pointing to a patch.

@@ -208,11 +208,7 @@ pub fn merge_json(base: String, ours: String, theirs: String) -> napi::Result<St
     let result = driver
         .merge(&base, &ours, &theirs)
         .map_err(|e| napi::Error::from_reason(format!("merge failed: {e}")))?;
-    result.ok_or_else(|| {
-        napi::Error::from_reason(
-            "merge conflict: cannot auto-resolve",
-        )
-    })
+    result.ok_or_else(|| napi::Error::from_reason("merge conflict: cannot auto-resolve"))
 }
 
 #[napi]
@@ -221,11 +217,7 @@ pub fn merge_yaml(base: String, ours: String, theirs: String) -> napi::Result<St
     let result = driver
         .merge(&base, &ours, &theirs)
         .map_err(|e| napi::Error::from_reason(format!("merge failed: {e}")))?;
-    result.ok_or_else(|| {
-        napi::Error::from_reason(
-            "merge conflict: cannot auto-resolve",
-        )
-    })
+    result.ok_or_else(|| napi::Error::from_reason("merge conflict: cannot auto-resolve"))
 }
 
 #[napi]
@@ -234,11 +226,7 @@ pub fn merge_toml(base: String, ours: String, theirs: String) -> napi::Result<St
     let result = driver
         .merge(&base, &ours, &theirs)
         .map_err(|e| napi::Error::from_reason(format!("merge failed: {e}")))?;
-    result.ok_or_else(|| {
-        napi::Error::from_reason(
-            "merge conflict: cannot auto-resolve",
-        )
-    })
+    result.ok_or_else(|| napi::Error::from_reason("merge conflict: cannot auto-resolve"))
 }
 
 #[napi]
@@ -247,15 +235,11 @@ pub fn merge_csv(base: String, ours: String, theirs: String) -> napi::Result<Str
     let result = driver
         .merge(&base, &ours, &theirs)
         .map_err(|e| napi::Error::from_reason(format!("merge failed: {e}")))?;
-    result.ok_or_else(|| {
-        napi::Error::from_reason(
-            "merge conflict: cannot auto-resolve",
-        )
-    })
+    result.ok_or_else(|| napi::Error::from_reason("merge conflict: cannot auto-resolve"))
 }
 
 #[napi]
-#[must_use] 
+#[must_use]
 pub fn get_version() -> String {
     env!("CARGO_PKG_VERSION").to_owned()
 }

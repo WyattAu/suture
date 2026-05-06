@@ -58,7 +58,8 @@ fn maybe_convert_to_lfs_pointer(path: &str) -> Result<bool, Box<dyn std::error::
         let file_name = full_path
             .file_name()
             .and_then(|n| n.to_str())
-            .unwrap_or(path).to_owned();
+            .unwrap_or(path)
+            .to_owned();
         store_lfs_object(repo_root, &hash, &data)?;
         let pointer = create_lfs_pointer(&hash, file_size, &file_name);
         std::fs::write(full_path, pointer)?;

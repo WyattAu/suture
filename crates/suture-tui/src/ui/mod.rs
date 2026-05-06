@@ -145,7 +145,8 @@ pub fn draw(f: &mut Frame, app: &App) {
                 let repo_name = app
                     .repo()
                     .root()
-                    .file_name().map_or_else(|| "?".to_owned(), |n| n.to_string_lossy().to_string());
+                    .file_name()
+                    .map_or_else(|| "?".to_owned(), |n| n.to_string_lossy().to_string());
                 let staged = app.staged_files().len();
                 let unstaged = app.unstaged_files().len();
                 let msg = app.status_message();
@@ -186,9 +187,7 @@ pub fn draw(f: &mut Frame, app: &App) {
                     ),
                     Span::styled(
                         format!(" {working_set_label} "),
-                        Style::default()
-                            .fg(Color::Black)
-                            .bg(working_set_color),
+                        Style::default().fg(Color::Black).bg(working_set_color),
                     ),
                     Span::raw(format!(
                         " staged:{} unstaged:{} patches:{} branches:{}{suffix} ",
@@ -213,7 +212,7 @@ pub fn draw(f: &mut Frame, app: &App) {
 }
 
 /// Render a file status icon.
-#[must_use] 
+#[must_use]
 pub fn status_icon(status: suture_common::FileStatus) -> &'static str {
     match status {
         suture_common::FileStatus::Added => "A",
@@ -225,7 +224,7 @@ pub fn status_icon(status: suture_common::FileStatus) -> &'static str {
 }
 
 /// Style for a file status icon.
-#[must_use] 
+#[must_use]
 pub fn status_style(status: suture_common::FileStatus) -> Style {
     match status {
         suture_common::FileStatus::Added => Style::default().fg(Color::Green),
@@ -237,7 +236,7 @@ pub fn status_style(status: suture_common::FileStatus) -> Style {
 }
 
 /// Style for a diff line.
-#[must_use] 
+#[must_use]
 pub fn diff_line_style(line_type: DiffLineType) -> Style {
     match line_type {
         DiffLineType::Context => Style::default().fg(Color::Gray),
@@ -253,7 +252,7 @@ pub fn diff_line_style(line_type: DiffLineType) -> Style {
 }
 
 /// Compute visible range for a scrollable list.
-#[must_use] 
+#[must_use]
 pub fn visible_range(total: usize, scroll: usize, height: usize) -> (usize, usize) {
     let start = scroll.min(total.saturating_sub(height));
     let end = (start + height).min(total);

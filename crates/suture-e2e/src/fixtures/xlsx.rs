@@ -4,12 +4,12 @@ use std::io::{Cursor, Write as IoWrite};
 use std::fmt::Write;
 pub type CellData = (usize, usize, String);
 
-#[must_use] 
+#[must_use]
 pub fn simple() -> String {
     make_xlsx(&simple_sheets())
 }
 
-#[must_use] 
+#[must_use]
 pub fn simple_sheets() -> Vec<(&'static str, Vec<CellData>)> {
     vec![(
         "sheet1",
@@ -24,12 +24,12 @@ pub fn simple_sheets() -> Vec<(&'static str, Vec<CellData>)> {
     )]
 }
 
-#[must_use] 
+#[must_use]
 pub fn multi_sheet() -> String {
     make_xlsx(&multi_sheet_sheets())
 }
 
-#[must_use] 
+#[must_use]
 pub fn multi_sheet_sheets() -> Vec<(&'static str, Vec<CellData>)> {
     vec![
         (
@@ -122,12 +122,12 @@ pub fn multi_sheet_sheets() -> Vec<(&'static str, Vec<CellData>)> {
     ]
 }
 
-#[must_use] 
+#[must_use]
 pub fn formula_heavy() -> String {
     make_xlsx(&formula_heavy_sheets())
 }
 
-#[must_use] 
+#[must_use]
 pub fn formula_heavy_sheets() -> Vec<(&'static str, Vec<CellData>)> {
     vec![
         (
@@ -199,12 +199,12 @@ pub fn formula_heavy_sheets() -> Vec<(&'static str, Vec<CellData>)> {
     ]
 }
 
-#[must_use] 
+#[must_use]
 pub fn structured() -> String {
     make_xlsx(&structured_sheets())
 }
 
-#[must_use] 
+#[must_use]
 pub fn structured_sheets() -> Vec<(&'static str, Vec<CellData>)> {
     vec![(
         "Reviews",
@@ -245,12 +245,12 @@ pub fn structured_sheets() -> Vec<(&'static str, Vec<CellData>)> {
     )]
 }
 
-#[must_use] 
+#[must_use]
 pub fn wide() -> String {
     make_xlsx(&wide_sheets())
 }
 
-#[must_use] 
+#[must_use]
 pub fn wide_sheets() -> Vec<(&'static str, Vec<CellData>)> {
     let mut cells = Vec::new();
     cells.push(cd(1, 0, "ID"));
@@ -320,9 +320,7 @@ fn make_xlsx(sheets: &[(&str, Vec<CellData>)]) -> String {
                 let _ = writeln!(xml, "<row r=\"{row_num}\">");
                 for (col, val) in cols {
                     let col_letter = col_to_letter(*col);
-                    let _ = writeln!(xml, 
-                        "<c r=\"{col_letter}{row_num}\"><v>{val}</v></c>"
-                    );
+                    let _ = writeln!(xml, "<c r=\"{col_letter}{row_num}\"><v>{val}</v></c>");
                 }
                 xml.push_str("</row>\n");
             }
@@ -339,7 +337,7 @@ fn make_xlsx(sheets: &[(&str, Vec<CellData>)]) -> String {
     zip_to_string(buf)
 }
 
-#[must_use] 
+#[must_use]
 pub fn with_modified_cell(
     sheets: &[(&str, Vec<CellData>)],
     sheet_idx: usize,

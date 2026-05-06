@@ -5,9 +5,7 @@
 // Suture Commercial License (for enterprise features).
 // See LICENSE-AGPL and LICENSE-COMMERCIAL in the repo root.
 
-use axum::{
-    response::{Html, IntoResponse, Response},
-};
+use axum::response::{Html, IntoResponse, Response};
 
 pub async fn serve_index() -> Html<&'static str> {
     Html(INDEX_HTML)

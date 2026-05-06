@@ -16,8 +16,10 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
 
     // Header info
     let branch = app.head_branch().unwrap_or("(detached)");
-    let head = app
-        .head_patch().map_or_else(|| "(none)".to_owned(), |h| format!("{}…", &h[..12.min(h.len())]));
+    let head = app.head_patch().map_or_else(
+        || "(none)".to_owned(),
+        |h| format!("{}…", &h[..12.min(h.len())]),
+    );
 
     let header_lines = vec![
         Line::from(vec![

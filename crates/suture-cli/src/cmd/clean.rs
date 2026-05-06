@@ -109,9 +109,7 @@ fn remove_empty_dirs(root: &StdPath, current: &StdPath, removed: &mut usize) {
         }
     }
 
-    entries.retain(|e| {
-        e.path().is_dir() && e.path().file_name().is_none_or(|n| n != ".suture")
-    });
+    entries.retain(|e| e.path().is_dir() && e.path().file_name().is_none_or(|n| n != ".suture"));
     let is_empty = entries.iter().all(|e| {
         let Ok(inner) = std::fs::read_dir(e.path()) else {
             return true;

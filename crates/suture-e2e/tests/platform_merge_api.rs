@@ -15,18 +15,12 @@ async fn start_test_hub() -> String {
             "/pull",
             axum::routing::post(suture_hub::server::pull_handler),
         )
-        .route(
-            "/handshake",
-            axum::routing::get(handshake_get),
-        )
+        .route("/handshake", axum::routing::get(handshake_get))
         .route(
             "/handshake",
             axum::routing::post(suture_hub::server::handshake_handler),
         )
-        .route(
-            "/api/merge",
-            axum::routing::post(merge_handler),
-        )
+        .route("/api/merge", axum::routing::post(merge_handler))
         .with_state(hub);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -69,7 +63,10 @@ async fn merge_handler(
 ) -> axum::Json<serde_json::Value> {
     use suture_driver::SutureDriver;
 
-    let driver_name = body.get("driver").and_then(|v| v.as_str()).unwrap_or("json");
+    let driver_name = body
+        .get("driver")
+        .and_then(|v| v.as_str())
+        .unwrap_or("json");
     let base = body.get("base").and_then(|v| v.as_str()).unwrap_or("");
     let ours = body.get("ours").and_then(|v| v.as_str()).unwrap_or("");
     let theirs = body.get("theirs").and_then(|v| v.as_str()).unwrap_or("");

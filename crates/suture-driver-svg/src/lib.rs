@@ -7,7 +7,7 @@ use std::fmt::Write;
 pub struct SvgDriver;
 
 impl SvgDriver {
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self
     }
@@ -76,8 +76,10 @@ impl SvgDriver {
         };
 
         let text = node.text().unwrap_or("").trim();
-        let element_children: Vec<roxmltree::Node> =
-            node.children().filter(roxmltree::Node::is_element).collect();
+        let element_children: Vec<roxmltree::Node> = node
+            .children()
+            .filter(roxmltree::Node::is_element)
+            .collect();
 
         if element_children.is_empty() && text.is_empty() {
             format!("{pad}<{tag}{attr_str}/>")
@@ -86,7 +88,8 @@ impl SvgDriver {
         } else {
             let mut result = format!("{pad}<{tag}{attr_str}>\n");
             if !text.is_empty() {
-                let _ = writeln!(result, 
+                let _ = writeln!(
+                    result,
                     "{}{}",
                     "  ".repeat(indent + 1),
                     Self::escape_xml(text)
@@ -294,12 +297,18 @@ impl SvgDriver {
             }
         }
 
-        let base_children: Vec<roxmltree::Node> =
-            base.children().filter(roxmltree::Node::is_element).collect();
-        let ours_children: Vec<roxmltree::Node> =
-            ours.children().filter(roxmltree::Node::is_element).collect();
-        let theirs_children: Vec<roxmltree::Node> =
-            theirs.children().filter(roxmltree::Node::is_element).collect();
+        let base_children: Vec<roxmltree::Node> = base
+            .children()
+            .filter(roxmltree::Node::is_element)
+            .collect();
+        let ours_children: Vec<roxmltree::Node> = ours
+            .children()
+            .filter(roxmltree::Node::is_element)
+            .collect();
+        let theirs_children: Vec<roxmltree::Node> = theirs
+            .children()
+            .filter(roxmltree::Node::is_element)
+            .collect();
 
         let base_id_map: HashMap<String, usize> = base_children
             .iter()
@@ -405,7 +414,8 @@ impl SvgDriver {
         } else {
             let mut result = format!("{pad}<{tag}{attr_str}>\n");
             if !merged_text.is_empty() {
-                let _ = writeln!(result, 
+                let _ = writeln!(
+                    result,
                     "{}{}",
                     "  ".repeat(indent + 1),
                     Self::escape_xml(&merged_text)
@@ -516,7 +526,8 @@ impl SutureDriver for SvgDriver {
             ours_doc.root_element(),
             theirs_doc.root_element(),
             0,
-        )?.map_or_else(
+        )?
+        .map_or_else(
             || Ok(None),
             |merged| {
                 result.push_str(&merged);

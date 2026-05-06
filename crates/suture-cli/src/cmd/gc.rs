@@ -1,7 +1,4 @@
-pub async fn cmd_gc(
-    dry_run: bool,
-    aggressive: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_gc(dry_run: bool, aggressive: bool) -> Result<(), Box<dyn std::error::Error>> {
     let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
 
     let branches = repo.dag().list_branches();
@@ -77,11 +74,15 @@ pub async fn cmd_gc(
             .as_secs() as i64;
         let cutoff = now_ts - (90 * 24 * 3600);
         let old_count = entries.iter().filter(|e| e.timestamp < cutoff).count();
-        if old_count > 0 {
-            let _ = repo.meta().reflog_clear();
+        if old_count > 0
+            && let Err(e) = repo.meta().reflog_clear()
+        {
+            eprintln!("suture: warning: failed to clear reflog: {e}");
         }
 
-        let _ = repo.cas().repack(10);
+        if let Err(e) = repo.cas().repack(10) {
+            eprintln!("suture: warning: failed to repack: {e}");
+        }
     }
 
     println!(

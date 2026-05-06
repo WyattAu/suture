@@ -135,8 +135,10 @@ fn build_summary_report(
             }
             DiffType::Modified => {
                 let semantic_detail = extract_semantic_item_count(repo, entry);
-                let label = semantic_detail
-                    .map_or_else(|| "modified)".to_owned(), |count| format!("modified) — {count}"));
+                let label = semantic_detail.map_or_else(
+                    || "modified)".to_owned(),
+                    |count| format!("modified) — {count}"),
+                );
                 println!("{icon} {} ({label}", entry.path);
                 if let Some(meta) = find_latest_patch_for_file(repo, &entry.path, from) {
                     println!("   by {} — {}", meta.author, relative_time(meta.timestamp));
@@ -153,7 +155,9 @@ fn extract_semantic_item_count(
 ) -> Option<String> {
     use std::path::Path as StdPath;
 
-    let (Some(old_hash), Some(new_hash)) = (&entry.old_hash, &entry.new_hash) else { return None };
+    let (Some(old_hash), Some(new_hash)) = (&entry.old_hash, &entry.new_hash) else {
+        return None;
+    };
 
     let registry = crate::driver_registry::builtin_registry();
     let Ok(driver) = registry.get_for_path(StdPath::new(&entry.path)) else {
@@ -297,9 +301,7 @@ pub async fn cmd_diff(
 
         match &entry.diff_type {
             DiffType::Renamed { old_path, new_path } => {
-                println!(
-                    "{ANSI_BOLD_CYAN}renamed {old_path} → {new_path}{ANSI_RESET}"
-                );
+                println!("{ANSI_BOLD_CYAN}renamed {old_path} → {new_path}{ANSI_RESET}");
             }
             DiffType::Added => {
                 if let Some(new_hash) = &entry.new_hash {
@@ -550,7 +552,8 @@ fn build_integrity_report(
     if has_lockfile && !has_manifest {
         warnings.push(
             "Lockfile modified without corresponding manifest change. \
-             Verify no new dependencies were injected.".to_owned(),
+             Verify no new dependencies were injected."
+                .to_owned(),
         );
     }
 

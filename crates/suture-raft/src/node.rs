@@ -65,7 +65,7 @@ pub struct RaftNode {
 }
 
 impl RaftNode {
-    #[must_use] 
+    #[must_use]
     pub fn new(id: NodeId, peers: Vec<NodeId>) -> Self {
         let election_timeout = Duration::from_millis(10);
         let max_offset = election_timeout.as_millis() as u64;
@@ -74,7 +74,8 @@ impl RaftNode {
         } else {
             0
         };
-        let all_nodes: BTreeSet<NodeId> = std::iter::once(id).chain(peers.iter().copied()).collect();
+        let all_nodes: BTreeSet<NodeId> =
+            std::iter::once(id).chain(peers.iter().copied()).collect();
         Self {
             id,
             state: NodeState::Follower,
@@ -101,7 +102,7 @@ impl RaftNode {
         }
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn with_timeouts(
         id: NodeId,
         peers: Vec<NodeId>,
@@ -230,10 +231,15 @@ impl RaftNode {
                 self.handle_install_snapshot_response(from, term);
                 Vec::new()
             }
-            RaftMessage::ReadIndexRequest { term: _term, index: _index } => {
+            RaftMessage::ReadIndexRequest {
+                term: _term,
+                index: _index,
+            } => {
                 vec![(
                     from,
-                    RaftMessage::ReadIndexResponse { term: self.current_term },
+                    RaftMessage::ReadIndexResponse {
+                        term: self.current_term,
+                    },
                 )]
             }
             RaftMessage::ReadIndexResponse { term } => {
@@ -266,22 +272,22 @@ impl RaftNode {
         }
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn state(&self) -> &NodeState {
         &self.state
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn term(&self) -> u64 {
         self.current_term
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn leader(&self) -> Option<NodeId> {
         self.leader_id
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn id(&self) -> NodeId {
         self.id
     }
@@ -297,7 +303,7 @@ impl RaftNode {
         Ok(())
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn committed_entries(&self) -> &[LogEntry] {
         if self.last_applied >= self.commit_index {
             return &[];
@@ -354,7 +360,12 @@ impl RaftNode {
             .collect()
     }
 
-    pub fn handle_pre_vote_response(&mut self, from: NodeId, term: u64, granted: bool) -> Vec<(NodeId, RaftMessage)> {
+    pub fn handle_pre_vote_response(
+        &mut self,
+        from: NodeId,
+        term: u64,
+        granted: bool,
+    ) -> Vec<(NodeId, RaftMessage)> {
         if let Some(ref mut pre_vote) = self.pre_vote {
             if term > self.current_term {
                 self.pre_vote = None;
@@ -594,9 +605,7 @@ impl RaftNode {
             };
         }
 
-        if !is_pre_vote
-            && term > self.current_term
-        {
+        if !is_pre_vote && term > self.current_term {
             self.current_term = term;
             self.voted_for = None;
             self.state = NodeState::Follower;
@@ -751,7 +760,7 @@ impl RaftNode {
         Ok(())
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn snapshot(&self) -> Option<&Snapshot> {
         self.snapshot.as_ref()
     }
@@ -780,7 +789,8 @@ impl RaftNode {
 
     fn replicate_to(&mut self, target: NodeId) {
         let next_idx = self.next_index.get(&target).copied().unwrap_or(1);
-        self.next_index.insert(target, next_idx.min(self.log.last_index() + 1));
+        self.next_index
+            .insert(target, next_idx.min(self.log.last_index() + 1));
     }
 
     pub fn read_index(&self) -> Result<ReadIndex, RaftError> {
@@ -799,7 +809,7 @@ impl RaftNode {
         read.quorum_acked.len() >= self.majority()
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn read_index_messages(&self) -> Vec<(NodeId, RaftMessage)> {
         self.peers
             .iter()
@@ -847,10 +857,7 @@ impl RaftNode {
             })
             .collect();
 
-        self.propose(
-            serde_json::to_vec(&self.config)
-                .unwrap_or_else(|_| b"config".to_vec()),
-        )?;
+        self.propose(serde_json::to_vec(&self.config).unwrap_or_else(|_| b"config".to_vec()))?;
 
         Ok(())
     }
@@ -863,20 +870,17 @@ impl RaftNode {
             .ok_or(RaftError::NoTransition)?;
         self.config.nodes = new_nodes;
 
-        self.propose(
-            serde_json::to_vec(&self.config)
-                .unwrap_or_else(|_| b"config".to_vec()),
-        )?;
+        self.propose(serde_json::to_vec(&self.config).unwrap_or_else(|_| b"config".to_vec()))?;
 
         Ok(())
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn config(&self) -> &ClusterConfig {
         &self.config
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn pre_vote(&self) -> Option<&PreVote> {
         self.pre_vote.as_ref()
     }
@@ -1024,7 +1028,9 @@ mod tests {
 
         assert_eq!(response.len(), 1);
         match &response[0].1 {
-            RaftMessage::RequestVoteResponse { term, vote_granted, .. } => {
+            RaftMessage::RequestVoteResponse {
+                term, vote_granted, ..
+            } => {
                 assert_eq!(*term, 1);
                 assert!(*vote_granted);
             }
@@ -1061,7 +1067,9 @@ mod tests {
 
         assert_eq!(response.len(), 1);
         match &response[0].1 {
-            RaftMessage::RequestVoteResponse { term, vote_granted, .. } => {
+            RaftMessage::RequestVoteResponse {
+                term, vote_granted, ..
+            } => {
                 assert_eq!(*term, 5);
                 assert!(!*vote_granted);
             }
@@ -1261,7 +1269,11 @@ mod tests {
 
         assert_eq!(response.len(), 1);
         match &response[0].1 {
-            RaftMessage::RequestVoteResponse { vote_granted, is_pre_vote, .. } => {
+            RaftMessage::RequestVoteResponse {
+                vote_granted,
+                is_pre_vote,
+                ..
+            } => {
                 assert!(*is_pre_vote);
                 assert!(!*vote_granted);
             }
@@ -1630,10 +1642,7 @@ mod tests {
         node.current_term = 3;
         node.state = NodeState::Follower;
 
-        let result = node.handle_message(
-            2,
-            RaftMessage::TimeoutNow { term: 3 },
-        );
+        let result = node.handle_message(2, RaftMessage::TimeoutNow { term: 3 });
 
         assert!(!result.is_empty());
         assert_eq!(node.state(), &NodeState::Candidate);
@@ -1647,10 +1656,7 @@ mod tests {
         node.current_term = 5;
         node.state = NodeState::Follower;
 
-        let result = node.handle_message(
-            2,
-            RaftMessage::TimeoutNow { term: 3 },
-        );
+        let result = node.handle_message(2, RaftMessage::TimeoutNow { term: 3 });
 
         assert!(result.is_empty());
         assert_eq!(node.state(), &NodeState::Follower);
@@ -1905,7 +1911,11 @@ mod tests {
 
         assert_eq!(response.len(), 1);
         match &response[0].1 {
-            RaftMessage::RequestVoteResponse { vote_granted, is_pre_vote, .. } => {
+            RaftMessage::RequestVoteResponse {
+                vote_granted,
+                is_pre_vote,
+                ..
+            } => {
                 assert!(*is_pre_vote);
                 assert!(!*vote_granted);
             }

@@ -92,7 +92,9 @@ fn write_tar(
 
     let entries = collect_entries(repo, tree);
     for (path, data_result) in &entries {
-        let data = data_result.as_ref().map_err(std::string::ToString::to_string)?;
+        let data = data_result
+            .as_ref()
+            .map_err(std::string::ToString::to_string)?;
         if path.contains("..") {
             continue;
         }
@@ -120,7 +122,9 @@ fn write_tar_gz(
 
     let entries = collect_entries(repo, tree);
     for (path, data_result) in &entries {
-        let data = data_result.as_ref().map_err(std::string::ToString::to_string)?;
+        let data = data_result
+            .as_ref()
+            .map_err(std::string::ToString::to_string)?;
         if path.contains("..") {
             continue;
         }
@@ -153,7 +157,9 @@ fn write_zip(
 
     let entries = collect_entries(repo, tree);
     for (path, data_result) in &entries {
-        let data = data_result.as_ref().map_err(std::string::ToString::to_string)?;
+        let data = data_result
+            .as_ref()
+            .map_err(std::string::ToString::to_string)?;
         if path.contains("..") {
             continue;
         }

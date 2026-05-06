@@ -43,9 +43,7 @@ pub async fn cmd_merge_file(
 
     // Resolve driver: explicit --driver flag > auto-detect by extension > none
     let driver: Option<&dyn suture_driver::SutureDriver> = driver_name.map_or_else(
-        || {
-            registry.get_for_path(StdPath::new(ours_path)).ok()
-        },
+        || registry.get_for_path(StdPath::new(ours_path)).ok(),
         |name| {
             if name == "auto" {
                 // --driver auto: detect from file extension
@@ -73,7 +71,9 @@ pub async fn cmd_merge_file(
         match driver.merge(&base_content, &ours_content, &theirs_content) {
             Ok(Some(merged)) => {
                 // Clean semantic merge
-                if let Some(path) = output_path { std::fs::write(path, merged.as_bytes())? } else {
+                if let Some(path) = output_path {
+                    std::fs::write(path, merged.as_bytes())?
+                } else {
                     // For binary formats, don't print to stdout
                     let ours_ext = StdPath::new(ours_path)
                         .extension()

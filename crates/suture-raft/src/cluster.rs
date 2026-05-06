@@ -8,10 +8,6 @@ use crate::node::{NodeState, RaftNode};
 
 pub struct Cluster {
     nodes: BTreeMap<u64, RaftNode>,
-    #[allow(dead_code)]
-    election_timeout: u64,
-    #[allow(dead_code)]
-    heartbeat_interval: u64,
 }
 
 #[derive(Debug, Default)]
@@ -21,7 +17,7 @@ pub struct ClusterTickResult {
 }
 
 impl Cluster {
-    #[must_use] 
+    #[must_use]
     pub fn new(peers: Vec<u64>, election_timeout: u64, heartbeat_interval: u64) -> Self {
         let mut nodes = BTreeMap::new();
         for &id in &peers {
@@ -35,11 +31,7 @@ impl Cluster {
             );
             nodes.insert(id, node);
         }
-        Self {
-            nodes,
-            election_timeout,
-            heartbeat_interval,
-        }
+        Self { nodes }
     }
 
     pub fn tick(&mut self) -> ClusterTickResult {
@@ -88,7 +80,7 @@ impl Cluster {
         node.propose(command)
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn leader(&self) -> Option<u64> {
         self.nodes
             .iter()
@@ -96,14 +88,14 @@ impl Cluster {
             .map(|(&id, _)| id)
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn state(&self, node_id: u64) -> NodeState {
         self.nodes
             .get(&node_id)
             .map_or(NodeState::Follower, |n| *n.state())
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn committed_entries(&self, node_id: u64) -> Vec<LogEntry> {
         self.nodes
             .get(&node_id)
@@ -121,7 +113,7 @@ impl Cluster {
         self.nodes.remove(&node_id);
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn tick_until_leader(&mut self, max_ticks: u64) -> Option<u64> {
         for _ in 0..max_ticks {
             self.tick();
@@ -132,7 +124,7 @@ impl Cluster {
         None
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn all_ids(&self) -> Vec<u64> {
         let mut ids: Vec<u64> = self.nodes.keys().copied().collect();
         ids.sort_unstable();

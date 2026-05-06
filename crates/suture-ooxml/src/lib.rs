@@ -72,18 +72,18 @@ impl OoxmlDocument {
 
             // Try to interpret as UTF-8 text
             let Ok(content) = String::from_utf8(raw_bytes.clone()) else {
-                    // Binary part (font, image, etc.) — store as raw bytes
-                    binary_parts.insert(path.clone(), raw_bytes);
-                    parts.insert(
-                        path.clone(),
-                        OoxmlPart {
-                            content_type: enc_name,
-                            content: String::new(),
-                            path,
-                        },
-                    );
-                    continue;
-                };
+                // Binary part (font, image, etc.) — store as raw bytes
+                binary_parts.insert(path.clone(), raw_bytes);
+                parts.insert(
+                    path.clone(),
+                    OoxmlPart {
+                        content_type: enc_name,
+                        content: String::new(),
+                        path,
+                    },
+                );
+                continue;
+            };
 
             if path == "[Content_Types].xml" {
                 content_types.clone_from(&content);
@@ -156,7 +156,7 @@ impl OoxmlDocument {
         Ok(buf)
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn get_part(&self, path: &str) -> Option<&OoxmlPart> {
         self.parts.get(path)
     }
@@ -178,7 +178,7 @@ impl OoxmlDocument {
     /// `ppt/slides/slide1.xml` based on `ppt/_rels/presentation.xml.rels`.
     ///
     /// Returns `None` if the relationship ID is not found.
-    #[must_use] 
+    #[must_use]
     pub fn resolve_rel(&self, part_path: &str, rel_id: &str) -> Option<String> {
         let id_map = self.part_rels.get(part_path)?;
         let target = id_map.get(rel_id)?;
@@ -189,7 +189,7 @@ impl OoxmlDocument {
     /// Get all relationship IDs and their resolved target paths for a given part.
     ///
     /// Returns an iterator of `(rel_id, resolved_target_path)` pairs.
-    #[must_use] 
+    #[must_use]
     pub fn get_part_rels(&self, part_path: &str) -> Option<&HashMap<String, String>> {
         self.part_rels.get(part_path)
     }
@@ -205,9 +205,7 @@ fn path_rels_to_owner(rels_path: &str) -> String {
     let name = rels_filename.strip_suffix(".rels").unwrap_or(rels_filename);
 
     // Find the directory containing "_rels"
-    let dir = rels_path
-        .rsplit_once("/_rels/")
-        .map_or("", |(d, _)| d);
+    let dir = rels_path.rsplit_once("/_rels/").map_or("", |(d, _)| d);
 
     if dir.is_empty() {
         name.to_owned()

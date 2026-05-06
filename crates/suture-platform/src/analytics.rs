@@ -6,10 +6,10 @@
 // See LICENSE-AGPL and LICENSE-COMMERCIAL in the repo root.
 
 use axum::{
+    Json,
     extract::{Extension, State},
     http::StatusCode,
     response::IntoResponse,
-    Json,
 };
 use std::collections::HashMap;
 
@@ -29,7 +29,10 @@ pub fn log_merge(
     conflict_count: i64,
     merge_time_ms: i64,
 ) -> anyhow::Result<()> {
-    let conn = state.db.conn().map_err(|e| anyhow::anyhow!("failed to get db connection for logging merge: {e}"))?;
+    let conn = state
+        .db
+        .conn()
+        .map_err(|e| anyhow::anyhow!("failed to get db connection for logging merge: {e}"))?;
     conn.execute(
         "INSERT INTO merge_logs (user_id, driver, base_size, ours_size, theirs_size, result_size, has_conflict, conflict_count, merge_time_ms)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
@@ -83,7 +86,11 @@ pub async fn analytics_handler(
     };
 
     let total_merges: i64 = conn
-        .query_row("SELECT COUNT(*) FROM merge_logs WHERE user_id = ?1", rusqlite::params![claims.sub], |row| row.get(0))
+        .query_row(
+            "SELECT COUNT(*) FROM merge_logs WHERE user_id = ?1",
+            rusqlite::params![claims.sub],
+            |row| row.get(0),
+        )
         .unwrap_or(0);
 
     let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
@@ -95,7 +102,9 @@ pub async fn analytics_handler(
         )
         .unwrap_or(0);
 
-    let week_ago = (chrono::Utc::now() - chrono::Duration::days(7)).format("%Y-%m-%d").to_string();
+    let week_ago = (chrono::Utc::now() - chrono::Duration::days(7))
+        .format("%Y-%m-%d")
+        .to_string();
     let merges_this_week: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM merge_logs WHERE user_id = ?1 AND date(created_at) >= ?2",

@@ -3,7 +3,7 @@ use crate::file_type::FileType;
 pub struct SemanticDiffFormatter;
 
 impl SemanticDiffFormatter {
-    #[must_use] 
+    #[must_use]
     pub fn format(file_path: &str, file_type: FileType, semantic_output: &str) -> String {
         let header = format!("=== {file_path} ===");
         let driver_label = file_type.driver_name();
@@ -13,7 +13,7 @@ impl SemanticDiffFormatter {
         format!("{header}  [{driver_label}]\n{semantic_output}")
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn format_image_diff(
         file_path: &str,
         old_size: Option<usize>,

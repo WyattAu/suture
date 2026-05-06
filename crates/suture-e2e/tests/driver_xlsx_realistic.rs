@@ -223,7 +223,9 @@ fn test_xlsx_formula_preservation() {
     let ours = xlsx::with_modified_cell(&xlsx::formula_heavy_sheets(), 0, 2, 1, "150");
     let theirs = xlsx::with_modified_cell(&xlsx::formula_heavy_sheets(), 1, 4, 3, "25000");
 
-    let merged = driver.merge_raw(base.as_bytes(), ours.as_bytes(), theirs.as_bytes()).unwrap();
+    let merged = driver
+        .merge_raw(base.as_bytes(), ours.as_bytes(), theirs.as_bytes())
+        .unwrap();
     assert!(
         merged.is_some(),
         "modifying source data cells on different sheets should merge cleanly"

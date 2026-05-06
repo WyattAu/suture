@@ -6,11 +6,11 @@
 // See LICENSE-AGPL and LICENSE-COMMERCIAL in the repo root.
 
 use axum::{
+    Json,
     extract::{Request, State},
     http::StatusCode,
     middleware::Next,
     response::{IntoResponse, Response},
-    Json,
 };
 use serde_json::json;
 
@@ -82,13 +82,9 @@ pub fn cors_layer(allowed_origins: &[&str]) -> tower_http::cors::CorsLayer {
         tower_http::cors::CorsLayer::permissive()
     } else {
         tower_http::cors::CorsLayer::new()
-            .allow_origin(
-                AllowOrigin::list(
-                    allowed_origins
-                        .iter()
-                        .filter_map(|o| o.parse().ok()),
-                ),
-            )
+            .allow_origin(AllowOrigin::list(
+                allowed_origins.iter().filter_map(|o| o.parse().ok()),
+            ))
             .allow_methods(tower_http::cors::Any)
             .allow_headers(tower_http::cors::Any)
     }

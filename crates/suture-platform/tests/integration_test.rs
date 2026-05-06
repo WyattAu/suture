@@ -8,8 +8,7 @@ fn free_port() -> u16 {
         .port()
 }
 
-fn test_config(
-) -> (
+fn test_config() -> (
     suture_platform::Config,
     u16,
     tempfile::NamedTempFile,
@@ -30,9 +29,7 @@ fn test_config(
     (config, port, db_file, hub_db_file)
 }
 
-async fn start_server(
-    config: suture_platform::Config,
-) -> u16 {
+async fn start_server(config: suture_platform::Config) -> u16 {
     let port: u16 = config.addr.split(':').next_back().unwrap().parse().unwrap();
     tokio::spawn(async move {
         let _ = suture_platform::run(config).await;
@@ -56,11 +53,7 @@ fn base_url(port: u16) -> String {
     format!("http://127.0.0.1:{}", port)
 }
 
-async fn register_user(
-    port: u16,
-    email: &str,
-    password: &str,
-) -> (String, serde_json::Value) {
+async fn register_user(port: u16, email: &str, password: &str) -> (String, serde_json::Value) {
     let client = reqwest::Client::new();
     let resp = client
         .post(format!("{}/auth/register", base_url(port)))
@@ -95,7 +88,12 @@ async fn test_register_and_login() {
     let port = start_server(config).await;
 
     let (token, reg_body) = register_user(port, "alice@example.com", "password123").await;
-    assert!(reg_body["user"]["email"].as_str().unwrap().contains("alice"));
+    assert!(
+        reg_body["user"]["email"]
+            .as_str()
+            .unwrap()
+            .contains("alice")
+    );
 
     let client = reqwest::Client::new();
     let resp = client
@@ -367,7 +365,11 @@ async fn test_create_and_list_orgs() {
     assert_eq!(resp.status(), 200);
     let orgs: serde_json::Value = resp.json().await.unwrap();
     let org_list = orgs.as_array().unwrap();
-    assert!(org_list.iter().any(|o| o["name"].as_str().unwrap() == "my-test-org"));
+    assert!(
+        org_list
+            .iter()
+            .any(|o| o["name"].as_str().unwrap() == "my-test-org")
+    );
 }
 
 #[tokio::test]
@@ -410,11 +412,13 @@ async fn test_oauth_start_unconfigured() {
     .unwrap();
     assert_eq!(resp.status(), 503);
     let body: serde_json::Value = resp.json().await.unwrap();
-    assert!(body["error"]
-        .as_str()
-        .unwrap()
-        .to_lowercase()
-        .contains("not configured"));
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap()
+            .to_lowercase()
+            .contains("not configured")
+    );
 }
 
 #[tokio::test]
@@ -434,11 +438,13 @@ async fn test_billing_not_configured() {
         .unwrap();
     assert_eq!(resp.status(), 503);
     let body: serde_json::Value = resp.json().await.unwrap();
-    assert!(body["error"]
-        .as_str()
-        .unwrap()
-        .to_lowercase()
-        .contains("not configured"));
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap()
+            .to_lowercase()
+            .contains("not configured")
+    );
 }
 
 #[tokio::test]

@@ -8,7 +8,8 @@
 //! - Large diffs (10K+ lines)
 //! - Multi-threaded concurrent access (read/write)
 
-use criterion::{black_box, Criterion, criterion_group, criterion_main};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use std::sync::Arc;
 use suture_common::Hash;
 use suture_core::cas::store::BlobStore;
 use suture_core::dag::graph::PatchDag;
@@ -18,7 +19,6 @@ use suture_core::patch::types::{OperationType, Patch, TouchSet};
 use suture_core::repository::Repository;
 use suture_hub::HubStorage;
 use suture_protocol::{HashProto, PatchProto};
-use std::sync::Arc;
 use tempfile::TempDir;
 
 // =============================================================================
@@ -39,15 +39,17 @@ fn make_patch(i: usize) -> Patch {
 fn make_hub_patch(i: usize, parent_hex: Option<&str>) -> PatchProto {
     let id_hex = Hash::from_data(format!("scale_patch_{}", i).as_bytes()).to_hex();
     PatchProto {
-        id: HashProto {
-            value: id_hex,
-        },
+        id: HashProto { value: id_hex },
         operation_type: "Create".to_string(),
         touch_set: vec![format!("file_{}", i)],
         target_path: Some(format!("file_{}", i)),
         payload: String::new(),
         parent_ids: parent_hex
-            .map(|h| vec![HashProto { value: h.to_string() }])
+            .map(|h| {
+                vec![HashProto {
+                    value: h.to_string(),
+                }]
+            })
             .unwrap_or_default(),
         author: "bench".to_string(),
         message: format!("patch {}", i),
@@ -178,7 +180,10 @@ fn bench_dag_10k_lca(c: &mut Criterion) {
 // 2. Deep branch histories
 // =============================================================================
 
-fn build_fanout_dag(branches: usize, depth_per_branch: usize) -> (PatchDag, Vec<suture_common::Hash>) {
+fn build_fanout_dag(
+    branches: usize,
+    depth_per_branch: usize,
+) -> (PatchDag, Vec<suture_common::Hash>) {
     let mut dag = PatchDag::new();
     let root = make_patch(0);
     let root_id = dag.add_patch(root, vec![]).unwrap();
@@ -305,9 +310,7 @@ fn bench_hub_10k_patches(c: &mut Criterion) {
                 store.ensure_repo("scale-repo").unwrap();
                 for i in 0..10_000 {
                     let parent = if i > 0 {
-                        Some(
-                            Hash::from_data(format!("scale_patch_{}", i - 1).as_bytes()).to_hex(),
-                        )
+                        Some(Hash::from_data(format!("scale_patch_{}", i - 1).as_bytes()).to_hex())
                     } else {
                         None
                     };
@@ -325,9 +328,7 @@ fn bench_hub_10k_patches(c: &mut Criterion) {
                 store.ensure_repo("scale-repo").unwrap();
                 for i in 0..10_000 {
                     let parent = if i > 0 {
-                        Some(
-                            Hash::from_data(format!("scale_patch_{}", i - 1).as_bytes()).to_hex(),
-                        )
+                        Some(Hash::from_data(format!("scale_patch_{}", i - 1).as_bytes()).to_hex())
                     } else {
                         None
                     };
@@ -430,7 +431,12 @@ fn bench_diff_10k_lines(c: &mut Criterion) {
     group.measurement_time(std::time::Duration::from_secs(30));
 
     let base: Vec<String> = (0..10_000)
-        .map(|i| format!("line {}: original content here with some padding to make it realistic", i))
+        .map(|i| {
+            format!(
+                "line {}: original content here with some padding to make it realistic",
+                i
+            )
+        })
         .collect();
 
     // 1% changes
@@ -618,9 +624,7 @@ fn bench_concurrent_hub_writes(c: &mut Criterion) {
                                     message: format!("patch {}", global_id),
                                     timestamp: global_id as u64,
                                 };
-                                store
-                                    .insert_patch("concurrent-repo", &patch)
-                                    .unwrap();
+                                store.insert_patch("concurrent-repo", &patch).unwrap();
                             }
                         })
                     })
@@ -693,11 +697,8 @@ fn bench_repo_10k_commits(c: &mut Criterion) {
             |(dir, mut repo)| {
                 for i in 0..10_000 {
                     let path = format!("file_{}.txt", i % 10);
-                    std::fs::write(
-                        dir.path().join(&path),
-                        format!("content revision {}", i),
-                    )
-                    .unwrap();
+                    std::fs::write(dir.path().join(&path), format!("content revision {}", i))
+                        .unwrap();
                     repo.add(&path).unwrap();
                     repo.commit(&format!("commit {}", i)).unwrap();
                 }
@@ -712,11 +713,8 @@ fn bench_repo_10k_commits(c: &mut Criterion) {
                 let mut repo = Repository::init(dir.path(), "bench").unwrap();
                 for i in 0..10_000 {
                     let path = format!("file_{}.txt", i % 10);
-                    std::fs::write(
-                        dir.path().join(&path),
-                        format!("content revision {}", i),
-                    )
-                    .unwrap();
+                    std::fs::write(dir.path().join(&path), format!("content revision {}", i))
+                        .unwrap();
                     repo.add(&path).unwrap();
                     repo.commit(&format!("commit {}", i)).unwrap();
                 }

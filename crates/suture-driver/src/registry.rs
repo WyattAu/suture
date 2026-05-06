@@ -10,7 +10,7 @@ pub struct DriverRegistry {
 }
 
 impl DriverRegistry {
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             extension_map: HashMap::new(),
@@ -54,7 +54,7 @@ impl DriverRegistry {
     }
 
     /// List all registered drivers with their extensions.
-    #[must_use] 
+    #[must_use]
     pub fn list(&self) -> Vec<(&str, Vec<&str>)> {
         let mut result: Vec<(&str, Vec<&str>)> = self
             .drivers

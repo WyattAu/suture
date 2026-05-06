@@ -36,7 +36,9 @@ impl From<DriverError> for MergeError {
         match err {
             DriverError::DriverNotFound(ext) => Self::NoDriver(ext),
             DriverError::UnsupportedExtension(ext) => Self::UnsupportedFormat(ext),
-            DriverError::ParseError(msg) | DriverError::SerializationError(msg) => Self::ParseError(msg),
+            DriverError::ParseError(msg) | DriverError::SerializationError(msg) => {
+                Self::ParseError(msg)
+            }
             DriverError::IoError(e) => Self::ParseError(e.to_string()),
         }
     }

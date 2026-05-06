@@ -75,7 +75,7 @@ pub enum ConflictStatus {
 
 impl Conflict {
     /// Create a new conflict between two patches.
-    #[must_use] 
+    #[must_use]
     pub fn new(patch_a_id: PatchId, patch_b_id: PatchId, conflict_addresses: Vec<String>) -> Self {
         let mut sorted = conflict_addresses;
         sorted.sort();
@@ -89,7 +89,7 @@ impl Conflict {
     /// Classify this conflict based on patch payloads.
     ///
     /// Returns a ConflictClass indicating the severity and potential resolvability.
-    #[must_use] 
+    #[must_use]
     pub fn classify(&self, patch_a: Option<&Patch>, patch_b: Option<&Patch>) -> ConflictClass {
         match (patch_a, patch_b) {
             (Some(pa), Some(pb)) => {
@@ -124,7 +124,7 @@ impl Conflict {
 
 impl ConflictNode {
     /// Create a new unresolved conflict node.
-    #[must_use] 
+    #[must_use]
     pub fn new(
         patch_a_id: PatchId,
         patch_b_id: PatchId,

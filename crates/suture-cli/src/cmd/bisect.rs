@@ -1,9 +1,7 @@
 use crate::BisectAction;
 use crate::ref_utils::resolve_ref;
 
-pub async fn cmd_bisect(
-    action: &crate::BisectAction,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_bisect(action: &crate::BisectAction) -> Result<(), Box<dyn std::error::Error>> {
     match action {
         BisectAction::Start {
             good: good_ref,
@@ -235,7 +233,12 @@ pub async fn cmd_bisect(
                 &original_head.to_hex(),
                 suture_core::repository::ResetMode::Hard,
             )?;
-            let _ = repo.checkout(&original_branch);
+            if let Err(e) = repo.checkout(&original_branch) {
+                eprintln!(
+                    "suture: warning: failed to restore branch '{}': {e}",
+                    original_branch
+                );
+            }
         }
     }
 

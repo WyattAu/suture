@@ -6,7 +6,7 @@ use suture_driver::{DriverError, SemanticChange, SutureDriver};
 pub struct CsvDriver;
 
 impl CsvDriver {
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self
     }
@@ -61,8 +61,14 @@ impl CsvDriver {
     ) -> Vec<SemanticChange> {
         let mut changes = Vec::new();
 
-        let old_headers_set: HashSet<&str> = old_headers.iter().map(std::string::String::as_str).collect();
-        let new_headers_set: HashSet<&str> = new_headers.iter().map(std::string::String::as_str).collect();
+        let old_headers_set: HashSet<&str> = old_headers
+            .iter()
+            .map(std::string::String::as_str)
+            .collect();
+        let new_headers_set: HashSet<&str> = new_headers
+            .iter()
+            .map(std::string::String::as_str)
+            .collect();
 
         for header in old_headers {
             if !new_headers_set.contains(header.as_str()) {
@@ -188,7 +194,10 @@ impl CsvDriver {
 
         let base_keys: HashSet<&str> = base_order.iter().map(std::string::String::as_str).collect();
         let ours_keys: HashSet<&str> = ours_order.iter().map(std::string::String::as_str).collect();
-        let theirs_keys: HashSet<&str> = theirs_order.iter().map(std::string::String::as_str).collect();
+        let theirs_keys: HashSet<&str> = theirs_order
+            .iter()
+            .map(std::string::String::as_str)
+            .collect();
 
         let mut key_order: Vec<String> = Vec::new();
         let mut seen_keys: HashSet<String> = HashSet::new();
@@ -398,8 +407,8 @@ impl SutureDriver for CsvDriver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use proptest::proptest;
     use proptest::prop_assert;
+    use proptest::proptest;
 
     #[test]
     fn test_csv_driver_name() {
@@ -882,13 +891,19 @@ mod tests {
         let b = "id,a,b,c,d\nrow,1,20,3,4\n";
         let c = "id,a,b,c,d\nrow,1,2,30,4\n";
 
-        let ab = driver.merge(base, a, b).unwrap().expect("merge(base, A, B) should succeed");
+        let ab = driver
+            .merge(base, a, b)
+            .unwrap()
+            .expect("merge(base, A, B) should succeed");
         let merge_left = driver
             .merge(base, &ab, c)
             .unwrap()
             .expect("merge(base, merge(A,B), C) should succeed");
 
-        let bc = driver.merge(base, b, c).unwrap().expect("merge(base, B, C) should succeed");
+        let bc = driver
+            .merge(base, b, c)
+            .unwrap()
+            .expect("merge(base, B, C) should succeed");
         let merge_right = driver
             .merge(base, a, &bc)
             .unwrap()

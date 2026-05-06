@@ -43,19 +43,22 @@ async fn cmd_report_change(
     let to_ref = to.unwrap_or("HEAD");
     let to_patch = resolve_ref(&repo, to_ref, &all_patches)?;
 
-    let from_ref = from.map_or_else(|| {
-        let tags = repo.list_tags().unwrap_or_default();
-        if let Some((tag_name, tag_id)) = tags.last() {
-            let tag_hex = tag_id.to_hex();
-            if tag_hex == to_patch.id.to_hex() {
-                "HEAD~10".to_owned()
+    let from_ref = from.map_or_else(
+        || {
+            let tags = repo.list_tags().unwrap_or_default();
+            if let Some((tag_name, tag_id)) = tags.last() {
+                let tag_hex = tag_id.to_hex();
+                if tag_hex == to_patch.id.to_hex() {
+                    "HEAD~10".to_owned()
+                } else {
+                    tag_name.clone()
+                }
             } else {
-                tag_name.clone()
+                "HEAD~10".to_owned()
             }
-        } else {
-            "HEAD~10".to_owned()
-        }
-    }, std::borrow::ToOwned::to_owned);
+        },
+        std::borrow::ToOwned::to_owned,
+    );
 
     let from_patch = resolve_ref(&repo, &from_ref, &all_patches)?;
 
@@ -101,7 +104,8 @@ async fn cmd_report_change(
 
     let repo_name = std::env::current_dir()
         .unwrap_or_default()
-        .file_name().map_or_else(|| "unknown".to_owned(), |n| n.to_string_lossy().to_string());
+        .file_name()
+        .map_or_else(|| "unknown".to_owned(), |n| n.to_string_lossy().to_string());
 
     let report = match format {
         "html" => generate_change_html(
@@ -152,10 +156,12 @@ fn generate_change_markdown(
     file_count: usize,
 ) -> String {
     let mut out = String::new();
-    let _ = write!(out, 
+    let _ = write!(
+        out,
         "# Change Report: {repo_name} ({from_ref} → {to_ref})\n\n"
     );
-    let _ = write!(out, 
+    let _ = write!(
+        out,
         "## Summary\n\n- **Commits:** {}\n- **Files changed:** {}\n- **Authors:** {}\n\n",
         entries.len(),
         file_count,
@@ -170,7 +176,8 @@ fn generate_change_markdown(
                 .unwrap_or_default()
                 .format("%Y-%m-%d %H:%M:%S")
                 .to_string();
-            let _ = write!(out, 
+            let _ = write!(
+                out,
                 "### {} — {}\n\n**Author:** {}  \n**Date:** {}\n\n",
                 short_hash, entry.message, entry.author, dt
             );
@@ -213,11 +220,13 @@ fn generate_change_html(
     out.push_str("th{background:#f5f5f5}tr:nth-child(even){background:#fafafa}.added{color:#22863a}.modified{color:#b08800}.deleted{color:#cb2431}");
     out.push_str(".meta{color:#888;font-size:.9em}summary{margin:1em 0;padding:1em;background:#f9f9f9;border-radius:4px}");
     out.push_str("</style></head><body>\n");
-    let _ = writeln!(out, 
+    let _ = writeln!(
+        out,
         "<h1>Change Report: {repo_name} ({from_ref} → {to_ref})</h1>"
     );
     out.push_str("<div class=\"summary\">");
-    let _ = write!(out, 
+    let _ = write!(
+        out,
         "<strong>Commits:</strong> {} | <strong>Files changed:</strong> {} | <strong>Authors:</strong> {}",
         entries.len(),
         file_count,
@@ -233,7 +242,8 @@ fn generate_change_html(
                 .unwrap_or_default()
                 .format("%Y-%m-%d %H:%M:%S")
                 .to_string();
-            let _ = write!(out, 
+            let _ = write!(
+                out,
                 "<h3>{} — {}</h3>\n<p class=\"meta\">Author: {}<br>Date: {}</p>\n",
                 short_hash, entry.message, entry.author, dt
             );
@@ -241,19 +251,13 @@ fn generate_change_html(
             if !entry.added.is_empty() || !entry.modified.is_empty() || !entry.deleted.is_empty() {
                 out.push_str("<table><tr><th>Status</th><th>File</th></tr>\n");
                 for f in &entry.added {
-                    let _ = writeln!(out, 
-                        "<tr><td class=\"added\">A</td><td>{f}</td></tr>"
-                    );
+                    let _ = writeln!(out, "<tr><td class=\"added\">A</td><td>{f}</td></tr>");
                 }
                 for f in &entry.modified {
-                    let _ = writeln!(out, 
-                        "<tr><td class=\"modified\">M</td><td>{f}</td></tr>"
-                    );
+                    let _ = writeln!(out, "<tr><td class=\"modified\">M</td><td>{f}</td></tr>");
                 }
                 for f in &entry.deleted {
-                    let _ = writeln!(out, 
-                        "<tr><td class=\"deleted\">D</td><td>{f}</td></tr>"
-                    );
+                    let _ = writeln!(out, "<tr><td class=\"deleted\">D</td><td>{f}</td></tr>");
                 }
                 out.push_str("</table>\n");
             }

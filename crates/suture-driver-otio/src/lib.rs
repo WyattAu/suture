@@ -39,8 +39,6 @@ pub enum OtioError {
 
     #[error("element not found: {0}")]
     ElementNotFound(String),
-
-
 }
 
 pub type Result<T> = std::result::Result<T, OtioError>;
@@ -81,18 +79,6 @@ impl OtioNode {
         }
     }
 
-    /// Return child OtioNodes for containers that hold them.
-    #[allow(dead_code)]
-    fn children(&self) -> Vec<Self> {
-        match self {
-            Self::Timeline(tl) => tl.child_nodes(),
-            Self::Track(tr) => tr.child_nodes(),
-            Self::Stack(st) => st.child_nodes(),
-            Self::SerializableCollection(sc) => sc.child_nodes(),
-            _ => Vec::new(),
-        }
-    }
-
     fn name(&self) -> Option<&str> {
         match self {
             Self::Timeline(tl) => Some(&tl.name),
@@ -104,19 +90,6 @@ impl OtioNode {
             Self::Unknown { value, .. } => value.get("name").and_then(|v| v.as_str()),
         }
     }
-
-    /// Serialize this node back to a JSON value.
-    fn to_json(&self) -> serde_json::Value {
-        match self {
-            Self::Timeline(tl) => serde_json::to_value(tl).unwrap_or_default(),
-            Self::Track(tr) => serde_json::to_value(tr).unwrap_or_default(),
-            Self::Stack(st) => serde_json::to_value(st).unwrap_or_default(),
-            Self::Clip(cl) => serde_json::to_value(cl).unwrap_or_default(),
-            Self::Transition(tr) => serde_json::to_value(tr).unwrap_or_default(),
-            Self::SerializableCollection(sc) => serde_json::to_value(sc).unwrap_or_default(),
-            Self::Unknown { value, .. } => value.clone(),
-        }
-    }
 }
 
 // --- Serde-friendly struct types (children stored as raw JSON) ---
@@ -126,11 +99,6 @@ fn parse_children(json_children: &[serde_json::Value]) -> Vec<OtioNode> {
         .iter()
         .filter_map(|v| parse_otio_node(v).ok())
         .collect()
-}
-
-#[allow(dead_code)]
-fn children_to_json(nodes: &[OtioNode]) -> Vec<serde_json::Value> {
-    nodes.iter().map(OtioNode::to_json).collect()
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -149,11 +117,6 @@ impl Timeline {
     fn child_nodes(&self) -> Vec<OtioNode> {
         parse_children(&self.tracks_json)
     }
-    #[allow(dead_code)]
-    fn with_children(mut self, nodes: Vec<OtioNode>) -> Self {
-        self.tracks_json = children_to_json(&nodes);
-        self
-    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -171,11 +134,6 @@ impl Track {
     fn child_nodes(&self) -> Vec<OtioNode> {
         parse_children(&self.children_json)
     }
-    #[allow(dead_code)]
-    fn with_children(mut self, nodes: Vec<OtioNode>) -> Self {
-        self.children_json = children_to_json(&nodes);
-        self
-    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -190,11 +148,6 @@ pub struct Stack {
 impl Stack {
     fn child_nodes(&self) -> Vec<OtioNode> {
         parse_children(&self.children_json)
-    }
-    #[allow(dead_code)]
-    fn with_children(mut self, nodes: Vec<OtioNode>) -> Self {
-        self.children_json = children_to_json(&nodes);
-        self
     }
 }
 
@@ -389,7 +342,9 @@ fn flatten_tree_with_raw(
     parent_fp: Option<&str>,
 ) -> Vec<FlatNode> {
     let mut result = Vec::new();
-    let Ok(node) = parse_otio_node(value) else { return result };
+    let Ok(node) = parse_otio_node(value) else {
+        return result;
+    };
     let fp = content_fingerprint(&node);
 
     let path = if parent_path.is_empty() {
@@ -603,11 +558,13 @@ fn merge_trees(
 
     // Reconstruct the OTIO JSON from the merged flat nodes.
     // Use ours as the structural template, then replace children with merged nodes.
-    let ours_json: serde_json::Value =
-        ours_nodes.first().map_or(serde_json::Value::Null, |node| node.raw_json.clone());
+    let ours_json: serde_json::Value = ours_nodes
+        .first()
+        .map_or(serde_json::Value::Null, |node| node.raw_json.clone());
 
-    let theirs_json: serde_json::Value =
-        theirs_nodes.first().map_or(serde_json::Value::Null, |node| node.raw_json.clone());
+    let theirs_json: serde_json::Value = theirs_nodes
+        .first()
+        .map_or(serde_json::Value::Null, |node| node.raw_json.clone());
 
     // Use whichever version has the root node
     let template = if ours_json.is_object() {
@@ -697,7 +654,7 @@ fn rebuild_children_with_merged(
 pub struct OtioDriver;
 
 impl OtioDriver {
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self
     }
@@ -821,13 +778,16 @@ pub enum TimelineElement {
 }
 
 impl TimelineElement {
-    #[must_use] 
+    #[must_use]
     pub fn id(&self) -> &str {
         match self {
-            Self::Timeline { id, .. } | Self::Track { id, .. } | Self::Clip { id, .. } | Self::Transition { id, .. } => id,
+            Self::Timeline { id, .. }
+            | Self::Track { id, .. }
+            | Self::Clip { id, .. }
+            | Self::Transition { id, .. } => id,
         }
     }
-    #[must_use] 
+    #[must_use]
     pub fn element_type(&self) -> &str {
         match self {
             Self::Timeline { .. } => "Timeline",
@@ -836,10 +796,13 @@ impl TimelineElement {
             Self::Transition { .. } => "Transition",
         }
     }
-    #[must_use] 
+    #[must_use]
     pub fn name(&self) -> &str {
         match self {
-            Self::Timeline { name, .. } | Self::Track { name, .. } | Self::Clip { name, .. } | Self::Transition { name, .. } => name,
+            Self::Timeline { name, .. }
+            | Self::Track { name, .. }
+            | Self::Clip { name, .. }
+            | Self::Transition { name, .. } => name,
         }
     }
 }
@@ -865,7 +828,7 @@ impl Default for LegacyOtioDriver {
 }
 
 impl LegacyOtioDriver {
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             elements: Vec::new(),
@@ -956,20 +919,23 @@ impl LegacyOtioDriver {
     }
 
     fn element_id(ty: &str, name: &str, index: usize, parent_id: Option<&str>) -> String {
-        parent_id.map_or_else(|| format!("{index}:{ty}:{name}"), |pid| format!("{pid}/{index}:{ty}:{name}"))
+        parent_id.map_or_else(
+            || format!("{index}:{ty}:{name}"),
+            |pid| format!("{pid}/{index}:{ty}:{name}"),
+        )
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn elements(&self) -> &[TimelineElement] {
         &self.elements
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn find_element(&self, id: &str) -> Option<&TimelineElement> {
         self.elements.iter().find(|e| e.id() == id)
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn compute_touch_set(&self, changes: &[ChangeDescription]) -> Vec<String> {
         let mut affected = Vec::new();
         let mut seen = std::collections::HashSet::<String>::new();

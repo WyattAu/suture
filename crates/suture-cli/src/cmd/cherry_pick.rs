@@ -42,9 +42,7 @@ pub async fn cmd_cherry_pick(
         }
 
         let _ = old_tree;
-        println!(
-            "Cherry-picked changes from {commit} staged (no commit created)"
-        );
+        println!("Cherry-picked changes from {commit} staged (no commit created)");
         Ok(())
     } else {
         let new_id = repo.cherry_pick(&patch_id)?;

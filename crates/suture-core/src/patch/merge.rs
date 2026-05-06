@@ -30,8 +30,6 @@ pub enum MergeError {
 
     #[error("empty branch: {0}")]
     EmptyBranch(String),
-
-
 }
 
 /// Result of a merge operation.
@@ -51,7 +49,7 @@ pub struct MergeResult {
 
 impl MergeResult {
     /// Get all patch IDs that should be in the merged result.
-    #[must_use] 
+    #[must_use]
     pub fn all_patch_ids(&self) -> Vec<PatchId> {
         let mut ids = Vec::with_capacity(
             self.common_patches.len() + self.patches_a_only.len() + self.patches_b_only.len(),
@@ -157,7 +155,7 @@ pub fn merge(
 ///
 /// This is useful for showing a preview of what would conflict before
 /// actually committing to a merge.
-#[must_use] 
+#[must_use]
 pub fn detect_conflicts(patches_a: &[Patch], patches_b: &[Patch]) -> Vec<Conflict> {
     let mut conflicts = Vec::new();
 

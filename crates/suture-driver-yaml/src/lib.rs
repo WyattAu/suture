@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 use serde_yaml::Value;
-use suture_driver::{DriverError, SemanticChange, SutureDriver};
 use suture_driver::impl_structured_driver;
+use suture_driver::{DriverError, SemanticChange, SutureDriver};
 
 pub struct YamlDriver;
 
@@ -711,13 +711,19 @@ mod tests {
         let b = "a: 1\nb: 20\nc: 3\nd: 4\n";
         let c = "a: 1\nb: 2\nc: 30\nd: 4\n";
 
-        let ab = driver.merge(base, a, b).unwrap().expect("merge(base, A, B) should succeed");
+        let ab = driver
+            .merge(base, a, b)
+            .unwrap()
+            .expect("merge(base, A, B) should succeed");
         let merge_left = driver
             .merge(base, &ab, c)
             .unwrap()
             .expect("merge(base, merge(A,B), C) should succeed");
 
-        let bc = driver.merge(base, b, c).unwrap().expect("merge(base, B, C) should succeed");
+        let bc = driver
+            .merge(base, b, c)
+            .unwrap()
+            .expect("merge(base, B, C) should succeed");
         let merge_right = driver
             .merge(base, a, &bc)
             .unwrap()

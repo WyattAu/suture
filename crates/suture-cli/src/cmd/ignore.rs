@@ -9,8 +9,12 @@ pub struct IgnoreRule {
 
 pub async fn cmd_ignore(args: &IgnoreArgs) -> Result<(), Box<dyn std::error::Error>> {
     match args {
-        IgnoreArgs::List => { cmd_ignore_list(); }
-        IgnoreArgs::Check { path } => { cmd_ignore_check(path); }
+        IgnoreArgs::List => {
+            cmd_ignore_list();
+        }
+        IgnoreArgs::Check { path } => {
+            cmd_ignore_check(path);
+        }
     }
     Ok(())
 }
@@ -110,10 +114,12 @@ fn pattern_matches(pattern: &str, rel_path: &str) -> bool {
     pattern.strip_prefix('*').map_or_else(
         || {
             pattern.strip_suffix('*').map_or_else(
-                || if pattern.contains('*') {
-                    simple_glob_match(pattern, rel_path)
-                } else {
-                    rel_path == pattern || rel_path.starts_with(&format!("{pattern}/"))
+                || {
+                    if pattern.contains('*') {
+                        simple_glob_match(pattern, rel_path)
+                    } else {
+                        rel_path == pattern || rel_path.starts_with(&format!("{pattern}/"))
+                    }
                 },
                 |prefix| rel_path.starts_with(prefix),
             )

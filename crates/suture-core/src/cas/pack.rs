@@ -52,7 +52,6 @@ pub struct PackIndex {
     entries: Vec<PackIndexEntry>,
 }
 
-#[allow(dead_code)]
 impl PackIndex {
     pub fn load(path: &std::path::Path) -> Result<Self, PackError> {
         let file = fs::File::open(path)?;
@@ -94,7 +93,7 @@ impl PackIndex {
         Ok(Self { entries })
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn find(&self, hash: &Hash) -> Option<u64> {
         self.entries
             .binary_search_by_key(hash, |e| e.hash)
@@ -102,17 +101,17 @@ impl PackIndex {
             .map(|idx| self.entries[idx].offset)
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn hashes(&self) -> Vec<Hash> {
         self.entries.iter().map(|e| e.hash).collect()
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
@@ -257,7 +256,7 @@ pub struct PackCache {
 
 #[allow(dead_code)]
 impl PackCache {
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             indices: HashMap::new(),
@@ -281,7 +280,7 @@ impl PackCache {
     }
 
     /// Find a hash across all loaded pack indices, returning the pack path and offset.
-    #[must_use] 
+    #[must_use]
     pub fn find(&self, hash: &Hash) -> Option<(&PathBuf, u64)> {
         for (pack_path, index) in &self.indices {
             if let Some(offset) = index.find(hash) {
@@ -292,7 +291,7 @@ impl PackCache {
     }
 
     /// List all hashes across all loaded pack indices.
-    #[must_use] 
+    #[must_use]
     pub fn all_hashes(&self) -> Vec<Hash> {
         let mut hashes = Vec::new();
         for index in self.indices.values() {
@@ -304,13 +303,13 @@ impl PackCache {
     }
 
     /// Number of pack files loaded.
-    #[must_use] 
+    #[must_use]
     pub fn pack_count(&self) -> usize {
         self.indices.len()
     }
 
     /// Total number of objects across all packs.
-    #[must_use] 
+    #[must_use]
     pub fn object_count(&self) -> usize {
         self.indices.values().map(PackIndex::len).sum()
     }

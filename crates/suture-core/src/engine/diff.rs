@@ -88,7 +88,7 @@ impl fmt::Display for DiffEntry {
 /// 4. Files in both with different hash → Modified
 /// 5. Heuristic rename detection: a deleted file whose hash matches an
 ///    added file is reported as a rename.
-#[must_use] 
+#[must_use]
 pub fn diff_trees(old_tree: &FileTree, new_tree: &FileTree) -> Vec<DiffEntry> {
     let mut diffs = Vec::new();
 
@@ -137,9 +137,7 @@ pub fn diff_trees(old_tree: &FileTree, new_tree: &FileTree) -> Vec<DiffEntry> {
             && let Some(candidates) = hash_to_added.get(del_hash)
         {
             for add_path in candidates {
-                if !matched_adds.contains(*add_path)
-                    && !matched_deletes.contains(del_path)
-                {
+                if !matched_adds.contains(*add_path) && !matched_deletes.contains(del_path) {
                     diffs.push(DiffEntry {
                         path: add_path.to_string(),
                         diff_type: DiffType::Renamed {
@@ -187,7 +185,7 @@ pub fn diff_trees(old_tree: &FileTree, new_tree: &FileTree) -> Vec<DiffEntry> {
 }
 
 /// Check if two trees are identical.
-#[must_use] 
+#[must_use]
 pub fn trees_equal(a: &FileTree, b: &FileTree) -> bool {
     if a.len() != b.len() {
         return false;

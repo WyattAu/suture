@@ -38,18 +38,12 @@ pub enum MetaError {
 
     #[error("serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
-
-
 }
 
 /// The SQLite metadata store.
 pub struct MetadataStore {
     conn: Connection,
 }
-
-/// Current schema version.
-#[allow(dead_code)]
-const SCHEMA_VERSION: i32 = 2;
 
 impl MetadataStore {
     /// Open or create a metadata database at the given path.
@@ -469,11 +463,10 @@ impl MetadataStore {
     }
 
     pub fn store_public_key(&self, author: &str, public_key_bytes: &[u8]) -> Result<(), MetaError> {
-        self.conn
-            .execute(
-                "INSERT OR REPLACE INTO public_keys (author, public_key) VALUES (?1, ?2)",
-                params![author, public_key_bytes],
-            )?;
+        self.conn.execute(
+            "INSERT OR REPLACE INTO public_keys (author, public_key) VALUES (?1, ?2)",
+            params![author, public_key_bytes],
+        )?;
         Ok(())
     }
 
@@ -490,11 +483,10 @@ impl MetadataStore {
     }
 
     pub fn store_signature(&self, patch_id: &str, signature_bytes: &[u8]) -> Result<(), MetaError> {
-        self.conn
-            .execute(
-                "INSERT OR REPLACE INTO signatures (patch_id, signature) VALUES (?1, ?2)",
-                params![patch_id, signature_bytes],
-            )?;
+        self.conn.execute(
+            "INSERT OR REPLACE INTO signatures (patch_id, signature) VALUES (?1, ?2)",
+            params![patch_id, signature_bytes],
+        )?;
         Ok(())
     }
 

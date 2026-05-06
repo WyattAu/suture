@@ -97,7 +97,7 @@ pub struct FileWatcher {
 }
 
 impl FileWatcher {
-    #[must_use] 
+    #[must_use]
     pub fn new(repo_path: PathBuf, debounce_window: Duration) -> Self {
         Self {
             repo_path,
@@ -200,7 +200,7 @@ pub struct AutoCommit {
 }
 
 impl AutoCommit {
-    #[must_use] 
+    #[must_use]
     pub fn new(repo_path: PathBuf, commit_template: String) -> Self {
         Self {
             repo_path,
@@ -253,7 +253,7 @@ pub struct AutoSync {
 }
 
 impl AutoSync {
-    #[must_use] 
+    #[must_use]
     pub fn new(repo_path: PathBuf, remote_url: Option<String>, interval: Duration) -> Self {
         Self {
             repo_path,
@@ -379,7 +379,10 @@ impl AutoSync {
             .map_err(|e| format!("failed to parse pull response: {e}"))?;
 
         if !result.success {
-            return Err(format!("pull failed: {}", result.error.as_deref().unwrap_or("unknown error")));
+            return Err(format!(
+                "pull failed: {}",
+                result.error.as_deref().unwrap_or("unknown error")
+            ));
         }
 
         if result.patches.is_empty() {
@@ -429,7 +432,8 @@ impl AutoSync {
                     if let Err(e) = repo
                         .dag_mut()
                         .add_patch(patch, valid_parents)
-                        .map_err(|e| format!("failed to add patch to DAG: {e}")) {
+                        .map_err(|e| format!("failed to add patch to DAG: {e}"))
+                    {
                         tracing::warn!("failed to add patch to DAG: {e}");
                         continue;
                     }
@@ -446,7 +450,8 @@ impl AutoSync {
                     if let Err(e) = repo.dag_mut().update_branch(&branch_name, target_id) {
                         tracing::warn!("update_branch failed: {e}");
                     }
-                } else if let Err(e) = repo.dag_mut().create_branch(branch_name.clone(), target_id) {
+                } else if let Err(e) = repo.dag_mut().create_branch(branch_name.clone(), target_id)
+                {
                     tracing::warn!("create_branch failed: {e}");
                 }
                 repo.meta()
@@ -580,7 +585,10 @@ impl AutoSync {
             .map_err(|e| format!("failed to parse push response: {e}"))?;
 
         if !result.success {
-            return Err(format!("push failed: {}", result.error.as_deref().unwrap_or("unknown error")));
+            return Err(format!(
+                "push failed: {}",
+                result.error.as_deref().unwrap_or("unknown error")
+            ));
         }
 
         let patch_count = push_data.patches.len();
@@ -606,7 +614,7 @@ pub struct Daemon {
 }
 
 impl Daemon {
-    #[must_use] 
+    #[must_use]
     pub fn new(repo_path: PathBuf, remote_url: Option<String>, sync_interval: Duration) -> Self {
         Self {
             config: DaemonConfig {
@@ -618,12 +626,12 @@ impl Daemon {
         }
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn with_config(config: DaemonConfig) -> Self {
         Self { config }
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn config(&self) -> &DaemonConfig {
         &self.config
     }
@@ -966,7 +974,9 @@ struct PushData {
 
 fn derive_repo_id(url: &str, remote_name: &str) -> String {
     let trimmed = url.trim_end_matches('/');
-    let after_scheme = trimmed.find("://").map_or(trimmed, |idx| &trimmed[idx + 3..]);
+    let after_scheme = trimmed
+        .find("://")
+        .map_or(trimmed, |idx| &trimmed[idx + 3..]);
     if let Some(path_start) = after_scheme.find('/') {
         let path = &after_scheme[path_start + 1..];
         if let Some(name) = path.rsplit('/').next()

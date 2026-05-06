@@ -12,14 +12,12 @@ pub async fn cmd_repack(
     let packed_hashes = cas.list_blobs_packed().unwrap_or_default();
     let pack_count = packed_hashes.len();
 
-    let existing_packs = std::fs::read_dir(cas.pack_dir())
-        .ok()
-        .map_or(0, |entries| {
-            entries
-                .filter_map(std::result::Result::ok)
-                .filter(|e| e.file_name().to_str().is_some_and(|n| n.ends_with(".pack")))
-                .count()
-        });
+    let existing_packs = std::fs::read_dir(cas.pack_dir()).ok().map_or(0, |entries| {
+        entries
+            .filter_map(std::result::Result::ok)
+            .filter(|e| e.file_name().to_str().is_some_and(|n| n.ends_with(".pack")))
+            .count()
+    });
 
     println!("Repack statistics:");
     println!("  Loose objects:   {loose_count}");
@@ -29,9 +27,7 @@ pub async fn cmd_repack(
     println!("  Threshold:       {threshold} loose objects");
 
     if loose_count <= threshold as u64 && !force {
-        println!(
-            "\nNothing to pack ({loose_count} loose objects <= threshold of {threshold})."
-        );
+        println!("\nNothing to pack ({loose_count} loose objects <= threshold of {threshold}).");
         println!("Use --force to pack regardless of threshold.");
         return Ok(());
     }
@@ -47,14 +43,12 @@ pub async fn cmd_repack(
         return Ok(());
     }
 
-    let new_pack_count = std::fs::read_dir(cas.pack_dir())
-        .ok()
-        .map_or(0, |entries| {
-            entries
-                .filter_map(std::result::Result::ok)
-                .filter(|e| e.file_name().to_str().is_some_and(|n| n.ends_with(".pack")))
-                .count()
-        });
+    let new_pack_count = std::fs::read_dir(cas.pack_dir()).ok().map_or(0, |entries| {
+        entries
+            .filter_map(std::result::Result::ok)
+            .filter(|e| e.file_name().to_str().is_some_and(|n| n.ends_with(".pack")))
+            .count()
+    });
 
     let new_loose_count = cas.blob_count()?;
     let new_packed_hashes = cas.list_blobs_packed().unwrap_or_default();

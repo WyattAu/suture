@@ -167,10 +167,7 @@ impl SheetsClient {
     }
 
     /// Get spreadsheet metadata.
-    pub async fn get_spreadsheet(
-        &self,
-        spreadsheet_id: &str,
-    ) -> Result<Spreadsheet, SheetsError> {
+    pub async fn get_spreadsheet(&self, spreadsheet_id: &str) -> Result<Spreadsheet, SheetsError> {
         let url = format!(
             "{}/spreadsheets/{}?includeGridData=false",
             self.base_url, spreadsheet_id
@@ -190,12 +187,15 @@ impl SheetsClient {
                 .and_then(|v| v.to_str().ok())
                 .and_then(|v| v.parse::<u64>().ok())
                 .unwrap_or(1000);
-            return Err(SheetsError::RateLimited { retry_after_ms: retry });
+            return Err(SheetsError::RateLimited {
+                retry_after_ms: retry,
+            });
         }
         if !resp.status().is_success() {
-            let body: ApiErrorResponse = resp.json().await.unwrap_or(ApiErrorResponse {
-                error: None,
-            });
+            let body: ApiErrorResponse = resp
+                .json()
+                .await
+                .unwrap_or(ApiErrorResponse { error: None });
             let message = body
                 .error
                 .map(|e| e.message)
@@ -203,10 +203,12 @@ impl SheetsClient {
             return Err(SheetsError::Api { status, message });
         }
 
-        resp.json::<Spreadsheet>().await.map_err(|e| SheetsError::Api {
-            status: 0,
-            message: format!("failed to parse spreadsheet metadata: {e}"),
-        })
+        resp.json::<Spreadsheet>()
+            .await
+            .map_err(|e| SheetsError::Api {
+                status: 0,
+                message: format!("failed to parse spreadsheet metadata: {e}"),
+            })
     }
 
     /// Get values from a sheet range.
@@ -219,7 +221,9 @@ impl SheetsClient {
     ) -> Result<ValueRange, SheetsError> {
         let url = format!(
             "{}/spreadsheets/{}/values/{}",
-            self.base_url, spreadsheet_id, urlencoding::encode(range)
+            self.base_url,
+            spreadsheet_id,
+            urlencoding::encode(range)
         );
         let resp = self
             .http
@@ -236,12 +240,15 @@ impl SheetsClient {
                 .and_then(|v| v.to_str().ok())
                 .and_then(|v| v.parse::<u64>().ok())
                 .unwrap_or(1000);
-            return Err(SheetsError::RateLimited { retry_after_ms: retry });
+            return Err(SheetsError::RateLimited {
+                retry_after_ms: retry,
+            });
         }
         if !resp.status().is_success() {
-            let body: ApiErrorResponse = resp.json().await.unwrap_or(ApiErrorResponse {
-                error: None,
-            });
+            let body: ApiErrorResponse = resp
+                .json()
+                .await
+                .unwrap_or(ApiErrorResponse { error: None });
             let message = body
                 .error
                 .map(|e| e.message)
@@ -249,17 +256,16 @@ impl SheetsClient {
             return Err(SheetsError::Api { status, message });
         }
 
-        resp.json::<ValueRange>().await.map_err(|e| SheetsError::Api {
-            status: 0,
-            message: format!("failed to parse value range: {e}"),
-        })
+        resp.json::<ValueRange>()
+            .await
+            .map_err(|e| SheetsError::Api {
+                status: 0,
+                message: format!("failed to parse value range: {e}"),
+            })
     }
 
     /// Get all sheet names from a spreadsheet.
-    pub async fn list_sheet_names(
-        &self,
-        spreadsheet_id: &str,
-    ) -> Result<Vec<String>, SheetsError> {
+    pub async fn list_sheet_names(&self, spreadsheet_id: &str) -> Result<Vec<String>, SheetsError> {
         let meta = self.get_spreadsheet(spreadsheet_id).await?;
         let names: Vec<String> = meta
             .sheets
@@ -403,8 +409,7 @@ fn column_number_to_letter(n: i64) -> String {
 
 /// Escape a cell value for CSV output per RFC 4180.
 fn csv_escape(value: &str) -> String {
-    if value.contains(',') || value.contains('"') || value.contains('\n') || value.contains('\r')
-    {
+    if value.contains(',') || value.contains('"') || value.contains('\n') || value.contains('\r') {
         let escaped = value.replace('"', "\"\"");
         format!("\"{escaped}\"")
     } else {
@@ -418,8 +423,18 @@ mod urlencoding {
         let mut result = String::with_capacity(s.len());
         for byte in s.as_bytes() {
             match *byte {
-                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'!' | b'\''
-                | b'(' | b')' | b'*' => {
+                b'A'..=b'Z'
+                | b'a'..=b'z'
+                | b'0'..=b'9'
+                | b'-'
+                | b'_'
+                | b'.'
+                | b'~'
+                | b'!'
+                | b'\''
+                | b'('
+                | b')'
+                | b'*' => {
                     result.push(*byte as char);
                 }
                 _ => {
@@ -525,9 +540,7 @@ mod tests {
         let values = ValueRange {
             range: "Sheet1!A1:B1".to_owned(),
             major_dimension: "ROWS".to_owned(),
-            values: vec![
-                vec!["col1".to_owned(), "col2".to_owned()],
-            ],
+            values: vec![vec!["col1".to_owned(), "col2".to_owned()]],
         };
         let json = SheetsClient::values_to_json_objects(&values).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -598,6 +611,9 @@ mod tests {
         assert_eq!(spreadsheet.properties.title, "Test Sheet");
         assert_eq!(spreadsheet.sheets.len(), 1);
         assert_eq!(spreadsheet.sheets[0].properties.title, "Sheet1");
-        assert_eq!(spreadsheet.sheets[0].properties.grid_properties.row_count, 1000);
+        assert_eq!(
+            spreadsheet.sheets[0].properties.grid_properties.row_count,
+            1000
+        );
     }
 }

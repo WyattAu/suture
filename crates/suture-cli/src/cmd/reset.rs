@@ -6,10 +6,9 @@ pub async fn cmd_reset(target: &str, mode: &str) -> Result<(), Box<dyn std::erro
         "mixed" => ResetMode::Mixed,
         "hard" => ResetMode::Hard,
         _ => {
-            return Err(format!(
-                "invalid reset mode: '{mode}' (expected soft, mixed, hard)"
-            )
-            .into());
+            return Err(
+                format!("invalid reset mode: '{mode}' (expected soft, mixed, hard)").into(),
+            );
         }
     };
 

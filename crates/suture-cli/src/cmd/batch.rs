@@ -134,7 +134,9 @@ fn collect_matching_files(
     pattern: &str,
     result: &mut Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut entries: Vec<_> = std::fs::read_dir(current)?.filter_map(std::result::Result::ok).collect();
+    let mut entries: Vec<_> = std::fs::read_dir(current)?
+        .filter_map(std::result::Result::ok)
+        .collect();
     entries.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
 
     for entry in &entries {

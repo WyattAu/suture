@@ -98,8 +98,8 @@ fn resolve_ref(
         return Ok(*patch_id);
     }
 
-    Err(format!(
-        "error: could not resolve '{target}': not a valid branch, tag, or commit hash"
+    Err(
+        format!("error: could not resolve '{target}': not a valid branch, tag, or commit hash")
+            .into(),
     )
-    .into())
 }

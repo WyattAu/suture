@@ -1,6 +1,6 @@
-use anyhow::Context;
 use crate::fuse::inode::{InodeEntry, InodeGenerator, InodeKind};
 use crate::path_translation::PathTranslator;
+use anyhow::Context;
 use async_stream::try_stream;
 use fuse3::MountOptions;
 use fuse3::raw::Request;
@@ -34,8 +34,7 @@ pub struct SutureFilesystem {
 
 impl SutureFilesystem {
     pub async fn new(repo_path: &Path, branch: Option<&str>) -> anyhow::Result<Self> {
-        let mut repo = Repository::open(repo_path)
-            .context("failed to open repository")?;
+        let mut repo = Repository::open(repo_path).context("failed to open repository")?;
 
         if let Some(branch_name) = branch {
             repo.checkout(branch_name)?;
@@ -141,7 +140,11 @@ impl Filesystem for SutureFilesystem {
             .lookup(&child_path)
             .ok_or_else(Errno::new_not_exist)?;
 
-        let entry = self.inner.inode_map.get(inode).ok_or_else(Errno::new_not_exist)?;
+        let entry = self
+            .inner
+            .inode_map
+            .get(inode)
+            .ok_or_else(Errno::new_not_exist)?;
         let size = if entry.kind == InodeKind::File {
             self.inner
                 .file_contents

@@ -25,7 +25,7 @@ pub struct Hash(pub [u8; 32]);
 
 impl Hash {
     /// Compute the BLAKE3 hash of arbitrary data.
-    #[must_use] 
+    #[must_use]
     pub fn from_data(data: &[u8]) -> Self {
         Self(*blake3::hash(data).as_bytes())
     }
@@ -51,7 +51,7 @@ impl Hash {
     }
 
     /// Convert to a 64-character lowercase hex string.
-    #[must_use] 
+    #[must_use]
     pub fn to_hex(&self) -> String {
         const HEX_CHARS: &[u8; 16] = b"0123456789abcdef";
         let mut s = String::with_capacity(64);
@@ -65,13 +65,10 @@ impl Hash {
     /// The zero hash (all zeros). Used as a sentinel value.
     pub const ZERO: Self = Self([0u8; 32]);
 
-    /// Convert to a blake3::Hash reference.
-    #[must_use] 
-    pub fn as_blake3(&self) -> &Blake3Hash {
-        // SAFETY: blake3::Hash is a newtype around [u8; 32] with repr(transparent),
-        // so the pointer cast is sound. The layout is verified at compile time
-        // by the repr(transparent) attribute.
-        unsafe { &*(std::ptr::from_ref::<[u8; 32]>(&self.0) as *const Blake3Hash) }
+    /// Convert to a blake3::Hash value.
+    #[must_use]
+    pub fn as_blake3(&self) -> Blake3Hash {
+        Blake3Hash::from_bytes(self.0)
     }
 }
 
@@ -144,7 +141,7 @@ impl BranchName {
         Ok(Self(s))
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -201,8 +198,6 @@ pub enum CommonError {
 
     #[error("repo path must not contain '..' components")]
     ParentDirInRepoPath,
-
-
 }
 
 // =============================================================================
@@ -234,12 +229,12 @@ impl RepoPath {
         Ok(Self(s))
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn to_path_buf(&self) -> PathBuf {
         PathBuf::from(&self.0)
     }

@@ -35,7 +35,7 @@ type SheetData = (String, Vec<Cell>);
 pub struct XlsxDriver;
 
 impl XlsxDriver {
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self
     }
@@ -198,9 +198,11 @@ impl XlsxDriver {
                     if cell_region.contains("</c>") {
                         if let Some((row, col)) = Self::parse_a1(&cell_ref) {
                             let display_value = match cell_type.as_str() {
-                                "s" => {
-                                    cell_value.parse::<usize>().ok().and_then(|idx| shared_strings.get(idx).cloned()).unwrap_or_else(|| cell_value.clone())
-                                }
+                                "s" => cell_value
+                                    .parse::<usize>()
+                                    .ok()
+                                    .and_then(|idx| shared_strings.get(idx).cloned())
+                                    .unwrap_or_else(|| cell_value.clone()),
                                 "b" => match cell_value.as_str() {
                                     "1" | "true" => "TRUE".to_owned(),
                                     _ => "FALSE".to_owned(),
@@ -528,7 +530,9 @@ impl XlsxDriver {
             None => return original_xml.to_owned(),
         };
 
-        let Some(data_end) = original_xml.find("</sheetData>") else { return original_xml.to_owned() };
+        let Some(data_end) = original_xml.find("</sheetData>") else {
+            return original_xml.to_owned();
+        };
 
         // Build new sheetData content
         let mut rows: BTreeMap<usize, Vec<(usize, &String)>> = BTreeMap::new();
@@ -549,7 +553,8 @@ impl XlsxDriver {
                     let bval = if *val == "TRUE" { "1" } else { "0" };
                     let _ = write!(new_data, "<c r=\"{ref_str}\" t=\"b\"><v>{bval}</v></c>");
                 } else {
-                    let _ = write!(new_data, 
+                    let _ = write!(
+                        new_data,
                         "<c r=\"{ref_str}\" t=\"inlineStr\"><is><t>{val}</t></is></c>"
                     );
                 }

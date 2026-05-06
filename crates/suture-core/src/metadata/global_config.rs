@@ -57,7 +57,9 @@ impl GlobalConfig {
         if !path.exists() {
             return Self::default();
         }
-        let Ok(content) = std::fs::read_to_string(&path) else { return Self::default() };
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            return Self::default();
+        };
         match toml::from_str(&content) {
             Ok(config) => config,
             Err(e) => {
@@ -71,19 +73,23 @@ impl GlobalConfig {
         }
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn config_path() -> PathBuf {
         std::env::var("XDG_CONFIG_HOME").map_or_else(
             |_| {
                 std::env::var("HOME").map_or_else(
-                    |_| dirs::config_dir()
-                        .unwrap_or_else(|| PathBuf::from("."))
-                        .join("suture")
-                        .join("config.toml"),
-                    |home| PathBuf::from(home)
-                        .join(".config")
-                        .join("suture")
-                        .join("config.toml"),
+                    |_| {
+                        dirs::config_dir()
+                            .unwrap_or_else(|| PathBuf::from("."))
+                            .join("suture")
+                            .join("config.toml")
+                    },
+                    |home| {
+                        PathBuf::from(home)
+                            .join(".config")
+                            .join("suture")
+                            .join("config.toml")
+                    },
                 )
             },
             |xdg| PathBuf::from(xdg).join("suture").join("config.toml"),
@@ -91,7 +97,7 @@ impl GlobalConfig {
     }
 
     #[allow(clippy::single_match, clippy::collapsible_match)]
-    #[must_use] 
+    #[must_use]
     pub fn get(&self, key: &str) -> Option<String> {
         let env_key = format!("SUTURE_{}", key.to_uppercase().replace('.', "_"));
         if let Ok(val) = std::env::var(&env_key) {

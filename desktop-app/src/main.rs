@@ -762,7 +762,8 @@ mod tauri_commands {
             .args([
                 "config",
                 "--global",
-                r#"merge.suture-driver.driver"%O" "%A" "%B""#,
+                "merge.suture-driver.driver",
+                "suture merge driver %O %A %B",
             ])
             .output();
 

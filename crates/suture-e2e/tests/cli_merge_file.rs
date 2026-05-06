@@ -48,9 +48,21 @@ fn test_cli_merge_file_json_add_keys() {
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path();
 
-    fs::write(dir.join("base.json"), r#"{"name": "test", "version": "1.0"}"#).unwrap();
-    fs::write(dir.join("ours.json"), r#"{"name": "test", "version": "1.1"}"#).unwrap();
-    fs::write(dir.join("theirs.json"), r#"{"name": "test", "license": "MIT"}"#).unwrap();
+    fs::write(
+        dir.join("base.json"),
+        r#"{"name": "test", "version": "1.0"}"#,
+    )
+    .unwrap();
+    fs::write(
+        dir.join("ours.json"),
+        r#"{"name": "test", "version": "1.1"}"#,
+    )
+    .unwrap();
+    fs::write(
+        dir.join("theirs.json"),
+        r#"{"name": "test", "license": "MIT"}"#,
+    )
+    .unwrap();
 
     let out = suture_success(
         dir,
@@ -64,9 +76,17 @@ fn test_cli_merge_file_json_add_keys() {
         ],
     );
 
-    assert!(out.contains("1.1"), "should have our version change: {}", out);
+    assert!(
+        out.contains("1.1"),
+        "should have our version change: {}",
+        out
+    );
     assert!(out.contains("MIT"), "should have their new key: {}", out);
-    assert!(out.contains("test"), "should preserve unchanged name: {}", out);
+    assert!(
+        out.contains("test"),
+        "should preserve unchanged name: {}",
+        out
+    );
 }
 
 #[test]
@@ -93,8 +113,16 @@ fn test_cli_merge_file_json_to_output_file() {
     );
 
     let merged = fs::read_to_string(dir.join("merged.json")).unwrap();
-    assert!(merged.contains("\"a\": 10"), "should have our a change: {}", merged);
-    assert!(merged.contains("\"c\": 30"), "should have their c change: {}", merged);
+    assert!(
+        merged.contains("\"a\": 10"),
+        "should have our a change: {}",
+        merged
+    );
+    assert!(
+        merged.contains("\"c\": 30"),
+        "should have their c change: {}",
+        merged
+    );
 }
 
 #[test]
@@ -102,9 +130,21 @@ fn test_cli_merge_file_yaml_explicit_driver() {
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path();
 
-    fs::write(dir.join("base.yaml"), "host: localhost\nport: 8080\ndebug: false\n").unwrap();
-    fs::write(dir.join("ours.yaml"), "host: 0.0.0.0\nport: 8080\ndebug: false\n").unwrap();
-    fs::write(dir.join("theirs.yaml"), "host: localhost\nport: 9090\ndebug: false\n").unwrap();
+    fs::write(
+        dir.join("base.yaml"),
+        "host: localhost\nport: 8080\ndebug: false\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.join("ours.yaml"),
+        "host: 0.0.0.0\nport: 8080\ndebug: false\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.join("theirs.yaml"),
+        "host: localhost\nport: 9090\ndebug: false\n",
+    )
+    .unwrap();
 
     let out = suture_success(
         dir,
@@ -118,9 +158,21 @@ fn test_cli_merge_file_yaml_explicit_driver() {
         ],
     );
 
-    assert!(out.contains("0.0.0.0"), "should have our host change: {}", out);
-    assert!(out.contains("9090"), "should have their port change: {}", out);
-    assert!(out.contains("false"), "should preserve unchanged debug: {}", out);
+    assert!(
+        out.contains("0.0.0.0"),
+        "should have our host change: {}",
+        out
+    );
+    assert!(
+        out.contains("9090"),
+        "should have their port change: {}",
+        out
+    );
+    assert!(
+        out.contains("false"),
+        "should preserve unchanged debug: {}",
+        out
+    );
 }
 
 #[test]
@@ -147,8 +199,16 @@ fn test_cli_merge_file_yaml_output_file() {
     );
 
     let merged = fs::read_to_string(dir.join("merged.yaml")).unwrap();
-    assert!(merged.contains("staging"), "should have our env change: {}", merged);
-    assert!(merged.contains("info"), "should have their new key: {}", merged);
+    assert!(
+        merged.contains("staging"),
+        "should have our env change: {}",
+        merged
+    );
+    assert!(
+        merged.contains("info"),
+        "should have their new key: {}",
+        merged
+    );
 }
 
 #[test]
@@ -200,8 +260,16 @@ fn test_cli_merge_file_json_empty_vs_content() {
         ],
     );
 
-    assert!(out.contains("\"a\": 1"), "should have our addition: {}", out);
-    assert!(out.contains("\"b\": 2"), "should have their addition: {}", out);
+    assert!(
+        out.contains("\"a\": 1"),
+        "should have our addition: {}",
+        out
+    );
+    assert!(
+        out.contains("\"b\": 2"),
+        "should have their addition: {}",
+        out
+    );
 }
 
 #[test]
@@ -225,8 +293,16 @@ fn test_cli_merge_file_yaml_nested() {
         ],
     );
 
-    assert!(out.contains("a: 10"), "should have our nested change: {}", out);
-    assert!(out.contains("b: 20"), "should have their nested change: {}", out);
+    assert!(
+        out.contains("a: 10"),
+        "should have our nested change: {}",
+        out
+    );
+    assert!(
+        out.contains("b: 20"),
+        "should have their nested change: {}",
+        out
+    );
 }
 
 #[test]

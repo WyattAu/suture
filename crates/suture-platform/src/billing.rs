@@ -5,7 +5,7 @@
 // Suture Commercial License (for enterprise features).
 // See LICENSE-AGPL and LICENSE-COMMERCIAL in the repo root.
 
-use axum::{extract::State, http::StatusCode, Extension, Json};
+use axum::{Extension, Json, extract::State, http::StatusCode};
 use serde::{Deserialize, Serialize};
 
 use crate::auth::Claims;
@@ -21,7 +21,7 @@ pub enum Tier {
 }
 
 impl Tier {
-    #[must_use] 
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Free => "free",
@@ -31,7 +31,7 @@ impl Tier {
     }
 
     #[allow(clippy::should_implement_trait)]
-    #[must_use] 
+    #[must_use]
     pub fn from_str(s: &str) -> Self {
         match s {
             "pro" => Self::Pro,
@@ -40,7 +40,7 @@ impl Tier {
         }
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn max_repos(&self) -> i64 {
         match self {
             Self::Free => 5,
@@ -48,7 +48,7 @@ impl Tier {
         }
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn max_merges_per_month(&self) -> i64 {
         match self {
             Self::Free => 100,
@@ -57,7 +57,7 @@ impl Tier {
         }
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn max_storage_bytes(&self) -> i64 {
         match self {
             Self::Free => 100 * 1024 * 1024,
@@ -66,7 +66,7 @@ impl Tier {
         }
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn max_drivers(&self) -> i64 {
         match self {
             Self::Free => 5,
@@ -74,7 +74,7 @@ impl Tier {
         }
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn price_cents_per_seat(&self) -> i64 {
         match self {
             Self::Free => 0,
@@ -99,14 +99,15 @@ pub struct UsageReport {
 }
 
 pub fn get_usage(db: &PlatformDb, account_id: &str) -> anyhow::Result<UsageReport> {
-    let conn = db.conn().map_err(|e| anyhow::anyhow!("failed to get db connection for usage report: {e}"))?;
+    let conn = db
+        .conn()
+        .map_err(|e| anyhow::anyhow!("failed to get db connection for usage report: {e}"))?;
 
-    let tier_str: String = conn
-        .query_row(
-            "SELECT tier FROM accounts WHERE user_id = ?1",
-            rusqlite::params![account_id],
-            |row| row.get(0),
-        )?;
+    let tier_str: String = conn.query_row(
+        "SELECT tier FROM accounts WHERE user_id = ?1",
+        rusqlite::params![account_id],
+        |row| row.get(0),
+    )?;
     let tier = Tier::from_str(&tier_str);
 
     let month = chrono::Utc::now().format("%Y-%m").to_string();
@@ -143,7 +144,9 @@ pub fn get_usage(db: &PlatformDb, account_id: &str) -> anyhow::Result<UsageRepor
 }
 
 pub fn record_merge(db: &PlatformDb, account_id: &str) -> anyhow::Result<()> {
-    let conn = db.conn().map_err(|e| anyhow::anyhow!("failed to get db connection for recording merge: {e}"))?;
+    let conn = db
+        .conn()
+        .map_err(|e| anyhow::anyhow!("failed to get db connection for recording merge: {e}"))?;
     let month = chrono::Utc::now().format("%Y-%m").to_string();
     conn.execute(
         "INSERT INTO usage (account_id, month, merges_used) VALUES (?1, ?2, 1)
@@ -154,7 +157,9 @@ pub fn record_merge(db: &PlatformDb, account_id: &str) -> anyhow::Result<()> {
 }
 
 pub fn record_api_call(db: &PlatformDb, account_id: &str) -> anyhow::Result<()> {
-    let conn = db.conn().map_err(|e| anyhow::anyhow!("failed to get db connection for recording api call: {e}"))?;
+    let conn = db
+        .conn()
+        .map_err(|e| anyhow::anyhow!("failed to get db connection for recording api call: {e}"))?;
     let month = chrono::Utc::now().format("%Y-%m").to_string();
     conn.execute(
         "INSERT INTO usage (account_id, month, api_calls) VALUES (?1, ?2, 1)

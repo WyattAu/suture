@@ -313,7 +313,6 @@ pub struct Repository {
     /// Path to the repository root (the directory containing `.suture/`).
     root: PathBuf,
     /// Path to the `.suture/` directory.
-    #[allow(dead_code)]
     suture_dir: PathBuf,
     /// Content Addressable Storage.
     cas: BlobStore,
@@ -543,11 +542,8 @@ impl Repository {
 
         // Collect all patch IDs from the patches table
         let all_patch_ids: Vec<PatchId> = {
-            let mut stmt = meta
-                .conn()
-                .prepare("SELECT id FROM patches ORDER BY id")?;
-            let rows = stmt
-                .query_map([], |row: &rusqlite::Row| row.get::<_, String>(0))?;
+            let mut stmt = meta.conn().prepare("SELECT id FROM patches ORDER BY id")?;
+            let rows = stmt.query_map([], |row: &rusqlite::Row| row.get::<_, String>(0))?;
             rows.filter_map(|r: Result<String, _>| r.ok())
                 .filter_map(|hex| Hash::from_hex(&hex).ok())
                 .collect()
@@ -609,11 +605,7 @@ impl Repository {
                         .filter_map(|&child_id| {
                             let deg = in_degree.get_mut(&child_id)?;
                             *deg -= 1;
-                            if *deg == 0 {
-                                Some(child_id)
-                            } else {
-                                None
-                            }
+                            if *deg == 0 { Some(child_id) } else { None }
                         })
                         .collect();
                     new_ready.sort();
@@ -633,7 +625,9 @@ impl Repository {
         // Recreate branches
         let branches = meta.list_branches()?;
         for (name, target_id) in &branches {
-            let Ok(branch_name) = BranchName::new(name) else { continue };
+            let Ok(branch_name) = BranchName::new(name) else {
+                continue;
+            };
             if !dag.branch_exists(&branch_name)
                 && let Err(e) = dag.create_branch(branch_name, *target_id)
             {
@@ -732,11 +726,10 @@ impl Repository {
     /// Returns [`RepoError::Custom`] if HEAD is not set and no target is provided.
     pub fn create_branch(&mut self, name: &str, target: Option<&str>) -> Result<(), RepoError> {
         let branch = BranchName::new(name)?;
-        let target_id = if let Some(t) = target { self.resolve_ref(t)? } else {
-            let head = self
-                .dag
-                .head()
-                .ok_or_else(|| RepoError::NoHeadBranch)?;
+        let target_id = if let Some(t) = target {
+            self.resolve_ref(t)?
+        } else {
+            let head = self.dag.head().ok_or_else(|| RepoError::NoHeadBranch)?;
             head.1
         };
 
@@ -818,12 +811,10 @@ impl Repository {
         let branch = BranchName::new(name)?;
         self.dag.delete_branch(&branch)?;
         // Also remove from metadata
-        self.meta
-            .conn()
-            .execute(
-                "DELETE FROM branches WHERE name = ?1",
-                rusqlite::params![name],
-            )?;
+        self.meta.conn().execute(
+            "DELETE FROM branches WHERE name = ?1",
+            rusqlite::params![name],
+        )?;
         Ok(())
     }
 
@@ -928,8 +919,7 @@ impl Repository {
                         .get_branch(&bn)
                         .ok_or_else(|| RepoError::BranchNotFound(t.to_owned()))?
                 } else {
-                    Hash::from_hex(t)
-                        .map_err(|_| RepoError::InvalidTarget(t.to_owned()))?
+                    Hash::from_hex(t).map_err(|_| RepoError::InvalidTarget(t.to_owned()))?
                 }
             }
             None => {
@@ -1092,11 +1082,7 @@ impl Repository {
                     .filter_map(|&child| {
                         let deg = in_degree.get_mut(&child)?;
                         *deg -= 1;
-                        if *deg == 0 {
-                            Some(child)
-                        } else {
-                            None
-                        }
+                        if *deg == 0 { Some(child) } else { None }
                     })
                     .collect();
                 new_ready.sort();
@@ -1333,7 +1319,9 @@ impl Repository {
                 |_| self.snapshot_uncached(&patch_id).unwrap_or_default(),
                 |parent_tree| {
                     let mut tree = parent_tree;
-                    if let Err(e) = apply_patch_mut(&mut tree, &batch_patch, resolve_payload_to_hash) {
+                    if let Err(e) =
+                        apply_patch_mut(&mut tree, &batch_patch, resolve_payload_to_hash)
+                    {
                         tracing::warn!("Incremental apply failed, tree may be stale: {}", e);
                     }
                     tree
@@ -1342,7 +1330,8 @@ impl Repository {
         };
         {
             let tree_hash = tree.content_hash();
-            self.meta.set_config("head_tree_hash", &tree_hash.to_hex())?;
+            self.meta
+                .set_config("head_tree_hash", &tree_hash.to_hex())?;
             self.meta.store_file_tree(&patch_id, &tree)?;
         }
 
@@ -1776,7 +1765,8 @@ impl Repository {
         }
 
         let tree_hash = tree.content_hash();
-        self.meta.set_config("head_tree_hash", &tree_hash.to_hex())?;
+        self.meta
+            .set_config("head_tree_hash", &tree_hash.to_hex())?;
         self.meta.store_file_tree(&head_id, &tree)?;
 
         // Clear the working set so checkout/status sees the tree as clean
@@ -2172,11 +2162,7 @@ impl Repository {
             }
         }
 
-        self.record_reflog(
-            &old_head,
-            &target_id,
-            &format!("reset: moving to {target}"),
-        )?;
+        self.record_reflog(&old_head, &target_id, &format!("reset: moving to {target}"))?;
 
         Ok(target_id)
     }
@@ -2200,21 +2186,27 @@ impl Repository {
             .ok_or_else(|| RepoError::PatchNotFound(patch_id.to_string()))?;
 
         let (branch_name, head_id) = self.head()?;
-        let msg = message.map_or_else(|| format!("Revert {patch_id}"), std::borrow::ToOwned::to_owned);
+        let msg = message.map_or_else(
+            || format!("Revert {patch_id}"),
+            std::borrow::ToOwned::to_owned,
+        );
 
         let old_tree = self.snapshot_head().unwrap_or_else(|_| FileTree::empty());
 
         match &patch.operation_type {
             OperationType::Batch => {
-                let changes = patch.file_changes().ok_or_else(|| {
-                    RepoError::InvalidBatchPatch
-                })?;
+                let changes = patch
+                    .file_changes()
+                    .ok_or_else(|| RepoError::InvalidBatchPatch)?;
                 if changes.is_empty() {
                     return Err(RepoError::EmptyBatchRevert);
                 }
                 let parent_tree = patch
                     .parent_ids
-                    .first().map_or_else(FileTree::empty, |pid| self.snapshot(pid).unwrap_or_else(|_| FileTree::empty()));
+                    .first()
+                    .map_or_else(FileTree::empty, |pid| {
+                        self.snapshot(pid).unwrap_or_else(|_| FileTree::empty())
+                    });
                 let mut revert_changes = Vec::new();
                 for change in &changes {
                     match change.op {
@@ -2309,7 +2301,10 @@ impl Repository {
                 }
                 Err(RepoError::CannotRevertDelete)
             }
-            _ => Err(RepoError::CannotRevertPatch(format!("{:?}", patch.operation_type))),
+            _ => Err(RepoError::CannotRevertPatch(format!(
+                "{:?}",
+                patch.operation_type
+            ))),
         }
     }
 
@@ -2357,7 +2352,8 @@ impl Repository {
             .add_patch(result.patch.clone(), vec![parent_of_first])?;
         self.meta().store_patch(&result.patch)?;
 
-        let branch = BranchName::new(&branch_name).map_err(|e| RepoError::InvalidBranchName(e.to_string()))?;
+        let branch = BranchName::new(&branch_name)
+            .map_err(|e| RepoError::InvalidBranchName(e.to_string()))?;
         self.dag_mut().update_branch(&branch, new_id)?;
         self.meta().set_branch(&branch, &new_id)?;
 
@@ -2902,7 +2898,8 @@ impl Repository {
 
         // Persist merge state so it survives repo reopen
         let parents_json = serde_json::to_string(&self.pending_merge_parents).unwrap_or_default();
-        self.meta.set_config("pending_merge_parents", &parents_json)?;
+        self.meta
+            .set_config("pending_merge_parents", &parents_json)?;
 
         Ok(MergeExecutionResult {
             is_clean: false,
@@ -3007,7 +3004,10 @@ impl Repository {
             || patch.operation_type == OperationType::Merge
             || patch.operation_type == OperationType::Create
         {
-            return Err(RepoError::CannotCherryPick(format!("{:?}", patch.operation_type)));
+            return Err(RepoError::CannotCherryPick(format!(
+                "{:?}",
+                patch.operation_type
+            )));
         }
 
         let (branch_name, head_id) = self.head()?;
@@ -3333,8 +3333,12 @@ impl Repository {
             }
 
             let mut parts = line.splitn(3, ' ');
-            let Some(action_str) = parts.next() else { continue };
-            let Some(short_hash) = parts.next() else { continue };
+            let Some(action_str) = parts.next() else {
+                continue;
+            };
+            let Some(short_hash) = parts.next() else {
+                continue;
+            };
             let message = parts.next().unwrap_or("").to_owned();
 
             let action = match action_str {
@@ -3422,14 +3426,17 @@ impl Repository {
                 continue; // Don't create patches yet — wait for next pick/edit/reword
             } else {
                 // For pick/reword/edit: use accumulated squash message if any
-                squash_message_acc.take().map_or_else(|| entry.message.clone(), |sq_msg| {
-                    let mut combined = sq_msg;
-                    if !combined.is_empty() && !entry.message.is_empty() {
-                        combined.push('\n');
-                    }
-                    combined.push_str(&entry.message);
-                    combined
-                })
+                squash_message_acc.take().map_or_else(
+                    || entry.message.clone(),
+                    |sq_msg| {
+                        let mut combined = sq_msg;
+                        if !combined.is_empty() && !entry.message.is_empty() {
+                            combined.push('\n');
+                        }
+                        combined.push_str(&entry.message);
+                        combined
+                    },
+                )
             };
 
             // Replay each patch in the commit group
@@ -3504,7 +3511,10 @@ impl Repository {
 
         // Clean up rebase state
         if let Err(e) = self.clear_rebase_state() {
-            tracing::warn!("Failed to clear rebase state after interactive rebase: {}", e);
+            tracing::warn!(
+                "Failed to clear rebase state after interactive rebase: {}",
+                e
+            );
         }
 
         Ok(last_new_id)
@@ -3528,9 +3538,8 @@ impl Repository {
             .map_err(RepoError::Meta)?
         {
             Some(json) => {
-                let state: RebaseState = serde_json::from_str(&json).map_err(|e| {
-                    RepoError::RebaseStateParse(e.to_string())
-                })?;
+                let state: RebaseState = serde_json::from_str(&json)
+                    .map_err(|e| RepoError::RebaseStateParse(e.to_string()))?;
                 Ok(Some(state))
             }
             None => Ok(None),
@@ -3613,19 +3622,20 @@ impl Repository {
                     match change.op {
                         OperationType::Create | OperationType::Modify => {
                             let payload_hex = String::from_utf8_lossy(&change.payload);
-                            let new_content =
-                                if let Ok(blob_hash) = Hash::from_hex(&payload_hex) {
-                                    if let Ok(blob_data) = self.cas.get_blob(&blob_hash) {
-                                        String::from_utf8_lossy(&blob_data).to_string()
-                                    } else {
-                                        continue;
-                                    }
+                            let new_content = if let Ok(blob_hash) = Hash::from_hex(&payload_hex) {
+                                if let Ok(blob_data) = self.cas.get_blob(&blob_hash) {
+                                    String::from_utf8_lossy(&blob_data).to_string()
                                 } else {
                                     continue;
-                                };
+                                }
+                            } else {
+                                continue;
+                            };
 
-                            let old_refs: Vec<&str> =
-                                current_lines.iter().map(std::string::String::as_str).collect();
+                            let old_refs: Vec<&str> = current_lines
+                                .iter()
+                                .map(std::string::String::as_str)
+                                .collect();
                             let new_refs: Vec<&str> = new_content.lines().collect();
                             let changes_diff =
                                 crate::engine::merge::diff_lines(&old_refs, &new_refs);
@@ -3663,8 +3673,10 @@ impl Repository {
                             }
 
                             line_author = new_line_author;
-                            current_lines =
-                                new_content.lines().map(std::borrow::ToOwned::to_owned).collect();
+                            current_lines = new_content
+                                .lines()
+                                .map(std::borrow::ToOwned::to_owned)
+                                .collect();
                         }
                         OperationType::Delete => {
                             line_author.clear();
@@ -3694,8 +3706,10 @@ impl Repository {
                             }
                         };
 
-                        let old_refs: Vec<&str> =
-                            current_lines.iter().map(std::string::String::as_str).collect();
+                        let old_refs: Vec<&str> = current_lines
+                            .iter()
+                            .map(std::string::String::as_str)
+                            .collect();
                         let new_refs: Vec<&str> = new_content.lines().collect();
                         let changes = crate::engine::merge::diff_lines(&old_refs, &new_refs);
 
@@ -3708,8 +3722,7 @@ impl Repository {
                                 crate::engine::merge::LineChange::Unchanged(clines) => {
                                     for i in 0..clines.len() {
                                         if old_idx + i < line_author.len() {
-                                            new_line_author
-                                                .push(line_author[old_idx + i].clone());
+                                            new_line_author.push(line_author[old_idx + i].clone());
                                         } else {
                                             new_line_author.push(None);
                                         }
@@ -3732,7 +3745,10 @@ impl Repository {
                         }
 
                         line_author = new_line_author;
-                        current_lines = new_content.lines().map(std::borrow::ToOwned::to_owned).collect();
+                        current_lines = new_content
+                            .lines()
+                            .map(std::borrow::ToOwned::to_owned)
+                            .collect();
                     }
                     OperationType::Delete if targets_file => {
                         line_author.clear();
@@ -3894,10 +3910,7 @@ impl Repository {
         self.meta.set_config(&new_url_key, &url)?;
         self.meta.delete_config(&old_url_key)?;
 
-        if let Some(token) = self
-            .meta
-            .get_config(&format!("remote.{old_name}.token"))?
-        {
+        if let Some(token) = self.meta.get_config(&format!("remote.{old_name}.token"))? {
             self.meta
                 .set_config(&format!("remote.{new_name}.token"), &token)?;
             self.meta
@@ -3914,10 +3927,7 @@ impl Repository {
             return Err(RepoError::RemoteNotFound(name.to_owned()));
         }
         self.meta.delete_config(&key)?;
-        if let Ok(Some(_)) = self
-            .meta
-            .get_config(&format!("remote.{name}.last_pushed"))
-        {
+        if let Ok(Some(_)) = self.meta.get_config(&format!("remote.{name}.last_pushed")) {
             self.meta
                 .delete_config(&format!("remote.{name}.last_pushed"))?;
         }
@@ -4015,8 +4025,7 @@ impl Repository {
     pub fn list_worktrees(&self) -> Result<Vec<WorktreeEntry>, RepoError> {
         let mut worktrees = Vec::new();
 
-        let main_branch = self
-            .head().map_or_else(|_| "main".to_owned(), |(n, _)| n);
+        let main_branch = self.head().map_or_else(|_| "main".to_owned(), |(n, _)| n);
         worktrees.push(WorktreeEntry {
             name: String::new(),
             path: self.root.to_string_lossy().to_string(),
@@ -4177,8 +4186,7 @@ impl Repository {
 
         // Delete unreachable patches in a transaction (atomic)
         let conn = self.meta().conn();
-        let tx = conn
-            .unchecked_transaction()?;
+        let tx = conn.unchecked_transaction()?;
 
         for id in &unreachable {
             let hex = id.to_hex();
@@ -4504,7 +4512,6 @@ fn is_ignored(rel_path: &str, patterns: &[String]) -> bool {
 /// A file entry found while walking the repository.
 struct WalkEntry {
     relative: String,
-    #[allow(dead_code)]
     full_path: PathBuf,
 }
 

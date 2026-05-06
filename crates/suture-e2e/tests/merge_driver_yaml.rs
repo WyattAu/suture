@@ -88,7 +88,11 @@ fn setup_git_repo_with_yaml_driver() -> (tempfile::TempDir, PathBuf) {
     );
     git_success(&repo, &["config", "merge.suture.driver", &driver_str]);
 
-    fs::write(repo.join(".gitattributes"), "*.yaml merge=suture\n*.yml merge=suture\n").unwrap();
+    fs::write(
+        repo.join(".gitattributes"),
+        "*.yaml merge=suture\n*.yml merge=suture\n",
+    )
+    .unwrap();
     git_success(&repo, &["add", ".gitattributes"]);
     git_success(&repo, &["commit", "-m", "add .gitattributes"]);
 
@@ -107,13 +111,21 @@ fn test_merge_driver_yaml_non_overlapping_keys() {
     git_ok(&repo, &["commit", "-m", "base config"], &suture);
 
     git_ok(&repo, &["checkout", "-b", "feature-version"], &suture);
-    fs::write(repo.join("config.yaml"), "version: \"1.1\"\nport: 8080\nhost: localhost\n").unwrap();
+    fs::write(
+        repo.join("config.yaml"),
+        "version: \"1.1\"\nport: 8080\nhost: localhost\n",
+    )
+    .unwrap();
     git_ok(&repo, &["add", "config.yaml"], &suture);
     git_ok(&repo, &["commit", "-m", "bump version"], &suture);
 
     git_ok(&repo, &["checkout", "main"], &suture);
     git_ok(&repo, &["checkout", "-b", "feature-port"], &suture);
-    fs::write(repo.join("config.yaml"), "version: \"1.0\"\nport: 9090\nhost: localhost\n").unwrap();
+    fs::write(
+        repo.join("config.yaml"),
+        "version: \"1.0\"\nport: 9090\nhost: localhost\n",
+    )
+    .unwrap();
     git_ok(&repo, &["add", "config.yaml"], &suture);
     git_ok(&repo, &["commit", "-m", "change port"], &suture);
 
@@ -174,7 +186,8 @@ fn test_merge_driver_yaml_same_key_conflict() {
 
     assert!(
         !output.status.success(),
-        "same-key YAML conflict should fail (exit != 0):\n{}", combined
+        "same-key YAML conflict should fail (exit != 0):\n{}",
+        combined
     );
     assert_eq!(
         output.status.code(),
@@ -202,13 +215,21 @@ fn test_merge_driver_yaml_nested_keys() {
     git_ok(&repo, &["commit", "-m", "base config"], &suture);
 
     git_ok(&repo, &["checkout", "-b", "feature-host"], &suture);
-    fs::write(repo.join("config.yaml"), "server:\n  host: 0.0.0.0\n  port: 8080\ndb:\n  name: mydb\n").unwrap();
+    fs::write(
+        repo.join("config.yaml"),
+        "server:\n  host: 0.0.0.0\n  port: 8080\ndb:\n  name: mydb\n",
+    )
+    .unwrap();
     git_ok(&repo, &["add", "config.yaml"], &suture);
     git_ok(&repo, &["commit", "-m", "change host"], &suture);
 
     git_ok(&repo, &["checkout", "main"], &suture);
     git_ok(&repo, &["checkout", "-b", "feature-db"], &suture);
-    fs::write(repo.join("config.yaml"), "server:\n  host: localhost\n  port: 8080\ndb:\n  name: prod\n").unwrap();
+    fs::write(
+        repo.join("config.yaml"),
+        "server:\n  host: localhost\n  port: 8080\ndb:\n  name: prod\n",
+    )
+    .unwrap();
     git_ok(&repo, &["add", "config.yaml"], &suture);
     git_ok(&repo, &["commit", "-m", "change db name"], &suture);
 

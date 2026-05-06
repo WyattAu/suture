@@ -5,7 +5,7 @@ use crate::cas::BlobStore;
 use crate::engine::diff::{DiffEntry, DiffType};
 use crate::engine::tree::FileTree;
 
-#[must_use] 
+#[must_use]
 pub fn shannon_entropy(data: &[u8]) -> f64 {
     if data.is_empty() {
         return 0.0;
@@ -40,7 +40,7 @@ pub enum EntropyCategory {
 }
 
 impl EntropyCategory {
-    #[must_use] 
+    #[must_use]
     pub fn from_entropy(entropy: f64) -> Self {
         match entropy {
             e if e < 1.0 => Self::Uniform,
@@ -125,11 +125,6 @@ impl RiskScore {
             4..=5 => Self::High,
             _ => Self::Critical,
         }
-    }
-
-    #[allow(dead_code)]
-    fn max(a: Self, b: Self) -> Self {
-        if a > b { a } else { b }
     }
 }
 
@@ -321,7 +316,9 @@ fn looks_like_base64(content: &[u8]) -> bool {
         return false;
     }
 
-    let Ok(text) = std::str::from_utf8(content) else { return false };
+    let Ok(text) = std::str::from_utf8(content) else {
+        return false;
+    };
 
     let lines: Vec<&str> = text.lines().collect();
     if lines.is_empty() {
@@ -376,7 +373,9 @@ fn looks_like_embedded_script(path: &str, content: &[u8]) -> bool {
                 | "cmake"
         )
     {
-        let Ok(text) = std::str::from_utf8(content) else { return false };
+        let Ok(text) = std::str::from_utf8(content) else {
+            return false;
+        };
 
         let lower = text.to_lowercase();
         let script_patterns = [
@@ -404,7 +403,7 @@ fn looks_like_embedded_script(path: &str, content: &[u8]) -> bool {
     false
 }
 
-#[must_use] 
+#[must_use]
 pub fn analyze_file(path: &str, content: &[u8]) -> FileIntegrityReport {
     let size_bytes = content.len();
     let entropy = shannon_entropy(content);
@@ -649,7 +648,8 @@ pub fn analyze_diff(
     if has_build_changes && has_test_changes {
         warnings.push(
             "Build script modified alongside test infrastructure. \
-             This pattern was used in the XZ Utils backdoor (CVE-2024-3094).".to_owned(),
+             This pattern was used in the XZ Utils backdoor (CVE-2024-3094)."
+                .to_owned(),
         );
         let mut paths = test_and_source_paths.clone();
         for report in &files {
@@ -668,7 +668,8 @@ pub fn analyze_diff(
     if has_lockfile_changes && !has_manifest_changes {
         warnings.push(
             "Lockfile modified without corresponding manifest change. \
-             This could indicate a supply chain injection attempt.".to_owned(),
+             This could indicate a supply chain injection attempt."
+                .to_owned(),
         );
         warnings.push(format!("Review: {}", lockfile_paths.join(", ")));
     }
@@ -718,7 +719,7 @@ fn is_manifest_file(path: &str) -> bool {
     )
 }
 
-#[must_use] 
+#[must_use]
 pub fn format_file_integrity(file: &FileIntegrityReport) -> String {
     let mut lines = Vec::new();
 
@@ -758,7 +759,7 @@ fn format_risk_score(score: RiskScore) -> String {
     }
 }
 
-#[must_use] 
+#[must_use]
 pub fn format_integrity_report(report: &DiffIntegrityReport) -> String {
     let mut lines = Vec::new();
 
@@ -793,9 +794,7 @@ pub fn format_integrity_report(report: &DiffIntegrityReport) -> String {
     ));
 
     let risk_label = format!("Risk: {}", report.summary.overall_risk);
-    lines.push(format!(
-        "{border_left}  {risk_label:<50}{border_right}"
-    ));
+    lines.push(format!("{border_left}  {risk_label:<50}{border_right}"));
     lines.push(format!(
         "{}{}{}",
         border_bottom,

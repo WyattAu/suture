@@ -47,7 +47,9 @@ async fn timeline_import(
     let filename_str = filename.to_string_lossy().to_string();
     repo.add(&filename_str)?;
 
-    let msg = if let Some(m) = message { m.to_owned() } else {
+    let msg = if let Some(m) = message {
+        m.to_owned()
+    } else {
         let name = parsed.name.as_deref().unwrap_or("unnamed");
         format!(
             "Import timeline: {name} ({} clips, {} tracks)",

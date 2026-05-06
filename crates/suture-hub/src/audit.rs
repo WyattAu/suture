@@ -2,13 +2,7 @@
 //!
 //! Logs all mutating (POST, PUT, DELETE, PATCH) requests to the audit_log table.
 
-use axum::{
-    body::Body,
-    extract::State,
-    http::Request,
-    middleware::Next,
-    response::Response,
-};
+use axum::{body::Body, extract::State, http::Request, middleware::Next, response::Response};
 use std::sync::Arc;
 
 use crate::server::SutureHubServer;
@@ -52,15 +46,18 @@ pub async fn audit_middleware(
 
     if is_mutating {
         let status = response.status();
-        let status_str = if status.is_success() { "success" } else { "failure" };
+        let status_str = if status.is_success() {
+            "success"
+        } else {
+            "failure"
+        };
 
         let action = format!("{} {}", method, uri.path());
         let (resource_type, resource_id) = classify_resource(uri.path());
         let details = format!("status={status}");
 
         let store = hub.storage.read().await;
-        // Ignore audit write failures — don't break the request
-        let _ = store.write_audit_entry(
+        if let Err(e) = store.write_audit_entry(
             "",
             &action,
             &resource_type,
@@ -69,7 +66,9 @@ pub async fn audit_middleware(
             &details,
             &request_id,
             &client_ip,
-        );
+        ) {
+            tracing::warn!("audit log write failed: {e}");
+        }
     }
 
     response

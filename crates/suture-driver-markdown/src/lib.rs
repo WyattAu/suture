@@ -213,7 +213,7 @@ fn match_blocks(base: &[Block], other: &[Block]) -> Vec<(Option<usize>, Option<u
 pub struct MarkdownDriver;
 
 impl MarkdownDriver {
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self
     }

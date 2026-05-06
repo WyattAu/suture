@@ -895,10 +895,10 @@ fn bench_hub_storage(c: &mut Criterion) {
                     store
                 },
                 |store| {
-                let patches = black_box(store.get_all_patches_unbounded("bench-repo").unwrap());
-                let blobs = black_box(store.get_all_blobs("bench-repo").unwrap());
-                assert_eq!(patches.len(), 100);
-                assert_eq!(blobs.len(), 100);
+                    let patches = black_box(store.get_all_patches_unbounded("bench-repo").unwrap());
+                    let blobs = black_box(store.get_all_blobs("bench-repo").unwrap());
+                    assert_eq!(patches.len(), 100);
+                    assert_eq!(blobs.len(), 100);
                     assert_eq!(patches.len(), n);
                     let blobs = black_box(store.get_all_blobs("bench-repo").unwrap());
                     assert_eq!(blobs.len(), n);

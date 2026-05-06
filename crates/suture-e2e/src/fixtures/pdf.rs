@@ -1,6 +1,6 @@
 pub const SIMPLE_PAGES: &[&str] = &["Hello, World! This is a simple one-page PDF document."];
 
-#[must_use] 
+#[must_use]
 pub fn simple() -> String {
     make_pdf(SIMPLE_PAGES)
 }
@@ -23,7 +23,7 @@ pub const MULTI_PAGE_PAGES: &[&str] = &[
     "Complete API reference with request and response examples.",
 ];
 
-#[must_use] 
+#[must_use]
 pub fn multi_page() -> String {
     make_pdf(MULTI_PAGE_PAGES)
 }
@@ -48,7 +48,7 @@ pub const COMPLEX_PAGES: &[&str] = &[
     "Strategic Priorities for Fiscal Year 2026",
 ];
 
-#[must_use] 
+#[must_use]
 pub fn complex() -> String {
     make_pdf(COMPLEX_PAGES)
 }

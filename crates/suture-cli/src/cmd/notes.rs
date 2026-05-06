@@ -1,8 +1,6 @@
 use crate::ref_utils::resolve_ref;
 
-pub async fn cmd_notes(
-    action: &crate::NotesAction,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_notes(action: &crate::NotesAction) -> Result<(), Box<dyn std::error::Error>> {
     let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
     let patches = repo.all_patches();
     match action {

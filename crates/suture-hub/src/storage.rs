@@ -435,36 +435,40 @@ impl HubStorage {
             "SELECT patch_id, operation_type, touch_set, target_path, payload, parent_ids, author, message, timestamp
              FROM patches WHERE repo_id = ?1 ORDER BY timestamp ASC, patch_id ASC LIMIT ?2 OFFSET ?3",
         )?;
-        let rows = stmt.query_map(params![repo_id, effective_limit as i64, offset as i64], |row| {
-            let id_hex: String = row.get(0)?;
-            let operation_type: String = row.get(1)?;
-            let touch_set_json: String = row.get(2)?;
-            let target_path: Option<String> = row.get(3)?;
-            let payload: String = row.get(4)?;
-            let parent_ids_json: String = row.get(5)?;
-            let author: String = row.get(6)?;
-            let message: String = row.get(7)?;
-            let timestamp: i64 = row.get(8)?;
+        let rows = stmt.query_map(
+            params![repo_id, effective_limit as i64, offset as i64],
+            |row| {
+                let id_hex: String = row.get(0)?;
+                let operation_type: String = row.get(1)?;
+                let touch_set_json: String = row.get(2)?;
+                let target_path: Option<String> = row.get(3)?;
+                let payload: String = row.get(4)?;
+                let parent_ids_json: String = row.get(5)?;
+                let author: String = row.get(6)?;
+                let message: String = row.get(7)?;
+                let timestamp: i64 = row.get(8)?;
 
-            let touch_set: Vec<String> = serde_json::from_str(&touch_set_json).unwrap_or_default();
-            let parent_ids: Vec<String> =
-                serde_json::from_str(&parent_ids_json).unwrap_or_default();
+                let touch_set: Vec<String> =
+                    serde_json::from_str(&touch_set_json).unwrap_or_default();
+                let parent_ids: Vec<String> =
+                    serde_json::from_str(&parent_ids_json).unwrap_or_default();
 
-            Ok(PatchProto {
-                id: HashProto { value: id_hex },
-                operation_type,
-                touch_set,
-                target_path,
-                payload,
-                parent_ids: parent_ids
-                    .into_iter()
-                    .map(|h| HashProto { value: h })
-                    .collect(),
-                author,
-                message,
-                timestamp: timestamp as u64,
-            })
-        })?;
+                Ok(PatchProto {
+                    id: HashProto { value: id_hex },
+                    operation_type,
+                    touch_set,
+                    target_path,
+                    payload,
+                    parent_ids: parent_ids
+                        .into_iter()
+                        .map(|h| HashProto { value: h })
+                        .collect(),
+                    author,
+                    message,
+                    timestamp: timestamp as u64,
+                })
+            },
+        )?;
 
         let mut patches = Vec::new();
         for row in rows {
@@ -476,7 +480,10 @@ impl HubStorage {
     /// Get all patches for a repo without pagination limit.
     /// Used internally by push/pull handlers that need the full patch set.
     /// Prefer `get_all_patches()` with pagination for user-facing APIs.
-    pub fn get_all_patches_unbounded(&self, repo_id: &str) -> Result<Vec<PatchProto>, StorageError> {
+    pub fn get_all_patches_unbounded(
+        &self,
+        repo_id: &str,
+    ) -> Result<Vec<PatchProto>, StorageError> {
         let conn = self
             .conn
             .lock()
@@ -496,8 +503,7 @@ impl HubStorage {
             let message: String = row.get(7)?;
             let timestamp: i64 = row.get(8)?;
 
-            let touch_set: Vec<String> =
-                serde_json::from_str(&touch_set_json).unwrap_or_default();
+            let touch_set: Vec<String> = serde_json::from_str(&touch_set_json).unwrap_or_default();
             let parent_ids: Vec<String> =
                 serde_json::from_str(&parent_ids_json).unwrap_or_default();
 
@@ -833,7 +839,11 @@ impl HubStorage {
             .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
 
         // Build a query with parameterized IN clause
-        let placeholders: Vec<String> = ids.iter().enumerate().map(|(i, _)| format!("?{}", i + 2)).collect();
+        let placeholders: Vec<String> = ids
+            .iter()
+            .enumerate()
+            .map(|(i, _)| format!("?{}", i + 2))
+            .collect();
         let sql = format!(
             "SELECT patch_id, operation_type, touch_set, target_path, payload, parent_ids, author, message, timestamp
              FROM patches WHERE repo_id = ?1 AND patch_id IN ({})",
@@ -844,7 +854,8 @@ impl HubStorage {
         for id in ids {
             params.push(Box::new(id.clone()));
         }
-        let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params.iter().map(|p| p.as_ref()).collect();
 
         let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_map(param_refs.as_slice(), |row| {
@@ -858,25 +869,27 @@ impl HubStorage {
             let message: String = row.get(7)?;
             let timestamp: i64 = row.get(8)?;
 
-            let touch_set: Vec<String> =
-                serde_json::from_str(&touch_set_json).unwrap_or_default();
+            let touch_set: Vec<String> = serde_json::from_str(&touch_set_json).unwrap_or_default();
             let parent_ids: Vec<String> =
                 serde_json::from_str(&parent_ids_json).unwrap_or_default();
 
-            Ok((id_hex.clone(), PatchProto {
-                id: HashProto { value: id_hex },
-                operation_type,
-                touch_set,
-                target_path,
-                payload,
-                parent_ids: parent_ids
-                    .into_iter()
-                    .map(|h| HashProto { value: h })
-                    .collect(),
-                author,
-                message,
-                timestamp: timestamp as u64,
-            }))
+            Ok((
+                id_hex.clone(),
+                PatchProto {
+                    id: HashProto { value: id_hex },
+                    operation_type,
+                    touch_set,
+                    target_path,
+                    payload,
+                    parent_ids: parent_ids
+                        .into_iter()
+                        .map(|h| HashProto { value: h })
+                        .collect(),
+                    author,
+                    message,
+                    timestamp: timestamp as u64,
+                },
+            ))
         })?;
 
         let mut result = std::collections::HashMap::with_capacity(ids.len());
@@ -1357,7 +1370,11 @@ impl HubStorage {
 
         // Sort deterministically
         let mut patches: Vec<PatchProto> = patches_map.into_values().collect();
-        patches.sort_by(|a, b| a.timestamp.cmp(&b.timestamp).then_with(|| a.id.value.cmp(&b.id.value)));
+        patches.sort_by(|a, b| {
+            a.timestamp
+                .cmp(&b.timestamp)
+                .then_with(|| a.id.value.cmp(&b.id.value))
+        });
         Ok(patches)
     }
 
@@ -1368,10 +1385,16 @@ impl HubStorage {
     ) -> Result<Vec<crate::types::TreeEntry>, StorageError> {
         use crate::types::TreeEntry;
 
-        let Some(tip_id) = self.get_branch_target(repo_id, branch)? else { return Ok(Vec::new()) };
+        let Some(tip_id) = self.get_branch_target(repo_id, branch)? else {
+            return Ok(Vec::new());
+        };
 
         let mut patches = self.get_patches_at(repo_id, &tip_id)?;
-        patches.sort_by(|a, b| a.timestamp.cmp(&b.timestamp).then_with(|| a.id.value.cmp(&b.id.value)));
+        patches.sort_by(|a, b| {
+            a.timestamp
+                .cmp(&b.timestamp)
+                .then_with(|| a.id.value.cmp(&b.id.value))
+        });
 
         let mut tree: std::collections::HashMap<String, String> = std::collections::HashMap::new();
 
@@ -1720,9 +1743,13 @@ impl HubStorage {
 
     /// Store an OIDC provider configuration.
     pub fn set_oidc_config(&self, config: &crate::sso::OidcConfig) -> Result<(), StorageError> {
-        let conn = self.conn.lock().map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
-        let json = serde_json::to_string(config)
-            .map_err(|e| StorageError::PoisonedLock(format!("failed to serialize OIDC config: {e}")))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let json = serde_json::to_string(config).map_err(|e| {
+            StorageError::PoisonedLock(format!("failed to serialize OIDC config: {e}"))
+        })?;
         conn.execute(
             "INSERT OR REPLACE INTO sso_providers (provider_name, config_json, updated_at) VALUES (?1, ?2, datetime('now'))",
             params![config.provider_name, json],
@@ -1731,8 +1758,14 @@ impl HubStorage {
     }
 
     /// Get an OIDC provider configuration by name.
-    pub fn get_oidc_config(&self, provider_name: &str) -> Result<Option<crate::sso::OidcConfig>, StorageError> {
-        let conn = self.conn.lock().map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+    pub fn get_oidc_config(
+        &self,
+        provider_name: &str,
+    ) -> Result<Option<crate::sso::OidcConfig>, StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
         let result = conn.query_row(
             "SELECT config_json FROM sso_providers WHERE provider_name = ?1",
             params![provider_name],
@@ -1740,8 +1773,9 @@ impl HubStorage {
         );
         match result {
             Ok(json) => {
-                let config: crate::sso::OidcConfig = serde_json::from_str(&json)
-                    .map_err(|e| StorageError::PoisonedLock(format!("failed to deserialize OIDC config: {e}")))?;
+                let config: crate::sso::OidcConfig = serde_json::from_str(&json).map_err(|e| {
+                    StorageError::PoisonedLock(format!("failed to deserialize OIDC config: {e}"))
+                })?;
                 Ok(Some(config))
             }
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
@@ -1751,14 +1785,19 @@ impl HubStorage {
 
     /// List all configured OIDC providers.
     pub fn list_oidc_configs(&self) -> Result<Vec<crate::sso::OidcConfig>, StorageError> {
-        let conn = self.conn.lock().map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
-        let mut stmt = conn.prepare("SELECT config_json FROM sso_providers ORDER BY provider_name")?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let mut stmt =
+            conn.prepare("SELECT config_json FROM sso_providers ORDER BY provider_name")?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
         let mut configs = Vec::new();
         for row in rows {
             let json = row?;
-            let config: crate::sso::OidcConfig = serde_json::from_str(&json)
-                .map_err(|e| StorageError::PoisonedLock(format!("failed to deserialize OIDC config: {e}")))?;
+            let config: crate::sso::OidcConfig = serde_json::from_str(&json).map_err(|e| {
+                StorageError::PoisonedLock(format!("failed to deserialize OIDC config: {e}"))
+            })?;
             configs.push(config);
         }
         Ok(configs)
@@ -1766,7 +1805,10 @@ impl HubStorage {
 
     /// Delete an OIDC provider configuration.
     pub fn delete_oidc_config(&self, provider_name: &str) -> Result<bool, StorageError> {
-        let conn = self.conn.lock().map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
         let affected = conn.execute(
             "DELETE FROM sso_providers WHERE provider_name = ?1",
             params![provider_name],
@@ -1789,7 +1831,10 @@ impl HubStorage {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs() as i64;
-        let conn = self.conn.lock().map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
         conn.execute(
             "INSERT INTO sso_states (state, provider_name, nonce, created_at) VALUES (?1, ?2, ?3, ?4)",
             params![state, provider_name, nonce, created_at],
@@ -1803,16 +1848,29 @@ impl HubStorage {
     /// The state is deleted after retrieval (one-time use).
     /// Returns `None` if the state does not exist or has expired (10 minutes).
     pub fn consume_sso_state(&self, state: &str) -> Result<Option<(String, String)>, StorageError> {
-        let conn = self.conn.lock().map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
         let result = conn.query_row(
             "SELECT provider_name, nonce, created_at FROM sso_states WHERE state = ?1",
             params![state],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, i64>(2)?)),
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            },
         );
         match result {
             Ok((provider_name, nonce, created_at)) => {
                 // Delete the state (one-time use).
-                let _ = conn.execute("DELETE FROM sso_states WHERE state = ?1", params![state]);
+                if let Err(e) =
+                    conn.execute("DELETE FROM sso_states WHERE state = ?1", params![state])
+                {
+                    tracing::warn!("failed to clean up SSO state: {e}");
+                }
                 // Check expiry (10 minutes).
                 let now = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -1836,7 +1894,10 @@ impl HubStorage {
             .unwrap_or_default()
             .as_secs() as i64
             - (10 * 60);
-        let conn = self.conn.lock().map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
         let affected = conn.execute(
             "DELETE FROM sso_states WHERE created_at < ?1",
             params![cutoff],
@@ -1850,7 +1911,10 @@ impl HubStorage {
         provider_name: &str,
         provider_sub: &str,
     ) -> Result<Option<String>, StorageError> {
-        let conn = self.conn.lock().map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
         let result = conn.query_row(
             "SELECT username FROM sso_user_mappings WHERE provider_name = ?1 AND provider_sub = ?2",
             params![provider_name, provider_sub],
@@ -1875,7 +1939,10 @@ impl HubStorage {
         username: &str,
         display_name: &str,
     ) -> Result<String, StorageError> {
-        let conn = self.conn.lock().map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
         let created_at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -1907,7 +1974,10 @@ impl HubStorage {
 
     /// Update a user's API token.
     pub fn update_user_token(&self, username: &str, token_hash: &str) -> Result<(), StorageError> {
-        let conn = self.conn.lock().map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
         conn.execute(
             "UPDATE users SET api_token = ?1 WHERE username = ?2",
             params![token_hash, username],
@@ -1930,7 +2000,10 @@ impl HubStorage {
         request_id: &str,
         client_ip: &str,
     ) -> Result<(), StorageError> {
-        let conn = self.conn.lock().map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
         conn.execute(
             "INSERT INTO audit_log (actor, action, resource_type, resource_id, status, details, request_id, client_ip) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![actor, action, resource_type, resource_id, status, details, request_id, client_ip],
@@ -1946,7 +2019,10 @@ impl HubStorage {
         limit: usize,
         offset: usize,
     ) -> Result<Vec<AuditEntry>, StorageError> {
-        let conn = self.conn.lock().map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
         let effective_limit: i64 = limit.clamp(1, 1000) as i64;
         let effective_offset: i64 = offset as i64;
 
@@ -1967,7 +2043,8 @@ impl HubStorage {
         param_values.push(Box::new(effective_limit));
         param_values.push(Box::new(effective_offset));
 
-        let param_refs: Vec<&dyn rusqlite::types::ToSql> = param_values.iter().map(|b| b.as_ref()).collect();
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            param_values.iter().map(|b| b.as_ref()).collect();
 
         let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_map(param_refs.as_slice(), |row| {

@@ -1751,9 +1751,7 @@ async fn main() {
                     pattern,
                     size_limit,
                 },
-                LfsAction::Untrack { pattern } => cmd::lfs::LfsAction::Untrack {
-                    pattern,
-                },
+                LfsAction::Untrack { pattern } => cmd::lfs::LfsAction::Untrack { pattern },
                 LfsAction::List => cmd::lfs::LfsAction::List,
                 LfsAction::Push => cmd::lfs::LfsAction::Push,
                 LfsAction::Pull => cmd::lfs::LfsAction::Pull,
@@ -1852,10 +1850,9 @@ async fn main() {
                     format,
                     output,
                 },
-                ReportType::Activity { days, format } => cmd::report::ReportType::Activity {
-                    days,
-                    format,
-                },
+                ReportType::Activity { days, format } => {
+                    cmd::report::ReportType::Activity { days, format }
+                }
                 ReportType::Stats { at } => cmd::report::ReportType::Stats {
                     at: at.unwrap_or_else(|| "HEAD".to_owned()),
                 },
@@ -1864,18 +1861,12 @@ async fn main() {
         }
         Commands::Batch { action } => {
             let ba = match action {
-                BatchAction::Stage { pattern } => cmd::batch::BatchAction::Stage {
-                    pattern,
-                },
-                BatchAction::Commit { pattern, message } => cmd::batch::BatchAction::Commit {
-                    pattern,
-                    message,
-                },
+                BatchAction::Stage { pattern } => cmd::batch::BatchAction::Stage { pattern },
+                BatchAction::Commit { pattern, message } => {
+                    cmd::batch::BatchAction::Commit { pattern, message }
+                }
                 BatchAction::ExportClients { clients, output } => {
-                    cmd::batch::BatchAction::ExportClients {
-                        clients,
-                        output,
-                    }
+                    cmd::batch::BatchAction::ExportClients { clients, output }
                 }
             };
             cmd::batch::cmd_batch(&ba).await
@@ -1917,8 +1908,7 @@ fn strip_rust_type_paths(s: &str) -> String {
     use std::sync::OnceLock;
     static RE: OnceLock<regex::Regex> = OnceLock::new();
     let re = RE.get_or_init(|| {
-        regex::Regex::new(r"[a-z_][a-z0-9_]*(?:::[a-z_][a-z0-9_]*)+::[A-Z][a-zA-Z0-9]*")
-            .unwrap()
+        regex::Regex::new(r"[a-z_][a-z0-9_]*(?:::[a-z_][a-z0-9_]*)+::[A-Z][a-zA-Z0-9]*").unwrap()
     });
     re.replace_all(s, "\u{2026}").to_string()
 }

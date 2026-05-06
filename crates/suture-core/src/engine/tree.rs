@@ -18,7 +18,7 @@ pub struct FileTree {
 
 impl FileTree {
     /// Create an empty file tree.
-    #[must_use] 
+    #[must_use]
     pub fn empty() -> Self {
         Self {
             entries: BTreeMap::new(),
@@ -26,19 +26,19 @@ impl FileTree {
     }
 
     /// Create a file tree from a pre-populated map.
-    #[must_use] 
+    #[must_use]
     pub fn from_map(entries: BTreeMap<String, Hash>) -> Self {
         Self { entries }
     }
 
     /// Get the blob hash for a given path.
-    #[must_use] 
+    #[must_use]
     pub fn get(&self, path: &str) -> Option<&Hash> {
         self.entries.get(path)
     }
 
     /// Check if a path exists in the tree.
-    #[must_use] 
+    #[must_use]
     pub fn contains(&self, path: &str) -> bool {
         self.entries.contains_key(path)
     }
@@ -64,13 +64,13 @@ impl FileTree {
     }
 
     /// Get the number of files in the tree.
-    #[must_use] 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
     /// Check if the tree is empty.
-    #[must_use] 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
@@ -81,7 +81,7 @@ impl FileTree {
     }
 
     /// Get all paths in the tree (sorted).
-    #[must_use] 
+    #[must_use]
     pub fn paths(&self) -> Vec<&String> {
         self.entries.keys().collect()
     }
@@ -89,7 +89,7 @@ impl FileTree {
     /// Compute a BLAKE3 hash of the entire tree state.
     ///
     /// This provides a content-addressed identifier for a snapshot.
-    #[must_use] 
+    #[must_use]
     pub fn content_hash(&self) -> Hash {
         let mut hasher = blake3::Hasher::new();
         for (path, hash) in &self.entries {

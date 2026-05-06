@@ -23,7 +23,7 @@ pub struct KeyInterner {
 }
 
 impl KeyInterner {
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             strings: HashMap::new(),
@@ -41,22 +41,22 @@ impl KeyInterner {
         id
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn resolve(&self, id: u32) -> &str {
         &self.values[id as usize]
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.values.len()
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.values.is_empty()
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn contains(&self, s: &str) -> bool {
         self.strings.contains_key(s)
     }

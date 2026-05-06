@@ -335,7 +335,7 @@ fn extract_blocks_from_doc(doc: &OoxmlDocument) -> Result<Vec<Block>, DriverErro
 pub struct DocxDriver;
 
 impl DocxDriver {
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self
     }
@@ -392,15 +392,13 @@ impl SutureDriver for DocxDriver {
         let mut changes = Vec::new();
 
         for i in 0..max_len {
-            let block_type = new_blocks
-                .get(i)
-                .map_or("paragraph", |b| {
-                    if b.kind == BlockKind::Table {
-                        "table"
-                    } else {
-                        "paragraph"
-                    }
-                });
+            let block_type = new_blocks.get(i).map_or("paragraph", |b| {
+                if b.kind == BlockKind::Table {
+                    "table"
+                } else {
+                    "paragraph"
+                }
+            });
             let path = format!("/{block_type}/{i}");
             match (base_blocks.get(i), new_blocks.get(i)) {
                 (None, Some(new)) => changes.push(SemanticChange::Added {
@@ -482,7 +480,8 @@ impl SutureDriver for DocxDriver {
 
         let main_path = base_doc
             .main_document_path()
-            .ok_or_else(|| DriverError::ParseError("no main document part".into()))?.to_owned();
+            .ok_or_else(|| DriverError::ParseError("no main document part".into()))?
+            .to_owned();
 
         let base_main = base_doc
             .get_part(&main_path)
@@ -853,7 +852,13 @@ mod tests {
 </w:document>"#;
         let modified2_str = docx_bytes(&make_docx_from_xml(modified2_doc_xml));
 
-        let merged = d.merge_raw(styled_str.as_bytes(), modified_str.as_bytes(), modified2_str.as_bytes()).unwrap();
+        let merged = d
+            .merge_raw(
+                styled_str.as_bytes(),
+                modified_str.as_bytes(),
+                modified2_str.as_bytes(),
+            )
+            .unwrap();
         assert!(merged.is_some(), "non-overlapping edits should merge");
 
         let merged_doc = OoxmlDocument::from_bytes(&merged.unwrap()).unwrap();

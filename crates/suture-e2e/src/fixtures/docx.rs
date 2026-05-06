@@ -49,7 +49,7 @@ fn make_docx_bytes(paragraphs: &[impl AsRef<str>]) -> Vec<u8> {
     buf
 }
 
-#[must_use] 
+#[must_use]
 pub fn multi_section_bytes() -> Vec<u8> {
     make_docx_bytes(MULTI_SECTION_PARAGRAPHS)
 }
@@ -70,7 +70,7 @@ pub fn with_modified_paragraph_bytes(
 
 pub const SIMPLE_PARAGRAPHS: &[&str] = &["This is a simple document with a single paragraph."];
 
-#[must_use] 
+#[must_use]
 pub fn simple() -> String {
     make_docx(SIMPLE_PARAGRAPHS)
 }
@@ -89,7 +89,7 @@ pub const MULTI_SECTION_PARAGRAPHS: &[&str] = &[
     "We plan to expand into the European market in Q1 2026.",
 ];
 
-#[must_use] 
+#[must_use]
 pub fn multi_section() -> String {
     make_docx(MULTI_SECTION_PARAGRAPHS)
 }
@@ -108,7 +108,7 @@ pub const STYLED_PARAGRAPHS: &[&str] = &[
     "Three major initiatives were launched this year.",
 ];
 
-#[must_use] 
+#[must_use]
 pub fn styled() -> String {
     make_docx(STYLED_PARAGRAPHS)
 }
@@ -140,12 +140,12 @@ pub const COMPLEX_PARAGRAPHS: &[&str] = &[
     "Authorized representative, Beta Industries",
 ];
 
-#[must_use] 
+#[must_use]
 pub fn complex() -> String {
     make_docx(COMPLEX_PARAGRAPHS)
 }
 
-#[must_use] 
+#[must_use]
 pub fn long_paragraphs() -> Vec<String> {
     let mut paragraphs = Vec::with_capacity(55);
     paragraphs.push("THE COMPREHENSIVE GUIDE TO MODERN SOFTWARE ARCHITECTURE".to_owned());
@@ -160,7 +160,8 @@ pub fn long_paragraphs() -> Vec<String> {
     }
     paragraphs.push("Chapter 2: Microservices Architecture".to_owned());
     paragraphs.push(
-        "Microservices decompose applications into small, independently deployable services.".to_owned(),
+        "Microservices decompose applications into small, independently deployable services."
+            .to_owned(),
     );
     for i in 1..=10 {
         paragraphs.push(format!("Section 2.{i}: Microservice Patterns"));
@@ -179,9 +180,8 @@ pub fn long_paragraphs() -> Vec<String> {
         ));
     }
     paragraphs.push("Chapter 4: Cloud-Native Patterns".to_owned());
-    paragraphs.push(
-        "Cloud-native architectures leverage containerization and orchestration.".to_owned(),
-    );
+    paragraphs
+        .push("Cloud-native architectures leverage containerization and orchestration.".to_owned());
     for i in 1..=10 {
         paragraphs.push(format!("Section 4.{i}: Cloud Deployment Strategies"));
         paragraphs.push(format!(
@@ -195,7 +195,7 @@ pub fn long_paragraphs() -> Vec<String> {
     paragraphs
 }
 
-#[must_use] 
+#[must_use]
 pub fn long() -> String {
     make_docx(&long_paragraphs())
 }

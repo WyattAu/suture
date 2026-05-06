@@ -122,8 +122,11 @@ pub fn read_shm_status(path: &Path) -> Result<ShmStatus, anyhow::Error> {
     let mmap = unsafe { memmap2::Mmap::map(&file)? };
 
     if mmap.len() < std::mem::size_of::<ShmStatus>() {
-        anyhow::bail!("SHM file too small: {} bytes, expected at least {}",
-            mmap.len(), std::mem::size_of::<ShmStatus>());
+        anyhow::bail!(
+            "SHM file too small: {} bytes, expected at least {}",
+            mmap.len(),
+            std::mem::size_of::<ShmStatus>()
+        );
     }
     // SAFETY: We just verified mmap.len() >= size_of::<ShmStatus>(), so the read
     // is within the mapped region's bounds.

@@ -6,9 +6,9 @@
 // See LICENSE-AGPL and LICENSE-COMMERCIAL in the repo root.
 
 use axum::{
+    Extension, Json,
     extract::State,
     http::{HeaderMap, StatusCode},
-    Extension, Json,
 };
 use serde::{Deserialize, Serialize};
 
@@ -62,7 +62,9 @@ fn stripe_key(state: &AppState) -> Result<String, (StatusCode, Json<serde_json::
         Some(key) if !key.is_empty() => Ok(key.clone()),
         _ => Err((
             StatusCode::SERVICE_UNAVAILABLE,
-            Json(serde_json::json!({"error": "billing is not configured", "hint": "set STRIPE_KEY environment variable"})),
+            Json(
+                serde_json::json!({"error": "billing is not configured", "hint": "set STRIPE_KEY environment variable"}),
+            ),
         )),
     }
 }
@@ -110,10 +112,12 @@ async fn get_or_create_customer(
     let key = stripe_key(state)?;
 
     let existing: Option<String> = {
-        let conn = state
-            .db
-            .conn()
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))))?;
+        let conn = state.db.conn().map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": e})),
+            )
+        })?;
         conn.query_row(
             "SELECT stripe_customer_id FROM accounts WHERE user_id = ?1 AND stripe_customer_id IS NOT NULL",
             rusqlite::params![user_id],
@@ -134,12 +138,19 @@ async fn get_or_create_customer(
         .form(&[("email", email), ("metadata[user_id]", user_id)])
         .send()
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e.to_string()}))))?;
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": e.to_string()})),
+            )
+        })?;
 
-    let customer: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e.to_string()}))))?;
+    let customer: serde_json::Value = resp.json().await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e.to_string()})),
+        )
+    })?;
 
     let customer_id = customer["id"].as_str().unwrap_or("").to_owned();
     if customer_id.is_empty() {
@@ -149,10 +160,12 @@ async fn get_or_create_customer(
         ));
     }
 
-    let conn = state
-        .db
-        .conn()
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))))?;
+    let conn = state.db.conn().map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e})),
+        )
+    })?;
     conn.execute(
         "UPDATE accounts SET stripe_customer_id = ?1, updated_at = datetime('now') WHERE user_id = ?2",
         rusqlite::params![customer_id, user_id],
@@ -199,12 +212,19 @@ pub async fn create_checkout_session(
         ])
         .send()
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e.to_string()}))))?;
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": e.to_string()})),
+            )
+        })?;
 
-    let session: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e.to_string()}))))?;
+    let session: serde_json::Value = resp.json().await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e.to_string()})),
+        )
+    })?;
 
     let url = session["url"].as_str().unwrap_or("").to_owned();
     let session_id = session["id"].as_str().unwrap_or("").to_owned();
@@ -235,10 +255,12 @@ pub async fn create_portal_session_inner(
     let key = stripe_key(state)?;
 
     let customer_id: String = {
-        let conn = state
-            .db
-            .conn()
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))))?;
+        let conn = state.db.conn().map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": e})),
+            )
+        })?;
 
         conn.query_row(
             "SELECT stripe_customer_id FROM accounts WHERE user_id = ?1 AND stripe_customer_id IS NOT NULL",
@@ -260,15 +282,25 @@ pub async fn create_portal_session_inner(
     let resp = client
         .post("https://api.stripe.com/v1/billing_portal/sessions")
         .basic_auth(&key, None::<&str>)
-        .form(&[("customer", customer_id.as_str()), ("return_url", return_url.as_str())])
+        .form(&[
+            ("customer", customer_id.as_str()),
+            ("return_url", return_url.as_str()),
+        ])
         .send()
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e.to_string()}))))?;
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": e.to_string()})),
+            )
+        })?;
 
-    let session: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e.to_string()}))))?;
+    let session: serde_json::Value = resp.json().await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e.to_string()})),
+        )
+    })?;
 
     let url = session["url"].as_str().unwrap_or("").to_owned();
     if url.is_empty() {
@@ -346,7 +378,9 @@ pub async fn handle_webhook(
         }
         Err(e) => {
             tracing::warn!("Invalid webhook payload: {}", e);
-            Ok(Json(serde_json::json!({"received": true, "error": "invalid payload"})))
+            Ok(Json(
+                serde_json::json!({"received": true, "error": "invalid payload"}),
+            ))
         }
     }
 }
@@ -373,7 +407,8 @@ fn verify_stripe_signature(payload: &str, sig_header: &str, secret: &str) -> Res
         }
     }
 
-    let timestamp = timestamp.ok_or_else(|| "missing timestamp in Stripe-Signature header".to_owned())?;
+    let timestamp =
+        timestamp.ok_or_else(|| "missing timestamp in Stripe-Signature header".to_owned())?;
     if signatures.is_empty() {
         return Err("missing signature in Stripe-Signature header".to_owned());
     }
@@ -398,7 +433,10 @@ fn verify_stripe_signature(payload: &str, sig_header: &str, secret: &str) -> Res
         if a.len() != b.len() {
             return false;
         }
-        let result = a.iter().zip(b.iter()).fold(0u8, |acc, (x, y)| acc | (x ^ y));
+        let result = a
+            .iter()
+            .zip(b.iter())
+            .fold(0u8, |acc, (x, y)| acc | (x ^ y));
         result == 0
     }
 
@@ -537,10 +575,12 @@ pub async fn get_subscription(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<SubscriptionInfo>, (StatusCode, Json<serde_json::Value>)> {
-    let conn = state
-        .db
-        .conn()
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))))?;
+    let conn = state.db.conn().map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e})),
+        )
+    })?;
 
     let tier: String = conn
         .query_row(
@@ -572,5 +612,3 @@ pub async fn get_subscription(
         cancel_at_period_end: false,
     }))
 }
-
-

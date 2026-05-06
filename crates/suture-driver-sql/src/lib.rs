@@ -490,7 +490,7 @@ fn parse_schema(content: &str) -> SqlSchema {
 }
 
 impl SqlDriver {
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self
     }
@@ -599,10 +599,16 @@ impl SqlDriver {
             }
         }
 
-        let old_idx: std::collections::HashSet<&str> =
-            old.indexes.keys().map(std::string::String::as_str).collect();
-        let new_idx: std::collections::HashSet<&str> =
-            new.indexes.keys().map(std::string::String::as_str).collect();
+        let old_idx: std::collections::HashSet<&str> = old
+            .indexes
+            .keys()
+            .map(std::string::String::as_str)
+            .collect();
+        let new_idx: std::collections::HashSet<&str> = new
+            .indexes
+            .keys()
+            .map(std::string::String::as_str)
+            .collect();
 
         for name in &old_idx {
             if !new_idx.contains(name) {
@@ -689,11 +695,7 @@ impl SqlDriver {
         lines.join(";\n\n") + ";\n"
     }
 
-    fn merge_schemas(
-        base: &SqlSchema,
-        ours: &SqlSchema,
-        theirs: &SqlSchema,
-    ) -> Option<SqlSchema> {
+    fn merge_schemas(base: &SqlSchema, ours: &SqlSchema, theirs: &SqlSchema) -> Option<SqlSchema> {
         let mut tables: BTreeMap<String, Option<TableDef>> = BTreeMap::new();
 
         let all_table_names: std::collections::HashSet<&str> = base
@@ -949,15 +951,18 @@ impl SutureDriver for SqlDriver {
         let ours_schema = parse_schema(ours);
         let theirs_schema = parse_schema(theirs);
 
-        Ok(Self::merge_schemas(&base_schema, &ours_schema, &theirs_schema).map(|merged| Self::schema_to_sql(&merged)))
+        Ok(
+            Self::merge_schemas(&base_schema, &ours_schema, &theirs_schema)
+                .map(|merged| Self::schema_to_sql(&merged)),
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use proptest::proptest;
     use proptest::prop_assert;
+    use proptest::proptest;
 
     #[test]
     fn test_sql_driver_name() {

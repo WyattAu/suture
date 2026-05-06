@@ -9,10 +9,11 @@ pub enum MountType {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)] // Variants used in tests and by consumers
 pub enum MountStatus {
+    #[cfg(test)]
     Pending,
     Active,
+    #[cfg(test)]
     Error(String),
     Stopped,
 }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 use serde_json::Value;
-use suture_driver::{DriverError, SemanticChange, SutureDriver};
 use suture_driver::impl_structured_driver;
+use suture_driver::{DriverError, SemanticChange, SutureDriver};
 
 pub struct JsonDriver;
 
@@ -741,13 +741,19 @@ mod tests {
         let b = r#"{"a": 1, "b": 20, "c": 3, "d": 4}"#;
         let c = r#"{"a": 1, "b": 2, "c": 30, "d": 4}"#;
 
-        let ab = driver.merge(base, a, b).unwrap().expect("merge(base, A, B) should succeed");
+        let ab = driver
+            .merge(base, a, b)
+            .unwrap()
+            .expect("merge(base, A, B) should succeed");
         let merge_left = driver
             .merge(base, &ab, c)
             .unwrap()
             .expect("merge(base, merge(A,B), C) should succeed");
 
-        let bc = driver.merge(base, b, c).unwrap().expect("merge(base, B, C) should succeed");
+        let bc = driver
+            .merge(base, b, c)
+            .unwrap()
+            .expect("merge(base, B, C) should succeed");
         let merge_right = driver
             .merge(base, a, &bc)
             .unwrap()

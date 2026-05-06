@@ -74,7 +74,7 @@ impl S3Config {
         Ok(())
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn build_url(&self, object_key: &str) -> String {
         if self.force_path_style {
             format!(
@@ -97,7 +97,7 @@ impl S3Config {
         }
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn list_url(&self) -> String {
         if self.force_path_style {
             format!(

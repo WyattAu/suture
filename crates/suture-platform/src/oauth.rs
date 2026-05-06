@@ -5,15 +5,15 @@
 // Suture Commercial License (for enterprise features).
 // See LICENSE-AGPL and LICENSE-COMMERCIAL in the repo root.
 
-use axum::{
-    extract::{Query, State},
-    http::StatusCode,
-    Json,
-};
-use serde::{Deserialize, Serialize};
-use crate::auth::{self, UserInfo, AuthResponse};
+use crate::auth::{self, AuthResponse, UserInfo};
 use crate::db::PlatformDb;
 use crate::server::AppState;
+use axum::{
+    Json,
+    extract::{Query, State},
+    http::StatusCode,
+};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
 pub struct OAuthCallbackQuery {
@@ -90,27 +90,35 @@ pub async fn start_oauth(
 
     let url = match query.provider.to_lowercase().as_str() {
         "google" => {
-            let client_id = std::env::var("GOOGLE_CLIENT_ID").unwrap_or_else(|_| GOOGLE_CLIENT_ID.to_owned());
+            let client_id =
+                std::env::var("GOOGLE_CLIENT_ID").unwrap_or_else(|_| GOOGLE_CLIENT_ID.to_owned());
             if client_id.is_empty() {
                 return Err((
                     StatusCode::SERVICE_UNAVAILABLE,
-                    Json(serde_json::json!({"error": "Google OAuth not configured", "hint": "set GOOGLE_CLIENT_ID env var"})),
+                    Json(
+                        serde_json::json!({"error": "Google OAuth not configured", "hint": "set GOOGLE_CLIENT_ID env var"}),
+                    ),
                 ));
             }
-            let redirect = std::env::var("GOOGLE_REDIRECT_URI").unwrap_or_else(|_| GOOGLE_REDIRECT_URI.to_owned());
+            let redirect = std::env::var("GOOGLE_REDIRECT_URI")
+                .unwrap_or_else(|_| GOOGLE_REDIRECT_URI.to_owned());
             format!(
                 "https://accounts.google.com/o/oauth2/v2/auth?client_id={client_id}&redirect_uri={redirect}&response_type=code&scope=openid%20email%20profile&access_type=offline&state={csrf_state}"
             )
         }
         "github" => {
-            let client_id = std::env::var("GITHUB_CLIENT_ID").unwrap_or_else(|_| GITHUB_CLIENT_ID.to_owned());
+            let client_id =
+                std::env::var("GITHUB_CLIENT_ID").unwrap_or_else(|_| GITHUB_CLIENT_ID.to_owned());
             if client_id.is_empty() {
                 return Err((
                     StatusCode::SERVICE_UNAVAILABLE,
-                    Json(serde_json::json!({"error": "GitHub OAuth not configured", "hint": "set GITHUB_CLIENT_ID env var"})),
+                    Json(
+                        serde_json::json!({"error": "GitHub OAuth not configured", "hint": "set GITHUB_CLIENT_ID env var"}),
+                    ),
                 ));
             }
-            let redirect = std::env::var("GITHUB_REDIRECT_URI").unwrap_or_else(|_| GITHUB_REDIRECT_URI.to_owned());
+            let redirect = std::env::var("GITHUB_REDIRECT_URI")
+                .unwrap_or_else(|_| GITHUB_REDIRECT_URI.to_owned());
             format!(
                 "https://github.com/login/oauth/authorize?client_id={client_id}&redirect_uri={redirect}&scope=user:email&state={csrf_state}"
             )
@@ -118,7 +126,9 @@ pub async fn start_oauth(
         _ => {
             return Err((
                 StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({"error": "unsupported provider", "supported": ["google", "github"]})),
+                Json(
+                    serde_json::json!({"error": "unsupported provider", "supported": ["google", "github"]}),
+                ),
             ));
         }
     };
@@ -132,9 +142,12 @@ pub async fn google_callback(
 ) -> Result<Json<AuthResponse>, (StatusCode, Json<serde_json::Value>)> {
     validate_oauth_state(&state, query.state.as_deref())?;
 
-    let client_id = std::env::var("GOOGLE_CLIENT_ID").unwrap_or_else(|_| GOOGLE_CLIENT_ID.to_owned());
-    let client_secret = std::env::var("GOOGLE_CLIENT_SECRET").unwrap_or_else(|_| GOOGLE_CLIENT_SECRET.to_owned());
-    let redirect_uri = std::env::var("GOOGLE_REDIRECT_URI").unwrap_or_else(|_| GOOGLE_REDIRECT_URI.to_owned());
+    let client_id =
+        std::env::var("GOOGLE_CLIENT_ID").unwrap_or_else(|_| GOOGLE_CLIENT_ID.to_owned());
+    let client_secret =
+        std::env::var("GOOGLE_CLIENT_SECRET").unwrap_or_else(|_| GOOGLE_CLIENT_SECRET.to_owned());
+    let redirect_uri =
+        std::env::var("GOOGLE_REDIRECT_URI").unwrap_or_else(|_| GOOGLE_REDIRECT_URI.to_owned());
 
     if client_id.is_empty() || client_secret.is_empty() {
         return Err((
@@ -157,20 +170,40 @@ pub async fn google_callback(
         ])
         .send()
         .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": e.to_string()}))))?
+        .map_err(|e| {
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({"error": e.to_string()})),
+            )
+        })?
         .json()
         .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": e.to_string()}))))?;
+        .map_err(|e| {
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({"error": e.to_string()})),
+            )
+        })?;
 
     let google_user: GoogleUserInfo = client
         .get("https://www.googleapis.com/oauth2/v2/userinfo")
         .bearer_auth(&token_resp.access_token)
         .send()
         .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": e.to_string()}))))?
+        .map_err(|e| {
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({"error": e.to_string()})),
+            )
+        })?
         .json()
         .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": e.to_string()}))))?;
+        .map_err(|e| {
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({"error": e.to_string()})),
+            )
+        })?;
 
     let user = find_or_create_oauth_user(
         &state.db,
@@ -186,7 +219,13 @@ pub async fn google_callback(
         None,
         "user",
         &state.config.jwt_secret,
-    ).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e.to_string()}))))?;
+    )
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e.to_string()})),
+        )
+    })?;
 
     Ok(Json(AuthResponse { token, user }))
 }
@@ -197,9 +236,12 @@ pub async fn github_callback(
 ) -> Result<Json<AuthResponse>, (StatusCode, Json<serde_json::Value>)> {
     validate_oauth_state(&state, query.state.as_deref())?;
 
-    let client_id = std::env::var("GITHUB_CLIENT_ID").unwrap_or_else(|_| GITHUB_CLIENT_ID.to_owned());
-    let client_secret = std::env::var("GITHUB_CLIENT_SECRET").unwrap_or_else(|_| GITHUB_CLIENT_SECRET.to_owned());
-    let redirect_uri = std::env::var("GITHUB_REDIRECT_URI").unwrap_or_else(|_| GITHUB_REDIRECT_URI.to_owned());
+    let client_id =
+        std::env::var("GITHUB_CLIENT_ID").unwrap_or_else(|_| GITHUB_CLIENT_ID.to_owned());
+    let client_secret =
+        std::env::var("GITHUB_CLIENT_SECRET").unwrap_or_else(|_| GITHUB_CLIENT_SECRET.to_owned());
+    let redirect_uri =
+        std::env::var("GITHUB_REDIRECT_URI").unwrap_or_else(|_| GITHUB_REDIRECT_URI.to_owned());
 
     if client_id.is_empty() || client_secret.is_empty() {
         return Err((
@@ -221,10 +263,20 @@ pub async fn github_callback(
         .header("Accept", "application/json")
         .send()
         .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": e.to_string()}))))?
+        .map_err(|e| {
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({"error": e.to_string()})),
+            )
+        })?
         .json()
         .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": e.to_string()}))))?;
+        .map_err(|e| {
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({"error": e.to_string()})),
+            )
+        })?;
 
     let github_user: GitHubUserInfo = client
         .get("https://api.github.com/user")
@@ -232,10 +284,20 @@ pub async fn github_callback(
         .header("User-Agent", "suture-platform")
         .send()
         .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": e.to_string()}))))?
+        .map_err(|e| {
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({"error": e.to_string()})),
+            )
+        })?
         .json()
         .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": e.to_string()}))))?;
+        .map_err(|e| {
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({"error": e.to_string()})),
+            )
+        })?;
 
     let email = match github_user.email {
         Some(e) if !e.is_empty() => e,
@@ -256,7 +318,13 @@ pub async fn github_callback(
         None,
         "user",
         &state.config.jwt_secret,
-    ).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e.to_string()}))))?;
+    )
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e.to_string()})),
+        )
+    })?;
 
     Ok(Json(AuthResponse { token, user }))
 }
@@ -267,8 +335,12 @@ fn find_or_create_oauth_user(
     email: &str,
     display_name: Option<&str>,
 ) -> Result<UserInfo, (StatusCode, Json<serde_json::Value>)> {
-    let conn = db.conn()
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))))?;
+    let conn = db.conn().map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e})),
+        )
+    })?;
 
     let oauth_marker = format!("oauth:{provider_id}");
 
@@ -279,7 +351,13 @@ fn find_or_create_oauth_user(
     );
 
     if let Ok((user_id, email, display_name, tier, created_at)) = existing {
-        Ok(UserInfo { user_id, email, display_name, tier, created_at })
+        Ok(UserInfo {
+            user_id,
+            email,
+            display_name,
+            tier,
+            created_at,
+        })
     } else {
         let user_id = uuid::Uuid::new_v4().to_string();
         let display_name = display_name.unwrap_or("").to_owned();
@@ -295,10 +373,12 @@ fn find_or_create_oauth_user(
         })?;
 
         let month = chrono::Utc::now().format("%Y-%m").to_string();
-        let _ = conn.execute(
+        if let Err(e) = conn.execute(
             "INSERT OR IGNORE INTO usage (account_id, month) VALUES (?1, ?2)",
             rusqlite::params![user_id, month],
-        );
+        ) {
+            tracing::warn!("oauth usage init failed: {e}");
+        }
 
         Ok(UserInfo {
             user_id,
@@ -339,26 +419,28 @@ fn validate_oauth_state(
         Ok((_stored_provider, expires_at)) => {
             let now = chrono::Utc::now().timestamp();
             if now > expires_at {
-                let _ = conn.execute(
+                if let Err(e) = conn.execute(
                     "DELETE FROM oauth_states WHERE state_token = ?1",
                     rusqlite::params![provided_state],
-                );
+                ) {
+                    tracing::warn!("oauth state cleanup failed: {e}");
+                }
                 return Err((
                     StatusCode::BAD_REQUEST,
                     Json(serde_json::json!({"error": "OAuth state expired \u{2014} try again"})),
                 ));
             }
-            let _ = conn.execute(
+            if let Err(e) = conn.execute(
                 "DELETE FROM oauth_states WHERE state_token = ?1",
                 rusqlite::params![provided_state],
-            );
+            ) {
+                tracing::warn!("oauth state cleanup failed: {e}");
+            }
             Ok(())
         }
-        Err(_) => {
-            Err((
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({"error": "invalid OAuth state \u{2014} possible CSRF attack"})),
-            ))
-        }
+        Err(_) => Err((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "invalid OAuth state \u{2014} possible CSRF attack"})),
+        )),
     }
 }

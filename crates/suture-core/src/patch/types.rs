@@ -81,7 +81,7 @@ pub struct TouchSet {
 
 impl TouchSet {
     /// Create an empty touch set (identity patch).
-    #[must_use] 
+    #[must_use]
     pub fn empty() -> Self {
         Self {
             inner: BTreeSet::new(),
@@ -103,13 +103,13 @@ impl TouchSet {
     }
 
     /// Check if this touch set is empty.
-    #[must_use] 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
 
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.inner.len()
     }
@@ -125,13 +125,13 @@ impl TouchSet {
     }
 
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn intersects(&self, other: &Self) -> bool {
         self.inner.intersection(&other.inner).next().is_some()
     }
 
     /// Get the intersection of two touch sets.
-    #[must_use] 
+    #[must_use]
     pub fn intersection(&self, other: &Self) -> Self {
         Self {
             inner: self.inner.intersection(&other.inner).cloned().collect(),
@@ -139,19 +139,19 @@ impl TouchSet {
     }
 
     /// Get all addresses as a sorted Vec.
-    #[must_use] 
+    #[must_use]
     pub fn addresses(&self) -> Vec<String> {
         self.inner.iter().cloned().collect()
     }
 
     #[inline]
-    #[must_use] 
+    #[must_use]
     pub fn contains(&self, addr: &str) -> bool {
         self.inner.contains(addr)
     }
 
     /// Compute the union of two touch sets.
-    #[must_use] 
+    #[must_use]
     pub fn union(&self, other: &Self) -> Self {
         Self {
             inner: self.inner.union(&other.inner).cloned().collect(),
@@ -159,7 +159,7 @@ impl TouchSet {
     }
 
     /// Subtract addresses from this touch set.
-    #[must_use] 
+    #[must_use]
     pub fn subtract(&self, other: &Self) -> Self {
         Self {
             inner: self.inner.difference(&other.inner).cloned().collect(),
@@ -212,7 +212,7 @@ pub struct Patch {
 
 impl Patch {
     /// Create a new patch.
-    #[must_use] 
+    #[must_use]
     pub fn new(
         operation_type: OperationType,
         touch_set: TouchSet,
@@ -247,7 +247,7 @@ impl Patch {
 
     /// Create a patch with an explicit ID (used by Hub when reconstructing from proto/network).
     #[allow(clippy::too_many_arguments)]
-    #[must_use] 
+    #[must_use]
     pub fn with_id(
         id: Hash,
         operation_type: OperationType,
@@ -273,7 +273,7 @@ impl Patch {
     }
 
     /// Create an identity (no-op) patch.
-    #[must_use] 
+    #[must_use]
     pub fn identity(parent: PatchId, author: String) -> Self {
         Self::new(
             OperationType::Identity,
@@ -306,13 +306,13 @@ impl Patch {
     }
 
     /// Check if this is an identity (no-op) patch.
-    #[must_use] 
+    #[must_use]
     pub fn is_identity(&self) -> bool {
         self.operation_type == OperationType::Identity && self.touch_set.is_empty()
     }
 
     /// Create a batched commit patch that groups multiple file changes.
-    #[must_use] 
+    #[must_use]
     pub fn new_batch(
         mut file_changes: Vec<FileChange>,
         parent_ids: Vec<PatchId>,
@@ -336,7 +336,7 @@ impl Patch {
     }
 
     /// If this is a Batch patch, deserialize the file changes.
-    #[must_use] 
+    #[must_use]
     pub fn file_changes(&self) -> Option<Vec<FileChange>> {
         if self.operation_type == OperationType::Batch {
             serde_json::from_slice(&self.payload).ok()
@@ -346,7 +346,7 @@ impl Patch {
     }
 
     /// Whether this patch is a batched commit.
-    #[must_use] 
+    #[must_use]
     pub fn is_batch(&self) -> bool {
         self.operation_type == OperationType::Batch
     }
@@ -509,12 +509,28 @@ mod tests {
         #[test]
         fn test_batch_patch_deterministic_regardless_of_order() {
             let changes_a = vec![
-                FileChange { path: "z.txt".into(), op: OperationType::Create, payload: b"z".to_vec() },
-                FileChange { path: "a.txt".into(), op: OperationType::Create, payload: b"a".to_vec() },
+                FileChange {
+                    path: "z.txt".into(),
+                    op: OperationType::Create,
+                    payload: b"z".to_vec(),
+                },
+                FileChange {
+                    path: "a.txt".into(),
+                    op: OperationType::Create,
+                    payload: b"a".to_vec(),
+                },
             ];
             let changes_b = vec![
-                FileChange { path: "a.txt".into(), op: OperationType::Create, payload: b"a".to_vec() },
-                FileChange { path: "z.txt".into(), op: OperationType::Create, payload: b"z".to_vec() },
+                FileChange {
+                    path: "a.txt".into(),
+                    op: OperationType::Create,
+                    payload: b"a".to_vec(),
+                },
+                FileChange {
+                    path: "z.txt".into(),
+                    op: OperationType::Create,
+                    payload: b"z".to_vec(),
+                },
             ];
             let p1 = Patch::new_batch(changes_a, vec![], "alice".into(), "batch".into());
             let p2 = Patch::new_batch(changes_b, vec![], "alice".into(), "batch".into());

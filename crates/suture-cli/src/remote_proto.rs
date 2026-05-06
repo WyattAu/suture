@@ -177,7 +177,9 @@ pub fn sign_push_request(
     repo: &suture_core::repository::Repository,
     mut req: PushRequest,
 ) -> Result<PushRequest, Box<dyn std::error::Error>> {
-    let Some(key_name) = repo.get_config("signing.key").ok().flatten() else { return Ok(req) };
+    let Some(key_name) = repo.get_config("signing.key").ok().flatten() else {
+        return Ok(req);
+    };
 
     let keys_dir = std::path::Path::new(".suture").join("keys");
     // Validate key_name to prevent path traversal
@@ -226,7 +228,9 @@ pub fn get_remote_token(
 
 pub fn derive_repo_id(url: &str, remote_name: &str) -> String {
     let trimmed = url.trim_end_matches('/');
-    let after_scheme = trimmed.find("://").map_or(trimmed, |idx| &trimmed[idx + 3..]);
+    let after_scheme = trimmed
+        .find("://")
+        .map_or(trimmed, |idx| &trimmed[idx + 3..]);
     if let Some(path_start) = after_scheme.find('/') {
         let path = &after_scheme[path_start + 1..];
         if let Some(name) = path.rsplit('/').next()
@@ -359,11 +363,24 @@ pub async fn do_fetch(
         let target_id = suture_common::Hash::from_hex(&branch.target_id.value)?;
         let branch_name = suture_common::BranchName::new(&branch.name)?;
         let ref_key = format!("remote.{}.ref.{}", remote, branch.name);
-        repo.meta().set_config(&ref_key, &target_id.to_hex()).ok();
+        repo.meta()
+            .set_config(&ref_key, &target_id.to_hex())
+            .map_err(|e| eprintln!("suture: warning: failed to store remote ref {ref_key}: {e}"))
+            .ok();
         if repo.dag().branch_exists(&branch_name) {
-            let _ = repo.dag_mut().update_branch(&branch_name, target_id);
+            repo.dag_mut()
+                .update_branch(&branch_name, target_id)
+                .map_err(|e| {
+                    eprintln!("suture: warning: failed to update DAG branch {branch_name}: {e}")
+                })
+                .ok();
         } else {
-            let _ = repo.dag_mut().create_branch(branch_name.clone(), target_id);
+            repo.dag_mut()
+                .create_branch(branch_name.clone(), target_id)
+                .map_err(|e| {
+                    eprintln!("suture: warning: failed to create DAG branch {branch_name}: {e}")
+                })
+                .ok();
         }
         repo.meta().set_branch(&branch_name, &target_id)?;
     }

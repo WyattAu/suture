@@ -6,9 +6,9 @@
 // See LICENSE-AGPL and LICENSE-COMMERCIAL in the repo root.
 
 use axum::{
+    Json,
     extract::{Extension, Path, State},
     http::StatusCode,
-    Json,
 };
 use serde::{Deserialize, Serialize};
 
@@ -45,7 +45,9 @@ pub async fn create_org(
     {
         return Err((
             StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({"error": "org name must be 2-39 alphanumeric characters (hyphens and underscores allowed)"})),
+            Json(
+                serde_json::json!({"error": "org name must be 2-39 alphanumeric characters (hyphens and underscores allowed)"}),
+            ),
         ));
     }
 

@@ -5,11 +5,11 @@
 // Suture Commercial License (for enterprise features).
 // See LICENSE-AGPL and LICENSE-COMMERCIAL in the repo root.
 
-use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
-use argon2::password_hash::rand_core::OsRng;
 use argon2::password_hash::SaltString;
+use argon2::password_hash::rand_core::OsRng;
+use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use chrono::Utc;
-use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
+use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 
 use crate::db::PlatformDb;
@@ -67,8 +67,11 @@ pub fn hash_password(password: &str) -> anyhow::Result<String> {
 }
 
 pub fn verify_password(password: &str, hash: &str) -> anyhow::Result<bool> {
-    let parsed = PasswordHash::new(hash).map_err(|e| anyhow::anyhow!("invalid password hash: {e}"))?;
-    Ok(Argon2::default().verify_password(password.as_bytes(), &parsed).is_ok())
+    let parsed =
+        PasswordHash::new(hash).map_err(|e| anyhow::anyhow!("invalid password hash: {e}"))?;
+    Ok(Argon2::default()
+        .verify_password(password.as_bytes(), &parsed)
+        .is_ok())
 }
 
 pub fn create_jwt(
@@ -120,7 +123,9 @@ pub fn register_user(db: &PlatformDb, req: &RegisterRequest) -> anyhow::Result<(
     let password_hash = hash_password(&req.password)?;
     let display_name = req.display_name.clone().unwrap_or_default();
 
-    let conn = db.conn().map_err(|e| anyhow::anyhow!("failed to get db connection for user registration: {e}"))?;
+    let conn = db
+        .conn()
+        .map_err(|e| anyhow::anyhow!("failed to get db connection for user registration: {e}"))?;
     conn.execute(
         "INSERT INTO accounts (user_id, email, password_hash, display_name) VALUES (?1, ?2, ?3, ?4)",
         rusqlite::params![user_id, req.email, password_hash, display_name],
@@ -145,13 +150,17 @@ pub fn register_user(db: &PlatformDb, req: &RegisterRequest) -> anyhow::Result<(
 }
 
 pub fn login_user(db: &PlatformDb, req: &LoginRequest) -> anyhow::Result<(String, UserInfo)> {
-    let conn = db.conn().map_err(|e| anyhow::anyhow!("failed to get db connection for user login: {e}"))?;
+    let conn = db
+        .conn()
+        .map_err(|e| anyhow::anyhow!("failed to get db connection for user login: {e}"))?;
     let mut stmt = conn.prepare(
         "SELECT user_id, email, password_hash, display_name, tier, created_at FROM accounts WHERE email = ?1",
     )?;
     let mut rows = stmt.query(rusqlite::params![req.email])?;
 
-    let row = rows.next()?.ok_or_else(|| anyhow::anyhow!("invalid email or password"))?;
+    let row = rows
+        .next()?
+        .ok_or_else(|| anyhow::anyhow!("invalid email or password"))?;
     let user_id: String = row.get(0)?;
     let email: String = row.get(1)?;
     let password_hash: String = row.get(2)?;
@@ -176,13 +185,17 @@ pub fn login_user(db: &PlatformDb, req: &LoginRequest) -> anyhow::Result<(String
 }
 
 pub fn get_user_by_id(db: &PlatformDb, user_id: &str) -> anyhow::Result<UserInfo> {
-    let conn = db.conn().map_err(|e| anyhow::anyhow!("failed to get db connection for user lookup: {e}"))?;
+    let conn = db
+        .conn()
+        .map_err(|e| anyhow::anyhow!("failed to get db connection for user lookup: {e}"))?;
     let mut stmt = conn.prepare(
         "SELECT user_id, email, display_name, tier, created_at FROM accounts WHERE user_id = ?1",
     )?;
     let mut rows = stmt.query(rusqlite::params![user_id])?;
 
-    let row = rows.next()?.ok_or_else(|| anyhow::anyhow!("user not found"))?;
+    let row = rows
+        .next()?
+        .ok_or_else(|| anyhow::anyhow!("user not found"))?;
     Ok(UserInfo {
         user_id: row.get(0)?,
         email: row.get(1)?,
@@ -192,18 +205,26 @@ pub fn get_user_by_id(db: &PlatformDb, user_id: &str) -> anyhow::Result<UserInfo
     })
 }
 
-use axum::{extract::State, http::StatusCode, Extension, Json};
 use crate::server::AppState;
+use axum::{Extension, Json, extract::State, http::StatusCode};
 
 pub fn revoke_jwt(db: &PlatformDb, token: &str, secret: &str) -> anyhow::Result<()> {
     let claims = verify_jwt(token, secret)?;
-    let jti = claims.jti.as_ref().ok_or_else(|| anyhow::anyhow!("token has no jti claim"))?;
-    let conn = db.conn().map_err(|e| anyhow::anyhow!("failed to get db connection for token revocation: {e}"))?;
+    let jti = claims
+        .jti
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("token has no jti claim"))?;
+    let conn = db
+        .conn()
+        .map_err(|e| anyhow::anyhow!("failed to get db connection for token revocation: {e}"))?;
     conn.execute(
         "INSERT OR IGNORE INTO revoked_tokens (jti, expires_at) VALUES (?1, ?2)",
-        rusqlite::params![jti, chrono::DateTime::from_timestamp(claims.exp as i64, 0)
-            .unwrap_or_else(chrono::Utc::now)
-            .to_rfc3339()],
+        rusqlite::params![
+            jti,
+            chrono::DateTime::from_timestamp(claims.exp as i64, 0)
+                .unwrap_or_else(chrono::Utc::now)
+                .to_rfc3339()
+        ],
     )?;
     Ok(())
 }
@@ -353,12 +374,17 @@ pub async fn list_users_handler(
 }
 
 pub fn revoke_jwt_by_jti(db: &PlatformDb, jti: &str, exp: usize) -> anyhow::Result<()> {
-    let conn = db.conn().map_err(|e| anyhow::anyhow!("failed to get db connection for token revocation: {e}"))?;
+    let conn = db
+        .conn()
+        .map_err(|e| anyhow::anyhow!("failed to get db connection for token revocation: {e}"))?;
     conn.execute(
         "INSERT OR IGNORE INTO revoked_tokens (jti, expires_at) VALUES (?1, ?2)",
-        rusqlite::params![jti, chrono::DateTime::from_timestamp(exp as i64, 0)
-            .unwrap_or_else(chrono::Utc::now)
-            .to_rfc3339()],
+        rusqlite::params![
+            jti,
+            chrono::DateTime::from_timestamp(exp as i64, 0)
+                .unwrap_or_else(chrono::Utc::now)
+                .to_rfc3339()
+        ],
     )?;
     Ok(())
 }

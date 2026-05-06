@@ -51,17 +51,20 @@ pub async fn cmd_key(action: &crate::KeyAction) -> Result<(), Box<dyn std::error
         }
         KeyAction::Public { name } => {
             let key = format!("key.public.{name}");
-            if let Some(pub_hex) = repo.get_config(&key)? { println!("{pub_hex}") } else {
+            if let Some(pub_hex) = repo.get_config(&key)? {
+                println!("{pub_hex}")
+            } else {
                 let all_keys: Vec<String> = repo
                     .list_config()
                     .unwrap_or_default()
                     .into_iter()
-                    .filter_map(|(k, _)| k.strip_prefix("key.public.").map(std::borrow::ToOwned::to_owned))
+                    .filter_map(|(k, _)| {
+                        k.strip_prefix("key.public.")
+                            .map(std::borrow::ToOwned::to_owned)
+                    })
                     .collect();
                 if let Some(suggestion) = crate::fuzzy::suggest(name, &all_keys) {
-                    eprintln!(
-                        "No public key found for '{name}' (did you mean '{suggestion}'?)"
-                    );
+                    eprintln!("No public key found for '{name}' (did you mean '{suggestion}'?)");
                 } else {
                     eprintln!("No public key found for '{name}'");
                 }

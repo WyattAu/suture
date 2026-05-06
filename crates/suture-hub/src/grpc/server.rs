@@ -17,12 +17,12 @@ pub struct GrpcServer {
 }
 
 impl GrpcServer {
-    #[must_use] 
+    #[must_use]
     pub fn new(addr: SocketAddr) -> Self {
         Self { addr }
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn addr(&self) -> SocketAddr {
         self.addr
     }

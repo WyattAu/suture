@@ -25,8 +25,9 @@ pub async fn cmd_export(
         repo.snapshot(&patch.id)?
     };
 
-    let effective_output =
-        client.as_ref().map_or_else(|| output.to_owned(), |name| format!("{output}/{name}"));
+    let effective_output = client
+        .as_ref()
+        .map_or_else(|| output.to_owned(), |name| format!("{output}/{name}"));
 
     let date = chrono::Local::now().format("%Y-%m-%d").to_string();
     let version = ref_str;
@@ -182,7 +183,9 @@ fn copy_template_recursive(
     ctx: &ExportContext,
     count: &mut usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let entries: Vec<_> = std::fs::read_dir(src)?.filter_map(std::result::Result::ok).collect();
+    let entries: Vec<_> = std::fs::read_dir(src)?
+        .filter_map(std::result::Result::ok)
+        .collect();
 
     for entry in &entries {
         let src_path = entry.path();

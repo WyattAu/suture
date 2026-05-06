@@ -7,7 +7,7 @@ use std::fmt::Write;
 pub struct HtmlDriver;
 
 impl HtmlDriver {
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self
     }
@@ -79,8 +79,10 @@ impl HtmlDriver {
         };
 
         let text = node.text().unwrap_or("").trim();
-        let element_children: Vec<roxmltree::Node> =
-            node.children().filter(roxmltree::Node::is_element).collect();
+        let element_children: Vec<roxmltree::Node> = node
+            .children()
+            .filter(roxmltree::Node::is_element)
+            .collect();
 
         if element_children.is_empty() && text.is_empty() {
             format!("{pad}<{tag}{attr_str}/>")
@@ -89,7 +91,8 @@ impl HtmlDriver {
         } else {
             let mut result = format!("{pad}<{tag}{attr_str}>\n");
             if !text.is_empty() {
-                let _ = writeln!(result, 
+                let _ = writeln!(
+                    result,
                     "{}{}",
                     "  ".repeat(indent + 1),
                     Self::escape_xml(text)
@@ -266,12 +269,18 @@ impl HtmlDriver {
             }
         }
 
-        let base_children: Vec<roxmltree::Node> =
-            base.children().filter(roxmltree::Node::is_element).collect();
-        let ours_children: Vec<roxmltree::Node> =
-            ours.children().filter(roxmltree::Node::is_element).collect();
-        let theirs_children: Vec<roxmltree::Node> =
-            theirs.children().filter(roxmltree::Node::is_element).collect();
+        let base_children: Vec<roxmltree::Node> = base
+            .children()
+            .filter(roxmltree::Node::is_element)
+            .collect();
+        let ours_children: Vec<roxmltree::Node> = ours
+            .children()
+            .filter(roxmltree::Node::is_element)
+            .collect();
+        let theirs_children: Vec<roxmltree::Node> = theirs
+            .children()
+            .filter(roxmltree::Node::is_element)
+            .collect();
 
         let max_len = base_children
             .len()
@@ -347,7 +356,8 @@ impl HtmlDriver {
         } else {
             let mut result = format!("{pad}<{tag}{attr_str}>\n");
             if !merged_text.is_empty() {
-                let _ = writeln!(result, 
+                let _ = writeln!(
+                    result,
                     "{}{}",
                     "  ".repeat(indent + 1),
                     Self::escape_xml(&merged_text)
@@ -454,15 +464,14 @@ impl SutureDriver for HtmlDriver {
 
         let mut result = String::new();
         result.push_str("<!DOCTYPE html>\n");
-        Self::merge_elements(base_doc.root(), ours_doc.root(), theirs_doc.root(), 0)?
-            .map_or_else(
-                || Ok(None),
-                |merged| {
-                    result.push_str(&merged);
-                    result.push('\n');
-                    Ok(Some(result))
-                },
-            )
+        Self::merge_elements(base_doc.root(), ours_doc.root(), theirs_doc.root(), 0)?.map_or_else(
+            || Ok(None),
+            |merged| {
+                result.push_str(&merged);
+                result.push('\n');
+                Ok(Some(result))
+            },
+        )
     }
 }
 

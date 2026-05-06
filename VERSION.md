@@ -7,7 +7,6 @@
 - **Last Updated:** 2026-04-30
 - **Rust Edition:** 2024
 - **Tests:** 1,438 passed, 0 failed, 3 ignored (1,231 unit + 21 raft + 186 E2E)
-- **Lean 4:** v4.29.1 (23 theorems proved)
 
 ## Tier 2 Status (All Complete)
 

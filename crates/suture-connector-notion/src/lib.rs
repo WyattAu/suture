@@ -296,7 +296,9 @@ impl NotionClient {
                 .and_then(|v| v.to_str().ok())
                 .and_then(|v| v.parse::<u64>().ok())
                 .unwrap_or(1000);
-            return Err(NotionError::RateLimited { retry_after_ms: retry });
+            return Err(NotionError::RateLimited {
+                retry_after_ms: retry,
+            });
         }
         if !resp.status().is_success() {
             let body: NotionApiResponse = resp.json().await.unwrap_or(NotionApiResponse {
@@ -330,10 +332,7 @@ impl NotionClient {
     }
 
     /// Get the blocks (content) of a page.
-    pub async fn get_page_blocks(
-        &self,
-        page_id: &str,
-    ) -> Result<Vec<NotionBlock>, NotionError> {
+    pub async fn get_page_blocks(&self, page_id: &str) -> Result<Vec<NotionBlock>, NotionError> {
         let url = format!("{}/blocks/{page_id}/children?page_size=100", self.base_url);
         let resp = self
             .http
@@ -351,7 +350,9 @@ impl NotionClient {
                 .and_then(|v| v.to_str().ok())
                 .and_then(|v| v.parse::<u64>().ok())
                 .unwrap_or(1000);
-            return Err(NotionError::RateLimited { retry_after_ms: retry });
+            return Err(NotionError::RateLimited {
+                retry_after_ms: retry,
+            });
         }
         if !resp.status().is_success() {
             let body: NotionApiResponse = resp.json().await.unwrap_or(NotionApiResponse {
@@ -368,10 +369,7 @@ impl NotionClient {
     }
 
     /// Query a database.
-    pub async fn query_database(
-        &self,
-        database_id: &str,
-    ) -> Result<Vec<DatabaseRow>, NotionError> {
+    pub async fn query_database(&self, database_id: &str) -> Result<Vec<DatabaseRow>, NotionError> {
         let url = format!("{}/databases/{database_id}/query", self.base_url);
         let resp = self
             .http
@@ -391,7 +389,9 @@ impl NotionClient {
                 .and_then(|v| v.to_str().ok())
                 .and_then(|v| v.parse::<u64>().ok())
                 .unwrap_or(1000);
-            return Err(NotionError::RateLimited { retry_after_ms: retry });
+            return Err(NotionError::RateLimited {
+                retry_after_ms: retry,
+            });
         }
         if !resp.status().is_success() {
             let body: NotionApiResponse = resp.json().await.unwrap_or(NotionApiResponse {
@@ -408,10 +408,7 @@ impl NotionClient {
     }
 
     /// Convert a page's blocks to markdown.
-    pub async fn page_to_markdown(
-        &self,
-        page_id: &str,
-    ) -> Result<String, NotionError> {
+    pub async fn page_to_markdown(&self, page_id: &str) -> Result<String, NotionError> {
         let blocks = self.get_page_blocks(page_id).await?;
         if blocks.is_empty() {
             return Err(NotionError::EmptyContent);
@@ -429,10 +426,7 @@ impl NotionClient {
     }
 
     /// Convert a database to JSON array of rows.
-    pub async fn database_to_json(
-        &self,
-        database_id: &str,
-    ) -> Result<String, NotionError> {
+    pub async fn database_to_json(&self, database_id: &str) -> Result<String, NotionError> {
         let rows = self.query_database(database_id).await?;
         let json = serde_json::to_string_pretty(&rows)?;
         Ok(json)
@@ -588,10 +582,7 @@ fn blocks_to_markdown(blocks: &[NotionBlock]) -> String {
             }
             "child_database" => {
                 if let Some(content) = &block.child_database {
-                    md.push_str(&format!(
-                        "[Database: {}]\n\n",
-                        content.title
-                    ));
+                    md.push_str(&format!("[Database: {}]\n\n", content.title));
                 }
             }
             "bookmark" => {
@@ -617,7 +608,10 @@ fn blocks_to_markdown(blocks: &[NotionBlock]) -> String {
                 }
             }
             _ => {
-                md.push_str(&format!("<!-- unsupported block type: {} -->\n\n", block.block_type));
+                md.push_str(&format!(
+                    "<!-- unsupported block type: {} -->\n\n",
+                    block.block_type
+                ));
             }
         }
 

@@ -43,7 +43,7 @@ impl std::fmt::Debug for MountHandle {
 }
 
 impl MountHandle {
-    #[must_use] 
+    #[must_use]
     pub fn info(&self) -> &MountInfo {
         &self.info
     }
@@ -59,7 +59,7 @@ pub struct MountManager {
 }
 
 impl MountManager {
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             mounts: HashMap::new(),
@@ -112,12 +112,12 @@ impl MountManager {
         handle.unmount()
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn list_mounts(&self) -> Vec<&MountInfo> {
         self.mounts.values().map(|h| &h.info).collect()
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn get_mount(&self, mount_point: &Path) -> Option<&MountHandle> {
         let key = mount_point.to_string_lossy().to_string();
         self.mounts.get(&key)
@@ -127,12 +127,12 @@ impl MountManager {
         self.mounts.clear();
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.mounts.is_empty()
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.mounts.len()
     }

@@ -29,7 +29,7 @@ pub enum CommuteResult {
 /// Note that some patches with overlapping touch sets MAY still commute
 /// (e.g., writing the same value), but we conservatively report them as
 /// non-commuting to guarantee correctness.
-#[must_use] 
+#[must_use]
 pub fn commute(p1: &Patch, p2: &Patch) -> CommuteResult {
     // Identity patches commute with everything
     if p1.is_identity() || p2.is_identity() {

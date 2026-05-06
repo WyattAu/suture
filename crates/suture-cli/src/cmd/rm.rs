@@ -1,7 +1,4 @@
-pub async fn cmd_rm(
-    paths: &[String],
-    cached: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_rm(paths: &[String], cached: bool) -> Result<(), Box<dyn std::error::Error>> {
     let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
     for path in paths {
         if !cached {

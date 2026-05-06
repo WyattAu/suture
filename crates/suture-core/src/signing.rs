@@ -20,8 +20,6 @@ pub enum SigningError {
 
     #[error("key error: {0}")]
     KeyError(String),
-
-
 }
 
 #[derive(Clone)]
@@ -40,29 +38,29 @@ impl SigningKeypair {
         }
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn public_key_bytes(&self) -> [u8; 32] {
         self.verifying_key.to_bytes()
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn private_key_bytes(&self) -> Vec<u8> {
         self.signing_key.to_bytes().to_vec()
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn sign(&self, canonical_bytes: &[u8]) -> Signature {
         self.signing_key.sign(canonical_bytes)
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn verifying_key(&self) -> &VerifyingKey {
         &self.verifying_key
     }
 }
 
 #[allow(clippy::too_many_arguments)]
-#[must_use] 
+#[must_use]
 pub fn canonical_patch_bytes(
     operation_type: &str,
     touch_set: &[String],

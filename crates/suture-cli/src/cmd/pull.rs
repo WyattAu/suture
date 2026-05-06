@@ -103,9 +103,7 @@ pub async fn cmd_pull(
                     println!("Resolved {resolved} LFS object(s)");
                 }
                 if missing > 0 {
-                    eprintln!(
-                        "{missing} LFS object(s) not found locally (run `suture lfs pull`)"
-                    );
+                    eprintln!("{missing} LFS object(s) not found locally (run `suture lfs pull`)");
                 }
             }
             Err(e) => {

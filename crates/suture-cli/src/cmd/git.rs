@@ -88,9 +88,7 @@ fn read_git_object(
     }
     let obj_path = git_dir.join("objects").join(&sha[..2]).join(&sha[2..]);
     let compressed = std::fs::read(&obj_path).map_err(|e| {
-        format!(
-            "cannot read git object {sha}: {e} (packed objects are not supported)"
-        )
+        format!("cannot read git object {sha}: {e} (packed objects are not supported)")
     })?;
     let mut decoder = flate2::read::ZlibDecoder::new(&compressed[..]);
     let mut decompressed = Vec::new();
@@ -229,12 +227,16 @@ fn read_head_sha(git_dir: &Path) -> Result<String, Box<dyn std::error::Error>> {
 }
 
 fn walk_commits(git_dir: &Path) -> Vec<(String, GitCommit)> {
-    let Ok(head_sha) = read_head_sha(git_dir) else { return Vec::new() };
+    let Ok(head_sha) = read_head_sha(git_dir) else {
+        return Vec::new();
+    };
     let mut commits = Vec::new();
     let mut current = head_sha;
     let mut seen = std::collections::HashSet::new();
     while !current.is_empty() && seen.insert(current.clone()) {
-        let Ok(commit) = read_commit(git_dir, &current) else { break };
+        let Ok(commit) = read_commit(git_dir, &current) else {
+            break;
+        };
         let parent = commit.parents.first().cloned().unwrap_or_default();
         commits.push((current.clone(), commit));
         current = parent;
@@ -546,13 +548,9 @@ fn cmd_driver_list() -> Result<(), Box<dyn std::error::Error>> {
 
     let script_path = std::path::Path::new(SUTURE_DRIVER_SCRIPT_PATH);
     if script_path.exists() {
-        println!(
-            "  driver script:     {SUTURE_DRIVER_SCRIPT_PATH} (exists)"
-        );
+        println!("  driver script:     {SUTURE_DRIVER_SCRIPT_PATH} (exists)");
     } else {
-        println!(
-            "  driver script:     {SUTURE_DRIVER_SCRIPT_PATH} (missing)"
-        );
+        println!("  driver script:     {SUTURE_DRIVER_SCRIPT_PATH} (missing)");
     }
 
     Ok(())
@@ -727,13 +725,13 @@ fn git_log(path: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
 
     for (sha, _reflog_msg) in &reflog_entries {
         let Ok(commit) = read_commit(&git_dir, sha) else {
-                commit_infos.push((sha.clone(), "(cannot read)".to_owned(), 0, 0, 0));
-                continue;
-            };
+            commit_infos.push((sha.clone(), "(cannot read)".to_owned(), 0, 0, 0));
+            continue;
+        };
         let Ok(tree) = flatten_tree(&git_dir, &commit.tree, "") else {
-                commit_infos.push((sha.clone(), commit.message.clone(), 0, 0, 0));
-                continue;
-            };
+            commit_infos.push((sha.clone(), commit.message.clone(), 0, 0, 0));
+            continue;
+        };
 
         let mut added = 0usize;
         let mut modified = 0usize;
@@ -765,7 +763,9 @@ fn git_log(path: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
     let total = commit_infos.len();
     for (pos, (sha, message, added, modified, deleted)) in commit_infos.iter().enumerate().rev() {
         let short = &sha[..8];
-        let branch = sha_to_branch.get(sha).map_or("-", std::string::String::as_str);
+        let branch = sha_to_branch
+            .get(sha)
+            .map_or("-", std::string::String::as_str);
         let is_head = pos == total - 1;
         let marker = if is_head { " * " } else { "   " };
 

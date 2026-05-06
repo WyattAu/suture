@@ -6,9 +6,9 @@
 // See LICENSE-AGPL and LICENSE-COMMERCIAL in the repo root.
 
 use axum::{
+    Json,
     extract::{Extension, State},
     http::StatusCode,
-    Json,
 };
 use serde::{Deserialize, Serialize};
 
@@ -98,7 +98,12 @@ pub async fn list_drivers(State(_state): State<AppState>) -> Json<SupportedDrive
         },
         DriverInfo {
             name: "Markdown".into(),
-            extensions: vec![".md".into(), ".markdown".into(), ".mdown".into(), ".mkd".into()],
+            extensions: vec![
+                ".md".into(),
+                ".markdown".into(),
+                ".mdown".into(),
+                ".mkd".into(),
+            ],
         },
         DriverInfo {
             name: "SVG".into(),
@@ -118,7 +123,18 @@ pub async fn list_drivers(State(_state): State<AppState>) -> Json<SupportedDrive
         },
         DriverInfo {
             name: "Image".into(),
-            extensions: vec![".png".into(), ".jpg".into(), ".jpeg".into(), ".gif".into(), ".bmp".into(), ".webp".into(), ".tiff".into(), ".tif".into(), ".ico".into(), ".avif".into()],
+            extensions: vec![
+                ".png".into(),
+                ".jpg".into(),
+                ".jpeg".into(),
+                ".gif".into(),
+                ".bmp".into(),
+                ".webp".into(),
+                ".tiff".into(),
+                ".tif".into(),
+                ".ico".into(),
+                ".avif".into(),
+            ],
         },
         DriverInfo {
             name: "OpenTimelineIO".into(),
@@ -182,9 +198,8 @@ pub async fn merge_files(
         "docx" => merge_with::<DocxDriver>(&req),
         "feed" | "rss" | "atom" => merge_with::<FeedDriver>(&req),
         "ical" | "ics" | "ifb" => merge_with::<IcalDriver>(&req),
-        "image" | "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "tiff" | "tif" | "ico" | "avif" => {
-            merge_with::<ImageDriver>(&req)
-        }
+        "image" | "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "tiff" | "tif" | "ico"
+        | "avif" => merge_with::<ImageDriver>(&req),
         "otio" => merge_with::<OtioDriver>(&req),
         "pdf" => merge_with::<PdfDriver>(&req),
         "pptx" => merge_with::<PptxDriver>(&req),

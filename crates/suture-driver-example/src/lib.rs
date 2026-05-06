@@ -11,7 +11,7 @@ impl Default for PropertiesDriver {
 }
 
 impl PropertiesDriver {
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self
     }
@@ -138,9 +138,8 @@ impl SutureDriver for PropertiesDriver {
         base_content: Option<&str>,
         new_content: &str,
     ) -> Result<Vec<SemanticChange>, DriverError> {
-        let base_entries: Vec<(String, String)> = base_content
-            .map(Self::parse_properties)
-            .unwrap_or_default();
+        let base_entries: Vec<(String, String)> =
+            base_content.map(Self::parse_properties).unwrap_or_default();
         let new_entries = Self::parse_properties(new_content);
 
         let base_map: std::collections::HashMap<&str, &str> = base_entries

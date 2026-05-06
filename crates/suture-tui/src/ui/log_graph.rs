@@ -19,7 +19,11 @@ pub fn compute_graph(entries: &[LogEntry]) -> Vec<GraphRow> {
     for (i, entry) in entries.iter().enumerate() {
         let is_last = i == n - 1;
 
-        let marker = if entry.is_merge { "\u{25c6}" } else { "\u{25cf}" };
+        let marker = if entry.is_merge {
+            "\u{25c6}"
+        } else {
+            "\u{25cf}"
+        };
         let connector = if is_last { "\u{2514}" } else { "\u{2502}" };
 
         let commit_prefix = format!("{connector} {marker} ");

@@ -32,9 +32,9 @@ pub async fn cmd_merge_abort() -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|e| user_error("failed to open repository", e))?;
 
     let Some(parents_json) = repo.get_config("pending_merge_parents").ok().flatten() else {
-            println!("no merge in progress");
-            return Ok(());
-        };
+        println!("no merge in progress");
+        return Ok(());
+    };
 
     let parents: Vec<suture_common::Hash> = serde_json::from_str(&parents_json)
         .map_err(|e| format!("failed to parse pending_merge_parents: {e}"))?;
@@ -68,14 +68,20 @@ pub async fn cmd_merge_abort() -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|e| user_error("failed to sync working tree", e))?;
 
     repo.set_config("pending_merge_parents", "")?;
-    let _ = repo
+    if let Err(e) = repo
         .meta()
         .conn()
-        .execute("DELETE FROM config WHERE key = 'pending_merge_parents'", []);
-    let _ = repo
+        .execute("DELETE FROM config WHERE key = 'pending_merge_parents'", [])
+    {
+        eprintln!("suture: warning: failed to clean up pending_merge_parents config: {e}");
+    }
+    if let Err(e) = repo
         .meta()
         .conn()
-        .execute("DELETE FROM config WHERE key = 'pending_merge_branch'", []);
+        .execute("DELETE FROM config WHERE key = 'pending_merge_branch'", [])
+    {
+        eprintln!("suture: warning: failed to clean up pending_merge_branch config: {e}");
+    }
 
     let conflicts_dir = repo.root().join(".suture").join("conflicts");
     if conflicts_dir.exists() {
@@ -94,7 +100,8 @@ pub async fn cmd_merge_continue() -> Result<(), Box<dyn std::error::Error>> {
     let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))
         .map_err(|e| user_error("failed to open repository", e))?;
 
-    if let Ok(Some(_)) = repo.get_config("pending_merge_parents") {} else {
+    if let Ok(Some(_)) = repo.get_config("pending_merge_parents") {
+    } else {
         println!("no merge in progress");
         return Ok(());
     }
@@ -129,10 +136,13 @@ pub async fn cmd_merge_continue() -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|e| user_error("failed to commit", e))?;
     println!("Merge complete: {patch_id}");
 
-    let _ = repo
+    if let Err(e) = repo
         .meta()
         .conn()
-        .execute("DELETE FROM config WHERE key = 'pending_merge_branch'", []);
+        .execute("DELETE FROM config WHERE key = 'pending_merge_branch'", [])
+    {
+        eprintln!("suture: warning: failed to clean up pending_merge_branch config: {e}");
+    }
 
     let conflicts_dir = repo.root().join(".suture").join("conflicts");
     if conflicts_dir.exists() {
@@ -155,9 +165,7 @@ pub async fn cmd_merge(
     use suture_core::repository::ConflictInfo;
 
     let merge_strategy = MergeStrategy::parse(strategy).ok_or_else(|| {
-        format!(
-            "unknown merge strategy '{strategy}' (expected: semantic, ours, theirs, manual)"
-        )
+        format!("unknown merge strategy '{strategy}' (expected: semantic, ours, theirs, manual)")
     })?;
 
     let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))
@@ -172,10 +180,10 @@ pub async fn cmd_merge(
 
     let branches: Vec<String> = repo.list_branches().into_iter().map(|(n, _)| n).collect();
     if !branches.contains(&source.to_owned()) && repo.resolve_ref(source).is_err() {
-        let hint = crate::fuzzy::suggest(source, &branches).map_or_else(
-            String::new,
-            |suggestion| format!(" (did you mean '{suggestion}'?)"),
-        );
+        let hint = crate::fuzzy::suggest(source, &branches)
+            .map_or_else(String::new, |suggestion| {
+                format!(" (did you mean '{suggestion}'?)")
+            });
         return Err(format!(
             "branch '{source}' not found{hint} (use 'suture branch' to create it)"
         )
@@ -229,8 +237,11 @@ pub async fn cmd_merge(
             .map_err(|e| user_error("merge failed", e))?
     };
 
-    if !result.is_clean && !dry_run {
-        let _ = repo.set_config("pending_merge_branch", source);
+    if !result.is_clean
+        && !dry_run
+        && let Err(e) = repo.set_config("pending_merge_branch", source)
+    {
+        eprintln!("suture: warning: failed to set pending_merge_branch config: {e}");
     }
 
     if result.is_clean {
@@ -309,7 +320,9 @@ pub async fn cmd_merge(
                     "strategy": strategy,
                 })
                 .to_string();
-                let _ = audit.append(&author, "merge", &details);
+                if let Err(e) = audit.append(&author, "merge", &details) {
+                    eprintln!("suture: warning: audit log write failed: {e}");
+                }
             }
         }
 
@@ -350,7 +363,12 @@ pub async fn cmd_merge(
                         eprintln!("warning: could not restore '{}': {}", conflict.path, e);
                     } else {
                         ooxml_resolved += 1;
-                        let _ = repo.add(&conflict.path);
+                        if let Err(e) = repo.add(&conflict.path) {
+                            eprintln!(
+                                "suture: warning: failed to stage resolved file {}: {e}",
+                                conflict.path
+                            );
+                        }
                     }
                 }
             }
@@ -399,9 +417,7 @@ pub async fn cmd_merge(
                     }
                 }
                 if resolved_count > 0 {
-                    println!(
-                        "Would resolve {resolved_count} conflict(s) via semantic drivers"
-                    );
+                    println!("Would resolve {resolved_count} conflict(s) via semantic drivers");
                 }
                 if remaining.is_empty() && resolved_count > 0 {
                     println!("All conflicts would be resolved via semantic drivers.");
@@ -446,14 +462,17 @@ pub async fn cmd_merge(
                     if let Err(e) = std::fs::write(&conflict.path, &blob) {
                         eprintln!("warning: could not write '{}': {}", conflict.path, e);
                     } else {
-                        let _ = repo.add(&conflict.path);
+                        if let Err(e) = repo.add(&conflict.path) {
+                            eprintln!(
+                                "suture: warning: failed to stage resolved file {}: {e}",
+                                conflict.path
+                            );
+                        }
                         resolved_count += 1;
                     }
                 }
             }
-            println!(
-                "Resolved {resolved_count} conflict(s) by keeping their version"
-            );
+            println!("Resolved {resolved_count} conflict(s) by keeping their version");
         }
         MergeStrategy::Semantic => {
             let registry = crate::driver_registry::builtin_registry();
@@ -485,13 +504,13 @@ pub async fn cmd_merge(
                     (Some(base_b), Some(ours_b), Some(theirs_b)) => {
                         // Try merge_raw first, then fall back to text merge.
                         driver.merge_raw(base_b, ours_b, theirs_b).or_else(|_| {
-                                let base_s = String::from_utf8_lossy(base_b);
-                                let ours_s = String::from_utf8_lossy(ours_b);
-                                let theirs_s = String::from_utf8_lossy(theirs_b);
-                                driver
-                                    .merge(&base_s, &ours_s, &theirs_s)
-                                    .map(|opt| opt.map(std::string::String::into_bytes))
-                            })
+                            let base_s = String::from_utf8_lossy(base_b);
+                            let ours_s = String::from_utf8_lossy(ours_b);
+                            let theirs_s = String::from_utf8_lossy(theirs_b);
+                            driver
+                                .merge(&base_s, &ours_s, &theirs_s)
+                                .map(|opt| opt.map(std::string::String::into_bytes))
+                        })
                     }
                     _ => Err(suture_driver::DriverError::ParseError(
                         "missing content".into(),
@@ -557,7 +576,8 @@ pub async fn cmd_merge(
 
         let mut report = String::new();
         report.push_str("# Merge Conflict Report\n");
-        let _ = writeln!(report, 
+        let _ = writeln!(
+            report,
             "Generated: {}",
             chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ")
         );
@@ -693,7 +713,8 @@ fn generate_ooxml_conflict_report(
     for conflict in conflicts {
         let ext = std::path::Path::new(&conflict.path)
             .extension()
-            .and_then(|e| e.to_str()).map_or_else(|| "UNKNOWN".to_owned(), str::to_uppercase);
+            .and_then(|e| e.to_str())
+            .map_or_else(|| "UNKNOWN".to_owned(), str::to_uppercase);
 
         let _ = writeln!(report, "{} ({})", conflict.path, ext);
         report.push_str("  Could not automatically merge. Your version has been preserved.\n\n");
@@ -716,7 +737,8 @@ fn generate_ooxml_conflict_report(
         report.push_str("\n  To resolve:\n");
         report.push_str("    1. Open the file (your version is preserved)\n");
         report.push_str("    2. Contact the other editor to see their changes\n");
-        let _ = write!(report, 
+        let _ = write!(
+            report,
             "    3. Make your edits and run: suture add {} && suture commit \"resolved conflict\"\n\n",
             conflict.path
         );

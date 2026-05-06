@@ -64,7 +64,11 @@ fn draw_search_bar(f: &mut Frame, app: &App, area: Rect) {
     ])];
 
     let widget = Paragraph::new(lines)
-        .block(Block::default().borders(Borders::ALL).title(" Patch Browser "))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Patch Browser "),
+        )
         .wrap(Wrap { trim: false });
     f.render_widget(widget, area);
 }
@@ -87,12 +91,7 @@ fn draw_patch_list(
             Style::default().fg(Color::DarkGray),
         )));
     } else {
-        for (i, entry) in patches
-            .iter()
-            .enumerate()
-            .skip(start)
-            .take(end - start)
-        {
+        for (i, entry) in patches.iter().enumerate().skip(start).take(end - start) {
             let is_selected = i == cursor;
             let prefix = if is_selected { "\u{25b6} " } else { "  " };
 
@@ -163,7 +162,11 @@ fn draw_patch_list(
     }
 
     lines.push(Line::from(""));
-    let sort_label = if sort_desc { "newest first" } else { "oldest first" };
+    let sort_label = if sort_desc {
+        "newest first"
+    } else {
+        "oldest first"
+    };
     lines.push(Line::from(Span::styled(
         format!(
             " [↑/k] Up  [↓/j] Down  [d] Diff  [Enter] Details  [s] Sort ({sort_label})  [Esc] Clear filter"
@@ -172,11 +175,11 @@ fn draw_patch_list(
     )));
 
     let widget = Paragraph::new(lines)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(format!(" Patches ({}/{}) ", patches.len(), cursor + 1)),
-        )
+        .block(Block::default().borders(Borders::ALL).title(format!(
+            " Patches ({}/{}) ",
+            patches.len(),
+            cursor + 1
+        )))
         .wrap(Wrap { trim: false });
     f.render_widget(widget, area);
 }

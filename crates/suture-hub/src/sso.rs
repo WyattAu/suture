@@ -41,7 +41,11 @@ pub struct OidcConfig {
 }
 
 fn default_scopes() -> Vec<String> {
-    vec!["openid".to_owned(), "email".to_owned(), "profile".to_owned()]
+    vec![
+        "openid".to_owned(),
+        "email".to_owned(),
+        "profile".to_owned(),
+    ]
 }
 
 /// Information extracted from a successful OIDC authentication.
@@ -135,9 +139,10 @@ pub async fn discover(issuer_url: &str) -> Result<OidcDiscovery, SsoError> {
         )));
     }
 
-    let discovery: OidcDiscovery = resp.json().await.map_err(|e| {
-        SsoError::Discovery(format!("failed to parse discovery document: {e}"))
-    })?;
+    let discovery: OidcDiscovery = resp
+        .json()
+        .await
+        .map_err(|e| SsoError::Discovery(format!("failed to parse discovery document: {e}")))?;
 
     // Verify the issuer matches (per OIDC spec §4.2).
     let expected_issuer = issuer_url.trim_end_matches('/');
@@ -412,10 +417,7 @@ pub async fn complete_callback(
         sub: claims.sub,
         email: user_email.clone(),
         email_verified,
-        name: claims
-            .name
-            .or(claims.preferred_username)
-            .or(user_email),
+        name: claims.name.or(claims.preferred_username).or(user_email),
         provider: config.provider_name.clone(),
     };
 
@@ -492,8 +494,8 @@ mod urlencoding {
 
 #[cfg(test)]
 mod tests {
-    use base64::Engine;
     use super::*;
+    use base64::Engine;
 
     #[test]
     fn test_authorization_url_construction() {
@@ -567,8 +569,8 @@ mod tests {
 
     #[test]
     fn test_validate_id_token_valid() {
-        let header = base64::engine::general_purpose::URL_SAFE
-            .encode(r#"{"alg":"HS256","typ":"JWT"}"#);
+        let header =
+            base64::engine::general_purpose::URL_SAFE.encode(r#"{"alg":"HS256","typ":"JWT"}"#);
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -605,11 +607,9 @@ mod tests {
 
     #[test]
     fn test_validate_id_token_issuer_mismatch() {
-        let header = base64::engine::general_purpose::URL_SAFE
-            .encode(r#"{"alg":"HS256"}"#);
-        let payload = base64::engine::general_purpose::URL_SAFE.encode(
-            r#"{"sub":"u","iss":"https://evil.com","aud":"c","exp":9999999999}"#,
-        );
+        let header = base64::engine::general_purpose::URL_SAFE.encode(r#"{"alg":"HS256"}"#);
+        let payload = base64::engine::general_purpose::URL_SAFE
+            .encode(r#"{"sub":"u","iss":"https://evil.com","aud":"c","exp":9999999999}"#);
         let token = format!("{header}.{payload}.sig");
 
         let result = validate_id_token(&token, "https://good.com", "c", None);
@@ -620,8 +620,7 @@ mod tests {
 
     #[test]
     fn test_validate_id_token_audience_mismatch() {
-        let header = base64::engine::general_purpose::URL_SAFE
-            .encode(r#"{"alg":"HS256"}"#);
+        let header = base64::engine::general_purpose::URL_SAFE.encode(r#"{"alg":"HS256"}"#);
         let payload = base64::engine::general_purpose::URL_SAFE.encode(
             r#"{"sub":"u","iss":"https://example.com","aud":"wrong-client","exp":9999999999}"#,
         );
@@ -635,11 +634,9 @@ mod tests {
 
     #[test]
     fn test_validate_id_token_expired() {
-        let header = base64::engine::general_purpose::URL_SAFE
-            .encode(r#"{"alg":"HS256"}"#);
-        let payload = base64::engine::general_purpose::URL_SAFE.encode(
-            r#"{"sub":"u","iss":"https://example.com","aud":"c","exp":1000}"#,
-        );
+        let header = base64::engine::general_purpose::URL_SAFE.encode(r#"{"alg":"HS256"}"#);
+        let payload = base64::engine::general_purpose::URL_SAFE
+            .encode(r#"{"sub":"u","iss":"https://example.com","aud":"c","exp":1000}"#);
         let token = format!("{header}.{payload}.sig");
 
         let result = validate_id_token(&token, "https://example.com", "c", None);
@@ -650,8 +647,7 @@ mod tests {
 
     #[test]
     fn test_validate_id_token_nonce_mismatch() {
-        let header = base64::engine::general_purpose::URL_SAFE
-            .encode(r#"{"alg":"HS256"}"#);
+        let header = base64::engine::general_purpose::URL_SAFE.encode(r#"{"alg":"HS256"}"#);
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -662,12 +658,7 @@ mod tests {
         ));
         let token = format!("{header}.{payload}.sig");
 
-        let result = validate_id_token(
-            &token,
-            "https://example.com",
-            "c",
-            Some("correct-nonce"),
-        );
+        let result = validate_id_token(&token, "https://example.com", "c", Some("correct-nonce"));
         assert!(result.is_err());
         match result.unwrap_err() {
             SsoError::NonceMismatch => {}
@@ -677,8 +668,7 @@ mod tests {
 
     #[test]
     fn test_validate_id_token_audience_array() {
-        let header = base64::engine::general_purpose::URL_SAFE
-            .encode(r#"{"alg":"HS256"}"#);
+        let header = base64::engine::general_purpose::URL_SAFE.encode(r#"{"alg":"HS256"}"#);
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()

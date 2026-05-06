@@ -20,7 +20,10 @@ pub fn sign_request(request: &mut reqwest::Request, config: &S3Config) -> Result
         .body()
         .as_ref()
         .and_then(|body| body.as_bytes())
-        .map_or_else(|| hex::encode(Sha256::digest([])), |bytes| hex::encode(Sha256::digest(bytes)));
+        .map_or_else(
+            || hex::encode(Sha256::digest([])),
+            |bytes| hex::encode(Sha256::digest(bytes)),
+        );
 
     let uri = request.url().path();
     let query = request.url().query().unwrap_or("");
@@ -98,18 +101,14 @@ pub fn sign_request(request: &mut reqwest::Request, config: &S3Config) -> Result
     Ok(())
 }
 
-fn derive_signing_key(
-    secret_key: &str,
-    date_stamp: &str,
-    region: &str,
-) -> Vec<u8> {
+fn derive_signing_key(secret_key: &str, date_stamp: &str, region: &str) -> Vec<u8> {
     let k_date = compute_hmac(
         format!("AWS4{secret_key}").as_bytes(),
         date_stamp.as_bytes(),
     );
     let k_region = compute_hmac(&k_date, region.as_bytes());
     let k_service = compute_hmac(&k_region, S3_SERVICE.as_bytes());
-    
+
     compute_hmac(&k_service, AWS4_REQUEST.as_bytes())
 }
 

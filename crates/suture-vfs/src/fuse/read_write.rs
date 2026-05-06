@@ -19,10 +19,10 @@
 // FUSE filesystems are inherently single-threaded per mount; the Arc is used for
 // shared ownership across callback closures dispatched by the FUSE library.
 
-use anyhow::Context;
 use crate::UnpoisonMutex;
 use crate::fuse::inode::{InodeEntry, InodeGenerator, InodeKind};
 use crate::path_translation::PathTranslator;
+use anyhow::Context;
 use async_stream::try_stream;
 use fuse3::raw::Request;
 use fuse3::raw::prelude::*;
@@ -68,8 +68,7 @@ pub struct RwFilesystem {
 
 impl RwFilesystem {
     pub async fn new(repo_path: &Path, branch: Option<&str>) -> anyhow::Result<Self> {
-        let mut repo = Repository::open(repo_path)
-            .context("failed to open repository")?;
+        let mut repo = Repository::open(repo_path).context("failed to open repository")?;
 
         if let Some(branch_name) = branch {
             repo.checkout(branch_name)?;
@@ -185,8 +184,7 @@ impl RwFilesystem {
         } else {
             format!("vfs: modify {path}")
         };
-        repo.commit(&msg)
-            .context("failed to commit file change")?;
+        repo.commit(&msg).context("failed to commit file change")?;
 
         self.inner.pending_files.unpoison_lock().remove(path);
         self.rebuild_from_repo(&repo)?;
@@ -200,8 +198,7 @@ impl RwFilesystem {
         }
 
         let mut repo = self.inner.repo.unpoison_lock();
-        repo.add(path)
-            .context("failed to stage file deletion")?;
+        repo.add(path).context("failed to stage file deletion")?;
         repo.commit(&format!("vfs: delete {path}"))
             .context("failed to commit file deletion")?;
 
@@ -224,7 +221,8 @@ impl RwFilesystem {
                 }
             }
 
-            file_contents.retain(|path, _| file_tree.contains(path) || pending_files.contains(path));
+            file_contents
+                .retain(|path, _| file_tree.contains(path) || pending_files.contains(path));
         }
 
         let (path_translator, inode_map) = {
@@ -239,7 +237,8 @@ impl RwFilesystem {
             let pending_dirs_list: Vec<String> = pending_dirs.iter().cloned().collect();
             drop(pending_dirs);
 
-            let all_paths_ref: Vec<&str> = all_paths.iter().map(std::string::String::as_str).collect();
+            let all_paths_ref: Vec<&str> =
+                all_paths.iter().map(std::string::String::as_str).collect();
             let path_translator = PathTranslator::build(&all_paths_ref);
 
             let mut inode_map = InodeGenerator::new();
@@ -393,9 +392,7 @@ impl Filesystem for RwFilesystem {
 
         let size = if entry.kind == InodeKind::File {
             let file_contents = self.inner.file_contents.unpoison_lock();
-            file_contents
-                .get(&child_path)
-                .map_or(0, |d| d.len() as u64)
+            file_contents.get(&child_path).map_or(0, |d| d.len() as u64)
         } else {
             0
         };
@@ -428,9 +425,7 @@ impl Filesystem for RwFilesystem {
 
             open_data.unwrap_or_else(|| {
                 let file_contents = self.inner.file_contents.unpoison_lock();
-                file_contents
-                    .get(&entry.path)
-                    .map_or(0, |d| d.len() as u64)
+                file_contents.get(&entry.path).map_or(0, |d| d.len() as u64)
             })
         } else {
             0
@@ -452,9 +447,7 @@ impl Filesystem for RwFilesystem {
 
         let size = if entry.kind == InodeKind::File {
             let file_contents = self.inner.file_contents.unpoison_lock();
-            file_contents
-                .get(&entry.path)
-                .map_or(0, |d| d.len() as u64)
+            file_contents.get(&entry.path).map_or(0, |d| d.len() as u64)
         } else {
             0
         };
@@ -682,7 +675,8 @@ impl Filesystem for RwFilesystem {
         let inode_map = self.inner.inode_map.unpoison_lock();
         let parent_path = inode_map
             .get_path(parent)
-            .ok_or_else(Errno::new_not_exist)?.to_owned();
+            .ok_or_else(Errno::new_not_exist)?
+            .to_owned();
         drop(inode_map);
 
         let entries = self.list_dir_entries(&parent_path);

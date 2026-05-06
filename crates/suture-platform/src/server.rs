@@ -5,19 +5,19 @@
 // Suture Commercial License (for enterprise features).
 // See LICENSE-AGPL and LICENSE-COMMERCIAL in the repo root.
 
+use axum::http::StatusCode;
 use axum::{
+    Extension, Json, Router,
     extract::{FromRequestParts, State},
     http::request::Parts,
     middleware,
     routing::{delete, get, post, put},
-    Extension, Json, Router,
 };
-use axum::http::StatusCode;
 use std::sync::Arc;
 
+use crate::Config;
 use crate::auth::Claims;
 use crate::db::PlatformDb;
-use crate::Config;
 use crate::rate_limit::RateLimiter;
 use suture_wasm_plugin::PluginManager;
 
@@ -86,21 +86,51 @@ pub async fn start(config: Config) -> anyhow::Result<()> {
         .route("/api/merge", post(crate::merge_api::merge_files))
         .route("/api/usage", get(crate::billing::usage_handler))
         .route("/api/analytics", get(crate::analytics::analytics_handler))
-        .route("/api/orgs", post(crate::orgs::create_org).get(crate::orgs::list_my_orgs))
-        .route("/api/orgs/{org_id}/invite", post(crate::orgs::invite_member_handler))
-        .route("/api/orgs/{org_id}/members", get(crate::orgs::list_members_handler))
-        .route("/api/orgs/{org_id}/members/{user_id}", delete(crate::orgs::remove_member_handler))
-        .route("/api/orgs/{org_id}/members/{user_id}/role", put(crate::orgs::update_member_role_handler))
-        .route("/api/invitations", get(crate::orgs::list_invitations_handler))
-        .route("/api/invitations/{invite_id}/accept", post(crate::orgs::accept_invitation_handler))
+        .route(
+            "/api/orgs",
+            post(crate::orgs::create_org).get(crate::orgs::list_my_orgs),
+        )
+        .route(
+            "/api/orgs/{org_id}/invite",
+            post(crate::orgs::invite_member_handler),
+        )
+        .route(
+            "/api/orgs/{org_id}/members",
+            get(crate::orgs::list_members_handler),
+        )
+        .route(
+            "/api/orgs/{org_id}/members/{user_id}",
+            delete(crate::orgs::remove_member_handler),
+        )
+        .route(
+            "/api/orgs/{org_id}/members/{user_id}/role",
+            put(crate::orgs::update_member_role_handler),
+        )
+        .route(
+            "/api/invitations",
+            get(crate::orgs::list_invitations_handler),
+        )
+        .route(
+            "/api/invitations/{invite_id}/accept",
+            post(crate::orgs::accept_invitation_handler),
+        )
         .route("/api/plugins", get(crate::plugins::list_plugins))
         .route("/api/plugins/search", post(crate::plugins::search_plugins))
         .route("/api/plugins/detail", post(crate::plugins::get_plugin))
         .route("/api/plugins/upload", post(crate::plugins::upload_plugin))
         .route("/api/plugins/delete", post(crate::plugins::delete_plugin))
-        .route("/api/plugins/merge", post(crate::plugins::merge_with_plugin))
-        .route("/billing/checkout", post(crate::stripe::create_checkout_session))
-        .route("/billing/subscription", get(crate::stripe::get_subscription))
+        .route(
+            "/api/plugins/merge",
+            post(crate::plugins::merge_with_plugin),
+        )
+        .route(
+            "/billing/checkout",
+            post(crate::stripe::create_checkout_session),
+        )
+        .route(
+            "/billing/subscription",
+            get(crate::stripe::get_subscription),
+        )
         .route("/billing/portal", post(portal_handler))
         .layer(middleware::from_fn_with_state(
             state.clone(),
@@ -112,10 +142,7 @@ pub async fn start(config: Config) -> anyhow::Result<()> {
         ));
 
     let auth_routes = Router::new()
-        .route(
-            "/admin/users",
-            get(crate::auth::list_users_handler),
-        )
+        .route("/admin/users", get(crate::auth::list_users_handler))
         .layer(middleware::from_fn_with_state(
             state.clone(),
             crate::middleware::require_auth,

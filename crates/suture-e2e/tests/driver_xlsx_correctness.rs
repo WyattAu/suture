@@ -51,7 +51,8 @@ fn make_xlsx(sheets: &[(&str, &[Cell])]) -> String {
                 let _ = write!(xml, "<row r=\"{}\">\n", row_num);
                 for (col, val) in cols {
                     let col_letter = col_to_letter(*col);
-                    let _ = write!(xml, 
+                    let _ = write!(
+                        xml,
                         "<c r=\"{}{}\"><v>{}</v></c>\n",
                         col_letter, row_num, val
                     );

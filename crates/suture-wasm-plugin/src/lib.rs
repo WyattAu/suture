@@ -39,7 +39,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use thiserror::Error;
-use wasmtime::{Engine, Module, Store, Linker, Caller, Instance, Config};
+use wasmtime::{Caller, Config, Engine, Instance, Linker, Module, Store};
 
 // ---------------------------------------------------------------------------
 // Plugin error types
@@ -203,45 +203,47 @@ impl WasmPlugin {
     }
 
     /// Get the plugin's driver name.
-    #[must_use] 
+    #[must_use]
     pub fn driver_name(&self) -> &str {
         &self.driver_name
     }
 
     /// Get the plugin's supported extensions.
-    #[must_use] 
+    #[must_use]
     pub fn extensions(&self) -> &[String] {
         &self.extensions
     }
 
     /// Get the plugin's name.
-    #[must_use] 
+    #[must_use]
     pub fn name(&self) -> &str {
         &self.name
     }
 
     /// Execute a 3-way merge using the plugin.
-    pub fn merge(
-        &self,
-        base: &str,
-        ours: &str,
-        theirs: &str,
-    ) -> Result<PluginMergeResult> {
+    pub fn merge(&self, base: &str, ours: &str, theirs: &str) -> Result<PluginMergeResult> {
         let mut store = Store::new(&self.engine, ());
         // Fuel-based timeout: 1 billion fuel units (~1-2 seconds of compute)
-        store.set_fuel(1_000_000_000)
+        store
+            .set_fuel(1_000_000_000)
             .map_err(|e| anyhow::anyhow!("failed to set fuel for WasmPlugin: {e}"))?;
 
         let mut linker = Linker::new(&self.engine);
 
         let plugin_name = self.name.clone();
-        linker.func_wrap("env", "host_log", move |_caller: Caller<'_, ()>, level_ptr: i32, msg_ptr: i32| {
-            tracing::debug!(
-                "[plugin:{}] log: level={}, msg_ptr={}",
-                plugin_name, level_ptr, msg_ptr
-            );
-            Ok(())
-        })?;
+        linker.func_wrap(
+            "env",
+            "host_log",
+            move |_caller: Caller<'_, ()>, level_ptr: i32, msg_ptr: i32| {
+                tracing::debug!(
+                    "[plugin:{}] log: level={}, msg_ptr={}",
+                    plugin_name,
+                    level_ptr,
+                    msg_ptr
+                );
+                Ok(())
+            },
+        )?;
 
         let instance = linker
             .instantiate(&mut store, &self.module)
@@ -261,7 +263,8 @@ impl WasmPlugin {
         let current_size = memory.data_size(&store);
         if ptr_offset + total_size > current_size {
             let needed = (ptr_offset + total_size).div_ceil(65536);
-            memory.grow(&mut store, needed as u64)
+            memory
+                .grow(&mut store, needed as u64)
                 .map_err(|e| anyhow::anyhow!("failed to grow plugin memory: {e}"))?;
         }
 
@@ -282,7 +285,11 @@ impl WasmPlugin {
 
         let merge_fn = instance
             .get_typed_func::<(i32, i32, i32), i32>(&mut store, "merge")
-            .map_err(|e| anyhow::anyhow!("merge export has wrong signature (expected (i32,i32,i32) -> i32): {e}"))?;
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "merge export has wrong signature (expected (i32,i32,i32) -> i32): {e}"
+                )
+            })?;
 
         let base_ptr = ptr_offset as i32;
         let ours_ptr = (ptr_offset + 4 + base_bytes.len()) as i32;
@@ -345,6 +352,9 @@ struct PluginState {
 ///
 /// Fuel-based timeouts and memory limits are enforced.
 pub struct WasmPluginHost {
+    /// The wasmtime engine. Kept alive to ensure `Store` and `Instance`
+    /// remain valid. Not directly read after construction, but dropping it
+    /// would invalidate the store/instance references.
     #[allow(dead_code)]
     engine: Engine,
     store: RefCell<Store<PluginState>>,
@@ -361,81 +371,111 @@ impl WasmPluginHost {
         config.consume_fuel(true);
         config.memory_reservation(MAX_PLUGIN_MEMORY);
 
-        let engine = Engine::new(&config)
-            .map_err(|e| PluginError::Compilation(e.to_string()))?;
+        let engine = Engine::new(&config).map_err(|e| PluginError::Compilation(e.to_string()))?;
 
         let module = Module::new(&engine, wasm_bytes)
             .map_err(|e| PluginError::Compilation(e.to_string()))?;
 
-        let mut store = Store::new(&engine, PluginState {
-            input_buffer: Vec::new(),
-            output_buffer: Vec::new(),
-            input_len: 0,
-        });
+        let mut store = Store::new(
+            &engine,
+            PluginState {
+                input_buffer: Vec::new(),
+                output_buffer: Vec::new(),
+                input_len: 0,
+            },
+        );
 
         let mut linker = Linker::new(&engine);
 
-        linker.func_wrap("env", "get_input_len", |caller: Caller<'_, PluginState>| -> i32 {
-            caller.data().input_len as i32
-        }).map_err(|e| PluginError::Compilation(e.to_string()))?;
+        linker
+            .func_wrap(
+                "env",
+                "get_input_len",
+                |caller: Caller<'_, PluginState>| -> i32 { caller.data().input_len as i32 },
+            )
+            .map_err(|e| PluginError::Compilation(e.to_string()))?;
 
-        linker.func_wrap("env", "get_input_byte", |caller: Caller<'_, PluginState>, offset: i32| -> i32 {
-            let state = caller.data();
-            if (offset as usize) < state.input_buffer.len() {
-                i32::from(state.input_buffer[offset as usize])
-            } else {
-                -1
-            }
-        }).map_err(|e| PluginError::Compilation(e.to_string()))?;
-
-        linker.func_wrap("env", "set_output_byte", |mut caller: Caller<'_, PluginState>, offset: i32, byte: i32| {
-            if offset < 0 {
-                return;
-            }
-            let state = caller.data_mut();
-            let offset = offset as usize;
-            if state.output_buffer.len() >= 16 * 1024 * 1024 {
-                return;
-            }
-            if offset >= state.output_buffer.len() {
-                state.output_buffer.resize(offset + 1, 0);
-            }
-            state.output_buffer[offset] = byte as u8;
-        }).map_err(|e| PluginError::Compilation(e.to_string()))?;
-
-        linker.func_wrap("env", "set_output_len", |mut caller: Caller<'_, PluginState>, len: i32| {
-            if len < 0 || len as usize > 16 * 1024 * 1024 {
-                return;
-            }
-            caller.data_mut().output_buffer.resize(len as usize, 0);
-        }).map_err(|e| PluginError::Compilation(e.to_string()))?;
-
-        linker.func_wrap("env", "host_log", |mut caller: Caller<'_, PluginState>, level: i32, msg_ptr: i32, msg_len: i32| {
-            let memory = caller.get_export("memory")
-                .and_then(|e| e.into_memory());
-            let msg = match memory {
-                Some(mem) => {
-                    let data = mem.data(&caller);
-                    let start = msg_ptr as usize;
-                    let end = start + msg_len as usize;
-                    if end <= data.len() {
-                        String::from_utf8_lossy(&data[start..end]).into_owned()
+        linker
+            .func_wrap(
+                "env",
+                "get_input_byte",
+                |caller: Caller<'_, PluginState>, offset: i32| -> i32 {
+                    let state = caller.data();
+                    if (offset as usize) < state.input_buffer.len() {
+                        i32::from(state.input_buffer[offset as usize])
                     } else {
-                        "<invalid msg pointer>".to_owned()
+                        -1
                     }
-                }
-                None => "<no memory>".to_owned(),
-            };
-            match level {
-                0 => tracing::trace!("[plugin] {}", msg),
-                1 => tracing::debug!("[plugin] {}", msg),
-                2 => tracing::info!("[plugin] {}", msg),
-                3 => tracing::warn!("[plugin] {}", msg),
-                _ => tracing::error!("[plugin] {}", msg),
-            }
-        }).map_err(|e| PluginError::Compilation(e.to_string()))?;
+                },
+            )
+            .map_err(|e| PluginError::Compilation(e.to_string()))?;
 
-        let instance = linker.instantiate(&mut store, &module)
+        linker
+            .func_wrap(
+                "env",
+                "set_output_byte",
+                |mut caller: Caller<'_, PluginState>, offset: i32, byte: i32| {
+                    if offset < 0 {
+                        return;
+                    }
+                    let state = caller.data_mut();
+                    let offset = offset as usize;
+                    if state.output_buffer.len() >= 16 * 1024 * 1024 {
+                        return;
+                    }
+                    if offset >= state.output_buffer.len() {
+                        state.output_buffer.resize(offset + 1, 0);
+                    }
+                    state.output_buffer[offset] = byte as u8;
+                },
+            )
+            .map_err(|e| PluginError::Compilation(e.to_string()))?;
+
+        linker
+            .func_wrap(
+                "env",
+                "set_output_len",
+                |mut caller: Caller<'_, PluginState>, len: i32| {
+                    if len < 0 || len as usize > 16 * 1024 * 1024 {
+                        return;
+                    }
+                    caller.data_mut().output_buffer.resize(len as usize, 0);
+                },
+            )
+            .map_err(|e| PluginError::Compilation(e.to_string()))?;
+
+        linker
+            .func_wrap(
+                "env",
+                "host_log",
+                |mut caller: Caller<'_, PluginState>, level: i32, msg_ptr: i32, msg_len: i32| {
+                    let memory = caller.get_export("memory").and_then(|e| e.into_memory());
+                    let msg = match memory {
+                        Some(mem) => {
+                            let data = mem.data(&caller);
+                            let start = msg_ptr as usize;
+                            let end = start + msg_len as usize;
+                            if end <= data.len() {
+                                String::from_utf8_lossy(&data[start..end]).into_owned()
+                            } else {
+                                "<invalid msg pointer>".to_owned()
+                            }
+                        }
+                        None => "<no memory>".to_owned(),
+                    };
+                    match level {
+                        0 => tracing::trace!("[plugin] {}", msg),
+                        1 => tracing::debug!("[plugin] {}", msg),
+                        2 => tracing::info!("[plugin] {}", msg),
+                        3 => tracing::warn!("[plugin] {}", msg),
+                        _ => tracing::error!("[plugin] {}", msg),
+                    }
+                },
+            )
+            .map_err(|e| PluginError::Compilation(e.to_string()))?;
+
+        let instance = linker
+            .instantiate(&mut store, &module)
             .map_err(|e| PluginError::Runtime(e.to_string()))?;
 
         // Check ABI version
@@ -444,8 +484,9 @@ impl WasmPluginHost {
                 .get_typed_func::<(), i32>(&mut store, "suture_abi_version")
                 .ok();
             if let Some(abi_fn) = abi_version_fn {
-                let version = abi_fn.call(&mut store, ())
-                    .map_err(|e| PluginError::Interface(format!("suture_abi_version call failed: {e}")))?;
+                let version = abi_fn.call(&mut store, ()).map_err(|e| {
+                    PluginError::Interface(format!("suture_abi_version call failed: {e}"))
+                })?;
                 if version != PLUGIN_ABI_VERSION as i32 {
                     return Err(PluginError::Interface(format!(
                         "plugin ABI version {version} does not match host ABI version {PLUGIN_ABI_VERSION}"
@@ -473,12 +514,18 @@ impl WasmPluginHost {
     /// - `0` — merged successfully (output in the output buffer)
     /// - `1` — conflict (no merge possible)
     /// - `-1` — error
-    pub fn merge(&self, base: &str, ours: &str, theirs: &str) -> Result<Option<String>, PluginError> {
+    pub fn merge(
+        &self,
+        base: &str,
+        ours: &str,
+        theirs: &str,
+    ) -> Result<Option<String>, PluginError> {
         let input = serde_json::json!({
             "base": base,
             "ours": ours,
             "theirs": theirs
-        }).to_string();
+        })
+        .to_string();
 
         {
             let mut store = self.store.borrow_mut();
@@ -487,7 +534,8 @@ impl WasmPluginHost {
             store.data_mut().input_len = input_len;
             store.data_mut().output_buffer = Vec::new();
 
-            store.set_fuel(DEFAULT_FUEL_BUDGET)
+            store
+                .set_fuel(DEFAULT_FUEL_BUDGET)
                 .map_err(|e| PluginError::Runtime(e.to_string()))?;
         }
 
@@ -498,10 +546,12 @@ impl WasmPluginHost {
             .get_typed_func::<(), i32>(&mut *store, "suture_merge")
             .map_err(|e| PluginError::Interface(format!("suture_merge function not found: {e}")))?;
 
-        let result_code = merge_fn.call(&mut *store, ())
+        let result_code = merge_fn
+            .call(&mut *store, ())
             .map_err(|e| PluginError::Runtime(e.to_string()))?;
 
-        let fuel_remaining = store.get_fuel()
+        let fuel_remaining = store
+            .get_fuel()
             .map_err(|e| PluginError::Runtime(e.to_string()))?;
         if fuel_remaining == 0 {
             return Err(PluginError::Timeout);
@@ -523,7 +573,9 @@ impl WasmPluginHost {
                     format!("Plugin error: {error_msg}")
                 }))
             }
-            _ => Err(PluginError::Runtime(format!("Unknown result code: {result_code}"))),
+            _ => Err(PluginError::Runtime(format!(
+                "Unknown result code: {result_code}"
+            ))),
         }
     }
 
@@ -541,34 +593,29 @@ impl WasmPluginHost {
 
 /// Read metadata from a host-function-ABI plugin by calling its name/version
 /// exports and reading strings from WASM memory.
-fn extract_metadata_host(
-    instance: &Instance,
-    store: &mut Store<PluginState>,
-) -> PluginMetadata {
-    let memory = instance
-        .get_memory(&mut *store, "memory");
+fn extract_metadata_host(instance: &Instance, store: &mut Store<PluginState>) -> PluginMetadata {
+    let memory = instance.get_memory(&mut *store, "memory");
 
-    let read_string = |store: &mut Store<PluginState>,
-                       ptr_func: &str,
-                       len_func: &str|
-        -> String {
-        let ptr_f = instance.get_typed_func::<(), i32>(&mut *store, ptr_func).ok();
-        let len_f = instance.get_typed_func::<(), i32>(&mut *store, len_func).ok();
+    let read_string = |store: &mut Store<PluginState>, ptr_func: &str, len_func: &str| -> String {
+        let ptr_f = instance
+            .get_typed_func::<(), i32>(&mut *store, ptr_func)
+            .ok();
+        let len_f = instance
+            .get_typed_func::<(), i32>(&mut *store, len_func)
+            .ok();
         match (ptr_f, len_f) {
             (Some(pf), Some(lf)) => {
                 let ptr = pf.call(&mut *store, ()).unwrap_or(0);
                 let len = lf.call(&mut *store, ()).unwrap_or(0) as usize;
-                memory.as_ref().map_or_else(
-                    String::new,
-                    |mem| {
-                        let data: &[u8] = mem.data(&*store);
-                        if ptr as usize + len <= data.len() {
-                            String::from_utf8_lossy(&data[ptr as usize..ptr as usize + len]).into_owned()
-                        } else {
-                            String::new()
-                        }
-                    },
-                )
+                memory.as_ref().map_or_else(String::new, |mem| {
+                    let data: &[u8] = mem.data(&*store);
+                    if ptr as usize + len <= data.len() {
+                        String::from_utf8_lossy(&data[ptr as usize..ptr as usize + len])
+                            .into_owned()
+                    } else {
+                        String::new()
+                    }
+                })
             }
             _ => String::new(),
         }
@@ -603,8 +650,12 @@ fn extract_metadata_host(
 /// Read the error message from a plugin that returned -1.
 fn read_plugin_error(instance: &Instance, store: &mut Store<PluginState>) -> String {
     let memory = instance.get_memory(&mut *store, "memory");
-    let ptr_fn = instance.get_typed_func::<(), i32>(&mut *store, "suture_error_msg").ok();
-    let len_fn = instance.get_typed_func::<(), i32>(&mut *store, "suture_error_msg_len").ok();
+    let ptr_fn = instance
+        .get_typed_func::<(), i32>(&mut *store, "suture_error_msg")
+        .ok();
+    let len_fn = instance
+        .get_typed_func::<(), i32>(&mut *store, "suture_error_msg_len")
+        .ok();
     match (ptr_fn, len_fn, memory) {
         (Some(pf), Some(lf), Some(mem)) => {
             let ptr = pf.call(&mut *store, ()).unwrap_or(0);
@@ -633,7 +684,10 @@ impl SutureWasmPlugin for WasmPlugin {
     }
 
     fn plugin_extensions(&self) -> Vec<&str> {
-        self.extensions.iter().map(std::string::String::as_str).collect()
+        self.extensions
+            .iter()
+            .map(std::string::String::as_str)
+            .collect()
     }
 
     fn merge(&self, base: &str, ours: &str, theirs: &str) -> Result<Option<String>, PluginError> {
@@ -674,7 +728,11 @@ impl SutureWasmPlugin for WasmPluginHost {
     }
 
     fn plugin_extensions(&self) -> Vec<&str> {
-        self.metadata.extensions.iter().map(std::string::String::as_str).collect()
+        self.metadata
+            .extensions
+            .iter()
+            .map(std::string::String::as_str)
+            .collect()
     }
 
     fn merge(&self, base: &str, ours: &str, theirs: &str) -> Result<Option<String>, PluginError> {
@@ -700,9 +758,11 @@ pub struct PluginManager {
 }
 
 impl PluginManager {
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
-        Self { plugins: Vec::new() }
+        Self {
+            plugins: Vec::new(),
+        }
     }
 
     /// Load a plugin from Wasm bytes.
@@ -714,8 +774,8 @@ impl PluginManager {
 
     /// Load a plugin from a .wasm file.
     pub fn load_file(&mut self, path: &str) -> Result<()> {
-        let wasm_bytes = std::fs::read(path)
-            .with_context(|| format!("failed to read plugin file: {path}"))?;
+        let wasm_bytes =
+            std::fs::read(path).with_context(|| format!("failed to read plugin file: {path}"))?;
         let name = std::path::Path::new(path)
             .file_stem()
             .and_then(|s| s.to_str())
@@ -724,23 +784,26 @@ impl PluginManager {
     }
 
     /// Get a plugin by driver name.
-    #[must_use] 
+    #[must_use]
     pub fn get(&self, driver_name: &str) -> Option<&Arc<WasmPlugin>> {
         self.plugins.iter().find(|p| p.driver_name == driver_name)
     }
 
     /// List all loaded plugins.
-    #[must_use] 
+    #[must_use]
     pub fn list(&self) -> Vec<PluginInfo> {
-        self.plugins.iter().map(|p| PluginInfo {
-            name: p.name.clone(),
-            driver_name: p.driver_name.clone(),
-            extensions: p.extensions.clone(),
-        }).collect()
+        self.plugins
+            .iter()
+            .map(|p| PluginInfo {
+                name: p.name.clone(),
+                driver_name: p.driver_name.clone(),
+                extensions: p.extensions.clone(),
+            })
+            .collect()
     }
 
     /// Get total number of loaded plugins.
-    #[must_use] 
+    #[must_use]
     pub fn count(&self) -> usize {
         self.plugins.len()
     }
@@ -772,15 +835,18 @@ pub struct PluginRegistry {
 }
 
 impl PluginRegistry {
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
-        Self { plugins: HashMap::new() }
+        Self {
+            plugins: HashMap::new(),
+        }
     }
 
     /// Load a plugin from a `.wasm` file on disk.
     pub fn load_from_file(&mut self, path: &Path) -> Result<String, PluginError> {
-        let wasm_bytes = std::fs::read(path)
-            .map_err(|e| PluginError::Compilation(format!("Failed to read {}: {}", path.display(), e)))?;
+        let wasm_bytes = std::fs::read(path).map_err(|e| {
+            PluginError::Compilation(format!("Failed to read {}: {}", path.display(), e))
+        })?;
         self.load_from_bytes(&wasm_bytes)
     }
 
@@ -795,28 +861,31 @@ impl PluginRegistry {
     }
 
     /// Get a plugin by name.
-    #[must_use] 
+    #[must_use]
     pub fn get_plugin(&self, name: &str) -> Option<&WasmPluginHost> {
         self.plugins.get(name)
     }
 
     /// Find the first plugin that handles the given extension.
-    #[must_use] 
+    #[must_use]
     pub fn find_plugin_for_extension(&self, ext: &str) -> Option<&WasmPluginHost> {
         let normalized = ext.strip_prefix('.').unwrap_or(ext);
-        self.plugins.values().find(|p| {
-            p.metadata().extensions.iter().any(|e| e == normalized)
-        })
+        self.plugins
+            .values()
+            .find(|p| p.metadata().extensions.iter().any(|e| e == normalized))
     }
 
     /// List metadata for all loaded plugins.
-    #[must_use] 
+    #[must_use]
     pub fn list_plugins(&self) -> Vec<&PluginMetadata> {
-        self.plugins.values().map(WasmPluginHost::metadata).collect()
+        self.plugins
+            .values()
+            .map(WasmPluginHost::metadata)
+            .collect()
     }
 
     /// Number of registered plugins.
-    #[must_use] 
+    #[must_use]
     pub fn count(&self) -> usize {
         self.plugins.len()
     }

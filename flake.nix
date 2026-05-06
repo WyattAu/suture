@@ -65,6 +65,8 @@
             nativeBuildInputs = with pkgs; [
               pkg-config
               sqlite
+              openssl
+              protobuf
             ];
 
             cargoBuildFlags = [ "-p suture-hub" ];

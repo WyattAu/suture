@@ -89,7 +89,10 @@ pub async fn cmd_branch(
                     format!("branch '{name}' not found (did you mean '{suggestion}'?)").into(),
                 );
             }
-            return Err(format!("branch '{name}' not found (use 'suture branch --list' to see available branches)").into());
+            return Err(format!(
+                "branch '{name}' not found (use 'suture branch --list' to see available branches)"
+            )
+            .into());
         }
         repo.delete_branch(name)
             .map_err(|e| user_error(&format!("failed to delete branch '{name}'"), e))?;

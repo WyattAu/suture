@@ -46,7 +46,7 @@ impl Tab {
         Self::ALL[(idx + Self::ALL.len() - 1) % Self::ALL.len()]
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn title(self) -> &'static str {
         match self {
             Self::Dashboard => "Dashboard",
@@ -345,7 +345,11 @@ impl App {
             .into_iter()
             .map(|p| {
                 let is_merge = p.parent_ids.len() > 1;
-                let parents: Vec<String> = p.parent_ids.iter().map(suture_common::Hash::to_hex).collect();
+                let parents: Vec<String> = p
+                    .parent_ids
+                    .iter()
+                    .map(suture_common::Hash::to_hex)
+                    .collect();
                 LogEntry {
                     id: p.id.to_hex(),
                     short_id: format!("{}…", &p.id.to_hex()[..12]),
@@ -565,7 +569,8 @@ impl App {
                 self.commit_mode = true;
                 self.commit_message.clear();
                 self.status_message =
-                    "Enter commit message for new patch (Enter to commit, Esc to cancel)".to_owned();
+                    "Enter commit message for new patch (Enter to commit, Esc to cancel)"
+                        .to_owned();
             }
             KeyCode::Char('r') => {
                 self.current_tab = Tab::Remote;
@@ -1090,7 +1095,8 @@ impl App {
                 self.patch_browser_search_mode = true;
                 self.patch_browser_filter.clear();
                 self.patch_browser_cursor = 0;
-                self.status_message = "Type to filter patches (Esc to cancel, Enter to apply)".to_owned();
+                self.status_message =
+                    "Type to filter patches (Esc to cancel, Enter to apply)".to_owned();
             }
             KeyCode::PageUp => {
                 self.patch_browser_cursor = self.patch_browser_cursor.saturating_sub(10);
@@ -1318,7 +1324,9 @@ impl App {
         if let Some(entry) = files.get(self.staging_cursor) {
             if self.staging_focus_staged {
                 // Unstage
-                let Ok(repo_path) = suture_common::RepoPath::new(&entry.path) else { return };
+                let Ok(repo_path) = suture_common::RepoPath::new(&entry.path) else {
+                    return;
+                };
                 if let Err(e) = self.repo.meta().working_set_remove(&repo_path) {
                     self.error_message = Some(format!("Unstage failed: {e}"));
                     return;
@@ -1411,11 +1419,13 @@ impl App {
     /// Show diff for a specific patch.
     fn show_patch_diff(&mut self, patch_id_hex: &str) {
         let Ok(patch_id) = Hash::from_hex(patch_id_hex) else {
-                self.error_message = Some("Invalid patch ID".to_owned());
-                return;
-            };
+            self.error_message = Some("Invalid patch ID".to_owned());
+            return;
+        };
 
-        let patch = if let Some(p) = self.repo.dag().get_patch(&patch_id) { p.clone() } else {
+        let patch = if let Some(p) = self.repo.dag().get_patch(&patch_id) {
+            p.clone()
+        } else {
             self.error_message = Some("Patch not found".to_owned());
             return;
         };
@@ -1439,10 +1449,11 @@ impl App {
         };
 
         let patch_tree = self.repo.snapshot(&patch_id_copy).ok();
-        let new_paths: std::collections::HashSet<String> = patch_tree.as_ref().map_or_else(
-            std::collections::HashSet::new,
-            |t| t.iter().map(|(k, _)| k.clone()).collect(),
-        );
+        let new_paths: std::collections::HashSet<String> = patch_tree
+            .as_ref()
+            .map_or_else(std::collections::HashSet::new, |t| {
+                t.iter().map(|(k, _)| k.clone()).collect()
+            });
 
         // Added files
         for path in new_paths.difference(&parent_paths) {
@@ -1705,8 +1716,14 @@ fn parse_conflict_markers(content: &str) -> Option<Vec<Hunk>> {
         let ours_text = content[ours_content_start..separator].to_string();
         let theirs_text = content[theirs_content_start..theirs_end].to_string();
 
-        let ours_lines: Vec<String> = ours_text.lines().map(std::string::ToString::to_string).collect();
-        let theirs_lines: Vec<String> = theirs_text.lines().map(std::string::ToString::to_string).collect();
+        let ours_lines: Vec<String> = ours_text
+            .lines()
+            .map(std::string::ToString::to_string)
+            .collect();
+        let theirs_lines: Vec<String> = theirs_text
+            .lines()
+            .map(std::string::ToString::to_string)
+            .collect();
 
         hunks.push(Hunk {
             ours_lines,
@@ -2151,17 +2168,20 @@ mod tests {
     fn test_merge_view_navigation() {
         let mut app = make_test_app();
         app.current_tab = Tab::MergeView;
-        app.conflict_files = vec![ConflictFileState {
-            path: "a.txt".to_string(),
-            hunks: Vec::new(),
-            current_hunk: 0,
-            raw_content: String::new(),
-        }, ConflictFileState {
-            path: "b.txt".to_string(),
-            hunks: Vec::new(),
-            current_hunk: 0,
-            raw_content: String::new(),
-        }];
+        app.conflict_files = vec![
+            ConflictFileState {
+                path: "a.txt".to_string(),
+                hunks: Vec::new(),
+                current_hunk: 0,
+                raw_content: String::new(),
+            },
+            ConflictFileState {
+                path: "b.txt".to_string(),
+                hunks: Vec::new(),
+                current_hunk: 0,
+                raw_content: String::new(),
+            },
+        ];
         assert_eq!(app.conflict_cursor(), 0);
         app.handle_key(key(KeyCode::Down, KeyModifiers::NONE));
         assert_eq!(app.conflict_cursor(), 1);

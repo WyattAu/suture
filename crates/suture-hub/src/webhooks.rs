@@ -211,7 +211,9 @@ impl WebhookManager {
                 .header("X-Suture-Event", event)
                 .header("X-Suture-Delivery", &webhook.id)
                 .header("X-Suture-Timestamp", timestamp.to_string())
-                .timeout(std::time::Duration::from_secs(self.retry_config.timeout_secs))
+                .timeout(std::time::Duration::from_secs(
+                    self.retry_config.timeout_secs,
+                ))
                 .body(payload_json.clone());
 
             if let Some(ref secret) = webhook.secret
@@ -312,7 +314,9 @@ impl WebhookManager {
             .header("X-Suture-Delivery", &webhook.id)
             .header("X-Suture-Timestamp", now_secs().to_string())
             .header("X-Suture-Retry-Count", attempt.to_string())
-            .timeout(std::time::Duration::from_secs(self.retry_config.timeout_secs))
+            .timeout(std::time::Duration::from_secs(
+                self.retry_config.timeout_secs,
+            ))
             .body(payload_json.to_owned());
 
         if let Some(ref secret) = webhook.secret
@@ -454,13 +458,19 @@ mod tests {
         let manager = WebhookManager::new();
         let payload = r#"{"event":"push"}"#;
         let secret = "test-secret";
-        let sig1 = manager.sign_payload(payload, secret).expect("valid HMAC key");
-        let sig2 = manager.sign_payload(payload, secret).expect("valid HMAC key");
+        let sig1 = manager
+            .sign_payload(payload, secret)
+            .expect("valid HMAC key");
+        let sig2 = manager
+            .sign_payload(payload, secret)
+            .expect("valid HMAC key");
         assert_eq!(sig1, sig2);
         assert!(!sig1.is_empty());
         assert!(sig1.len() > 32);
 
-        let different_sig = manager.sign_payload(r#"{"event":"pull"}"#, secret).expect("valid HMAC key");
+        let different_sig = manager
+            .sign_payload(r#"{"event":"pull"}"#, secret)
+            .expect("valid HMAC key");
         assert_ne!(sig1, different_sig);
     }
 
@@ -472,7 +482,9 @@ mod tests {
         let sig = manager.sign_payload(payload, secret).unwrap();
         let signature = format!("sha256={sig}");
 
-        assert!(WebhookManager::verify_signature(payload, secret, &signature));
+        assert!(WebhookManager::verify_signature(
+            payload, secret, &signature
+        ));
     }
 
     #[test]
@@ -541,7 +553,7 @@ mod tests {
 
         // With jitter ±25%, d1 should be roughly 2x d0 (allowing wide margin).
         // d0 ~1000, d1 ~2000±500, d2 ~4000±1000
-        assert!(d0 > 500, "d0={d0}");  // 1000 - 25% = 750, but be generous
+        assert!(d0 > 500, "d0={d0}"); // 1000 - 25% = 750, but be generous
         assert!(d1 > 1000, "d1={d1}"); // 2000 - 50% = 1000
         assert!(d2 > 2000, "d2={d2}"); // 4000 - 50% = 2000
 

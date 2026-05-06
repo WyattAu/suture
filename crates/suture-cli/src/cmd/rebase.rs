@@ -12,10 +12,10 @@ pub async fn cmd_rebase(
 
     let branches: Vec<String> = repo.list_branches().into_iter().map(|(n, _)| n).collect();
     if !branches.contains(&branch.to_owned()) && repo.resolve_ref(branch).is_err() {
-        let hint = crate::fuzzy::suggest(branch, &branches).map_or_else(
-            String::new,
-            |suggestion| format!(" (did you mean '{suggestion}'?)"),
-        );
+        let hint = crate::fuzzy::suggest(branch, &branches)
+            .map_or_else(String::new, |suggestion| {
+                format!(" (did you mean '{suggestion}'?)")
+            });
         return Err(format!(
             "branch '{branch}' not found{hint} (use 'suture branch' to create it)"
         )
@@ -98,11 +98,7 @@ async fn cmd_rebase_interactive(
         let branches: Vec<String> = repo.list_branches().into_iter().map(|(n, _)| n).collect();
         crate::fuzzy::suggest(base_branch, &branches).map_or_else(
             || format!("branch '{base_branch}' not found"),
-            |suggestion| {
-                format!(
-                    "branch '{base_branch}' not found (did you mean '{suggestion}'?)"
-                )
-            },
+            |suggestion| format!("branch '{base_branch}' not found (did you mean '{suggestion}'?)"),
         )
     })?;
 

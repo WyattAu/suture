@@ -27,8 +27,6 @@ pub enum ApplyError {
 
     #[error("move payload must be valid UTF-8 path")]
     InvalidMovePayload,
-
-
 }
 
 /// Apply a single patch to a FileTree, producing a new FileTree.
@@ -204,11 +202,14 @@ where
             tree.remove(target_path);
         }
         OperationType::Move => {
-            let new_path = String::from_utf8(payload.to_vec())
-                .map_err(|_| ApplyError::InvalidMovePayload)?;
+            let new_path =
+                String::from_utf8(payload.to_vec()).map_err(|_| ApplyError::InvalidMovePayload)?;
             tree.rename(target_path, new_path);
         }
-        OperationType::Metadata | OperationType::Merge | OperationType::Identity | OperationType::Batch => {}
+        OperationType::Metadata
+        | OperationType::Merge
+        | OperationType::Identity
+        | OperationType::Batch => {}
     }
 
     Ok(())
@@ -248,7 +249,10 @@ fn apply_single_op_mut(tree: &mut FileTree, op: &OperationType, target_path: &st
                 tree.rename(target_path, new_path);
             }
         }
-        OperationType::Metadata | OperationType::Merge | OperationType::Identity | OperationType::Batch => {}
+        OperationType::Metadata
+        | OperationType::Merge
+        | OperationType::Identity
+        | OperationType::Batch => {}
     }
 }
 
@@ -256,7 +260,7 @@ fn apply_single_op_mut(tree: &mut FileTree, op: &OperationType, target_path: &st
 ///
 /// The payload in suture-core patches stores the hex-encoded BLAKE3 hash
 /// of the blob in the CAS. This function parses it back into a Hash.
-#[must_use] 
+#[must_use]
 pub fn resolve_payload_to_hash(patch: &Patch) -> Option<suture_common::Hash> {
     resolve_hex_to_hash(&patch.payload)
 }
@@ -580,7 +584,10 @@ mod tests {
         );
 
         let tree_final = apply_patch(&tree_after, &inverse_patch, resolve_payload_to_hash).unwrap();
-        assert_eq!(tree_final, tree, "forward then inverse should equal original");
+        assert_eq!(
+            tree_final, tree,
+            "forward then inverse should equal original"
+        );
         assert_eq!(tree_final.get("hello.txt"), Some(&original_hash));
         assert!(tree_final.get("new_file.txt").is_none());
         assert!(tree_final.contains("dir/data.json"));

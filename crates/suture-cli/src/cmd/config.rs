@@ -50,9 +50,7 @@ async fn cmd_config_repo(key_value: &[String]) -> Result<(), Box<dyn std::error:
                 })
                 .collect();
             if let Some(suggestion) = crate::fuzzy::suggest(key, &all_keys) {
-                eprintln!(
-                    "config key '{key}' not found (did you mean '{suggestion}'?)"
-                );
+                eprintln!("config key '{key}' not found (did you mean '{suggestion}'?)");
             } else {
                 eprintln!("config key '{key}' not found");
             }
@@ -98,15 +96,14 @@ async fn cmd_config_global(key_value: &[String]) -> Result<(), Box<dyn std::erro
         let key = key_value[0].trim();
         if let Some(value) = table
             .get(key)
-            .and_then(|v| v.as_str().map(std::borrow::ToOwned::to_owned)) {
+            .and_then(|v| v.as_str().map(std::borrow::ToOwned::to_owned))
+        {
             println!("{value}");
             return Ok(());
         } else {
             let all_keys: Vec<String> = table.keys().cloned().collect();
             if let Some(suggestion) = crate::fuzzy::suggest(key, &all_keys) {
-                eprintln!(
-                    "global config key '{key}' not found (did you mean '{suggestion}'?)"
-                );
+                eprintln!("global config key '{key}' not found (did you mean '{suggestion}'?)");
             } else {
                 eprintln!("global config key '{key}' not found");
             }

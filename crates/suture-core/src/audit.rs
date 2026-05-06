@@ -46,7 +46,7 @@ pub struct AuditEntry {
 
 impl AuditEntry {
     /// Compute the BLAKE3 content hash for this entry over its fields.
-    #[must_use] 
+    #[must_use]
     pub fn compute_content_hash(&self) -> [u8; 32] {
         let mut hasher = blake3::Hasher::new();
         hasher.update(&self.sequence.to_le_bytes());
@@ -59,13 +59,13 @@ impl AuditEntry {
     }
 
     /// Verify this entry's content hash matches its stored hash.
-    #[must_use] 
+    #[must_use]
     pub fn verify_integrity(&self) -> bool {
         self.compute_content_hash() == self.content_hash
     }
 
     /// Verify both this entry's integrity and its chain link to the previous entry.
-    #[must_use] 
+    #[must_use]
     pub fn verify_chain(&self, prev: Option<&Self>) -> bool {
         if let Some(prev) = prev {
             if self.prev_hash != prev.content_hash {

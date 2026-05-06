@@ -10,6 +10,17 @@ use crate::raft_network::RaftTcpTransport;
 
 /// Manages the Raft background task for consensus.
 ///
+/// # Async Safety
+///
+/// This struct uses `std::sync::Mutex` (not `tokio::sync::Mutex`) because the
+/// inner `RaftHub` type is synchronous and not `Send`. Converting to an async
+/// mutex would require making all accessor methods (`propose`, `is_leader`, etc.)
+/// async, which would cascade through the entire hub call chain.
+///
+/// **INVARIANT:** All `StdMutex` guards MUST be dropped before any `.await` point.
+/// This is enforced by scoping guards in blocks that don't cross await boundaries.
+/// Violating this invariant will block the tokio runtime thread.
+///
 /// When spawned, runs a tick loop and provides channels for:
 /// - Proposing commands (leader only)
 /// - Receiving committed commands (for applying to storage)

@@ -426,7 +426,9 @@ impl BlobStore {
         let _ = pack_path;
 
         for hash in &loose_hashes {
-            let _ = self.delete_blob(hash);
+            if let Err(e) = self.delete_blob(hash) {
+                tracing::warn!("failed to delete loose blob after repack: {e}");
+            }
         }
 
         // Invalidate pack cache since we created new pack files

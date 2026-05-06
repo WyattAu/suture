@@ -11,7 +11,7 @@ fn bytes_to_string_lossy(bytes: Vec<u8>) -> String {
 pub struct ImageDriver;
 
 impl ImageDriver {
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self
     }
@@ -391,7 +391,9 @@ mod tests {
         let ours_bytes = create_test_png(100, 50, [0, 0, 0]);
         let theirs_bytes = create_test_png(50, 50, [0, 0, 0]);
 
-        let result = driver.merge_raw(&base_bytes, &ours_bytes, &theirs_bytes).unwrap();
+        let result = driver
+            .merge_raw(&base_bytes, &ours_bytes, &theirs_bytes)
+            .unwrap();
         assert!(result.is_some());
         assert_eq!(result.unwrap(), ours_bytes);
     }
@@ -403,7 +405,9 @@ mod tests {
         let ours_bytes = create_test_png(100, 50, [0, 0, 0]);
         let theirs_bytes = create_test_png(200, 50, [0, 0, 0]);
 
-        let result = driver.merge_raw(&base_bytes, &ours_bytes, &theirs_bytes).unwrap();
+        let result = driver
+            .merge_raw(&base_bytes, &ours_bytes, &theirs_bytes)
+            .unwrap();
         assert!(result.is_none());
     }
 

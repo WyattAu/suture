@@ -131,7 +131,7 @@ pub struct RepoInfoResponse {
     pub error: Option<String>,
 }
 
-#[must_use] 
+#[must_use]
 pub fn hash_to_hex(h: &HashProto) -> String {
     h.value.clone()
 }
@@ -144,7 +144,7 @@ pub fn decompress(data: &[u8]) -> Result<Vec<u8>, String> {
     zstd::decode_all(data).map_err(|e| format!("zstd decompression failed: {e}"))
 }
 
-#[must_use] 
+#[must_use]
 pub fn hex_to_hash(hex: &str) -> HashProto {
     HashProto {
         value: hex.to_owned(),
@@ -153,7 +153,7 @@ pub fn hex_to_hash(hex: &str) -> HashProto {
 
 /// Build canonical bytes for push request signing.
 /// Format: repo_id \0 patch_count \0 (each patch: id \0 op \0 author \0 msg \0 timestamp \0) ... branch_count \0 (each: name \0 target \0) ...
-#[must_use] 
+#[must_use]
 pub fn canonical_push_bytes(req: &PushRequest) -> Vec<u8> {
     let mut buf = Vec::new();
 
@@ -310,7 +310,7 @@ pub enum LfsAction {
     Error,
 }
 
-#[must_use] 
+#[must_use]
 pub fn compute_delta(base: &[u8], target: &[u8]) -> (Vec<u8>, Vec<u8>) {
     let prefix_len = base
         .iter()
@@ -348,7 +348,7 @@ pub fn compute_delta(base: &[u8], target: &[u8]) -> (Vec<u8>, Vec<u8>) {
     }
 }
 
-#[must_use] 
+#[must_use]
 pub fn apply_delta(base: &[u8], delta: &[u8]) -> Vec<u8> {
     if delta.is_empty() {
         return Vec::new();

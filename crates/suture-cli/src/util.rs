@@ -18,9 +18,10 @@ pub fn is_path_within_repo(repo_root: &Path, path: &Path) -> bool {
         }
     }
     let full = repo_root.join(path);
-    if let (Ok(resolved), Ok(root)) =
-        (std::fs::canonicalize(&full), std::fs::canonicalize(repo_root))
-    {
+    if let (Ok(resolved), Ok(root)) = (
+        std::fs::canonicalize(&full),
+        std::fs::canonicalize(repo_root),
+    ) {
         return resolved.starts_with(&root);
     }
     !path

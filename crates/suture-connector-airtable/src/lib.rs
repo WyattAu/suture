@@ -162,11 +162,15 @@ impl AirtableClient {
                 .and_then(|v| v.to_str().ok())
                 .and_then(|v| v.parse::<u64>().ok())
                 .unwrap_or(1000);
-            return Err(AirtableError::RateLimited { retry_after_ms: retry });
+            return Err(AirtableError::RateLimited {
+                retry_after_ms: retry,
+            });
         }
         if !resp.status().is_success() {
-            let body: AirtableErrorResponse =
-                resp.json().await.unwrap_or(AirtableErrorResponse { error: None });
+            let body: AirtableErrorResponse = resp
+                .json()
+                .await
+                .unwrap_or(AirtableErrorResponse { error: None });
             let message = body
                 .error
                 .map(|e| e.message)
@@ -200,10 +204,7 @@ impl AirtableClient {
 
     /// Get the base schema (all tables and their fields).
     pub async fn get_schema(&self) -> Result<BaseSchema, AirtableError> {
-        let url = format!(
-            "{}/meta/bases/{}/tables",
-            self.base_url, self.base_id
-        );
+        let url = format!("{}/meta/bases/{}/tables", self.base_url, self.base_id);
 
         let resp = self
             .http
@@ -214,8 +215,10 @@ impl AirtableClient {
 
         let status = resp.status().as_u16();
         if !resp.status().is_success() {
-            let body: AirtableErrorResponse =
-                resp.json().await.unwrap_or(AirtableErrorResponse { error: None });
+            let body: AirtableErrorResponse = resp
+                .json()
+                .await
+                .unwrap_or(AirtableErrorResponse { error: None });
             let message = body
                 .error
                 .map(|e| e.message)
@@ -365,10 +368,7 @@ mod tests {
 
     #[test]
     fn test_json_value_string() {
-        assert_eq!(
-            json_value_to_string(&serde_json::json!("hello")),
-            "hello"
-        );
+        assert_eq!(json_value_to_string(&serde_json::json!("hello")), "hello");
     }
 
     #[test]

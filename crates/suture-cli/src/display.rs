@@ -108,7 +108,5 @@ pub fn format_timestamp(ts: u64) -> String {
     let hours = (ts % 86400) / 3600;
     let minutes = (ts % 3600) / 60;
     let remaining_secs = ts % 60;
-    format!(
-        "{days}d {hours:02}:{minutes:02}:{remaining_secs:02} (unix: {ts})"
-    )
+    format!("{days}d {hours:02}:{minutes:02}:{remaining_secs:02} (unix: {ts})")
 }

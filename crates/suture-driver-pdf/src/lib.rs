@@ -17,7 +17,7 @@ fn bytes_to_string_lossy(bytes: Vec<u8>) -> String {
 pub struct PdfDriver;
 
 impl PdfDriver {
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self
     }
@@ -203,15 +203,15 @@ impl PdfDriver {
             let t = theirs.get(i);
 
             match (b, o, t) {
-            (None | Some(_), None, Some(t)) => merged.push(t.clone()),
-            (None, Some(o), Some(t)) => {
-                if o == t {
-                    merged.push(o.clone());
-                } else {
-                    return None;
+                (None | Some(_), None, Some(t)) => merged.push(t.clone()),
+                (None, Some(o), Some(t)) => {
+                    if o == t {
+                        merged.push(o.clone());
+                    } else {
+                        return None;
+                    }
                 }
-            }
-            (None | Some(_), Some(o), None) => merged.push(o.clone()),
+                (None | Some(_), Some(o), None) => merged.push(o.clone()),
                 (Some(_), None, None) => {}
                 (Some(b), Some(o), Some(t)) => {
                     if o == t {

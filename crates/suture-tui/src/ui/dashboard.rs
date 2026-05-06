@@ -25,8 +25,10 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
 
 fn draw_repo_info(f: &mut Frame, app: &App, area: Rect) {
     let branch = app.head_branch().unwrap_or("(detached)");
-    let head = app
-        .head_patch().map_or_else(|| "(none)".to_owned(), |h| format!("{}…", &h[..12.min(h.len())]));
+    let head = app.head_patch().map_or_else(
+        || "(none)".to_owned(),
+        |h| format!("{}…", &h[..12.min(h.len())]),
+    );
 
     let working_set_dirty = !app.unstaged_files().is_empty() || !app.staged_files().is_empty();
     let working_set_label = if working_set_dirty { "dirty" } else { "clean" };
@@ -41,7 +43,8 @@ fn draw_repo_info(f: &mut Frame, app: &App, area: Rect) {
     let repo_name = app
         .repo()
         .root()
-        .file_name().map_or_else(|| "unknown".to_owned(), |n| n.to_string_lossy().to_string());
+        .file_name()
+        .map_or_else(|| "unknown".to_owned(), |n| n.to_string_lossy().to_string());
 
     let has_conflicts = !app.conflict_files().is_empty();
 
@@ -121,15 +124,15 @@ fn draw_recent_patches(f: &mut Frame, app: &App, area: Rect) {
                 Span::raw(" "),
                 Span::styled(&entry.message, Style::default().fg(Color::White)),
                 Span::raw("  "),
-                Span::styled(
-                    &entry.timestamp,
-                    Style::default().fg(Color::DarkGray),
-                ),
+                Span::styled(&entry.timestamp, Style::default().fg(Color::DarkGray)),
             ]));
         }
         if entries.len() > max_display {
             lines.push(Line::from(Span::styled(
-                format!("  ... and {} more (press [l] for full log)", entries.len() - max_display),
+                format!(
+                    "  ... and {} more (press [l] for full log)",
+                    entries.len() - max_display
+                ),
                 Style::default().fg(Color::DarkGray),
             )));
         }

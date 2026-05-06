@@ -89,11 +89,11 @@ fn draw_merge_header(f: &mut Frame, app: &App, cursor: usize, area: Rect) {
     ])];
 
     let widget = Paragraph::new(lines)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(format!(" Merge [{}/{}] ", cursor + 1, conflicts.len())),
-        )
+        .block(Block::default().borders(Borders::ALL).title(format!(
+            " Merge [{}/{}] ",
+            cursor + 1,
+            conflicts.len()
+        )))
         .wrap(Wrap { trim: false });
     f.render_widget(widget, area);
 }
@@ -127,7 +127,11 @@ fn draw_side_panel(
         )));
     } else {
         for (idx, hunk) in hunks.iter().enumerate() {
-            let side_lines = if is_ours { &hunk.ours_lines } else { &hunk.theirs_lines };
+            let side_lines = if is_ours {
+                &hunk.ours_lines
+            } else {
+                &hunk.theirs_lines
+            };
             let color = if is_ours { Color::Cyan } else { Color::Magenta };
 
             lines.push(Line::from(vec![

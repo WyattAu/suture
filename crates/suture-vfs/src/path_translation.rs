@@ -13,7 +13,7 @@ pub struct PathTranslator {
 }
 
 impl PathTranslator {
-    #[must_use] 
+    #[must_use]
     pub fn build(file_paths: &[&str]) -> Self {
         let mut dirs: BTreeSet<String> = BTreeSet::new();
         let mut files: BTreeMap<String, String> = BTreeMap::new();
@@ -32,14 +32,17 @@ impl PathTranslator {
                     dirs.insert(prefix.clone());
                 }
             }
-            let file_name = parts.last().map(std::string::ToString::to_string).unwrap_or_default();
+            let file_name = parts
+                .last()
+                .map(std::string::ToString::to_string)
+                .unwrap_or_default();
             files.insert(path.to_owned(), file_name);
         }
 
         Self { dirs, files }
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn list_dir(&self, dir_path: &str) -> Vec<DirEntry> {
         let mut entries = Vec::new();
 
@@ -49,7 +52,11 @@ impl PathTranslator {
             }
             let parent = parent_of(d).unwrap_or_default();
             if parent == dir_path {
-                let name = d.rsplit('/').next().map(std::borrow::ToOwned::to_owned).unwrap_or_default();
+                let name = d
+                    .rsplit('/')
+                    .next()
+                    .map(std::borrow::ToOwned::to_owned)
+                    .unwrap_or_default();
                 entries.push(DirEntry {
                     name,
                     path: d.clone(),
@@ -61,7 +68,11 @@ impl PathTranslator {
         for path in self.files.keys() {
             let parent = parent_of(path).unwrap_or_default();
             if parent == dir_path {
-                let name = path.rsplit('/').next().map(std::borrow::ToOwned::to_owned).unwrap_or_default();
+                let name = path
+                    .rsplit('/')
+                    .next()
+                    .map(std::borrow::ToOwned::to_owned)
+                    .unwrap_or_default();
                 entries.push(DirEntry {
                     name,
                     path: path.clone(),
@@ -79,22 +90,22 @@ impl PathTranslator {
         entries
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn is_dir(&self, path: &str) -> bool {
         self.dirs.contains(path)
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn is_file(&self, path: &str) -> bool {
         self.files.contains_key(path)
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn all_dirs(&self) -> &BTreeSet<String> {
         &self.dirs
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn all_files(&self) -> &BTreeMap<String, String> {
         &self.files
     }

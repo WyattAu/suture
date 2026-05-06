@@ -42,7 +42,7 @@ struct ParsedFeed {
 pub struct FeedDriver;
 
 impl FeedDriver {
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self
     }
@@ -62,7 +62,8 @@ impl FeedDriver {
             .find(|n| n.is_element() && n.tag_name().name() == tag)
             .and_then(|n| n.text())
             .unwrap_or("")
-            .trim().to_owned()
+            .trim()
+            .to_owned()
     }
 
     fn attr_value(node: roxmltree::Node, tag: &str, attr: &str) -> String {
@@ -70,7 +71,8 @@ impl FeedDriver {
             .find(|n| n.is_element() && n.tag_name().name() == tag)
             .and_then(|n| n.attribute(attr))
             .unwrap_or("")
-            .trim().to_owned()
+            .trim()
+            .to_owned()
     }
 
     fn parse_rss(doc: &roxmltree::Document) -> ParsedFeed {
@@ -80,28 +82,32 @@ impl FeedDriver {
             .find(|n| n.is_element() && n.tag_name().name() == "channel");
 
         let (metadata, channel_node) = channel.map_or_else(
-            || (
-                FeedMetadata {
-                    title: String::new(),
-                    description: String::new(),
-                    link: String::new(),
-                    language: String::new(),
-                    copyright: String::new(),
-                    managing_editor: String::new(),
-                },
-                root,
-            ),
-            |ch| (
-                FeedMetadata {
-                    title: Self::text_content(ch, "title"),
-                    description: Self::text_content(ch, "description"),
-                    link: Self::text_content(ch, "link"),
-                    language: Self::text_content(ch, "language"),
-                    copyright: Self::text_content(ch, "copyright"),
-                    managing_editor: Self::text_content(ch, "managingEditor"),
-                },
-                ch,
-            ),
+            || {
+                (
+                    FeedMetadata {
+                        title: String::new(),
+                        description: String::new(),
+                        link: String::new(),
+                        language: String::new(),
+                        copyright: String::new(),
+                        managing_editor: String::new(),
+                    },
+                    root,
+                )
+            },
+            |ch| {
+                (
+                    FeedMetadata {
+                        title: Self::text_content(ch, "title"),
+                        description: Self::text_content(ch, "description"),
+                        link: Self::text_content(ch, "link"),
+                        language: Self::text_content(ch, "language"),
+                        copyright: Self::text_content(ch, "copyright"),
+                        managing_editor: Self::text_content(ch, "managingEditor"),
+                    },
+                    ch,
+                )
+            },
         );
 
         let entries: Vec<FeedEntry> = channel_node
@@ -160,7 +166,8 @@ impl FeedDriver {
                     })
                     .and_then(|n| n.text())
                     .unwrap_or("")
-                    .trim().to_owned();
+                    .trim()
+                    .to_owned();
 
                 let categories: Vec<String> = entry
                     .children()
@@ -372,10 +379,16 @@ impl FeedDriver {
                 });
             }
 
-            let old_cats: std::collections::HashSet<&str> =
-                old_entry.categories.iter().map(std::string::String::as_str).collect();
-            let new_cats: std::collections::HashSet<&str> =
-                new_entry.categories.iter().map(std::string::String::as_str).collect();
+            let old_cats: std::collections::HashSet<&str> = old_entry
+                .categories
+                .iter()
+                .map(std::string::String::as_str)
+                .collect();
+            let new_cats: std::collections::HashSet<&str> = new_entry
+                .categories
+                .iter()
+                .map(std::string::String::as_str)
+                .collect();
 
             for cat in &old_cats {
                 if !new_cats.contains(cat) {
@@ -628,12 +641,21 @@ impl FeedDriver {
                 Some(author),
                 Some(content),
             ) => {
-                let base_cats: std::collections::HashSet<&str> =
-                    base.categories.iter().map(std::string::String::as_str).collect();
-                let ours_cats: std::collections::HashSet<&str> =
-                    ours.categories.iter().map(std::string::String::as_str).collect();
-                let theirs_cats: std::collections::HashSet<&str> =
-                    theirs.categories.iter().map(std::string::String::as_str).collect();
+                let base_cats: std::collections::HashSet<&str> = base
+                    .categories
+                    .iter()
+                    .map(std::string::String::as_str)
+                    .collect();
+                let ours_cats: std::collections::HashSet<&str> = ours
+                    .categories
+                    .iter()
+                    .map(std::string::String::as_str)
+                    .collect();
+                let theirs_cats: std::collections::HashSet<&str> = theirs
+                    .categories
+                    .iter()
+                    .map(std::string::String::as_str)
+                    .collect();
 
                 let mut merged_cats: Vec<String> = Vec::new();
                 let all_cats: std::collections::HashSet<&str> = base_cats
@@ -686,33 +708,31 @@ impl FeedDriver {
         s.push_str("<rss version=\"2.0\">\n");
         s.push_str("  <channel>\n");
 
-        let _ = writeln!(s, 
-            "    <title>{}</title>",
-            escape_xml(&feed.metadata.title)
-        );
-        let _ = writeln!(s, 
-            "    <link>{}</link>",
-            escape_xml(&feed.metadata.link)
-        );
-        let _ = writeln!(s, 
+        let _ = writeln!(s, "    <title>{}</title>", escape_xml(&feed.metadata.title));
+        let _ = writeln!(s, "    <link>{}</link>", escape_xml(&feed.metadata.link));
+        let _ = writeln!(
+            s,
             "    <description>{}</description>",
             escape_xml(&feed.metadata.description)
         );
 
         if !feed.metadata.language.is_empty() {
-            let _ = writeln!(s, 
+            let _ = writeln!(
+                s,
                 "    <language>{}</language>",
                 escape_xml(&feed.metadata.language)
             );
         }
         if !feed.metadata.copyright.is_empty() {
-            let _ = writeln!(s, 
+            let _ = writeln!(
+                s,
                 "    <copyright>{}</copyright>",
                 escape_xml(&feed.metadata.copyright)
             );
         }
         if !feed.metadata.managing_editor.is_empty() {
-            let _ = writeln!(s, 
+            let _ = writeln!(
+                s,
                 "    <managingEditor>{}</managingEditor>",
                 escape_xml(&feed.metadata.managing_editor)
             );
@@ -721,22 +741,21 @@ impl FeedDriver {
         for entry in &feed.entries {
             s.push_str("    <item>\n");
             if !entry.title.is_empty() {
-                let _ = writeln!(s, 
-                    "      <title>{}</title>",
-                    escape_xml(&entry.title)
-                );
+                let _ = writeln!(s, "      <title>{}</title>", escape_xml(&entry.title));
             }
             if !entry.link.is_empty() {
                 let _ = writeln!(s, "      <link>{}</link>", escape_xml(&entry.link));
             }
             if !entry.description.is_empty() {
-                let _ = writeln!(s, 
+                let _ = writeln!(
+                    s,
                     "      <description>{}</description>",
                     escape_xml(&entry.description)
                 );
             }
             if !entry.pub_date.is_empty() {
-                let _ = writeln!(s, 
+                let _ = writeln!(
+                    s,
                     "      <pubDate>{}</pubDate>",
                     escape_xml(&entry.pub_date)
                 );
@@ -748,13 +767,11 @@ impl FeedDriver {
                 let _ = writeln!(s, "      <category>{}</category>", escape_xml(cat));
             }
             if !entry.author.is_empty() {
-                let _ = writeln!(s, 
-                    "      <author>{}</author>",
-                    escape_xml(&entry.author)
-                );
+                let _ = writeln!(s, "      <author>{}</author>", escape_xml(&entry.author));
             }
             if !entry.content.is_empty() {
-                let _ = writeln!(s, 
+                let _ = writeln!(
+                    s,
                     "      <content:encoded>{}</content:encoded>",
                     escape_xml(&entry.content)
                 );
@@ -772,18 +789,13 @@ impl FeedDriver {
         s.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
         s.push_str("<feed xmlns=\"http://www.w3.org/2005/Atom\">\n");
 
-        let _ = writeln!(s, 
-            "  <title>{}</title>",
-            escape_xml(&feed.metadata.title)
-        );
+        let _ = writeln!(s, "  <title>{}</title>", escape_xml(&feed.metadata.title));
         if !feed.metadata.link.is_empty() {
-            let _ = writeln!(s, 
-                "  <link href=\"{}\"/>",
-                escape_xml(&feed.metadata.link)
-            );
+            let _ = writeln!(s, "  <link href=\"{}\"/>", escape_xml(&feed.metadata.link));
         }
         if !feed.metadata.description.is_empty() {
-            let _ = writeln!(s, 
+            let _ = writeln!(
+                s,
                 "  <subtitle>{}</subtitle>",
                 escape_xml(&feed.metadata.description)
             );
@@ -792,28 +804,20 @@ impl FeedDriver {
         for entry in &feed.entries {
             s.push_str("  <entry>\n");
             if !entry.title.is_empty() {
-                let _ = writeln!(s, 
-                    "    <title>{}</title>",
-                    escape_xml(&entry.title)
-                );
+                let _ = writeln!(s, "    <title>{}</title>", escape_xml(&entry.title));
             }
             if !entry.link.is_empty() {
-                let _ = writeln!(s, 
-                    "    <link href=\"{}\"/>",
-                    escape_xml(&entry.link)
-                );
+                let _ = writeln!(s, "    <link href=\"{}\"/>", escape_xml(&entry.link));
             }
             if !entry.description.is_empty() {
-                let _ = writeln!(s, 
+                let _ = writeln!(
+                    s,
                     "      <summary>{}</summary>",
                     escape_xml(&entry.description)
                 );
             }
             if !entry.pub_date.is_empty() {
-                let _ = writeln!(s, 
-                    "    <updated>{}</updated>",
-                    escape_xml(&entry.pub_date)
-                );
+                let _ = writeln!(s, "    <updated>{}</updated>", escape_xml(&entry.pub_date));
             }
             if !entry.id.is_empty() {
                 let _ = writeln!(s, "    <id>{}</id>", escape_xml(&entry.id));
@@ -823,17 +827,11 @@ impl FeedDriver {
             }
             if !entry.author.is_empty() {
                 s.push_str("    <author>\n");
-                let _ = writeln!(s, 
-                    "      <name>{}</name>",
-                    escape_xml(&entry.author)
-                );
+                let _ = writeln!(s, "      <name>{}</name>", escape_xml(&entry.author));
                 s.push_str("    </author>\n");
             }
             if !entry.content.is_empty() {
-                let _ = writeln!(s, 
-                    "    <content>{}</content>",
-                    escape_xml(&entry.content)
-                );
+                let _ = writeln!(s, "    <content>{}</content>", escape_xml(&entry.content));
             }
             s.push_str("  </entry>\n");
         }

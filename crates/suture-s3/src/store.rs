@@ -10,13 +10,13 @@ pub struct S3BlobStore {
 }
 
 impl S3BlobStore {
-    #[must_use] 
+    #[must_use]
     pub fn new(config: S3Config) -> Self {
         let client = reqwest::Client::new();
         Self { config, client }
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn object_key(&self, hash: &Hash) -> String {
         let hex = hash.to_hex();
         format!("{}{}", self.config.prefix, hex)
@@ -136,7 +136,7 @@ impl S3BlobStore {
                 let body = response.text().await?;
                 let hashes = parse_list_response(&body, &self.config.prefix);
                 debug!(count = hashes.len(), "LIST blobs succeeded");
-    Ok(hashes)
+                Ok(hashes)
             }
             403 => Err(S3Error::AccessDenied("LIST: access denied".into())),
             status => {

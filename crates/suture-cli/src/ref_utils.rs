@@ -63,10 +63,7 @@ pub fn resolve_ref<'a>(
             crate::fuzzy::suggest(ref_str, &candidates).map_or_else(
                 || Err(format!("unknown ref: {ref_str}").into()),
                 |suggestion| {
-                    Err(format!(
-                        "unknown ref: '{ref_str}' (did you mean '{suggestion}'?)"
-                    )
-                    .into())
+                    Err(format!("unknown ref: '{ref_str}' (did you mean '{suggestion}'?)").into())
                 },
             )
         }

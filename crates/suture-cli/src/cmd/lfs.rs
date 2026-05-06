@@ -71,9 +71,7 @@ fn parse_human_size(s: &str) -> Option<u64> {
             s.strip_suffix("MB").map_or_else(
                 || {
                     s.strip_suffix("KB").map_or_else(
-                        || {
-                            s.strip_suffix("B").map_or((s, 1u64), |n| (n.trim(), 1))
-                        },
+                        || s.strip_suffix("B").map_or((s, 1u64), |n| (n.trim(), 1)),
                         |n| (n.trim(), 1024u64),
                     )
                 },
@@ -112,8 +110,7 @@ pub fn lfs_object_path(hash: &str) -> PathBuf {
 }
 
 pub fn is_lfs_pointer(content: &[u8]) -> bool {
-    std::str::from_utf8(content)
-        .is_ok_and(|text| text.starts_with(LFS_POINTER_HEADER))
+    std::str::from_utf8(content).is_ok_and(|text| text.starts_with(LFS_POINTER_HEADER))
 }
 
 pub fn parse_lfs_pointer(content: &str) -> Option<LfsPointer> {
@@ -141,9 +138,7 @@ pub fn parse_lfs_pointer(content: &str) -> Option<LfsPointer> {
 }
 
 pub fn create_lfs_pointer(hash: &str, size: u64, name: &str) -> String {
-    format!(
-        "{LFS_POINTER_HEADER}\noid sha256:{hash}\nsize {size}\nname {name}\n"
-    )
+    format!("{LFS_POINTER_HEADER}\noid sha256:{hash}\nsize {size}\nname {name}\n")
 }
 
 pub fn store_lfs_object(
@@ -198,10 +193,12 @@ pub fn pattern_matches(pattern: &str, rel_path: &str) -> bool {
     pattern.strip_prefix('*').map_or_else(
         || {
             pattern.strip_suffix('*').map_or_else(
-                || if pattern.contains('*') {
-                    simple_glob_match(pattern, rel_path)
-                } else {
-                    rel_path == pattern || rel_path.starts_with(&format!("{pattern}/"))
+                || {
+                    if pattern.contains('*') {
+                        simple_glob_match(pattern, rel_path)
+                    } else {
+                        rel_path == pattern || rel_path.starts_with(&format!("{pattern}/"))
+                    }
                 },
                 |prefix| rel_path.starts_with(prefix),
             )
@@ -274,8 +271,12 @@ fn walk_lfs_objects(dir: &Path) -> usize {
 
 fn list_lfs_pointers_in_tree() -> Vec<(String, LfsPointer)> {
     let mut pointers = Vec::new();
-    let Ok(repo) = suture_core::repository::Repository::open(Path::new(".")) else { return pointers };
-    let Ok(tree) = repo.snapshot_head() else { return pointers };
+    let Ok(repo) = suture_core::repository::Repository::open(Path::new(".")) else {
+        return pointers;
+    };
+    let Ok(tree) = repo.snapshot_head() else {
+        return pointers;
+    };
     for (path, hash) in tree.iter() {
         if let Ok(blob) = repo.cas().get_blob(hash)
             && let Ok(text) = std::str::from_utf8(&blob)
@@ -287,8 +288,7 @@ fn list_lfs_pointers_in_tree() -> Vec<(String, LfsPointer)> {
     pointers
 }
 
-pub fn resolve_lfs_pointers_in_workdir() -> Result<(usize, usize), Box<dyn std::error::Error>>
-{
+pub fn resolve_lfs_pointers_in_workdir() -> Result<(usize, usize), Box<dyn std::error::Error>> {
     let mut resolved = 0usize;
     let mut missing = 0usize;
 
@@ -302,14 +302,18 @@ pub fn resolve_lfs_pointers_in_workdir() -> Result<(usize, usize), Box<dyn std::
             continue;
         }
 
-        let Ok(content) = std::fs::read(path) else { continue };
+        let Ok(content) = std::fs::read(path) else {
+            continue;
+        };
 
         if !is_lfs_pointer(&content) {
             continue;
         }
 
         let text = std::str::from_utf8(&content).unwrap_or("");
-        let Some(ptr) = parse_lfs_pointer(text) else { continue };
+        let Some(ptr) = parse_lfs_pointer(text) else {
+            continue;
+        };
 
         if let Ok(data) = read_lfs_object(Path::new("."), &ptr.oid) {
             std::fs::write(path, &data)?;
@@ -375,8 +379,9 @@ fn cmd_lfs_track(
     config.rules.push(rule);
     save_lfs_config(&config)?;
 
-    let limit_info =
-        size_limit.as_ref().map_or_else(String::new, |limit| format!(" (size limit: {limit})"));
+    let limit_info = size_limit
+        .as_ref()
+        .map_or_else(String::new, |limit| format!(" (size limit: {limit})"));
     println!("Tracking {pattern}{limit_info}");
 
     let threshold = get_threshold(Path::new("."));
@@ -427,8 +432,10 @@ fn cmd_lfs_list() -> Result<(), Box<dyn std::error::Error>> {
         let effective = rule.size_limit.as_ref().map_or_else(
             || format!("(> {threshold} bytes, default threshold)"),
             |limit| {
-                parse_human_size(limit)
-                    .map_or_else(|| format!("(> {limit})"), |bytes| format!("(> {bytes} bytes)"))
+                parse_human_size(limit).map_or_else(
+                    || format!("(> {limit})"),
+                    |bytes| format!("(> {bytes} bytes)"),
+                )
             },
         );
         println!("  {} {}", rule.pattern, effective);
@@ -551,7 +558,10 @@ async fn cmd_lfs_push() -> Result<(), Box<dyn std::error::Error>> {
                     println!(
                         "  uploaded: {} ({} bytes)",
                         &oid[..12],
-                        action_val.get("size").and_then(serde_json::Value::as_u64).unwrap_or(0)
+                        action_val
+                            .get("size")
+                            .and_then(serde_json::Value::as_u64)
+                            .unwrap_or(0)
                     );
                 } else {
                     eprintln!(
@@ -577,9 +587,7 @@ async fn cmd_lfs_push() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!();
-    println!(
-        "LFS push complete: {uploaded} uploaded, {skipped} skipped, {failed} failed"
-    );
+    println!("LFS push complete: {uploaded} uploaded, {skipped} skipped, {failed} failed");
     if failed > 0 {
         return Err(format!("{failed} LFS object(s) failed to upload").into());
     }
@@ -711,9 +719,7 @@ async fn cmd_lfs_pull() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!();
-    println!(
-        "LFS pull complete: {downloaded} downloaded, {skipped} skipped, {failed} failed"
-    );
+    println!("LFS pull complete: {downloaded} downloaded, {skipped} skipped, {failed} failed");
     if failed > 0 {
         return Err(format!("{failed} LFS object(s) failed to download").into());
     }

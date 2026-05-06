@@ -67,8 +67,10 @@ pub async fn cmd_sync(
             return Ok(());
         }
 
-        let msg =
-            message.map_or_else(|| generate_sync_message(&changed_files), std::borrow::ToOwned::to_owned);
+        let msg = message.map_or_else(
+            || generate_sync_message(&changed_files),
+            std::borrow::ToOwned::to_owned,
+        );
 
         let patch_id = repo.commit(&msg)?;
         println!(
@@ -124,9 +126,7 @@ fn has_configured_remote(repo: &suture_core::repository::Repository, name: &str)
     remotes.iter().any(|(n, _)| n == name)
 }
 
-fn detect_changed_files(
-    repo: &suture_core::repository::Repository,
-) -> Vec<String> {
+fn detect_changed_files(repo: &suture_core::repository::Repository) -> Vec<String> {
     let mut changed = Vec::new();
 
     let head_tree = repo
@@ -477,10 +477,10 @@ pub fn cmd_sync_status() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let Ok(repo) = suture_core::repository::Repository::open(Path::new(".")) else {
-            println!();
-            println!("Not a suture repository.");
-            return Ok(());
-        };
+        println!();
+        println!("Not a suture repository.");
+        return Ok(());
+    };
 
     let remotes = repo.list_remotes().unwrap_or_default();
     if let Some((name, url)) = remotes.first() {

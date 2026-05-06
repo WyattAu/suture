@@ -1,4 +1,4 @@
-use criterion::{black_box, BenchmarkId, Criterion, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 
 use suture_driver::SutureDriver;
 use suture_driver_csv::CsvDriver;
@@ -164,19 +164,31 @@ fn bench_json_merge(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::new("one_sided", size), &size, |b, _| {
             b.iter(|| {
-                black_box(driver.merge(&base, &ours_one_side, &theirs_unchanged).unwrap());
+                black_box(
+                    driver
+                        .merge(&base, &ours_one_side, &theirs_unchanged)
+                        .unwrap(),
+                );
             });
         });
 
         group.bench_with_input(BenchmarkId::new("different_keys", size), &size, |b, _| {
             b.iter(|| {
-                black_box(driver.merge(&base, &ours_diff_keys, &theirs_diff_keys).unwrap());
+                black_box(
+                    driver
+                        .merge(&base, &ours_diff_keys, &theirs_diff_keys)
+                        .unwrap(),
+                );
             });
         });
 
         group.bench_with_input(BenchmarkId::new("conflict", size), &size, |b, _| {
             b.iter(|| {
-                black_box(driver.merge(&base, &ours_conflict, &theirs_conflict).unwrap());
+                black_box(
+                    driver
+                        .merge(&base, &ours_conflict, &theirs_conflict)
+                        .unwrap(),
+                );
             });
         });
     }
@@ -218,19 +230,31 @@ fn bench_yaml_merge(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::new("one_sided", size), &size, |b, _| {
             b.iter(|| {
-                black_box(driver.merge(&base, &ours_one_side, &theirs_unchanged).unwrap());
+                black_box(
+                    driver
+                        .merge(&base, &ours_one_side, &theirs_unchanged)
+                        .unwrap(),
+                );
             });
         });
 
         group.bench_with_input(BenchmarkId::new("different_keys", size), &size, |b, _| {
             b.iter(|| {
-                black_box(driver.merge(&base, &ours_diff_keys, &theirs_diff_keys).unwrap());
+                black_box(
+                    driver
+                        .merge(&base, &ours_diff_keys, &theirs_diff_keys)
+                        .unwrap(),
+                );
             });
         });
 
         group.bench_with_input(BenchmarkId::new("conflict", size), &size, |b, _| {
             b.iter(|| {
-                black_box(driver.merge(&base, &ours_conflict, &theirs_conflict).unwrap());
+                black_box(
+                    driver
+                        .merge(&base, &ours_conflict, &theirs_conflict)
+                        .unwrap(),
+                );
             });
         });
     }
@@ -272,19 +296,31 @@ fn bench_toml_merge(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::new("one_sided", size), &size, |b, _| {
             b.iter(|| {
-                black_box(driver.merge(&base, &ours_one_side, &theirs_unchanged).unwrap());
+                black_box(
+                    driver
+                        .merge(&base, &ours_one_side, &theirs_unchanged)
+                        .unwrap(),
+                );
             });
         });
 
         group.bench_with_input(BenchmarkId::new("different_keys", size), &size, |b, _| {
             b.iter(|| {
-                black_box(driver.merge(&base, &ours_diff_keys, &theirs_diff_keys).unwrap());
+                black_box(
+                    driver
+                        .merge(&base, &ours_diff_keys, &theirs_diff_keys)
+                        .unwrap(),
+                );
             });
         });
 
         group.bench_with_input(BenchmarkId::new("conflict", size), &size, |b, _| {
             b.iter(|| {
-                black_box(driver.merge(&base, &ours_conflict, &theirs_conflict).unwrap());
+                black_box(
+                    driver
+                        .merge(&base, &ours_conflict, &theirs_conflict)
+                        .unwrap(),
+                );
             });
         });
     }
@@ -300,11 +336,7 @@ fn bench_csv_merge(c: &mut Criterion) {
     let mut group = c.benchmark_group("csv_merge");
     group.sample_size(50);
 
-    let sizes: Vec<(usize, usize)> = vec![
-        (10, 5),
-        (100, 10),
-        (1000, 20),
-    ];
+    let sizes: Vec<(usize, usize)> = vec![(10, 5), (100, 10), (1000, 20)];
 
     for (rows, cols) in sizes {
         let base = generate_csv(rows, cols);
@@ -331,19 +363,39 @@ fn bench_csv_merge(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::new("one_sided", &label), &label, |b, _| {
             b.iter(|| {
-                black_box(driver.merge(&base, &ours_one_side, &theirs_unchanged).unwrap());
+                black_box(
+                    driver
+                        .merge(&base, &ours_one_side, &theirs_unchanged)
+                        .unwrap(),
+                );
             });
         });
 
-        group.bench_with_input(BenchmarkId::new("different_keys", &label), &label, |b, _| {
-            b.iter(|| {
-                black_box(driver.merge(&base, &theirs_diff_row, &base.replacen("val_2_1", "THEIRS", 1)).unwrap());
-            });
-        });
+        group.bench_with_input(
+            BenchmarkId::new("different_keys", &label),
+            &label,
+            |b, _| {
+                b.iter(|| {
+                    black_box(
+                        driver
+                            .merge(
+                                &base,
+                                &theirs_diff_row,
+                                &base.replacen("val_2_1", "THEIRS", 1),
+                            )
+                            .unwrap(),
+                    );
+                });
+            },
+        );
 
         group.bench_with_input(BenchmarkId::new("conflict", &label), &label, |b, _| {
             b.iter(|| {
-                black_box(driver.merge(&base, &ours_conflict, &theirs_conflict).unwrap());
+                black_box(
+                    driver
+                        .merge(&base, &ours_conflict, &theirs_conflict)
+                        .unwrap(),
+                );
             });
         });
     }
@@ -368,8 +420,7 @@ fn bench_xml_merge(c: &mut Criterion) {
         let ours_one_side = xml_modify_elements(&base, &[0], "ours");
         let theirs_unchanged = base.clone();
 
-        let ours_diff_keys =
-            xml_modify_elements(&base, &(0..size / 2).collect::<Vec<_>>(), "ours");
+        let ours_diff_keys = xml_modify_elements(&base, &(0..size / 2).collect::<Vec<_>>(), "ours");
         let theirs_diff_keys =
             xml_modify_elements(&base, &(size / 2..size).collect::<Vec<_>>(), "theirs");
 
@@ -386,19 +437,31 @@ fn bench_xml_merge(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::new("one_sided", size), &size, |b, _| {
             b.iter(|| {
-                black_box(driver.merge(&base, &ours_one_side, &theirs_unchanged).unwrap());
+                black_box(
+                    driver
+                        .merge(&base, &ours_one_side, &theirs_unchanged)
+                        .unwrap(),
+                );
             });
         });
 
         group.bench_with_input(BenchmarkId::new("different_keys", size), &size, |b, _| {
             b.iter(|| {
-                black_box(driver.merge(&base, &ours_diff_keys, &theirs_diff_keys).unwrap());
+                black_box(
+                    driver
+                        .merge(&base, &ours_diff_keys, &theirs_diff_keys)
+                        .unwrap(),
+                );
             });
         });
 
         group.bench_with_input(BenchmarkId::new("conflict", size), &size, |b, _| {
             b.iter(|| {
-                black_box(driver.merge(&base, &ours_conflict, &theirs_conflict).unwrap());
+                black_box(
+                    driver
+                        .merge(&base, &ours_conflict, &theirs_conflict)
+                        .unwrap(),
+                );
             });
         });
     }

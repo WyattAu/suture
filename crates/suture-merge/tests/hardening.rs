@@ -411,10 +411,7 @@ fn stress_xml_500_elements() {
 fn stress_markdown_200_sections() {
     let mut base = String::new();
     for i in 0..200 {
-        let _ = write!(base, 
-            "# Section {}\n\nContent for section {}.\n\n",
-            i, i
-        );
+        let _ = write!(base, "# Section {}\n\nContent for section {}.\n\n", i, i);
     }
     let ours = base.replace("Content for section 0", "MODIFIED section 0");
     let theirs = base.replace("Content for section 199", "MODIFIED section 199");
@@ -449,7 +446,8 @@ fn stress_yaml_500_keys() {
 fn stress_ical_50_events() {
     let mut base = String::from("BEGIN:VCALENDAR\r\nVERSION:2.0\r\n");
     for i in 0..50 {
-        let _ = write!(base, 
+        let _ = write!(
+            base,
             "BEGIN:VEVENT\r\nSUMMARY:Event {}\r\nUID:event{}@test.com\r\nEND:VEVENT\r\n",
             i, i
         );
@@ -472,7 +470,8 @@ fn stress_ical_50_events() {
 fn stress_feed_50_entries() {
     let mut items = String::new();
     for i in 0..50 {
-        let _ = write!(items, 
+        let _ = write!(
+            items,
             "    <item><title>Article {}</title><guid>id{}</guid></item>\n",
             i, i
         );

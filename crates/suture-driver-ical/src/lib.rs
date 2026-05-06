@@ -9,7 +9,7 @@ type Component = (String, Vec<(String, String)>);
 pub struct IcalDriver;
 
 impl IcalDriver {
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self
     }
@@ -80,7 +80,9 @@ impl IcalDriver {
         let value = &line[colon_pos + 1..];
         let prop_part = &line[..colon_pos];
 
-        let prop_name = prop_part.find(';').map_or(prop_part, |semi_pos| &prop_part[..semi_pos]);
+        let prop_name = prop_part
+            .find(';')
+            .map_or(prop_part, |semi_pos| &prop_part[..semi_pos]);
 
         Some((prop_name.to_owned(), value.to_owned()))
     }
@@ -469,7 +471,10 @@ impl SutureDriver for IcalDriver {
         let ours_inner = Self::extract_inner_components(&ours_components);
         let theirs_inner = Self::extract_inner_components(&theirs_components);
 
-        Ok(Self::merge_components(&base_inner, &ours_inner, &theirs_inner).map(|merged| Self::serialize_components(&merged)))
+        Ok(
+            Self::merge_components(&base_inner, &ours_inner, &theirs_inner)
+                .map(|merged| Self::serialize_components(&merged)),
+        )
     }
 }
 

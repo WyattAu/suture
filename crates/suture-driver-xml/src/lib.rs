@@ -7,7 +7,7 @@ use std::fmt::Write;
 pub struct XmlDriver;
 
 impl XmlDriver {
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self
     }
@@ -71,8 +71,10 @@ impl XmlDriver {
         };
 
         let text = node.text().unwrap_or("").trim();
-        let element_children: Vec<roxmltree::Node> =
-            node.children().filter(roxmltree::Node::is_element).collect();
+        let element_children: Vec<roxmltree::Node> = node
+            .children()
+            .filter(roxmltree::Node::is_element)
+            .collect();
 
         if element_children.is_empty() && text.is_empty() {
             format!("{pad}<{tag}{attr_str}/>")
@@ -81,7 +83,8 @@ impl XmlDriver {
         } else {
             let mut result = format!("{pad}<{tag}{attr_str}>\n");
             if !text.is_empty() {
-                let _ = writeln!(result, 
+                let _ = writeln!(
+                    result,
                     "{}{}",
                     "  ".repeat(indent + 1),
                     Self::escape_xml(text)
@@ -258,12 +261,18 @@ impl XmlDriver {
             }
         }
 
-        let base_children: Vec<roxmltree::Node> =
-            base.children().filter(roxmltree::Node::is_element).collect();
-        let ours_children: Vec<roxmltree::Node> =
-            ours.children().filter(roxmltree::Node::is_element).collect();
-        let theirs_children: Vec<roxmltree::Node> =
-            theirs.children().filter(roxmltree::Node::is_element).collect();
+        let base_children: Vec<roxmltree::Node> = base
+            .children()
+            .filter(roxmltree::Node::is_element)
+            .collect();
+        let ours_children: Vec<roxmltree::Node> = ours
+            .children()
+            .filter(roxmltree::Node::is_element)
+            .collect();
+        let theirs_children: Vec<roxmltree::Node> = theirs
+            .children()
+            .filter(roxmltree::Node::is_element)
+            .collect();
 
         let max_len = base_children
             .len()
@@ -339,7 +348,8 @@ impl XmlDriver {
         } else {
             let mut result = format!("{pad}<{tag}{attr_str}>\n");
             if !merged_text.is_empty() {
-                let _ = writeln!(result, 
+                let _ = writeln!(
+                    result,
                     "{}{}",
                     "  ".repeat(indent + 1),
                     Self::escape_xml(&merged_text)
@@ -456,7 +466,8 @@ impl SutureDriver for XmlDriver {
             ours_doc.root_element(),
             theirs_doc.root_element(),
             0,
-        )?.map_or_else(
+        )?
+        .map_or_else(
             || Ok(None),
             |merged| {
                 result.push_str(&merged);
@@ -499,8 +510,8 @@ fn collect_all_paths(node: roxmltree::Node, out: &mut Vec<SemanticChange>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use proptest::proptest;
     use proptest::prop_assert;
+    use proptest::proptest;
 
     #[test]
     fn test_xml_driver_name() {
@@ -948,13 +959,19 @@ mod tests {
         let b = r#"<root><a>1</a><b>20</b><c>3</c><d>4</d></root>"#;
         let c = r#"<root><a>1</a><b>2</b><c>30</c><d>4</d></root>"#;
 
-        let ab = driver.merge(base, a, b).unwrap().expect("merge(base, A, B) should succeed");
+        let ab = driver
+            .merge(base, a, b)
+            .unwrap()
+            .expect("merge(base, A, B) should succeed");
         let merge_left = driver
             .merge(base, &ab, c)
             .unwrap()
             .expect("merge(base, merge(A,B), C) should succeed");
 
-        let bc = driver.merge(base, b, c).unwrap().expect("merge(base, B, C) should succeed");
+        let bc = driver
+            .merge(base, b, c)
+            .unwrap()
+            .expect("merge(base, B, C) should succeed");
         let merge_right = driver
             .merge(base, a, &bc)
             .unwrap()

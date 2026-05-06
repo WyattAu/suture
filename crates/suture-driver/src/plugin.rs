@@ -67,7 +67,7 @@ pub struct PluginRegistry {
 }
 
 impl PluginRegistry {
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             plugins: HashMap::new(),
@@ -83,12 +83,12 @@ impl PluginRegistry {
         self.plugins.insert(name, plugin);
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn get(&self, name: &str) -> Option<&dyn DriverPlugin> {
         self.plugins.get(name).map(std::convert::AsRef::as_ref)
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn get_by_extension(&self, ext: &str) -> Option<&dyn DriverPlugin> {
         let normalized = if ext.starts_with('.') {
             ext.to_owned()
@@ -100,9 +100,13 @@ impl PluginRegistry {
             .and_then(|name| self.plugins.get(name).map(std::convert::AsRef::as_ref))
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn list_drivers(&self) -> Vec<&str> {
-        let mut names: Vec<&str> = self.plugins.keys().map(std::string::String::as_str).collect();
+        let mut names: Vec<&str> = self
+            .plugins
+            .keys()
+            .map(std::string::String::as_str)
+            .collect();
         names.sort_unstable();
         names
     }
@@ -117,9 +121,7 @@ impl PluginRegistry {
             sorted_entries.sort_by_key(std::fs::DirEntry::file_name);
             for entry in sorted_entries {
                 let path = entry.path();
-                if path
-                    .extension()
-                    .is_some_and(|e| e == "suture-plugin")
+                if path.extension().is_some_and(|e| e == "suture-plugin")
                     && let Ok(content) = std::fs::read_to_string(&path)
                     && let Some(desc) = Self::parse_plugin_descriptor(&content)
                 {
@@ -208,12 +210,6 @@ impl PluginRegistry {
 
 #[cfg(feature = "wasm-plugins")]
 pub struct WasmDriverPlugin {
-    #[allow(dead_code)]
-    engine: wasmtime::Engine,
-    #[allow(dead_code)]
-    instance: wasmtime::Instance,
-    #[allow(dead_code)]
-    store: wasmtime::Store<()>,
     name: String,
     extensions_storage: Vec<String>,
     extensions: Vec<&'static str>,
@@ -232,22 +228,28 @@ impl WasmDriverPlugin {
         // Provide `suture.alloc` host import for WASM memory allocation.
         // Plugins call this to request the host to grow their memory and return a pointer.
         linker
-            .func_wrap("suture", "alloc", |mut caller: wasmtime::Caller<'_, ()>, size: i32| -> i32 {
-                let size = if size <= 0 { return -1 };
-                let size = size as usize;
-                let memory = match caller.get_export("memory") {
-                    Some(wasmtime::Extern::Memory(mem)) => mem,
-                    _ => return -1,
-                };
-                let current_size = memory.data_size(&mut caller);
-                let old_pages = memory.data_size(&mut caller) / 65536;
-                // Grow by at least enough pages to accommodate `size` bytes
-                let needed_pages = (size.saturating_sub(current_size % 65536) + 65535) / 65536;
-                match memory.grow(&mut caller, needed_pages) {
-                    Ok(_) => current_size as i32,
-                    Err(_) => -1,
-                }
-            })
+            .func_wrap(
+                "suture",
+                "alloc",
+                |mut caller: wasmtime::Caller<'_, ()>, size: i32| -> i32 {
+                    let size = if size <= 0 {
+                        return -1;
+                    };
+                    let size = size as usize;
+                    let memory = match caller.get_export("memory") {
+                        Some(wasmtime::Extern::Memory(mem)) => mem,
+                        _ => return -1,
+                    };
+                    let current_size = memory.data_size(&mut caller);
+                    let old_pages = memory.data_size(&mut caller) / 65536;
+                    // Grow by at least enough pages to accommodate `size` bytes
+                    let needed_pages = (size.saturating_sub(current_size % 65536) + 65535) / 65536;
+                    match memory.grow(&mut caller, needed_pages) {
+                        Ok(_) => current_size as i32,
+                        Err(_) => -1,
+                    }
+                },
+            )
             .map_err(|e| PluginError::LoadFailed(format!("failed to define suture.alloc: {e}")))?;
 
         let instance = linker
@@ -275,9 +277,6 @@ impl WasmDriverPlugin {
             .collect();
 
         let plugin = Self {
-            engine,
-            instance,
-            store,
             name,
             extensions_storage,
             extensions,

@@ -14,7 +14,17 @@ use std::sync::Arc;
 
 use tokio::sync::RwLock;
 use tower_lsp::jsonrpc::Result;
-use tower_lsp::lsp_types::{Url, Diagnostic, Range, Position, DiagnosticSeverity, NumberOrString, MessageType, CodeAction, CodeActionKind, Command, Hover, HoverContents, MarkupContent, MarkupKind, CompletionItem, CompletionItemKind, DocumentSymbol, SymbolKind, InitializeParams, InitializeResult, ServerCapabilities, HoverProviderCapability, TextDocumentSyncCapability, TextDocumentSyncKind, CodeActionProviderCapability, CompletionOptions, OneOf, ServerInfo, InitializedParams, DidOpenTextDocumentParams, DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidSaveTextDocumentParams, HoverParams, CodeActionParams, CodeActionResponse, CodeActionOrCommand, CompletionParams, CompletionResponse, DocumentSymbolParams, DocumentSymbolResponse};
+use tower_lsp::lsp_types::{
+    CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams,
+    CodeActionProviderCapability, CodeActionResponse, Command, CompletionItem, CompletionItemKind,
+    CompletionOptions, CompletionParams, CompletionResponse, Diagnostic, DiagnosticSeverity,
+    DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
+    DidSaveTextDocumentParams, DocumentSymbol, DocumentSymbolParams, DocumentSymbolResponse, Hover,
+    HoverContents, HoverParams, HoverProviderCapability, InitializeParams, InitializeResult,
+    InitializedParams, MarkupContent, MarkupKind, MessageType, NumberOrString, OneOf, Position,
+    Range, ServerCapabilities, ServerInfo, SymbolKind, TextDocumentSyncCapability,
+    TextDocumentSyncKind, Url,
+};
 use tower_lsp::{Client, LanguageServer};
 
 use suture_common::FileStatus;
@@ -28,7 +38,7 @@ pub struct SutureLsp {
 }
 
 impl SutureLsp {
-    #[must_use] 
+    #[must_use]
     pub fn new(client: Client) -> Self {
         Self {
             client,
@@ -274,8 +284,12 @@ impl SutureLsp {
     }
 
     fn complete_json(content: &str, _position: Position) -> Vec<CompletionItem> {
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(content) else { return Vec::new() };
-        let Some(object) = value.as_object() else { return Vec::new() };
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(content) else {
+            return Vec::new();
+        };
+        let Some(object) = value.as_object() else {
+            return Vec::new();
+        };
 
         object
             .keys()
@@ -311,8 +325,7 @@ impl SutureLsp {
             }
         }
 
-        seen
-            .into_keys()
+        seen.into_keys()
             .map(|key| CompletionItem {
                 label: key.clone(),
                 kind: Some(CompletionItemKind::PROPERTY),
@@ -344,8 +357,12 @@ impl SutureLsp {
     }
 
     fn document_symbols_json(content: &str) -> Vec<DocumentSymbol> {
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(content) else { return Vec::new() };
-        let Some(object) = value.as_object() else { return Vec::new() };
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(content) else {
+            return Vec::new();
+        };
+        let Some(object) = value.as_object() else {
+            return Vec::new();
+        };
 
         object
             .iter()
@@ -518,11 +535,7 @@ fn current_toml_section(content: &str, target_line: usize) -> String {
     current
 }
 
-fn get_toml_value<'a>(
-    root: &'a toml::Table,
-    section: &str,
-    key: &str,
-) -> Option<&'a toml::Value> {
+fn get_toml_value<'a>(root: &'a toml::Table, section: &str, key: &str) -> Option<&'a toml::Value> {
     let mut table = root;
     if !section.is_empty() {
         for part in section.split('.') {
@@ -582,11 +595,7 @@ fn find_toml_key_range(content: &str, full_key: &str) -> Range {
     )
 }
 
-fn collect_toml_keys(
-    table: &toml::Table,
-    prefix: String,
-    items: &mut Vec<CompletionItem>,
-) {
+fn collect_toml_keys(table: &toml::Table, prefix: String, items: &mut Vec<CompletionItem>) {
     for (key, value) in table {
         let full_key = if prefix.is_empty() {
             key.clone()
@@ -623,11 +632,7 @@ impl LanguageServer for SutureLsp {
                 )),
                 code_action_provider: Some(CodeActionProviderCapability::Simple(true)),
                 completion_provider: Some(CompletionOptions {
-                    trigger_characters: Some(vec![
-                        ":".to_owned(),
-                        "=".to_owned(),
-                        "\"".to_owned(),
-                    ]),
+                    trigger_characters: Some(vec![":".to_owned(), "=".to_owned(), "\"".to_owned()]),
                     ..Default::default()
                 }),
                 document_symbol_provider: Some(OneOf::Left(true)),
@@ -694,7 +699,9 @@ impl LanguageServer for SutureLsp {
 
         let line = position.line as usize + 1;
 
-        let Ok(blame_entries) = repo.blame(&relative_str, None) else { return Ok(None) };
+        let Ok(blame_entries) = repo.blame(&relative_str, None) else {
+            return Ok(None);
+        };
 
         if let Some(entry) = blame_entries.iter().find(|e| e.line_number == line) {
             let contents = format!(
@@ -750,10 +757,7 @@ impl LanguageServer for SutureLsp {
         }
     }
 
-    async fn completion(
-        &self,
-        params: CompletionParams,
-    ) -> Result<Option<CompletionResponse>> {
+    async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
         let uri = &params.text_document_position.text_document.uri;
         let position = params.text_document_position.position;
 
@@ -810,7 +814,10 @@ impl LanguageServer for SutureLsp {
 mod tests {
     use super::*;
     use tower_lsp::LspService;
-    use tower_lsp::lsp_types::{TextDocumentPositionParams, TextDocumentIdentifier, WorkDoneProgressParams, TextDocumentItem};
+    use tower_lsp::lsp_types::{
+        TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams,
+        WorkDoneProgressParams,
+    };
 
     fn create_service() -> LspService<SutureLsp> {
         let (service, _) = LspService::new(SutureLsp::new);
@@ -1275,7 +1282,10 @@ port = 8080
 
     #[test]
     fn test_extract_json_key() {
-        assert_eq!(extract_json_key(r#"  "hello": "world","#), Some("hello".to_string()));
+        assert_eq!(
+            extract_json_key(r#"  "hello": "world","#),
+            Some("hello".to_string())
+        );
         assert_eq!(extract_json_key(r#""key": 123"#), Some("key".to_string()));
         assert_eq!(extract_json_key("no key here"), None);
     }

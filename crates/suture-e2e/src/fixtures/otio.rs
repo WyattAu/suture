@@ -1,6 +1,6 @@
 use serde_json::{Value, json};
 
-#[must_use] 
+#[must_use]
 pub fn simple() -> String {
     json!({
         "OTIO_SCHEMA": "otio.schema.Timeline",
@@ -34,7 +34,7 @@ pub fn simple() -> String {
     .to_string()
 }
 
-#[must_use] 
+#[must_use]
 pub fn complex() -> String {
     json!({
         "OTIO_SCHEMA": "otio.schema.Timeline",
@@ -107,7 +107,7 @@ pub fn complex() -> String {
     .to_string()
 }
 
-#[must_use] 
+#[must_use]
 pub fn nested() -> String {
     json!({
         "OTIO_SCHEMA": "otio.schema.Timeline",

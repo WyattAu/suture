@@ -64,7 +64,9 @@ pub async fn cmd_tag(
         repo.delete_tag(name)
             .map_err(|e| user_error(&format!("failed to delete tag '{name}'"), e))?;
         let msg_key = format!("tag.{name}.message");
-        let _ = repo.meta().delete_config(&msg_key);
+        if let Err(e) = repo.meta().delete_config(&msg_key) {
+            eprintln!("suture: warning: failed to delete tag message config: {e}");
+        }
         println!("Deleted tag '{name}'");
     } else {
         let tags = repo

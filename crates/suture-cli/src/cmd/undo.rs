@@ -1,8 +1,4 @@
-pub async fn cmd_undo(
-    n: usize,
-    hard: bool,
-    force: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_undo(n: usize, hard: bool, force: bool) -> Result<(), Box<dyn std::error::Error>> {
     use suture_core::repository::ResetMode;
 
     let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;

@@ -106,9 +106,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
     let args = Args::parse();
 
-    let cfg: HubConfig = args.config.as_ref().map_or_else(
-        HubConfig::default,
-        |config_path| {
+    let cfg: HubConfig = args
+        .config
+        .as_ref()
+        .map_or_else(HubConfig::default, |config_path| {
             match load_config(config_path) {
                 Ok(c) => {
                     tracing::info!("loaded config from {}", config_path);
@@ -119,8 +120,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     HubConfig::default()
                 }
             }
-        },
-    );
+        });
 
     let addr = if args.addr == "0.0.0.0:50051" {
         cfg.addr.unwrap_or(args.addr)

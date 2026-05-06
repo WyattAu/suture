@@ -198,7 +198,8 @@ fn stat_for_diffs(diffs: &[FileDiff]) -> String {
             .flat_map(|h| h.lines.iter())
             .filter(|l| l.kind == HunkLineKind::Remove)
             .count();
-        let _ = writeln!(output, 
+        let _ = writeln!(
+            output,
             " {} | {} insertion(s), {} deletion(s)",
             diff.new_path, total_add, total_remove
         );
@@ -254,7 +255,10 @@ pub async fn cmd_apply(
             String::new()
         };
 
-        let mut file_lines: Vec<String> = file_content.lines().map(std::borrow::ToOwned::to_owned).collect();
+        let mut file_lines: Vec<String> = file_content
+            .lines()
+            .map(std::borrow::ToOwned::to_owned)
+            .collect();
 
         for hunk in &diff.hunks {
             apply_hunk(&mut file_lines, hunk, reverse)?;

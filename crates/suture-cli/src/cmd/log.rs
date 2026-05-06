@@ -4,8 +4,12 @@ fn verify_status(
     repo: &suture_core::repository::Repository,
     patch: &suture_core::patch::types::Patch,
 ) -> &'static str {
-    let Ok(Some(pub_key)) = repo.meta().get_public_key(&patch.author) else { return "\u{2014} unsigned" };
-    let Ok(Some(sig)) = repo.meta().get_signature(&patch.id.to_hex()) else { return "\u{2014} unsigned" };
+    let Ok(Some(pub_key)) = repo.meta().get_public_key(&patch.author) else {
+        return "\u{2014} unsigned";
+    };
+    let Ok(Some(sig)) = repo.meta().get_signature(&patch.id.to_hex()) else {
+        return "\u{2014} unsigned";
+    };
     let pub_key_arr: [u8; 32] = match pub_key.try_into() {
         Ok(k) => k,
         Err(_) => return "\u{2717} INVALID",
@@ -277,7 +281,8 @@ pub async fn cmd_log(
     let head_branch = repo.head().map(|(name, _)| name).unwrap_or_default();
 
     let all_patches = repo.all_patches_ref();
-    let mut commit_groups: Vec<(Vec<suture_core::patch::types::PatchId>, String, u64)> = Vec::with_capacity(32);
+    let mut commit_groups: Vec<(Vec<suture_core::patch::types::PatchId>, String, u64)> =
+        Vec::with_capacity(32);
     let mut seen_messages: std::collections::HashMap<(String, u64), usize> =
         std::collections::HashMap::new();
 
@@ -384,9 +389,7 @@ pub async fn cmd_log(
             format!(" ({})", labels.join(", "))
         };
 
-        println!(
-            "{row_str} {short_hash} {author_truncated} {time_str} {message}{label_str}"
-        );
+        println!("{row_str} {short_hash} {author_truncated} {time_str} {message}{label_str}");
 
         if is_merge {
             let mut merge_open = vec![' '; num_cols];
@@ -480,7 +483,11 @@ async fn cmd_audit(
                 timestamp: dt,
                 author: patch.author.clone(),
                 commit: patch.id.to_hex(),
-                parents: patch.parent_ids.iter().map(suture_core::Hash::to_hex).collect(),
+                parents: patch
+                    .parent_ids
+                    .iter()
+                    .map(suture_core::Hash::to_hex)
+                    .collect(),
                 message: patch.message.clone(),
                 files_changed,
                 files_added,

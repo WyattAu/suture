@@ -128,7 +128,9 @@ pub fn write_output(s: &str) {
         host::set_output_len(bytes.len() as i32);
     }
     for (i, &byte) in bytes.iter().enumerate() {
-        unsafe { host::set_output_byte(i as i32, byte as i32); }
+        unsafe {
+            host::set_output_byte(i as i32, byte as i32);
+        }
     }
 }
 

@@ -107,13 +107,21 @@ fn test_merge_driver_json_non_overlapping_keys() {
     git_ok(&repo, &["commit", "-m", "base config"], &suture);
 
     git_ok(&repo, &["checkout", "-b", "feature-a"], &suture);
-    fs::write(repo.join("config.json"), r#"{"version": "1.1", "port": 8080}"#).unwrap();
+    fs::write(
+        repo.join("config.json"),
+        r#"{"version": "1.1", "port": 8080}"#,
+    )
+    .unwrap();
     git_ok(&repo, &["add", "config.json"], &suture);
     git_ok(&repo, &["commit", "-m", "change version"], &suture);
 
     git_ok(&repo, &["checkout", "main"], &suture);
     git_ok(&repo, &["checkout", "-b", "feature-b"], &suture);
-    fs::write(repo.join("config.json"), r#"{"version": "1.0", "port": 9090}"#).unwrap();
+    fs::write(
+        repo.join("config.json"),
+        r#"{"version": "1.0", "port": 9090}"#,
+    )
+    .unwrap();
     git_ok(&repo, &["add", "config.json"], &suture);
     git_ok(&repo, &["commit", "-m", "change port"], &suture);
 
@@ -160,12 +168,20 @@ fn test_merge_driver_json_same_key_conflict() {
     git_ok(&repo, &["commit", "-m", "base config"], &suture);
 
     git_ok(&repo, &["checkout", "-b", "conflict-a"], &suture);
-    fs::write(repo.join("config.json"), r#"{"key": "from-a", "other": "base"}"#).unwrap();
+    fs::write(
+        repo.join("config.json"),
+        r#"{"key": "from-a", "other": "base"}"#,
+    )
+    .unwrap();
     git_ok(&repo, &["add", "config.json"], &suture);
     git_ok(&repo, &["commit", "-m", "change key to from-a"], &suture);
 
     git_ok(&repo, &["checkout", "main"], &suture);
-    fs::write(repo.join("config.json"), r#"{"key": "from-b", "other": "base"}"#).unwrap();
+    fs::write(
+        repo.join("config.json"),
+        r#"{"key": "from-b", "other": "base"}"#,
+    )
+    .unwrap();
     git_ok(&repo, &["add", "config.json"], &suture);
     git_ok(&repo, &["commit", "-m", "change key to from-b"], &suture);
 

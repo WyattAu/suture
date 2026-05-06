@@ -24,7 +24,10 @@ impl PlatformDb {
     }
 
     fn init_schema(&self) -> anyhow::Result<()> {
-        let conn = self.conn.lock().map_err(|e| anyhow::anyhow!("failed to acquire db lock for schema init: {e}"))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| anyhow::anyhow!("failed to acquire db lock for schema init: {e}"))?;
         conn.execute_batch(
             "
             CREATE TABLE IF NOT EXISTS accounts (
@@ -147,6 +150,8 @@ impl PlatformDb {
     }
 
     pub fn conn(&self) -> Result<std::sync::MutexGuard<'_, Connection>, String> {
-        self.conn.lock().map_err(|e| format!("db lock poisoned: {e}"))
+        self.conn
+            .lock()
+            .map_err(|e| format!("db lock poisoned: {e}"))
     }
 }

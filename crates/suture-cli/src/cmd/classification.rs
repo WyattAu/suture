@@ -70,7 +70,9 @@ fn classification_patterns() -> Vec<(&'static str, &'static str)> {
 fn find_classifications(text: &str) -> Vec<(String, usize)> {
     let mut found = Vec::new();
     for (name, pattern) in classification_patterns() {
-        let Ok(re) = regex::Regex::new(pattern) else { continue };
+        let Ok(re) = regex::Regex::new(pattern) else {
+            continue;
+        };
         let count = re.find_iter(text).count();
         if count > 0 {
             found.push((name.to_owned(), count));
@@ -198,7 +200,8 @@ pub fn format_classification_report(results: &[ClassificationResult]) -> String 
         out.push_str(":\n");
         match &r.change {
             ClassificationChange::Added(marking) => {
-                let _ = write!(out, 
+                let _ = write!(
+                    out,
                     "  OLD: not found\n  NEW: \"{}\" (found in {} location{})\n",
                     marking,
                     r.new_count,
@@ -207,7 +210,8 @@ pub fn format_classification_report(results: &[ClassificationResult]) -> String 
                 out.push_str("  ! ADDED: Classification marking added\n\n");
             }
             ClassificationChange::Removed(marking) => {
-                let _ = write!(out, 
+                let _ = write!(
+                    out,
                     "  OLD: \"{}\" (found in {} location{})\n  NEW: not found\n",
                     marking,
                     r.old_count,
@@ -216,7 +220,8 @@ pub fn format_classification_report(results: &[ClassificationResult]) -> String 
                 out.push_str("  ! REMOVED: Classification marking removed\n\n");
             }
             ClassificationChange::Upgraded { from, to } => {
-                let _ = write!(out, 
+                let _ = write!(
+                    out,
                     "  OLD: \"{}\" (found in {} location{})\n  NEW: \"{}\" (found in {} location{})\n",
                     from,
                     r.old_count,
@@ -228,7 +233,8 @@ pub fn format_classification_report(results: &[ClassificationResult]) -> String 
                 let _ = write!(out, "  ! UPGRADE: {from} -> {to}\n\n");
             }
             ClassificationChange::Downgraded { from, to } => {
-                let _ = write!(out, 
+                let _ = write!(
+                    out,
                     "  OLD: \"{}\" (found in {} location{})\n  NEW: \"{}\" (found in {} location{})\n",
                     from,
                     r.old_count,
@@ -255,8 +261,8 @@ fn get_content(
     {
         return blob;
     }
-    let full_path = crate::util::safe_path(repo.root(), std::path::Path::new(path))
-        .unwrap_or_default();
+    let full_path =
+        crate::util::safe_path(repo.root(), std::path::Path::new(path)).unwrap_or_default();
     std::fs::read(full_path).unwrap_or_default()
 }
 
@@ -504,7 +510,9 @@ async fn cmd_report(output: Option<&str>) -> Result<(), Box<dyn std::error::Erro
                 ClassificationChange::Removed(_) => {
                     current_state.remove(&r.path);
                 }
-                ClassificationChange::Added(m) | ClassificationChange::Upgraded { to: m, .. } | ClassificationChange::Downgraded { to: m, .. } => {
+                ClassificationChange::Added(m)
+                | ClassificationChange::Upgraded { to: m, .. }
+                | ClassificationChange::Downgraded { to: m, .. } => {
                     current_state.insert(r.path.clone(), m.clone());
                 }
             }
@@ -540,7 +548,8 @@ async fn cmd_report(output: Option<&str>) -> Result<(), Box<dyn std::error::Erro
 
     let repo_name = std::env::current_dir()
         .unwrap_or_default()
-        .file_name().map_or_else(|| "unknown".to_owned(), |n| n.to_string_lossy().to_string());
+        .file_name()
+        .map_or_else(|| "unknown".to_owned(), |n| n.to_string_lossy().to_string());
     let scan_time = chrono::Utc::now().to_rfc3339();
 
     let mut report = String::new();
@@ -550,10 +559,7 @@ async fn cmd_report(output: Option<&str>) -> Result<(), Box<dyn std::error::Erro
     let _ = writeln!(report, "Repository:   {repo_name}");
     let _ = writeln!(report, "Scan Time:    {scan_time}");
     let _ = writeln!(report, "Total Commits Scanned: {total_commits}");
-    let _ = write!(report, 
-        "Total Classification Events: {}\n\n",
-        events.len()
-    );
+    let _ = write!(report, "Total Classification Events: {}\n\n", events.len());
 
     report.push_str("--- Event Breakdown ---\n");
     let _ = writeln!(report, "  Added:     {added_count}");

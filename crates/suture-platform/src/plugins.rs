@@ -6,9 +6,9 @@
 // See LICENSE-AGPL and LICENSE-COMMERCIAL in the repo root.
 
 use axum::{
+    Json,
     extract::{Extension, Multipart, State},
     http::StatusCode,
-    Json,
 };
 use serde::{Deserialize, Serialize};
 
@@ -21,10 +21,11 @@ pub struct PluginListResponse {
     pub count: usize,
 }
 
-pub async fn list_plugins(
-    State(state): State<AppState>,
-) -> Json<PluginListResponse> {
-    let plugins = state.plugins.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+pub async fn list_plugins(State(state): State<AppState>) -> Json<PluginListResponse> {
+    let plugins = state
+        .plugins
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let list = plugins.list();
     Json(PluginListResponse {
         count: list.len(),
@@ -71,7 +72,10 @@ pub async fn search_plugins(
     State(state): State<AppState>,
     Json(query): Json<PluginSearchQuery>,
 ) -> Json<PluginRegistryResponse> {
-    let plugins = state.plugins.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let plugins = state
+        .plugins
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let list = plugins.list();
 
     let mut entries: Vec<PluginRegistryEntry> = list
@@ -103,7 +107,9 @@ pub async fn search_plugins(
     if let Some(ref format) = query.format {
         let format_lower = format.to_lowercase();
         entries.retain(|e| {
-            e.extensions.iter().any(|f| f.to_lowercase() == format_lower)
+            e.extensions
+                .iter()
+                .any(|f| f.to_lowercase() == format_lower)
         });
     }
 
@@ -120,10 +126,7 @@ pub async fn get_plugin(
     State(state): State<AppState>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<PluginRegistryEntry>, (StatusCode, Json<serde_json::Value>)> {
-    let driver_id = body
-        .get("driver")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let driver_id = body.get("driver").and_then(|v| v.as_str()).unwrap_or("");
 
     if driver_id.is_empty() {
         return Err((
@@ -132,7 +135,10 @@ pub async fn get_plugin(
         ));
     }
 
-    let plugins = state.plugins.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let plugins = state
+        .plugins
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let list = plugins.list();
 
     let entry = list.into_iter().find(|info| info.driver_name == driver_id);
@@ -164,10 +170,7 @@ pub async fn delete_plugin(
         ));
     }
 
-    let driver_id = body
-        .get("driver")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let driver_id = body.get("driver").and_then(|v| v.as_str()).unwrap_or("");
 
     if driver_id.is_empty() {
         return Err((
@@ -176,7 +179,10 @@ pub async fn delete_plugin(
         ));
     }
 
-    let plugins = state.plugins.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let plugins = state
+        .plugins
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     if plugins.get(driver_id).is_none() {
         return Err((
             StatusCode::NOT_FOUND,
@@ -219,19 +225,39 @@ pub async fn upload_plugin(
     }
 
     let field = multipart.next_field().await.map_err(|e| {
-        (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e.to_string()})))
+        (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": e.to_string()})),
+        )
     })?;
 
     let Some(field) = field else {
-            return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "no file uploaded"}))));
-        };
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "no file uploaded"})),
+        ));
+    };
 
-    let name = field.file_name().map_or_else(|| "unknown".into(), |s| s.replace(['/', '\\', '\0'], "_").replace("..", "_"));
-    if !name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '.') {
-        return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "plugin name must contain only alphanumeric characters, hyphens, underscores, and dots"}))));
+    let name = field.file_name().map_or_else(
+        || "unknown".into(),
+        |s| s.replace(['/', '\\', '\0'], "_").replace("..", "_"),
+    );
+    if !name
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '.')
+    {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(
+                serde_json::json!({"error": "plugin name must contain only alphanumeric characters, hyphens, underscores, and dots"}),
+            ),
+        ));
     }
     let data = field.bytes().await.map_err(|e| {
-        (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e.to_string()})))
+        (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": e.to_string()})),
+        )
     })?;
 
     match suture_wasm_plugin::validate_plugin(&data) {
@@ -250,7 +276,12 @@ pub async fn upload_plugin(
         }
     }
 
-    match state.plugins.lock().unwrap_or_else(std::sync::PoisonError::into_inner).load(&name, &data) {
+    match state
+        .plugins
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .load(&name, &data)
+    {
         Ok(()) => {
             let plugin_path = format!("plugins/{}.wasm", name.replace(".wasm", ""));
             let data_clone = data.clone();
@@ -258,7 +289,10 @@ pub async fn upload_plugin(
                 if let Err(e) = tokio::task::spawn_blocking(move || {
                     std::fs::create_dir_all("plugins")?;
                     std::fs::write(&plugin_path, &data_clone)
-                }).await.unwrap_or_else(|e| Err(std::io::Error::other(e))) {
+                })
+                .await
+                .unwrap_or_else(|e| Err(std::io::Error::other(e)))
+                {
                     tracing::warn!("Failed to persist plugin: {e}");
                 }
             });
@@ -284,9 +318,15 @@ pub async fn merge_with_plugin(
     Extension(_claims): Extension<Claims>,
     Json(req): Json<crate::merge_api::MergeRequest>,
 ) -> Result<Json<crate::merge_api::MergeResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let plugins = state.plugins.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let plugins = state
+        .plugins
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let plugin = plugins.get(&req.driver).ok_or_else(|| {
-        (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": format!("plugin '{}' not loaded", req.driver)})))
+        (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": format!("plugin '{}' not loaded", req.driver)})),
+        )
     })?;
 
     match plugin.merge(&req.base, &req.ours, &req.theirs) {

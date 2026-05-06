@@ -19,7 +19,7 @@ pub use error::DriverError;
 pub use interner::KeyInterner;
 pub use plugin::{BuiltinDriverPlugin, DriverPlugin, PluginError, PluginRegistry};
 pub use registry::DriverRegistry;
-pub use strategy::{optimal_merge_strategy, MergeStrategy};
+pub use strategy::{MergeStrategy, optimal_merge_strategy};
 pub use types::{DiffHunk, DiffHunkType, DiffSummary, VisualDiff};
 
 /// Format-specific driver for translating between file formats and Suture patches.
@@ -89,7 +89,9 @@ pub trait SutureDriver: Send + Sync {
         let base_str = String::from_utf8_lossy(base);
         let ours_str = String::from_utf8_lossy(ours);
         let theirs_str = String::from_utf8_lossy(theirs);
-        Ok(self.merge(&base_str, &ours_str, &theirs_str)?.map(std::string::String::into_bytes))
+        Ok(self
+            .merge(&base_str, &ours_str, &theirs_str)?
+            .map(std::string::String::into_bytes))
     }
 
     /// Byte-level semantic diff for binary formats.

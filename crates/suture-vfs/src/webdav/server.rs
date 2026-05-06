@@ -1,5 +1,5 @@
-use anyhow::Context;
 use crate::UnpoisonMutex;
+use anyhow::Context;
 use axum::{
     Router,
     body::Body,
@@ -151,7 +151,8 @@ async fn handle_propfind_path(
         return (
             StatusCode::BAD_REQUEST,
             [(header::CONTENT_TYPE, "application/xml; charset=utf-8")],
-            "<d:error xmlns:d=\"DAV:\"><s:message>path traversal not allowed</s:message></d:error>".to_owned(),
+            "<d:error xmlns:d=\"DAV:\"><s:message>path traversal not allowed</s:message></d:error>"
+                .to_owned(),
         );
     }
 
@@ -257,7 +258,8 @@ fn mime_guess_path(path: &str) -> String {
         Some("zip") => "application/zip",
         Some("gz" | "tgz") => "application/gzip",
         _ => "application/octet-stream",
-    }.to_owned()
+    }
+    .to_owned()
 }
 
 async fn handle_put(
@@ -293,15 +295,21 @@ async fn handle_put(
     let full_path = repo_path.join(&clean);
     if let Some(parent) = full_path.parent() {
         let parent_owned = parent.to_owned();
-        if let Err(e) = tokio::task::spawn_blocking(move || std::fs::create_dir_all(parent_owned)).await {
+        if let Err(e) =
+            tokio::task::spawn_blocking(move || std::fs::create_dir_all(parent_owned)).await
+        {
             tracing::warn!("spawn_blocking panicked in WebDAV PUT create_dir: {e}");
         }
     }
     let fp = full_path.clone();
     let body_data = body.to_vec();
     match tokio::task::spawn_blocking(move || std::fs::write(fp, body_data)).await {
-        Ok(Ok(())) => {},
-        Ok(Err(e)) => tracing::warn!("WebDAV PUT failed to write file {}: {}", full_path.display(), e),
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => tracing::warn!(
+            "WebDAV PUT failed to write file {}: {}",
+            full_path.display(),
+            e
+        ),
         Err(e) => tracing::warn!("spawn_blocking panicked in WebDAV PUT write: {e}"),
     }
 
@@ -355,8 +363,12 @@ async fn handle_delete(
     if full_path.exists() {
         let fp = full_path.clone();
         match tokio::task::spawn_blocking(move || std::fs::remove_file(fp)).await {
-            Ok(Ok(())) => {},
-            Ok(Err(e)) => tracing::warn!("WebDAV DELETE failed to remove file {}: {}", full_path.display(), e),
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => tracing::warn!(
+                "WebDAV DELETE failed to remove file {}: {}",
+                full_path.display(),
+                e
+            ),
             Err(e) => tracing::warn!("spawn_blocking panicked in WebDAV DELETE: {e}"),
         }
     }
@@ -379,7 +391,8 @@ async fn handle_mkcol(
 ) -> impl IntoResponse {
     let clean = path
         .trim_start_matches('/')
-        .trim_end_matches('/').to_owned();
+        .trim_end_matches('/')
+        .to_owned();
 
     if clean.is_empty() || clean.contains("..") {
         return StatusCode::FORBIDDEN.into_response();
@@ -419,8 +432,7 @@ async fn handle_webdav_fallback(
 type FileContents = HashMap<String, Vec<u8>>;
 
 fn load_repo(repo_path: &Path) -> anyhow::Result<(FileContents, Vec<String>)> {
-    let repo = Repository::open(repo_path)
-        .context("failed to open repository")?;
+    let repo = Repository::open(repo_path).context("failed to open repository")?;
 
     let file_tree = repo
         .snapshot_head()

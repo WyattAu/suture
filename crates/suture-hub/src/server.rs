@@ -1,4 +1,3 @@
-use sha2::Digest;
 use axum::{
     Json,
     extract::{ConnectInfo, Path, Query, State},
@@ -7,6 +6,7 @@ use axum::{
     routing::get,
 };
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+use sha2::Digest;
 use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -26,7 +26,7 @@ pub enum Role {
 }
 
 impl Role {
-    #[must_use] 
+    #[must_use]
     pub fn parse(s: &str) -> Self {
         match s {
             "admin" => Self::Admin,
@@ -35,7 +35,7 @@ impl Role {
         }
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Admin => "admin",
@@ -118,12 +118,12 @@ impl Default for SutureHubServer {
 }
 
 impl SutureHubServer {
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self::new_in_memory()
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn new_in_memory() -> Self {
         Self {
             storage: Arc::new(RwLock::new(
@@ -141,7 +141,10 @@ impl SutureHubServer {
             rate_limit_db: None,
             lfs_data_dir: None,
             #[cfg(feature = "raft-cluster")]
-            raft_node: Arc::new(tokio::sync::Mutex::new(suture_raft::RaftNode::new(1, vec![]))),
+            raft_node: Arc::new(tokio::sync::Mutex::new(suture_raft::RaftNode::new(
+                1,
+                vec![],
+            ))),
             #[cfg(feature = "raft-cluster")]
             raft_node_id: 1,
         }
@@ -172,7 +175,10 @@ impl SutureHubServer {
             rate_limit_db: Some(Arc::new(tokio::sync::Mutex::new(rate_limit_conn))),
             lfs_data_dir: None,
             #[cfg(feature = "raft-cluster")]
-            raft_node: Arc::new(tokio::sync::Mutex::new(suture_raft::RaftNode::new(1, vec![]))),
+            raft_node: Arc::new(tokio::sync::Mutex::new(suture_raft::RaftNode::new(
+                1,
+                vec![],
+            ))),
             #[cfg(feature = "raft-cluster")]
             raft_node_id: 1,
         })
@@ -182,12 +188,12 @@ impl SutureHubServer {
         self.no_auth = no_auth;
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn is_no_auth(&self) -> bool {
         self.no_auth
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn storage(&self) -> &Arc<RwLock<HubStorage>> {
         &self.storage
     }
@@ -268,12 +274,18 @@ impl SutureHubServer {
     }
 
     pub fn set_replication_role(&self, role: &str) {
-        *self.replication_role.write().unwrap_or_else(std::sync::PoisonError::into_inner) = role.to_owned();
+        *self
+            .replication_role
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = role.to_owned();
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn get_replication_role(&self) -> String {
-        self.replication_role.read().unwrap_or_else(std::sync::PoisonError::into_inner).clone()
+        self.replication_role
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
     }
 
     pub fn set_blob_backend(&mut self, backend: Arc<dyn BlobBackend>) {
@@ -288,9 +300,11 @@ impl SutureHubServer {
         data: &[u8],
     ) -> Result<(), String> {
         self.blob_backend.as_ref().map_or_else(
-            || store
-                .store_blob(repo_id, hash_hex, data)
-                .map_err(|e| e.to_string()),
+            || {
+                store
+                    .store_blob(repo_id, hash_hex, data)
+                    .map_err(|e| e.to_string())
+            },
             |backend| backend.store_blob(repo_id, hash_hex, data),
         )
     }
@@ -400,7 +414,10 @@ impl SutureHubServer {
 
         let full_key = format!("{key}:{ip}");
         let now = std::time::Instant::now();
-        let mut limits = self.rate_limits.write().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut limits = self
+            .rate_limits
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
 
         limits.retain(|_, (_, start)| now.duration_since(*start) < window);
 
@@ -435,10 +452,12 @@ impl SutureHubServer {
         let store = self.storage.read().await;
         let effective_limit = limit.min(200) as usize;
         let offset = offset as usize;
-        let patches = store.get_all_patches(repo_id, offset, effective_limit + 1).unwrap_or_else(|e| {
-            tracing::warn!("store get_all_patches failed: {e}");
-            Default::default()
-        });
+        let patches = store
+            .get_all_patches(repo_id, offset, effective_limit + 1)
+            .unwrap_or_else(|e| {
+                tracing::warn!("store get_all_patches failed: {e}");
+                Default::default()
+            });
         let has_more = patches.len() > effective_limit;
         let mut collected = patches;
         if has_more {
@@ -481,9 +500,7 @@ impl SutureHubServer {
                     ));
                 }
             };
-            if has_keys
-                && let Err(e) = verify_push_signature(&store, &req, sig_bytes)
-            {
+            if has_keys && let Err(e) = verify_push_signature(&store, &req, sig_bytes) {
                 return Err((
                     StatusCode::FORBIDDEN,
                     PushResponse {
@@ -576,7 +593,8 @@ impl SutureHubServer {
         }
 
         for patch in &req.patches {
-            if let Err(e) = store.log_operation("insert", "patches", &hash_to_hex(&patch.id), None) {
+            if let Err(e) = store.log_operation("insert", "patches", &hash_to_hex(&patch.id), None)
+            {
                 tracing::warn!("Failed to log operation: {}", e);
             }
         }
@@ -682,7 +700,11 @@ impl SutureHubServer {
             if !hooks.is_empty() {
                 let result = manager.trigger(&hooks, "push", &repo_id, patch_data).await;
                 if result.failed > 0 {
-                    tracing::warn!("Hook trigger failed: {} of {} webhooks failed", result.failed, result.triggered);
+                    tracing::warn!(
+                        "Hook trigger failed: {} of {} webhooks failed",
+                        result.failed,
+                        result.triggered
+                    );
                 }
             }
         });
@@ -720,10 +742,12 @@ impl SutureHubServer {
             };
         }
 
-        let all_patches = store.get_all_patches_unbounded(&req.repo_id).unwrap_or_else(|e| {
-            tracing::warn!("store get_all_patches failed: {e}");
-            Default::default()
-        });
+        let all_patches = store
+            .get_all_patches_unbounded(&req.repo_id)
+            .unwrap_or_else(|e| {
+                tracing::warn!("store get_all_patches failed: {e}");
+                Default::default()
+            });
         let client_ancestors = collect_ancestors(&all_patches, &req.known_branches);
         let mut new_patches = collect_new_patches(&all_patches, &client_ancestors);
 
@@ -990,7 +1014,9 @@ impl SutureHubServer {
 
         for blob in &pull_result.blobs {
             let hex = hash_to_hex(&blob.hash);
-            let Ok(data) = base64_decode(&blob.data) else { continue };
+            let Ok(data) = base64_decode(&blob.data) else {
+                continue;
+            };
             if let Err(e) = self.blob_store(&store, &local_repo, &hex, &data) {
                 tracing::warn!("Failed to store blob during mirror sync: {}", e);
             }
@@ -1106,10 +1132,12 @@ impl SutureHubServer {
             };
         }
 
-        let all_patches = store.get_all_patches_unbounded(&req.repo_id).unwrap_or_else(|e| {
-            tracing::warn!("store get_all_patches failed: {e}");
-            Default::default()
-        });
+        let all_patches = store
+            .get_all_patches_unbounded(&req.repo_id)
+            .unwrap_or_else(|e| {
+                tracing::warn!("store get_all_patches failed: {e}");
+                Default::default()
+            });
         let client_ancestors = collect_ancestors(&all_patches, &req.known_branches);
         let mut new_patches = collect_new_patches(&all_patches, &client_ancestors);
 
@@ -1167,27 +1195,28 @@ impl SutureHubServer {
         if req.capabilities.supports_delta {
             for needed_hash in &needed_hashes {
                 let Ok(Some(target_data)) = self.blob_get(&store, &req.repo_id, needed_hash) else {
-                        if let Ok(b) = store.get_blobs(
-                            &req.repo_id,
-                            &std::collections::HashSet::from([needed_hash.clone()]),
-                        ) && let Some(blob) = b.into_iter().next()
-                        {
-                            blobs.push(blob);
-                        }
-                        continue;
-                    };
+                    if let Ok(b) = store.get_blobs(
+                        &req.repo_id,
+                        &std::collections::HashSet::from([needed_hash.clone()]),
+                    ) && let Some(blob) = b.into_iter().next()
+                    {
+                        blobs.push(blob);
+                    }
+                    continue;
+                };
 
                 if known_hash_set.contains(needed_hash) {
-                    let Ok(Some(base_data)) = self.blob_get(&store, &req.repo_id, needed_hash) else {
-                            blobs.push(BlobRef {
-                                hash: HashProto {
-                                    value: needed_hash.clone(),
-                                },
-                                data: base64_encode(&target_data),
-                                truncated: false,
-                            });
-                            continue;
-                        };
+                    let Ok(Some(base_data)) = self.blob_get(&store, &req.repo_id, needed_hash)
+                    else {
+                        blobs.push(BlobRef {
+                            hash: HashProto {
+                                value: needed_hash.clone(),
+                            },
+                            data: base64_encode(&target_data),
+                            truncated: false,
+                        });
+                        continue;
+                    };
 
                     if base_data == target_data {
                         continue;
@@ -1327,8 +1356,12 @@ impl SutureHubServer {
             if matches!(delta.encoding, DeltaEncoding::BinaryPatch) {
                 let base_hex = hash_to_hex(&delta.base_hash);
                 let target_hex = hash_to_hex(&delta.target_hash);
-                let Ok(Some(base_data)) = self.blob_get(&store, &req.repo_id, &base_hex) else { continue };
-                let Ok(delta_bytes) = base64_decode(&delta.delta_data) else { continue };
+                let Ok(Some(base_data)) = self.blob_get(&store, &req.repo_id, &base_hex) else {
+                    continue;
+                };
+                let Ok(delta_bytes) = base64_decode(&delta.delta_data) else {
+                    continue;
+                };
                 let reconstructed = suture_protocol::apply_delta(&base_data, &delta_bytes);
                 if let Err(e) = self.blob_store(&store, &req.repo_id, &target_hex, &reconstructed) {
                     return Err((
@@ -1415,7 +1448,8 @@ impl SutureHubServer {
         }
 
         for patch in &req.patches {
-            if let Err(e) = store.log_operation("insert", "patches", &hash_to_hex(&patch.id), None) {
+            if let Err(e) = store.log_operation("insert", "patches", &hash_to_hex(&patch.id), None)
+            {
                 tracing::warn!("Failed to log operation: {}", e);
             }
         }
@@ -1521,7 +1555,11 @@ impl SutureHubServer {
             if !hooks.is_empty() {
                 let result = manager.trigger(&hooks, "push", &repo_id, patch_data).await;
                 if result.failed > 0 {
-                    tracing::warn!("Hook trigger failed: {} of {} webhooks failed", result.failed, result.triggered);
+                    tracing::warn!(
+                        "Hook trigger failed: {} of {} webhooks failed",
+                        result.failed,
+                        result.triggered
+                    );
                 }
             }
         });
@@ -1602,7 +1640,8 @@ impl SutureHubServer {
         }
 
         for patch in &req.patches {
-            if let Err(e) = store.log_operation("insert", "patches", &hash_to_hex(&patch.id), None) {
+            if let Err(e) = store.log_operation("insert", "patches", &hash_to_hex(&patch.id), None)
+            {
                 tracing::warn!("Failed to log operation: {}", e);
             }
         }
@@ -1681,7 +1720,11 @@ impl SutureHubServer {
             if !hooks.is_empty() {
                 let result = manager.trigger(&hooks, "push", &repo_id, patch_data).await;
                 if result.failed > 0 {
-                    tracing::warn!("Hook trigger failed: {} of {} webhooks failed", result.failed, result.triggered);
+                    tracing::warn!(
+                        "Hook trigger failed: {} of {} webhooks failed",
+                        result.failed,
+                        result.triggered
+                    );
                 }
             }
         });
@@ -2128,8 +2171,12 @@ pub async fn pull_compressed_handler(
     let mut resp = hub.handle_pull(req).await;
     if resp.success {
         for blob in &mut resp.blobs {
-            let Ok(raw) = base64_decode(&blob.data) else { continue };
-            let Ok(compressed) = suture_protocol::compress(&raw) else { continue };
+            let Ok(raw) = base64_decode(&blob.data) else {
+                continue;
+            };
+            let Ok(compressed) = suture_protocol::compress(&raw) else {
+                continue;
+            };
             blob.data = base64_encode(&compressed);
         }
     }
@@ -2324,7 +2371,10 @@ pub async fn create_token_handler(
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 HeaderMap::new(),
-                Json(TokenResponse { token: String::new(), created_at: 0 }),
+                Json(TokenResponse {
+                    token: String::new(),
+                    created_at: 0,
+                }),
             );
         }
         return (
@@ -2362,7 +2412,10 @@ pub async fn create_token_handler(
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 HeaderMap::new(),
-                Json(TokenResponse { token: String::new(), created_at: 0 }),
+                Json(TokenResponse {
+                    token: String::new(),
+                    created_at: 0,
+                }),
             );
         }
         return (
@@ -2466,7 +2519,11 @@ pub async fn mirror_setup_handler(
     Json(req): Json<crate::types::MirrorSetupRequest>,
 ) -> (StatusCode, Json<crate::types::MirrorSetupResponse>) {
     if let Err(status) = check_auth(&hub, &headers).await {
-        let resp = crate::types::MirrorSetupResponse { success: false, mirror_id: None, error: Some("unauthorized".to_owned()) };
+        let resp = crate::types::MirrorSetupResponse {
+            success: false,
+            mirror_id: None,
+            error: Some("unauthorized".to_owned()),
+        };
         return (status, Json(resp));
     }
     let resp = hub.handle_mirror_setup(req).await;
@@ -2484,7 +2541,12 @@ pub async fn mirror_sync_handler(
     Json(req): Json<crate::types::MirrorSyncRequest>,
 ) -> (StatusCode, Json<crate::types::MirrorSyncResponse>) {
     if let Err(status) = check_auth(&hub, &headers).await {
-        let resp = crate::types::MirrorSyncResponse { success: false, error: Some("unauthorized".to_owned()), patches_synced: 0, branches_synced: 0 };
+        let resp = crate::types::MirrorSyncResponse {
+            success: false,
+            error: Some("unauthorized".to_owned()),
+            patches_synced: 0,
+            branches_synced: 0,
+        };
         return (status, Json(resp));
     }
     let store = hub.storage.read().await;
@@ -2559,10 +2621,10 @@ pub async fn repo_branches_handler(
     Path(repo_id): Path<String>,
 ) -> (StatusCode, Json<Vec<BranchProto>>) {
     let store = hub.storage.read().await;
-        let branches = store.get_branches(&repo_id).unwrap_or_else(|e| {
-            tracing::warn!("store get_branches failed: {e}");
-            Default::default()
-        });
+    let branches = store.get_branches(&repo_id).unwrap_or_else(|e| {
+        tracing::warn!("store get_branches failed: {e}");
+        Default::default()
+    });
     (StatusCode::OK, Json(branches))
 }
 
@@ -2623,7 +2685,10 @@ pub async fn protect_branch_handler(
     Path((repo_id, branch)): Path<(String, String)>,
 ) -> (StatusCode, Json<serde_json::Value>) {
     if let Err(status) = check_auth(&hub, &headers).await {
-        return (status, Json(serde_json::json!({"success": false, "error": "unauthorized"})));
+        return (
+            status,
+            Json(serde_json::json!({"success": false, "error": "unauthorized"})),
+        );
     }
     let store = hub.storage.write().await;
     match store.protect_branch(&repo_id, &branch) {
@@ -2641,7 +2706,10 @@ pub async fn unprotect_branch_handler(
     Path((repo_id, branch)): Path<(String, String)>,
 ) -> (StatusCode, Json<serde_json::Value>) {
     if let Err(status) = check_auth(&hub, &headers).await {
-        return (status, Json(serde_json::json!({"success": false, "error": "unauthorized"})));
+        return (
+            status,
+            Json(serde_json::json!({"success": false, "error": "unauthorized"})),
+        );
     }
     let store = hub.storage.write().await;
     match store.unprotect_branch(&repo_id, &branch) {
@@ -2731,7 +2799,11 @@ pub async fn create_branch_handler(
                         .trigger(&hooks, "branch.create", &rid, branch_data)
                         .await;
                     if result.failed > 0 {
-                        tracing::warn!("Hook trigger failed: {} of {} webhooks failed", result.failed, result.triggered);
+                        tracing::warn!(
+                            "Hook trigger failed: {} of {} webhooks failed",
+                            result.failed,
+                            result.triggered
+                        );
                     }
                 }
             });
@@ -2779,7 +2851,11 @@ pub async fn delete_branch_handler(
                         .trigger(&hooks, "branch.delete", &rid, branch_data)
                         .await;
                     if result.failed > 0 {
-                        tracing::warn!("Hook trigger failed: {} of {} webhooks failed", result.failed, result.triggered);
+                        tracing::warn!(
+                            "Hook trigger failed: {} of {} webhooks failed",
+                            result.failed,
+                            result.triggered
+                        );
                     }
                 }
             });
@@ -2822,7 +2898,11 @@ pub async fn lfs_batch_handler(
     Json(req): Json<suture_protocol::LfsBatchRequest>,
 ) -> (StatusCode, Json<serde_json::Value>) {
     // Validate repo_id to prevent path traversal
-    if !req.repo_id.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.') {
+    if !req
+        .repo_id
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.')
+    {
         return (
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({
@@ -2847,7 +2927,8 @@ pub async fn lfs_batch_handler(
     let obj_dir = repo_dir.join("objects");
     let obj_dir_clone = obj_dir.clone();
     if let Err(e) = tokio::task::spawn_blocking(move || std::fs::create_dir_all(obj_dir_clone))
-        .await.unwrap_or_else(|e| Err(std::io::Error::other(e.to_string())))
+        .await
+        .unwrap_or_else(|e| Err(std::io::Error::other(e.to_string())))
     {
         tracing::warn!("Failed to create directory {}: {}", obj_dir.display(), e);
     }
@@ -2920,10 +3001,16 @@ pub async fn lfs_upload_handler(
     body: bytes::Bytes,
 ) -> (StatusCode, Json<serde_json::Value>) {
     if let Err(status) = check_auth(&hub, &headers).await {
-        return (status, Json(serde_json::json!({ "message": "unauthorized" })));
+        return (
+            status,
+            Json(serde_json::json!({ "message": "unauthorized" })),
+        );
     }
     // Validate repo_id and oid to prevent path traversal
-    let is_safe = |s: &str| s.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.');
+    let is_safe = |s: &str| {
+        s.chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.')
+    };
     if !is_safe(&repo_id) || !is_safe(&oid) {
         return (
             StatusCode::BAD_REQUEST,
@@ -2973,7 +3060,8 @@ pub async fn lfs_upload_handler(
     if let Some(parent) = obj_path.parent() {
         let parent_owned = parent.to_owned();
         if let Err(e) = tokio::task::spawn_blocking(move || std::fs::create_dir_all(parent_owned))
-            .await.unwrap_or_else(|e| Err(std::io::Error::other(e.to_string())))
+            .await
+            .unwrap_or_else(|e| Err(std::io::Error::other(e.to_string())))
         {
             tracing::warn!("Failed to create directory {}: {}", parent.display(), e);
         }
@@ -2982,7 +3070,10 @@ pub async fn lfs_upload_handler(
         let obj_path = obj_path.clone();
         let body = body.clone();
         move || std::fs::write(obj_path, body)
-    }).await.unwrap_or_else(|e| Err(std::io::Error::other(e.to_string()))) {
+    })
+    .await
+    .unwrap_or_else(|e| Err(std::io::Error::other(e.to_string())))
+    {
         Ok(()) => (
             StatusCode::OK,
             Json(serde_json::json!({
@@ -3005,12 +3096,19 @@ pub async fn lfs_download_handler(
     Path((repo_id, oid)): Path<(String, String)>,
 ) -> (StatusCode, axum::response::Response) {
     // Validate repo_id and oid to prevent path traversal
-    let is_safe = |s: &str| s.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.');
+    let is_safe = |s: &str| {
+        s.chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.')
+    };
     if !is_safe(&repo_id) || !is_safe(&oid) {
         let body = axum::body::Body::from("{\"message\":\"invalid repo_id or oid\"}");
-        let response = axum::response::Response::builder().body(body).unwrap_or_else(|_| {
-            axum::response::Response::new(axum::body::Body::from("{\"message\":\"invalid repo_id or oid\"}"))
-        });
+        let response = axum::response::Response::builder()
+            .body(body)
+            .unwrap_or_else(|_| {
+                axum::response::Response::new(axum::body::Body::from(
+                    "{\"message\":\"invalid repo_id or oid\"}",
+                ))
+            });
         return (StatusCode::BAD_REQUEST, response.into_response());
     }
 
@@ -3036,7 +3134,10 @@ pub async fn lfs_download_handler(
     match tokio::task::spawn_blocking({
         let obj_path = obj_path.clone();
         move || std::fs::read(obj_path)
-    }).await.unwrap_or_else(|e| Err(std::io::Error::other(e.to_string()))) {
+    })
+    .await
+    .unwrap_or_else(|e| Err(std::io::Error::other(e.to_string())))
+    {
         Err(_) => (
             StatusCode::NOT_FOUND,
             axum::response::Response::new(axum::body::Body::from(
@@ -3056,7 +3157,7 @@ pub async fn lfs_download_handler(
                     axum::response::Response::new(axum::body::Body::from("internal error"))
                 });
             (StatusCode::OK, response)
-        },
+        }
     }
 }
 
@@ -3209,20 +3310,26 @@ async fn serve_static_file(
     let static_dir = std::path::Path::new("static");
     let file_path = static_dir.join(&path);
 
-    let Ok(canonical_static) = tokio::fs::canonicalize(static_dir).await else { return StatusCode::NOT_FOUND.into_response() };
-    let Ok(canonical_file) = tokio::fs::canonicalize(&file_path).await else { return StatusCode::NOT_FOUND.into_response() };
+    let Ok(canonical_static) = tokio::fs::canonicalize(static_dir).await else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let Ok(canonical_file) = tokio::fs::canonicalize(&file_path).await else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
 
     if !canonical_file.starts_with(&canonical_static) {
         return StatusCode::FORBIDDEN.into_response();
     }
 
-    tokio::fs::read_to_string(&canonical_file).await.map_or_else(
-        |_| StatusCode::NOT_FOUND.into_response(),
-        |contents| {
-            let headers = [(axum::http::header::CONTENT_TYPE, content_type)];
-            (StatusCode::OK, headers, contents).into_response()
-        },
-    )
+    tokio::fs::read_to_string(&canonical_file)
+        .await
+        .map_or_else(
+            |_| StatusCode::NOT_FOUND.into_response(),
+            |contents| {
+                let headers = [(axum::http::header::CONTENT_TYPE, content_type)];
+                (StatusCode::OK, headers, contents).into_response()
+            },
+        )
 }
 
 pub async fn register_handler(
@@ -3348,9 +3455,7 @@ pub async fn get_user_handler(
     Path(username): Path<String>,
 ) -> (StatusCode, Json<crate::types::GetUserResponse>) {
     let requesting_user = resolve_user(&hub, &headers).await;
-    let is_admin = requesting_user
-        .as_ref()
-        .is_some_and(|u| u.role == "admin");
+    let is_admin = requesting_user.as_ref().is_some_and(|u| u.role == "admin");
     let is_self = requesting_user
         .as_ref()
         .is_some_and(|u| u.username == username);
@@ -3620,7 +3725,14 @@ pub async fn add_peer_handler(
     Json(req): Json<AddPeerRequest>,
 ) -> (StatusCode, Json<AddPeerResponse>) {
     if let Err(status) = check_auth(&hub, &headers).await {
-        return (status, Json(AddPeerResponse { success: false, peer_id: None, error: Some("unauthorized".to_owned()) }));
+        return (
+            status,
+            Json(AddPeerResponse {
+                success: false,
+                peer_id: None,
+                error: Some("unauthorized".to_owned()),
+            }),
+        );
     }
     let role = hub.get_replication_role();
     if role != "leader" {
@@ -3648,7 +3760,13 @@ pub async fn remove_peer_handler(
     Path(id): Path<i64>,
 ) -> (StatusCode, Json<RemovePeerResponse>) {
     if let Err(status) = check_auth(&hub, &headers).await {
-        return (status, Json(RemovePeerResponse { success: false, error: Some("unauthorized".to_owned()) }));
+        return (
+            status,
+            Json(RemovePeerResponse {
+                success: false,
+                error: Some("unauthorized".to_owned()),
+            }),
+        );
     }
     let role = hub.get_replication_role();
     if role != "leader" {
@@ -3951,7 +4069,10 @@ pub async fn sso_list_providers_handler(
     match store.list_oidc_configs() {
         Ok(configs) => {
             let names: Vec<&str> = configs.iter().map(|c| c.provider_name.as_str()).collect();
-            (StatusCode::OK, Json(serde_json::json!({"providers": names})))
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({"providers": names})),
+            )
         }
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -4057,7 +4178,9 @@ pub async fn sso_authorize_handler(
         Ok(None) => {
             return (
                 StatusCode::NOT_FOUND,
-                Json(serde_json::json!({"error": format!("provider '{provider_name}' not configured")})),
+                Json(
+                    serde_json::json!({"error": format!("provider '{provider_name}' not configured")}),
+                ),
             );
         }
         Err(e) => {
@@ -4084,10 +4207,13 @@ pub async fn sso_authorize_handler(
 
     let url = crate::sso::authorization_url(&config, &state, &nonce);
 
-    (StatusCode::OK, Json(serde_json::json!({
-        "authorization_url": url,
-        "state": state,
-    })))
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "authorization_url": url,
+            "state": state,
+        })),
+    )
 }
 
 /// Handle an OIDC callback — exchange the authorization code for tokens,
@@ -4100,9 +4226,21 @@ pub async fn sso_callback_handler(
     if let Err(status) = check_auth(&hub, &headers).await {
         return (status, Json(serde_json::json!({"error": "unauthorized"})));
     }
-    let provider_name = body.get("provider").and_then(|v| v.as_str()).unwrap_or("").to_owned();
-    let code = body.get("code").and_then(|v| v.as_str()).unwrap_or("").to_owned();
-    let state = body.get("state").and_then(|v| v.as_str()).unwrap_or("").to_owned();
+    let provider_name = body
+        .get("provider")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_owned();
+    let code = body
+        .get("code")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_owned();
+    let state = body
+        .get("state")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_owned();
 
     if provider_name.is_empty() {
         return (
@@ -4156,7 +4294,9 @@ pub async fn sso_callback_handler(
         Ok(None) => {
             return (
                 StatusCode::NOT_FOUND,
-                Json(serde_json::json!({"error": format!("provider '{provider_name}' not configured")})),
+                Json(
+                    serde_json::json!({"error": format!("provider '{provider_name}' not configured")}),
+                ),
             );
         }
         Err(e) => {
@@ -4184,44 +4324,38 @@ pub async fn sso_callback_handler(
     let user_sub = result.user.sub.clone();
     let user_email = result.user.email.clone();
     let user_name = result.user.name.clone();
-    let username = user_email
-        .as_deref()
-        .unwrap_or("")
-        .to_owned();
+    let username = user_email.as_deref().unwrap_or("").to_owned();
     let username = if username.is_empty() {
         format!("{}:{}", provider_name, user_sub)
     } else {
         username
     };
-    let display_name = user_name
-        .as_deref()
-        .unwrap_or(&username)
-        .to_owned();
+    let display_name = user_name.as_deref().unwrap_or(&username).to_owned();
 
     let store = hub.storage.read().await;
-    match store.upsert_sso_user(
-        &provider_name,
-        &user_sub,
-        &username,
-        &display_name,
-    ) {
+    match store.upsert_sso_user(&provider_name, &user_sub, &username, &display_name) {
         Ok(created_username) => {
             // Set the session token as the user's API token.
-            let token_hash =
-                format!("{:x}", sha2::Sha256::digest(result.session_token.as_bytes()));
+            let token_hash = format!(
+                "{:x}",
+                sha2::Sha256::digest(result.session_token.as_bytes())
+            );
             if let Err(e) = store.update_user_token(&created_username, &token_hash) {
                 tracing::warn!("failed to set SSO session token: {e}");
             }
             drop(store);
 
-            (StatusCode::OK, Json(serde_json::json!({
-                "status": "authenticated",
-                "username": created_username,
-                "display_name": display_name,
-                "provider": provider_name,
-                "session_token": result.session_token,
-                "email": user_email,
-            })))
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "status": "authenticated",
+                    "username": created_username,
+                    "display_name": display_name,
+                    "provider": provider_name,
+                    "session_token": result.session_token,
+                    "email": user_email,
+                })),
+            )
         }
         Err(e) => {
             tracing::warn!("failed to upsert SSO user: {e}");
@@ -4441,7 +4575,10 @@ pub async fn run_server(
             axum::routing::get(lfs_download_handler),
         )
         // SSO / OIDC routes
-        .route("/sso/providers", axum::routing::get(sso_list_providers_handler))
+        .route(
+            "/sso/providers",
+            axum::routing::get(sso_list_providers_handler),
+        )
         .route(
             "/sso/providers",
             axum::routing::post(sso_configure_provider_handler),
@@ -4493,10 +4630,7 @@ pub async fn run_server(
                 // In a real multi-node deployment, these messages would be sent
                 // to peers via HTTP. For now, we log state transitions.
                 if !messages.is_empty() {
-                    tracing::trace!(
-                        "[raft] tick produced {} messages",
-                        messages.len()
-                    );
+                    tracing::trace!("[raft] tick produced {} messages", messages.len());
                 }
                 // Apply committed entries to replication log
                 let entries = hub_for_raft.raft_committed_entries().await;
@@ -4506,11 +4640,19 @@ pub async fn run_server(
                     for entry in &entries {
                         // Deserialize the command: expected format is JSON
                         // {"operation": "insert|update|delete", "table": "...", "data": "..."}
-                        if let Ok(cmd) = serde_json::from_slice::<serde_json::Value>(&entry.command) {
-                            let op = cmd.get("operation").and_then(|v| v.as_str()).unwrap_or("unknown");
+                        if let Ok(cmd) = serde_json::from_slice::<serde_json::Value>(&entry.command)
+                        {
+                            let op = cmd
+                                .get("operation")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown");
                             let table = cmd.get("table").and_then(|v| v.as_str()).unwrap_or("");
                             let data = cmd.get("data").and_then(|v| v.as_str()).unwrap_or("");
-                            let _ = store.log_operation(op, table, &entry.index.to_string(), Some(data));
+                            if let Err(e) =
+                                store.log_operation(op, table, &entry.index.to_string(), Some(data))
+                            {
+                                tracing::warn!("failed to log raft operation: {e}");
+                            }
                         }
                     }
                     drop(store);

@@ -1,9 +1,7 @@
 use crate::RemoteAction;
 use crate::cmd::user_error;
 
-pub async fn cmd_remote(
-    action: &crate::RemoteAction,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_remote(action: &crate::RemoteAction) -> Result<(), Box<dyn std::error::Error>> {
     let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))
         .map_err(|e| user_error("failed to open repository", e))?;
     match action {

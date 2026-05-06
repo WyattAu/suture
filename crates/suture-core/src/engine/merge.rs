@@ -15,13 +15,6 @@ pub enum LineChange {
     Inserted(Vec<String>),
 }
 
-impl LineChange {
-    #[allow(dead_code)]
-    fn is_unchanged(&self) -> bool {
-        matches!(self, Self::Unchanged(_))
-    }
-}
-
 /// Maximum line count for the O(m×n) DP table approach.
 /// Above this threshold, we fall back to the linear-space approach.
 const LCS_DP_THRESHOLD: usize = 2000;
@@ -31,14 +24,17 @@ const LCS_DP_THRESHOLD: usize = 2000;
 /// Returns a list of changes that transform `base` into `modified`.
 /// For files under 2000 lines, uses the O(m×n) DP table for exact results.
 /// For larger files, uses a linear-space hash-based approach.
-#[must_use] 
+#[must_use]
 pub fn diff_lines(base: &[&str], modified: &[&str]) -> Vec<LineChange> {
     if base.is_empty() && modified.is_empty() {
         return Vec::new();
     }
     if base.is_empty() {
         return vec![LineChange::Inserted(
-            modified.iter().map(std::string::ToString::to_string).collect(),
+            modified
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect(),
         )];
     }
     if modified.is_empty() {
@@ -232,7 +228,7 @@ pub struct MergeOutput {
 /// 3. For each chunk: auto-merge if possible, otherwise conflict markers
 ///
 /// Returns a `MergeOutput` with the merged lines and conflict status.
-#[must_use] 
+#[must_use]
 pub fn three_way_merge_lines(
     base: &[&str],
     ours: &[&str],
@@ -251,7 +247,10 @@ pub fn three_way_merge_lines(
     }
     if base == ours {
         return MergeOutput {
-            lines: theirs.iter().map(std::string::ToString::to_string).collect(),
+            lines: theirs
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect(),
             is_clean: true,
             auto_merged: 0,
             conflicts: 0,

@@ -6,11 +6,11 @@
 // See LICENSE-AGPL and LICENSE-COMMERCIAL in the repo root.
 
 use axum::{
+    Json,
     extract::State,
     http::StatusCode,
     middleware::Next,
     response::{IntoResponse, Response},
-    Json,
 };
 use serde_json::json;
 use std::collections::HashMap;
@@ -41,7 +41,7 @@ impl Default for RateLimiter {
 }
 
 impl RateLimiter {
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             entries: Mutex::new(HashMap::new()),
@@ -49,7 +49,10 @@ impl RateLimiter {
     }
 
     pub fn check(&self, key: &str, limit: u32) -> (bool, u32, u64) {
-        let mut entries = self.entries.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let now = Instant::now();
         let window_duration = std::time::Duration::from_secs(60);
 
@@ -80,7 +83,10 @@ impl RateLimiter {
     }
 
     pub fn cleanup(&self) {
-        let mut entries = self.entries.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let now = Instant::now();
         let window_duration = std::time::Duration::from_secs(120);
         entries.retain(|_, entry| now.duration_since(entry.window_start) < window_duration);
@@ -100,18 +106,26 @@ pub async fn rate_limit(
     request: axum::extract::Request,
     next: Next,
 ) -> Response {
-    let (key, limit) = request.extensions().get::<crate::auth::Claims>().map_or_else(
-        || {
-            let ip = request
-                .headers()
-                .get("x-forwarded-for")
-                .and_then(|h| h.to_str().ok())
-                .and_then(|h| h.split(',').next())
-                .unwrap_or("unknown");
-            (format!("ip:{ip}"), ANONYMOUS_RATE_LIMIT)
-        },
-        |claims| (format!("user:{}", claims.sub), tier_rate_limit(&claims.tier)),
-    );
+    let (key, limit) = request
+        .extensions()
+        .get::<crate::auth::Claims>()
+        .map_or_else(
+            || {
+                let ip = request
+                    .headers()
+                    .get("x-forwarded-for")
+                    .and_then(|h| h.to_str().ok())
+                    .and_then(|h| h.split(',').next())
+                    .unwrap_or("unknown");
+                (format!("ip:{ip}"), ANONYMOUS_RATE_LIMIT)
+            },
+            |claims| {
+                (
+                    format!("user:{}", claims.sub),
+                    tier_rate_limit(&claims.tier),
+                )
+            },
+        );
 
     let (allowed, remaining, reset_after) = state.rate_limiter.check(&key, limit);
 
@@ -129,7 +143,10 @@ pub async fn rate_limit(
         let headers = response.headers_mut();
         headers.insert("X-RateLimit-Limit", limit.to_string().parse().unwrap());
         headers.insert("X-RateLimit-Remaining", 0u32.to_string().parse().unwrap());
-        headers.insert("X-RateLimit-Reset", reset_after.to_string().parse().unwrap());
+        headers.insert(
+            "X-RateLimit-Reset",
+            reset_after.to_string().parse().unwrap(),
+        );
         headers.insert("Retry-After", reset_after.to_string().parse().unwrap());
 
         return response;
@@ -143,7 +160,10 @@ pub async fn rate_limit(
         "X-RateLimit-Remaining",
         remaining.to_string().parse().unwrap(),
     );
-    headers.insert("X-RateLimit-Reset", reset_after.to_string().parse().unwrap());
+    headers.insert(
+        "X-RateLimit-Reset",
+        reset_after.to_string().parse().unwrap(),
+    );
 
     response
 }

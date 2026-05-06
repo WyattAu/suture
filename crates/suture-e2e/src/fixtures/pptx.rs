@@ -4,12 +4,12 @@ fn zip_to_string(buf: Vec<u8>) -> String {
     unsafe { String::from_utf8_unchecked(buf) }
 }
 
-#[must_use] 
+#[must_use]
 pub fn simple() -> String {
     make_pptx(&["Title Slide", "Content Slide", "Summary Slide"])
 }
 
-#[must_use] 
+#[must_use]
 pub fn multi_layout() -> String {
     make_pptx(&[
         "Title",
@@ -27,7 +27,7 @@ pub fn multi_layout() -> String {
     ])
 }
 
-#[must_use] 
+#[must_use]
 pub fn styled() -> String {
     make_pptx(&[
         "Acme Corp Annual Report 2025",
@@ -41,7 +41,7 @@ pub fn styled() -> String {
     ])
 }
 
-#[must_use] 
+#[must_use]
 pub fn complex() -> String {
     make_pptx(&[
         "Project Phoenix - Kickoff",

@@ -57,7 +57,7 @@ impl SlideRef {
 pub struct PptxDriver;
 
 impl PptxDriver {
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self
     }
@@ -103,7 +103,9 @@ impl PptxDriver {
             let mut search_start = 0;
             while search_start < trimmed.len() {
                 let remaining = &trimmed[search_start..];
-                let Some(tag_start) = remaining.find("<p:sldId ") else { break };
+                let Some(tag_start) = remaining.find("<p:sldId ") else {
+                    break;
+                };
                 let element = &remaining[tag_start..];
 
                 // Find the end of this element (either /> or >)
@@ -142,15 +144,12 @@ impl PptxDriver {
                 DriverError::ParseError(msg)
             })?;
 
-            let (content_hash, name) = doc.get_part(&part_path).map_or(
-                (0, None),
-                |part| {
-                    (
-                        SlideRef::content_fingerprint(&part.content),
-                        Self::extract_slide_name(&part.content),
-                    )
-                },
-            );
+            let (content_hash, name) = doc.get_part(&part_path).map_or((0, None), |part| {
+                (
+                    SlideRef::content_fingerprint(&part.content),
+                    Self::extract_slide_name(&part.content),
+                )
+            });
 
             refs.push(SlideRef {
                 slide_id,
@@ -456,7 +455,13 @@ fn part_path_to_rels_path(part_path: &str) -> String {
 fn resolve_relative_path(base_part: &str, target: &str) -> String {
     let dir = base_part.rsplit_once('/').map_or("", |(d, _)| d);
     target.strip_prefix('/').map_or_else(
-        || if dir.is_empty() { target.to_owned() } else { format!("{dir}/{target}") },
+        || {
+            if dir.is_empty() {
+                target.to_owned()
+            } else {
+                format!("{dir}/{target}")
+            }
+        },
         std::borrow::ToOwned::to_owned,
     )
 }
@@ -549,7 +554,9 @@ impl SutureDriver for PptxDriver {
         let ours_slides = Self::extract_slides(&ours_doc)?;
         let theirs_slides = Self::extract_slides(&theirs_doc)?;
 
-        let Some(merged) = Self::merge_slides(&base_slides, &ours_slides, &theirs_slides) else { return Ok(None) };
+        let Some(merged) = Self::merge_slides(&base_slides, &ours_slides, &theirs_slides) else {
+            return Ok(None);
+        };
 
         // Build the merged document starting from base
         let mut doc =
@@ -674,7 +681,8 @@ impl PptxDriver {
 
         // Add other relationships first
         for (rid, target) in &other_rels {
-            let _ = write!(rels_xml, 
+            let _ = write!(
+                rels_xml,
                 r#"
   <Relationship Id="{rid}" Type="{slide_rel_type}" Target="{target}"/>"#
             );
@@ -682,7 +690,8 @@ impl PptxDriver {
 
         // Add slide relationships
         for slide in slides {
-            let _ = write!(rels_xml, 
+            let _ = write!(
+                rels_xml,
                 r#"
   <Relationship Id="{}" Type="{}" Target="{}"/>"#,
                 slide.rel_id,
@@ -719,7 +728,8 @@ impl PptxDriver {
                 slide
                     .part_path
                     .strip_prefix("ppt/")
-                    .unwrap_or(&slide.part_path).to_owned(),
+                    .unwrap_or(&slide.part_path)
+                    .to_owned(),
             );
         }
         doc.part_rels.insert(pres_path.to_owned(), new_id_map);
@@ -756,7 +766,8 @@ impl PptxDriver {
                 for slide in slides {
                     let part_name = format!("/{}", slide.part_path);
                     if !content.contains(&part_name) {
-                        let _ = write!(overrides, 
+                        let _ = write!(
+                            overrides,
                             r#"  <Override PartName="{part_name}" ContentType="{slide_ct}"/>"#
                         );
                         overrides.push('\n');
@@ -1288,7 +1299,9 @@ mod tests {
         let ours_bytes = build_minimal_pptx(&["Shared", "Ours Slide"]);
         let theirs_bytes = build_minimal_pptx(&["Shared", "Theirs Slide"]);
 
-        let result = driver.merge_raw(&base_bytes, &ours_bytes, &theirs_bytes).unwrap();
+        let result = driver
+            .merge_raw(&base_bytes, &ours_bytes, &theirs_bytes)
+            .unwrap();
         assert!(
             result.is_some(),
             "merge should succeed (non-conflicting adds)"
@@ -1309,7 +1322,9 @@ mod tests {
         let theirs_bytes = build_minimal_pptx(&["Theirs Version"]);
 
         // Both modified the same slide differently — conflict
-        let result = driver.merge_raw(&base_bytes, &ours_bytes, &theirs_bytes).unwrap();
+        let result = driver
+            .merge_raw(&base_bytes, &ours_bytes, &theirs_bytes)
+            .unwrap();
         assert!(result.is_none());
     }
 
@@ -1320,7 +1335,9 @@ mod tests {
         let ours_bytes = build_minimal_pptx(&["Modified"]);
         let theirs_bytes = build_minimal_pptx(&["Original"]); // unchanged
 
-        let result = driver.merge_raw(&base_bytes, &ours_bytes, &theirs_bytes).unwrap();
+        let result = driver
+            .merge_raw(&base_bytes, &ours_bytes, &theirs_bytes)
+            .unwrap();
         assert!(result.is_some());
 
         // Verify the merged result has the modified content.

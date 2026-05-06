@@ -68,7 +68,9 @@ pub async fn cmd_commit(message: &str, all: bool) -> Result<(), Box<dyn std::err
             "parents": parent_ids,
         })
         .to_string();
-        let _ = audit.append(&author, "commit", &details);
+        if let Err(e) = audit.append(&author, "commit", &details) {
+            eprintln!("suture: warning: audit log write failed: {e}");
+        }
     }
 
     if let Ok(Some(key_name)) = repo.get_config("signing.key") {
@@ -98,12 +100,18 @@ pub async fn cmd_commit(message: &str, all: bool) -> Result<(), Box<dyn std::err
                         patch.timestamp,
                     );
                     let sig = signing_key.sign(&canonical);
-                    let _ = repo
+                    if let Err(e) = repo
                         .meta()
-                        .store_signature(&patch.id.to_hex(), &sig.to_bytes());
-                    let _ = repo
+                        .store_signature(&patch.id.to_hex(), &sig.to_bytes())
+                    {
+                        eprintln!("suture: warning: failed to store signature: {e}");
+                    }
+                    if let Err(e) = repo
                         .meta()
-                        .store_public_key(&patch.author, &signing_key.verifying_key().to_bytes());
+                        .store_public_key(&patch.author, &signing_key.verifying_key().to_bytes())
+                    {
+                        eprintln!("suture: warning: failed to store public key: {e}");
+                    }
                 }
             }
         }
