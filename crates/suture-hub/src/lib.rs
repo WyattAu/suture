@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+pub mod async_storage;
 pub mod audit;
 pub mod blob_backend;
 pub mod grpc;

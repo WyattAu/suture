@@ -117,74 +117,9 @@ impl PluginRegistry {
         }
 
         if let Ok(entries) = std::fs::read_dir(plugin_dir) {
-            let mut sorted_entries: Vec<_> = entries.flatten().collect();
-            sorted_entries.sort_by_key(std::fs::DirEntry::file_name);
-            for entry in sorted_entries {
-                let path = entry.path();
-                if path.extension().is_some_and(|e| e == "suture-plugin")
-                    && let Ok(content) = std::fs::read_to_string(&path)
-                    && let Some(desc) = Self::parse_plugin_descriptor(&content)
-                {
-                    let _ = desc; // plugin descriptor found; future: dynamic loading
-                }
-            }
+            let _sorted_entries: Vec<_> = entries.flatten().collect();
         }
     }
-
-    fn parse_plugin_descriptor(content: &str) -> Option<PluginDescriptor> {
-        let mut name = None;
-        let mut extensions = Vec::new();
-        let mut description = String::new();
-
-        for line in content.lines() {
-            let line = line.trim();
-            if let Some(val) = line
-                .strip_prefix("name")
-                .and_then(Self::extract_string_value)
-            {
-                name = Some(val);
-            } else if let Some(start) = line.find('[') {
-                if let Some(end) = line[start..].find(']') {
-                    let inner = &line[start + 1..start + end];
-                    for ext in inner.split(',') {
-                        let ext = ext.trim().trim_matches('"');
-                        if !ext.is_empty() {
-                            extensions.push(ext.to_owned());
-                        }
-                    }
-                }
-            } else if let Some(val) = line
-                .strip_prefix("description")
-                .and_then(Self::extract_string_value)
-            {
-                description = val;
-            }
-        }
-
-        name.map(|name| PluginDescriptor {
-            name,
-            extensions,
-            description,
-        })
-    }
-
-    fn extract_string_value(line: &str) -> Option<String> {
-        if let Some(eq_pos) = line.find('=') {
-            let val = line[eq_pos + 1..].trim();
-            if val.starts_with('"') && val.ends_with('"') {
-                return Some(val[1..val.len() - 1].to_string());
-            }
-        }
-        None
-    }
-}
-
-#[allow(dead_code)]
-struct PluginDescriptor {
-    name: String,
-    extensions: Vec<String>,
-    #[allow(dead_code)]
-    description: String,
 }
 
 impl Default for PluginRegistry {
@@ -481,25 +416,6 @@ mod tests {
         let mut reg = PluginRegistry::new();
         reg.discover_plugins(Path::new("/tmp/suture-test-nonexistent-12345"));
         assert!(reg.list_drivers().is_empty());
-    }
-
-    #[test]
-    fn parse_plugin_descriptor_valid() {
-        let content = r#"
-name = "my-driver"
-extensions = [".custom", ".ext"]
-description = "A custom driver"
-"#;
-        let desc = PluginRegistry::parse_plugin_descriptor(content).unwrap();
-        assert_eq!(desc.name, "my-driver");
-        assert_eq!(desc.extensions, vec![".custom", ".ext"]);
-        assert_eq!(desc.description, "A custom driver");
-    }
-
-    #[test]
-    fn parse_plugin_descriptor_missing_name() {
-        let content = r#"extensions = [".custom"]"#;
-        assert!(PluginRegistry::parse_plugin_descriptor(content).is_none());
     }
 
     #[test]

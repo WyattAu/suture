@@ -49,7 +49,7 @@ pub fn commute(p1: &Patch, p2: &Patch) -> CommuteResult {
 ///
 /// Returns `true` only if ALL pairs in the list commute.
 /// This is O(n²) in the number of patches.
-#[allow(dead_code)]
+#[allow(dead_code)] // Public API utility; used externally and in future conflict pre-filtering
 pub fn all_commute(patches: &[Patch]) -> bool {
     for i in 0..patches.len() {
         for j in (i + 1)..patches.len() {

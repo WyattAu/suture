@@ -107,35 +107,51 @@ pub fn merge(
         .copied()
         .collect();
 
-    // Detect conflicts between unique patches
     let mut conflicts = Vec::new();
+
+    let mut b_index: HashMap<&str, Vec<&PatchId>> = HashMap::new();
+    for patch_b_id in &patches_b_only {
+        if let Some(patch_b) = all_patches.get(patch_b_id) {
+            if patch_b.is_identity() {
+                continue;
+            }
+            for addr in patch_b.touch_set.iter() {
+                b_index.entry(addr.as_str()).or_default().push(patch_b_id);
+            }
+        }
+    }
 
     for patch_a_id in &patches_a_only {
         let patch_a = all_patches
             .get(patch_a_id)
             .ok_or_else(|| MergeError::PatchNotFound(patch_a_id.to_hex()))?;
 
-        // Skip identity patches for conflict detection
         if patch_a.is_identity() {
             continue;
         }
 
-        for patch_b_id in &patches_b_only {
+        let mut b_candidates: HashSet<&PatchId> = HashSet::new();
+        for addr in patch_a.touch_set.iter() {
+            if let Some(ids) = b_index.get(addr.as_str()) {
+                for id in ids {
+                    b_candidates.insert(id);
+                }
+            }
+        }
+
+        let mut b_candidates: Vec<_> = b_candidates.into_iter().collect();
+        b_candidates.sort();
+
+        for patch_b_id in &b_candidates {
             let patch_b = all_patches
                 .get(patch_b_id)
                 .ok_or_else(|| MergeError::PatchNotFound(patch_b_id.to_hex()))?;
 
-            if patch_b.is_identity() {
-                continue;
-            }
-
             match commute(patch_a, patch_b) {
                 crate::patch::CommuteResult::DoesNotCommute { conflict_addresses } => {
-                    conflicts.push(Conflict::new(*patch_a_id, *patch_b_id, conflict_addresses));
+                    conflicts.push(Conflict::new(*patch_a_id, **patch_b_id, conflict_addresses));
                 }
-                crate::patch::CommuteResult::Commutes => {
-                    // No conflict, both can be included
-                }
+                crate::patch::CommuteResult::Commutes => {}
             }
         }
     }
@@ -159,14 +175,33 @@ pub fn merge(
 pub fn detect_conflicts(patches_a: &[Patch], patches_b: &[Patch]) -> Vec<Conflict> {
     let mut conflicts = Vec::new();
 
+    let mut b_index: HashMap<&str, Vec<usize>> = HashMap::new();
+    for (idx, patch_b) in patches_b.iter().enumerate() {
+        if patch_b.is_identity() {
+            continue;
+        }
+        for addr in patch_b.touch_set.iter() {
+            b_index.entry(addr.as_str()).or_default().push(idx);
+        }
+    }
+
     for patch_a in patches_a {
         if patch_a.is_identity() {
             continue;
         }
-        for patch_b in patches_b {
-            if patch_b.is_identity() {
-                continue;
+        let mut b_candidates: HashSet<usize> = HashSet::new();
+        for addr in patch_a.touch_set.iter() {
+            if let Some(indices) = b_index.get(addr.as_str()) {
+                for &idx in indices {
+                    b_candidates.insert(idx);
+                }
             }
+        }
+        let mut b_candidates: Vec<_> = b_candidates.into_iter().collect();
+        b_candidates.sort();
+
+        for &idx in &b_candidates {
+            let patch_b = &patches_b[idx];
             match commute(patch_a, patch_b) {
                 crate::patch::CommuteResult::DoesNotCommute { conflict_addresses } => {
                     conflicts.push(Conflict::new(patch_a.id, patch_b.id, conflict_addresses));

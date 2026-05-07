@@ -102,8 +102,6 @@ pub struct SutureHubServer {
     rate_limit_window: std::time::Duration,
     replication_role: Arc<tokio::sync::RwLock<String>>,
     webhook_manager: Arc<WebhookManager>,
-    #[allow(dead_code)]
-    rate_limit_db: Option<Arc<tokio::sync::Mutex<rusqlite::Connection>>>,
     lfs_data_dir: Option<std::path::PathBuf>,
     #[cfg(feature = "raft-cluster")]
     raft_node: Arc<tokio::sync::Mutex<suture_raft::RaftNode>>,
@@ -138,7 +136,6 @@ impl SutureHubServer {
             rate_limit_window: std::time::Duration::from_secs(60),
             replication_role: Arc::new(tokio::sync::RwLock::new("standalone".to_owned())),
             webhook_manager: Arc::new(WebhookManager::new()),
-            rate_limit_db: None,
             lfs_data_dir: None,
             #[cfg(feature = "raft-cluster")]
             raft_node: Arc::new(tokio::sync::Mutex::new(suture_raft::RaftNode::new(
@@ -151,16 +148,6 @@ impl SutureHubServer {
     }
 
     pub fn with_db(path: &std::path::Path) -> Result<Self, crate::storage::StorageError> {
-        let rate_limit_db_path = path.with_extension("rate.db");
-        let rate_limit_conn = rusqlite::Connection::open(&rate_limit_db_path)?;
-        rate_limit_conn.execute_batch("PRAGMA journal_mode=WAL;")?;
-        rate_limit_conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS rate_limits (
-                key TEXT PRIMARY KEY,
-                count INTEGER NOT NULL DEFAULT 0,
-                window_start INTEGER NOT NULL
-            );",
-        )?;
         Ok(Self {
             storage: Arc::new(RwLock::new(HubStorage::open(path)?)),
             blob_backend: None,
@@ -172,7 +159,6 @@ impl SutureHubServer {
             rate_limit_window: std::time::Duration::from_secs(60),
             replication_role: Arc::new(tokio::sync::RwLock::new("standalone".to_owned())),
             webhook_manager: Arc::new(WebhookManager::new()),
-            rate_limit_db: Some(Arc::new(tokio::sync::Mutex::new(rate_limit_conn))),
             lfs_data_dir: None,
             #[cfg(feature = "raft-cluster")]
             raft_node: Arc::new(tokio::sync::Mutex::new(suture_raft::RaftNode::new(

@@ -10,9 +10,11 @@ pub enum MountType {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MountStatus {
+    /// Test-only: mount operation has been initiated but not yet completed.
     #[cfg(test)]
     Pending,
     Active,
+    /// Test-only: mount operation failed with an error.
     #[cfg(test)]
     Error(String),
     Stopped,
