@@ -24,3 +24,4 @@ keywords = ["vcs", "version-control", "patch", "semantic-merge", "dvcs"]
 lto = true
 codegen-units = 1
 panic = "abort"
+strip = true

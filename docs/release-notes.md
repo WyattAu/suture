@@ -80,6 +80,6 @@ The killer feature. Two developers editing different JSON keys? Merged cleanly. 
 ## Quality
 - 898 tests, 0 failures
 - 0 clippy warnings
-- 23 Lean 4 theorems proved
+- 21 proptest property-based test suites (10K+ randomized cases)
 - 28 Criterion benchmarks
 - 16 semantic drivers

@@ -582,7 +582,7 @@
 | Ed25519 signing | ✅ Wired into push | `suture key generate`, auto-sign on push |
 | E2E tests | ✅ 50 integration tests | init→commit→branch→merge→gc→fsck→bisect→tag→stash→integrity→stress→git |
 | Binary E2E | ✅ 71 tests | DOCX/XLSX/PPTX full lifecycle (init→add→commit→branch→modify→merge→diff→log) |
-| Lean 4 proofs | ✅ 23 theorems | TouchSet, commutativity, DAG, LCA, merge properties |
+| Formal verification | 🔄 Planned | Core properties verified via proptest; Lean 4 proofs planned |
 | HTTP integration | ✅ 61 tests (with features) | handshake, repos, patches, push/pull, V2, auth, mirrors, CRUD, search, batch, health |
 | Semantic drivers | ✅ 16 drivers | JSON, YAML, TOML, CSV, XML, Markdown, DOCX, XLSX, PPTX, OTIO, SQL, PDF, Image, Example, Properties |
 | Supply chain integrity | ✅ NEW | Shannon entropy, 13 risk indicators, XZ-style attack detection |

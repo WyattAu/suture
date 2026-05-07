@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-use serde_yaml::Value;
+use serde_yml::Value;
 use suture_driver::impl_structured_driver;
 use suture_driver::{DriverError, SemanticChange, SutureDriver};
 
@@ -9,13 +9,13 @@ impl YamlDriver {
     fn value_to_string(val: &Value) -> String {
         match val {
             Value::String(s) => s.clone(),
-            other => serde_yaml::to_string(other).unwrap_or_else(|_| format!("{other:#?}")),
+            other => serde_yml::to_string(other).unwrap_or_else(|_| format!("{other:#?}")),
         }
     }
 
     fn child_path(parent: &str, key: &Value) -> String {
         let key_str = key.as_str().map_or_else(
-            || serde_yaml::to_string(key).unwrap_or_else(|_| format!("{key:#?}")),
+            || serde_yml::to_string(key).unwrap_or_else(|_| format!("{key:#?}")),
             str::to_owned,
         );
         if parent == "/" {
@@ -35,7 +35,7 @@ impl_structured_driver! {
     obj_pat = |_m| Value::Mapping(_m),
     arr_pat = |_v| Value::Sequence(_v),
 
-    new_map = serde_yaml::Mapping::new(),
+    new_map = serde_yml::Mapping::new(),
     wrap_map = |m| Value::Mapping(m),
     wrap_arr = |v| Value::Sequence(v),
 
@@ -46,8 +46,8 @@ impl_structured_driver! {
     val_str = |v| YamlDriver::value_to_string(v),
     child_path = |parent, key| YamlDriver::child_path(parent, key),
 
-    parse_val = |s| serde_yaml::from_str(s).map_err(|e| DriverError::ParseError(e.to_string())),
-    serialize_val = |v| serde_yaml::to_string(v).map_err(|e| DriverError::SerializationError(e.to_string())),
+    parse_val = |s| serde_yml::from_str(s).map_err(|e| DriverError::ParseError(e.to_string())),
+    serialize_val = |v| serde_yml::to_string(v).map_err(|e| DriverError::SerializationError(e.to_string())),
 
     arrow = "→",
 }
@@ -233,7 +233,7 @@ mod tests {
 
         let result = driver.merge(base, ours, theirs).unwrap();
         assert!(result.is_some());
-        let merged: Value = serde_yaml::from_str(&result.unwrap()).unwrap();
+        let merged: Value = serde_yml::from_str(&result.unwrap()).unwrap();
         assert_eq!(merged["a"], Value::Number(10.into()));
         assert_eq!(merged["b"], Value::Number(2.into()));
         assert_eq!(merged["c"], Value::Number(30.into()));
@@ -259,7 +259,7 @@ mod tests {
 
         let result = driver.merge(base, ours, theirs).unwrap();
         assert!(result.is_some());
-        let merged: Value = serde_yaml::from_str(&result.unwrap()).unwrap();
+        let merged: Value = serde_yml::from_str(&result.unwrap()).unwrap();
         assert_eq!(merged["shared"], Value::Bool(true));
         assert_eq!(merged["added_by_ours"], Value::String("yes".into()));
         assert_eq!(merged["added_by_theirs"], Value::String("yes".into()));
@@ -285,7 +285,7 @@ mod tests {
 
         let result = driver.merge(base, ours, theirs).unwrap();
         assert!(result.is_some());
-        let merged: Value = serde_yaml::from_str(&result.unwrap()).unwrap();
+        let merged: Value = serde_yml::from_str(&result.unwrap()).unwrap();
         assert_eq!(merged["server"]["host"], Value::String("0.0.0.0".into()));
         assert_eq!(merged["server"]["port"], Value::Number(9090.into()));
     }
@@ -301,8 +301,8 @@ mod tests {
         let r2 = driver.merge(base, theirs, ours).unwrap();
         assert_eq!(r1.is_some(), r2.is_some());
         if let (Some(m1), Some(m2)) = (r1, r2) {
-            let v1: Value = serde_yaml::from_str(&m1).unwrap();
-            let v2: Value = serde_yaml::from_str(&m2).unwrap();
+            let v1: Value = serde_yml::from_str(&m1).unwrap();
+            let v2: Value = serde_yml::from_str(&m2).unwrap();
             assert_eq!(v1, v2, "merge must be commutative");
         }
     }
@@ -315,8 +315,8 @@ mod tests {
 
         let result = driver.merge(base, ours, ours).unwrap();
         assert!(result.is_some());
-        let merged: Value = serde_yaml::from_str(&result.unwrap()).unwrap();
-        let expected: Value = serde_yaml::from_str(ours).unwrap();
+        let merged: Value = serde_yml::from_str(&result.unwrap()).unwrap();
+        let expected: Value = serde_yml::from_str(ours).unwrap();
         assert_eq!(
             merged, expected,
             "merge(base, ours, ours) should equal ours"
@@ -331,8 +331,8 @@ mod tests {
 
         let result = driver.merge(base, base, theirs).unwrap();
         assert!(result.is_some());
-        let merged: Value = serde_yaml::from_str(&result.unwrap()).unwrap();
-        let expected: Value = serde_yaml::from_str(theirs).unwrap();
+        let merged: Value = serde_yml::from_str(&result.unwrap()).unwrap();
+        let expected: Value = serde_yml::from_str(theirs).unwrap();
         assert_eq!(merged, expected);
     }
 
@@ -397,7 +397,7 @@ mod tests {
 
         let result = driver.merge(base, ours, theirs).unwrap();
         assert!(result.is_some(), "deep nested merge should succeed");
-        let merged: Value = serde_yaml::from_str(&result.unwrap()).unwrap();
+        let merged: Value = serde_yml::from_str(&result.unwrap()).unwrap();
 
         // Team-a's changes must be preserved
         assert!(
@@ -443,8 +443,8 @@ mod tests {
 
         let result = driver.merge(base, ours, base).unwrap();
         assert!(result.is_some());
-        let merged: Value = serde_yaml::from_str(&result.unwrap()).unwrap();
-        let expected: Value = serde_yaml::from_str(ours).unwrap();
+        let merged: Value = serde_yml::from_str(&result.unwrap()).unwrap();
+        let expected: Value = serde_yml::from_str(ours).unwrap();
         assert_eq!(merged, expected);
     }
 
@@ -455,8 +455,8 @@ mod tests {
 
         let result = driver.merge(content, content, content).unwrap();
         assert!(result.is_some());
-        let merged: Value = serde_yaml::from_str(&result.unwrap()).unwrap();
-        let expected: Value = serde_yaml::from_str(content).unwrap();
+        let merged: Value = serde_yml::from_str(&result.unwrap()).unwrap();
+        let expected: Value = serde_yml::from_str(content).unwrap();
         assert_eq!(merged, expected);
     }
 
@@ -469,7 +469,7 @@ mod tests {
 
         let result = driver.merge(base, ours, theirs).unwrap();
         assert!(result.is_some());
-        let merged: Value = serde_yaml::from_str(&result.unwrap()).unwrap();
+        let merged: Value = serde_yml::from_str(&result.unwrap()).unwrap();
         assert_eq!(merged["shared"], Value::Bool(true));
         assert_eq!(merged["from_ours"], Value::Number(100.into()));
         assert_eq!(merged["from_theirs"], Value::Number(200.into()));
@@ -484,7 +484,7 @@ mod tests {
 
         let result = driver.merge(base, ours, theirs).unwrap();
         assert!(result.is_some());
-        let merged: Value = serde_yaml::from_str(&result.unwrap()).unwrap();
+        let merged: Value = serde_yml::from_str(&result.unwrap()).unwrap();
         assert_eq!(merged["a"], Value::Number(10.into()));
         assert_eq!(merged["c"], Value::Number(30.into()));
         assert_eq!(merged["b"], Value::Number(2.into()));
@@ -499,7 +499,7 @@ mod tests {
 
         let result = driver.merge(base, ours, theirs).unwrap();
         assert!(result.is_some(), "identical changes should not conflict");
-        let merged: Value = serde_yaml::from_str(&result.unwrap()).unwrap();
+        let merged: Value = serde_yml::from_str(&result.unwrap()).unwrap();
         assert_eq!(merged["key"], Value::String("changed".into()));
     }
 
@@ -523,7 +523,7 @@ mod tests {
 
         let result = driver.merge(base, ours, theirs).unwrap();
         assert!(result.is_some());
-        let merged: Value = serde_yaml::from_str(&result.unwrap()).unwrap();
+        let merged: Value = serde_yml::from_str(&result.unwrap()).unwrap();
         assert_eq!(merged["l1"]["l2"]["l3"]["a"], Value::Number(10.into()));
         assert_eq!(merged["l1"]["l2"]["l3"]["c"], Value::Number(30.into()));
         assert_eq!(merged["l1"]["l2"]["l3"]["b"], Value::Number(2.into()));
@@ -538,7 +538,7 @@ mod tests {
 
         let result = driver.merge(base, ours, theirs).unwrap();
         assert!(result.is_some());
-        let merged: Value = serde_yaml::from_str(&result.unwrap()).unwrap();
+        let merged: Value = serde_yml::from_str(&result.unwrap()).unwrap();
         assert_eq!(merged["名前"], Value::String("次郎".into()));
         assert_eq!(merged["age"], Value::Number(31.into()));
     }
@@ -571,7 +571,7 @@ mod tests {
 
         let result = driver.merge(&base, &ours, &theirs).unwrap();
         assert!(result.is_some());
-        let merged: Value = serde_yaml::from_str(&result.unwrap()).unwrap();
+        let merged: Value = serde_yml::from_str(&result.unwrap()).unwrap();
         assert_eq!(merged["key_100"], Value::String("modified_by_ours".into()));
         assert_eq!(
             merged["key_400"],
@@ -590,7 +590,7 @@ mod tests {
 
         let result = driver.merge(base, ours, theirs).unwrap();
         assert!(result.is_some());
-        let merged: Value = serde_yaml::from_str(&result.unwrap()).unwrap();
+        let merged: Value = serde_yml::from_str(&result.unwrap()).unwrap();
         assert_eq!(merged["a"], Value::Number(10.into()));
         assert_eq!(merged["b"], Value::String("not_null".into()));
         assert_eq!(merged["c"], Value::String("hello".into()));
@@ -606,7 +606,7 @@ mod tests {
         let result = driver.merge(base, ours, theirs).unwrap();
         assert!(result.is_some());
         let merged_str = result.unwrap();
-        let merged: Value = serde_yaml::from_str(&merged_str)
+        let merged: Value = serde_yml::from_str(&merged_str)
             .unwrap_or_else(|e| panic!("merged output should be valid YAML: {e}"));
         assert_eq!(merged["a"], Value::Number(10.into()));
         assert_eq!(merged["b"], Value::Number(20.into()));
@@ -621,7 +621,7 @@ mod tests {
 
         let result = driver.merge(base, ours, theirs).unwrap();
         assert!(result.is_some());
-        let merged: Value = serde_yaml::from_str(&result.unwrap()).unwrap();
+        let merged: Value = serde_yml::from_str(&result.unwrap()).unwrap();
         let arr = merged["items"].as_sequence().unwrap();
         assert_eq!(arr[0], Value::String("x".into()));
         assert_eq!(arr[1], Value::String("b".into()));
@@ -638,7 +638,7 @@ mod tests {
 
         let result = driver.merge(base, ours, theirs).unwrap();
         assert!(result.is_some());
-        let merged: Value = serde_yaml::from_str(&result.unwrap()).unwrap();
+        let merged: Value = serde_yml::from_str(&result.unwrap()).unwrap();
         assert_eq!(merged["enabled"], Value::Bool(false));
         assert_eq!(merged["verbose"], Value::Bool(true));
     }
@@ -652,7 +652,7 @@ mod tests {
 
         let result = driver.merge(base, ours, theirs).unwrap();
         assert!(result.is_some());
-        let merged: Value = serde_yaml::from_str(&result.unwrap()).unwrap();
+        let merged: Value = serde_yml::from_str(&result.unwrap()).unwrap();
         assert_eq!(merged["a"], Value::Number(1.into()));
         assert_eq!(merged["b"], Value::Number(2.into()));
     }
@@ -666,7 +666,7 @@ mod tests {
 
         let result = driver.merge(base, ours, theirs).unwrap();
         assert!(result.is_some());
-        let merged: Value = serde_yaml::from_str(&result.unwrap()).unwrap();
+        let merged: Value = serde_yml::from_str(&result.unwrap()).unwrap();
         assert_eq!(
             merged[&Value::String("b".into())],
             Value::Number(2.into()),
@@ -697,7 +697,7 @@ mod tests {
 
         let result = driver.merge(base, ours, theirs).unwrap();
         assert!(result.is_some());
-        let merged: Value = serde_yaml::from_str(&result.unwrap()).unwrap();
+        let merged: Value = serde_yml::from_str(&result.unwrap()).unwrap();
         assert_eq!(merged["server"]["host"], Value::String("0.0.0.0".into()));
         assert_eq!(merged["server"]["ssl"]["enabled"], Value::Bool(true));
         assert_eq!(merged["server"]["port"], Value::Number(8080.into()));
@@ -729,8 +729,8 @@ mod tests {
             .unwrap()
             .expect("merge(base, A, merge(B,C)) should succeed");
 
-        let v_left: Value = serde_yaml::from_str(&merge_left).unwrap();
-        let v_right: Value = serde_yaml::from_str(&merge_right).unwrap();
+        let v_left: Value = serde_yml::from_str(&merge_left).unwrap();
+        let v_right: Value = serde_yml::from_str(&merge_right).unwrap();
 
         assert_eq!(
             v_left, v_right,

@@ -860,6 +860,10 @@ impl Repository {
         if self.is_worktree {
             let head_path = self.suture_dir.join("HEAD");
             if head_path.exists() {
+                let metadata = fs::metadata(&head_path)?;
+                if metadata.len() > 4096 {
+                    return Err(RepoError::Custom("HEAD file too large".into()));
+                }
                 Ok(fs::read_to_string(&head_path)?.trim().to_owned())
             } else {
                 Ok("main".to_owned())
@@ -4478,8 +4482,21 @@ fn load_ignore_patterns(root: &Path) -> Vec<String> {
         return Vec::new();
     }
 
-    fs::read_to_string(&ignore_file)
-        .unwrap_or_default()
+    const MAX_IGNORE_SIZE: u64 = 64 * 1024; // 64KB
+    let Ok(mut file) = std::fs::File::open(&ignore_file) else {
+        return Vec::new();
+    };
+    let Ok(metadata) = file.metadata() else {
+        return Vec::new();
+    };
+    if metadata.len() > MAX_IGNORE_SIZE {
+        return Vec::new();
+    }
+    let mut contents = String::with_capacity(metadata.len() as usize);
+    let Ok(_) = std::io::Read::read_to_string(&mut file, &mut contents) else {
+        return Vec::new();
+    };
+    contents
         .lines()
         .map(|line| line.trim().to_owned())
         .filter(|line| !line.is_empty() && !line.starts_with('#'))

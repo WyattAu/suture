@@ -106,41 +106,60 @@ pub mod s3_adapter {
     impl BlobBackend for S3BlobBackendAdapter {
         fn store_blob(&self, _repo_id: &str, hash_hex: &str, data: &[u8]) -> Result<(), String> {
             let hash = Hash::from_hex(hash_hex).map_err(|e| format!("invalid hash: {e}"))?;
-            let rt = tokio::runtime::Handle::current();
-            rt.block_on(self.store.put_blob(&hash, data))
-                .map_err(|e| format!("s3 put: {e}"))
+            let store = &self.store;
+            let data = data.to_vec();
+            // Use block_in_place to avoid panicking on multi-threaded tokio runtime.
+            // This is safe because BlobBackend trait methods are sync and called
+            // from handlers that can yield the runtime thread.
+            tokio::task::block_in_place(|| {
+                let rt = tokio::runtime::Handle::current();
+                rt.block_on(store.put_blob(&hash, &data))
+                    .map_err(|e| format!("s3 put: {e}"))
+            })
         }
 
         fn get_blob(&self, _repo_id: &str, hash_hex: &str) -> Result<Option<Vec<u8>>, String> {
             let hash = Hash::from_hex(hash_hex).map_err(|e| format!("invalid hash: {e}"))?;
-            let rt = tokio::runtime::Handle::current();
-            match rt.block_on(self.store.get_blob(&hash)) {
-                Ok(data) => Ok(Some(data)),
-                Err(suture_s3::S3Error::NotFound(_)) => Ok(None),
-                Err(e) => Err(format!("s3 get: {e}")),
-            }
+            let store = &self.store;
+            tokio::task::block_in_place(|| {
+                let rt = tokio::runtime::Handle::current();
+                match rt.block_on(store.get_blob(&hash)) {
+                    Ok(data) => Ok(Some(data)),
+                    Err(suture_s3::S3Error::NotFound(_)) => Ok(None),
+                    Err(e) => Err(format!("s3 get: {e}")),
+                }
+            })
         }
 
         fn has_blob(&self, _repo_id: &str, hash_hex: &str) -> Result<bool, String> {
             let hash = Hash::from_hex(hash_hex).map_err(|e| format!("invalid hash: {e}"))?;
-            let rt = tokio::runtime::Handle::current();
-            rt.block_on(self.store.has_blob(&hash))
-                .map_err(|e| format!("s3 has: {e}"))
+            let store = &self.store;
+            tokio::task::block_in_place(|| {
+                let rt = tokio::runtime::Handle::current();
+                rt.block_on(store.has_blob(&hash))
+                    .map_err(|e| format!("s3 has: {e}"))
+            })
         }
 
         fn delete_blob(&self, _repo_id: &str, hash_hex: &str) -> Result<(), String> {
             let hash = Hash::from_hex(hash_hex).map_err(|e| format!("invalid hash: {e}"))?;
-            let rt = tokio::runtime::Handle::current();
-            rt.block_on(self.store.delete_blob(&hash))
-                .map_err(|e| format!("s3 delete: {e}"))
+            let store = &self.store;
+            tokio::task::block_in_place(|| {
+                let rt = tokio::runtime::Handle::current();
+                rt.block_on(store.delete_blob(&hash))
+                    .map_err(|e| format!("s3 delete: {e}"))
+            })
         }
 
         fn list_blobs(&self, _repo_id: &str) -> Result<Vec<String>, String> {
-            let rt = tokio::runtime::Handle::current();
-            let hashes = rt
-                .block_on(self.store.list_blobs())
-                .map_err(|e| format!("s3 list: {e}"))?;
-            Ok(hashes.iter().map(|h| h.to_hex()).collect())
+            let store = &self.store;
+            tokio::task::block_in_place(|| {
+                let rt = tokio::runtime::Handle::current();
+                let hashes = rt
+                    .block_on(store.list_blobs())
+                    .map_err(|e| format!("s3 list: {e}"))?;
+                Ok(hashes.iter().map(|h| h.to_hex()).collect())
+            })
         }
     }
 }

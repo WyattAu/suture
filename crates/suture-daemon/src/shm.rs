@@ -185,8 +185,13 @@ pub fn read_pid_file() -> Result<u32, anyhow::Error> {
     if !path.exists() {
         anyhow::bail!("PID file not found: daemon may not be running");
     }
-    let mut contents = String::new();
-    File::open(path)?.read_to_string(&mut contents)?;
+    let file = File::open(path)?;
+    let metadata = file.metadata()?;
+    if metadata.len() > 256 {
+        anyhow::bail!("PID file too large ({} bytes)", metadata.len());
+    }
+    let mut contents = String::with_capacity(metadata.len() as usize);
+    file.take(256).read_to_string(&mut contents)?;
     let pid: u32 = contents.trim().parse()?;
     Ok(pid)
 }

@@ -55,7 +55,7 @@ impl OoxmlDocument {
         let mut part_rels: HashMap<String, HashMap<String, String>> = HashMap::new();
 
         for i in 0..archive.len() {
-            let mut file = archive
+            let file = archive
                 .by_index(i)
                 .map_err(|e| OoxmlError::Zip(e.to_string()))?;
 
@@ -65,10 +65,17 @@ impl OoxmlDocument {
                 .map(|n| n.display().to_string())
                 .unwrap_or_default();
 
-            // Read raw bytes first
-            let mut raw_bytes = Vec::new();
-            file.read_to_end(&mut raw_bytes)
+            // Read raw bytes first (limit per-entry size to prevent OOM)
+            const MAX_PART_SIZE: usize = 500 * 1024 * 1024;
+            let mut raw_bytes = Vec::with_capacity(1024 * 1024);
+            file.take(MAX_PART_SIZE as u64)
+                .read_to_end(&mut raw_bytes)
                 .map_err(|e| OoxmlError::Io(e.to_string()))?;
+            if raw_bytes.len() >= MAX_PART_SIZE {
+                return Err(OoxmlError::Io(
+                    "archive entry exceeds maximum size (500MB)".into(),
+                ));
+            }
 
             // Try to interpret as UTF-8 text
             let Ok(content) = String::from_utf8(raw_bytes.clone()) else {
@@ -123,8 +130,18 @@ impl OoxmlDocument {
     }
 
     pub fn from_file(path: &std::path::Path) -> Result<Self, OoxmlError> {
-        let data = std::fs::read(path).map_err(|e| OoxmlError::Io(e.to_string()))?;
-        Self::from_bytes(&data)
+        const MAX_FILE_SIZE: usize = 500 * 1024 * 1024;
+        let file = std::fs::File::open(path).map_err(|e| OoxmlError::Io(e.to_string()))?;
+        let mut raw_bytes = Vec::with_capacity(1024 * 1024);
+        file.take(MAX_FILE_SIZE as u64)
+            .read_to_end(&mut raw_bytes)
+            .map_err(|e| OoxmlError::Io(e.to_string()))?;
+        if raw_bytes.len() >= MAX_FILE_SIZE {
+            return Err(OoxmlError::Io(
+                "file exceeds maximum size (500MB)".into(),
+            ));
+        }
+        Self::from_bytes(&raw_bytes)
     }
 
     pub fn to_bytes(&self) -> Result<Vec<u8>, OoxmlError> {

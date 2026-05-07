@@ -26,8 +26,8 @@ It works as:
 5. VS Code extension
 6. Rust library
 
-The core merge engine is ~1M lines of Rust, has 1,300+ tests, and is proven
-by Lean 4 formal verification using patch theory. The self-hosted hub is
+The core merge engine is ~131K lines of Rust, has 1,550+ tests, and is verified
+via extensive property-based testing using patch theory. The self-hosted hub is
 always free (AGPL-3.0). We also have a hosted platform with a free tier
 (100 merges/month).
 

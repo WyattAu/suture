@@ -410,22 +410,24 @@ impl PatchDag {
         chain
     }
 
+    /// Collect all patch IDs reachable from a given patch ID (inclusive).
+    ///
+    /// This is the cheap counterpart to [`reachable_patches`](Self::reachable_patches)
+    /// when callers only need IDs and not full patch data (which clones payloads).
+    pub fn reachable_patch_ids(&self, id: &PatchId) -> Vec<PatchId> {
+        let ancestors = self.ancestors(id);
+        let mut ids = Vec::with_capacity(ancestors.len() + 1);
+        ids.push(*id);
+        ids.extend(ancestors.iter());
+        ids
+    }
+
     /// Collect all patches reachable from a given patch ID (inclusive).
     pub fn reachable_patches(&self, id: &PatchId) -> Vec<Patch> {
-        let ancestors = self.ancestors(id);
-        let mut patches = Vec::with_capacity(ancestors.len() + 1);
-
-        if let Some(node) = self.nodes.get(id) {
-            patches.push(node.patch.clone());
-        }
-
-        for ancestor_id in ancestors.iter() {
-            if let Some(node) = self.nodes.get(ancestor_id) {
-                patches.push(node.patch.clone());
-            }
-        }
-
-        patches
+        self.reachable_patch_ids(id)
+            .into_iter()
+            .filter_map(|pid| self.nodes.get(&pid).map(|n| n.patch.clone()))
+            .collect()
     }
 }
 

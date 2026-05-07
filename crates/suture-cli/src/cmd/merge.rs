@@ -640,7 +640,7 @@ pub async fn cmd_merge(
             MergeStrategy::Semantic => "semantic drivers",
             MergeStrategy::Ours => "keeping our version",
             MergeStrategy::Theirs => "keeping their version",
-            MergeStrategy::Manual => unreachable!(),
+            MergeStrategy::Manual => "manual resolution",
         };
         if ooxml_resolved > 0 && resolved_count > ooxml_resolved {
             println!(

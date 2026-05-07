@@ -40,7 +40,7 @@ The core idea: Git's line-based merge treats files as bags of lines. If two peop
 
 **Tech details:**
 - Written in Rust (32 crates, 1,300+ tests)
-- Proven by Lean 4 formal verification using patch theory
+- Core patch algebra verified via property-based testing (proptest)
 - Uses BLAKE3 for content hashing
 - Raft consensus for distributed hub
 - Wasm plugin system for custom merge strategies

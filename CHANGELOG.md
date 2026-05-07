@@ -341,10 +341,12 @@ Rigorous testing and correctness release — bugs found and fixed, formal proofs
 - **Determinism: +7 tests** — commit determinism, patch ID determinism, merge determinism, push-pull roundtrip, BLAKE3 determinism, diff symmetry, branch idempotency
 - **Git merge driver: +2 tests** — clean merge end-to-end, conflict detection end-to-end (with real git repos)
 
-### Formal Verification (Lean4)
+### Formal Verification (Planned — Lean4)
 
-23 theorems proved in `.specs/02_architecture/proofs/proof_suture_core.lean`:
+The following properties are verified via extensive property-based testing (proptest)
+and targeted unit tests. Lean 4 formal proofs are planned but not yet written.
 
+Properties verified:
 - **TouchSet algebra** (3): conflict ↔ intersection, symmetry, disjoint ⇒ no conflict
 - **Commutativity** (7): symmetry, disjoint touch sets ⇒ commute, identity units, contrapositive
 - **DAG acyclicity** (2): add_node preserves acyclicity, add_edge preserves acyclicity

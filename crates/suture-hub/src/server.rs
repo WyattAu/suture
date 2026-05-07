@@ -95,12 +95,12 @@ pub struct SutureHubServer {
     blob_backend: Option<Arc<dyn BlobBackend>>,
     no_auth: bool,
     rate_limits:
-        Arc<std::sync::RwLock<std::collections::HashMap<String, (u32, std::time::Instant)>>>,
+        Arc<tokio::sync::RwLock<std::collections::HashMap<String, (u32, std::time::Instant)>>>,
     max_pushes_per_hour: u32,
     max_pulls_per_hour: u32,
     max_token_creates_per_minute: u32,
     rate_limit_window: std::time::Duration,
-    replication_role: Arc<std::sync::RwLock<String>>,
+    replication_role: Arc<tokio::sync::RwLock<String>>,
     webhook_manager: Arc<WebhookManager>,
     #[allow(dead_code)]
     rate_limit_db: Option<Arc<tokio::sync::Mutex<rusqlite::Connection>>>,
@@ -131,12 +131,12 @@ impl SutureHubServer {
             )),
             blob_backend: None,
             no_auth: false,
-            rate_limits: Arc::new(std::sync::RwLock::new(std::collections::HashMap::new())),
+            rate_limits: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
             max_pushes_per_hour: 100,
             max_pulls_per_hour: 1000,
             max_token_creates_per_minute: 5,
             rate_limit_window: std::time::Duration::from_secs(60),
-            replication_role: Arc::new(std::sync::RwLock::new("standalone".to_owned())),
+            replication_role: Arc::new(tokio::sync::RwLock::new("standalone".to_owned())),
             webhook_manager: Arc::new(WebhookManager::new()),
             rate_limit_db: None,
             lfs_data_dir: None,
@@ -165,12 +165,12 @@ impl SutureHubServer {
             storage: Arc::new(RwLock::new(HubStorage::open(path)?)),
             blob_backend: None,
             no_auth: false,
-            rate_limits: Arc::new(std::sync::RwLock::new(std::collections::HashMap::new())),
+            rate_limits: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
             max_pushes_per_hour: 100,
             max_pulls_per_hour: 1000,
             max_token_creates_per_minute: 5,
             rate_limit_window: std::time::Duration::from_secs(60),
-            replication_role: Arc::new(std::sync::RwLock::new("standalone".to_owned())),
+            replication_role: Arc::new(tokio::sync::RwLock::new("standalone".to_owned())),
             webhook_manager: Arc::new(WebhookManager::new()),
             rate_limit_db: Some(Arc::new(tokio::sync::Mutex::new(rate_limit_conn))),
             lfs_data_dir: None,
@@ -273,19 +273,13 @@ impl SutureHubServer {
         self
     }
 
-    pub fn set_replication_role(&self, role: &str) {
-        *self
-            .replication_role
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = role.to_owned();
+    pub async fn set_replication_role(&self, role: &str) {
+        *self.replication_role.write().await = role.to_owned();
     }
 
     #[must_use]
-    pub fn get_replication_role(&self) -> String {
-        self.replication_role
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone()
+    pub async fn get_replication_role(&self) -> String {
+        self.replication_role.read().await.clone()
     }
 
     pub fn set_blob_backend(&mut self, backend: Arc<dyn BlobBackend>) {
@@ -406,7 +400,7 @@ impl SutureHubServer {
         }
     }
 
-    pub fn check_rate_limit(&self, ip: &str, key: &str) -> Result<(), u64> {
+    pub async fn check_rate_limit(&self, ip: &str, key: &str) -> Result<(), u64> {
         let window = self.rate_limit_window;
         if window.is_zero() {
             return Ok(());
@@ -414,10 +408,7 @@ impl SutureHubServer {
 
         let full_key = format!("{key}:{ip}");
         let now = std::time::Instant::now();
-        let mut limits = self
-            .rate_limits
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut limits = self.rate_limits.write().await;
 
         limits.retain(|_, (_, start)| now.duration_since(*start) < window);
 
@@ -2195,7 +2186,7 @@ pub async fn push_handler(
     Json(req): Json<PushRequest>,
 ) -> (StatusCode, HeaderMap, Json<PushResponse>) {
     let ip = addr.ip().to_string();
-    if let Err(retry_after) = hub.check_rate_limit(&ip, "push") {
+    if let Err(retry_after) = hub.check_rate_limit(&ip, "push").await {
         let mut hdrs = HeaderMap::new();
         if let Ok(val) = retry_after.to_string().parse() {
             hdrs.insert(axum::http::header::RETRY_AFTER, val);
@@ -2251,7 +2242,7 @@ pub async fn pull_handler(
     Json(req): Json<PullRequest>,
 ) -> (StatusCode, HeaderMap, Json<PullResponse>) {
     let ip = addr.ip().to_string();
-    if let Err(retry_after) = hub.check_rate_limit(&ip, "pull") {
+    if let Err(retry_after) = hub.check_rate_limit(&ip, "pull").await {
         let mut hdrs = HeaderMap::new();
         if let Ok(val) = retry_after.to_string().parse() {
             hdrs.insert(axum::http::header::RETRY_AFTER, val);
@@ -2343,7 +2334,7 @@ pub async fn create_token_handler(
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
 ) -> (StatusCode, HeaderMap, Json<TokenResponse>) {
     let ip = addr.ip().to_string();
-    if let Err(retry_after) = hub.check_rate_limit(&ip, "token_create") {
+    if let Err(retry_after) = hub.check_rate_limit(&ip, "token_create").await {
         let mut hdrs = HeaderMap::new();
         if let Ok(val) = retry_after.to_string().parse() {
             hdrs.insert(axum::http::header::RETRY_AFTER, val);
@@ -3618,7 +3609,7 @@ pub async fn v2_pull_handler(
     Json(req): Json<crate::types::PullRequestV2>,
 ) -> (StatusCode, HeaderMap, Json<crate::types::PullResponseV2>) {
     let ip = addr.ip().to_string();
-    if let Err(retry_after) = hub.check_rate_limit(&ip, "pull") {
+    if let Err(retry_after) = hub.check_rate_limit(&ip, "pull").await {
         let mut hdrs = HeaderMap::new();
         if let Ok(val) = retry_after.to_string().parse() {
             hdrs.insert(axum::http::header::RETRY_AFTER, val);
@@ -3670,7 +3661,7 @@ pub async fn v2_push_handler(
     Json(req): Json<crate::types::PushRequestV2>,
 ) -> (StatusCode, HeaderMap, Json<PushResponse>) {
     let ip = addr.ip().to_string();
-    if let Err(retry_after) = hub.check_rate_limit(&ip, "push") {
+    if let Err(retry_after) = hub.check_rate_limit(&ip, "push").await {
         let mut hdrs = HeaderMap::new();
         if let Ok(val) = retry_after.to_string().parse() {
             hdrs.insert(axum::http::header::RETRY_AFTER, val);
@@ -3734,7 +3725,7 @@ pub async fn add_peer_handler(
             }),
         );
     }
-    let role = hub.get_replication_role();
+    let role = hub.get_replication_role().await;
     if role != "leader" {
         return (
             StatusCode::FORBIDDEN,
@@ -3768,7 +3759,7 @@ pub async fn remove_peer_handler(
             }),
         );
     }
-    let role = hub.get_replication_role();
+    let role = hub.get_replication_role().await;
     if role != "leader" {
         return (
             StatusCode::FORBIDDEN,
@@ -3805,7 +3796,7 @@ pub async fn replication_sync_handler(
     State(hub): State<Arc<SutureHubServer>>,
     Json(entries): Json<Vec<ReplicationEntry>>,
 ) -> (StatusCode, Json<SyncResponse>) {
-    let role = hub.get_replication_role();
+    let role = hub.get_replication_role().await;
     if role != "follower" && role != "standalone" {
         return (
             StatusCode::FORBIDDEN,
@@ -3832,7 +3823,7 @@ pub async fn batch_push_handler(
     Json(req): Json<BatchPatchRequest>,
 ) -> (StatusCode, HeaderMap, Json<PushResponse>) {
     let ip = addr.ip().to_string();
-    if let Err(retry_after) = hub.check_rate_limit(&ip, "push") {
+    if let Err(retry_after) = hub.check_rate_limit(&ip, "push").await {
         let mut hdrs = HeaderMap::new();
         if let Ok(val) = retry_after.to_string().parse() {
             hdrs.insert(axum::http::header::RETRY_AFTER, val);
@@ -3871,7 +3862,7 @@ async fn replication_background_task(hub: Arc<SutureHubServer>) {
     loop {
         interval.tick().await;
 
-        let role = hub.get_replication_role();
+        let role = hub.get_replication_role().await;
         if role != "leader" {
             continue;
         }
@@ -5629,7 +5620,7 @@ mod tests {
     async fn test_http_replication() {
         let (hub, _port, base) = start_test_hub().await;
         let client = reqwest::Client::new();
-        hub.set_replication_role("leader");
+        hub.set_replication_role("leader").await;
 
         let add_resp = client
             .post(format!("{}/replication/peers", &base))

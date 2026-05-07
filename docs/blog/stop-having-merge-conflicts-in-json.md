@@ -183,7 +183,7 @@ Suture uses a three-way merge at the semantic level. When Git invokes the driver
 
 Each change is mapped to a logical address -- for JSON, that's an RFC 6901 JSON Pointer like `/spec/replicas`; for YAML, a dot-separated key path; for DOCX, a paragraph index. Two changes conflict only when their logical addresses overlap. If Alice changed `/spec/replicas` and Bob changed `/spec/template/spec/containers/0/env`, the touch sets are disjoint, so both patches apply cleanly and the merge is deterministic.
 
-The patch algebra is formalized and proved correct in Lean 4: if the touch sets of two patches are disjoint, their composition commutes. The merge result is the same regardless of which side is applied first. This isn't a heuristic -- it's a structural guarantee.
+The patch algebra is verified via extensive property-based testing (proptest): if the touch sets of two patches are disjoint, their composition commutes. The merge result is the same regardless of which side is applied first. This isn't a heuristic -- it's a structural guarantee verified by thousands of randomized test cases.
 
 ## Try It
 

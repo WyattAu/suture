@@ -166,7 +166,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         SutureHubServer::new()
     };
 
-    hub.set_replication_role(&replication_role);
+    hub.set_replication_role(&replication_role).await;
 
     // S3 blob backend setup
     if blob_backend == "s3" {

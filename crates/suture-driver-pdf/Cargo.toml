@@ -12,4 +12,4 @@ categories.workspace = true
 
 [dependencies]
 suture-driver = { path = "../suture-driver", version = "5.0.0" }
-lopdf = "0.34"
+lopdf = "0.40"

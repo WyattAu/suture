@@ -13,4 +13,4 @@ categories.workspace = true
 [dependencies]
 suture-driver = { path = "../suture-driver", version = "5.0.0" }
 serde = { version = "1", features = ["derive"] }
-serde_yaml = "0.9"
+serde_yml = "0.0.12"
