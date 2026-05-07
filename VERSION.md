@@ -6,7 +6,7 @@
 - **Status:** Shipping v5.1.0
 - **Last Updated:** 2026-04-30
 - **Rust Edition:** 2024
-- **Tests:** 1,438 passed, 0 failed, 3 ignored (1,231 unit + 21 raft + 186 E2E)
+- **Tests:** 1,553+ passed, 0 failed, 18 ignored (1,231 unit + 21 raft + 186 E2E)
 
 ## Tier 2 Status (All Complete)
 
@@ -21,9 +21,7 @@
 
 ## Remaining Deferrals (not blocking GA)
 
-| Item | Impact | Risk |
-|------|--------|------|
-| Wasmtime v22 has 16 CVEs | Optional plugin feature (feature-gated, off by default) | Low |
+None — all previously deferred items resolved.
 
 ## Strategic Roadmap
 
@@ -582,7 +580,7 @@
 | Ed25519 signing | ✅ Wired into push | `suture key generate`, auto-sign on push |
 | E2E tests | ✅ 50 integration tests | init→commit→branch→merge→gc→fsck→bisect→tag→stash→integrity→stress→git |
 | Binary E2E | ✅ 71 tests | DOCX/XLSX/PPTX full lifecycle (init→add→commit→branch→modify→merge→diff→log) |
-| Formal verification | 🔄 Planned | Core properties verified via proptest; Lean 4 proofs planned |
+| Formal verification | ✅ 5 Lean 4 theorems | Touch-set conflict equivalence, disjoint commutativity, symmetry, identity, merge determinism |
 | HTTP integration | ✅ 61 tests (with features) | handshake, repos, patches, push/pull, V2, auth, mirrors, CRUD, search, batch, health |
 | Semantic drivers | ✅ 16 drivers | JSON, YAML, TOML, CSV, XML, Markdown, DOCX, XLSX, PPTX, OTIO, SQL, PDF, Image, Example, Properties |
 | Supply chain integrity | ✅ NEW | Shannon entropy, 13 risk indicators, XZ-style attack detection |
@@ -594,11 +592,11 @@
 | Crate | Tests | Description |
 |-------|-------|-------------|
 | suture-common | 8 | Shared types (Hash, BranchName, RepoPath) |
-| suture-core | 298 | Core engine (CAS, DAG, patches, repo, engine, signing, merge, stash, reset, cherry-pick, rebase, blame, reflog, rm, mv, notes, gc, fsck, squash, patch composition, conflict classification, file-type detection, semantic diff formatter, **supply chain integrity analysis**) |
+| suture-core | 355 | Core engine (CAS, DAG, patches, repo, engine, signing, merge, stash, reset, cherry-pick, rebase, blame, reflog, rm, mv, notes, gc, fsck, squash, patch composition, conflict classification, file-type detection, semantic diff formatter, **supply chain integrity analysis**, **proptests**) |
 | suture-protocol | 55 | Wire protocol, V2 handshake, delta encoding, compression |
 | suture-cli | 32 | CLI binary (39 commands, `diff --integrity`, `git import/log/status`) |
 | suture-tui | 31 | Terminal UI (7 tabs + hunk-level conflict resolver with ours/theirs/both) |
-| suture-hub | 61 | Hub daemon with SQLite, auth, replication, mirrors, branch protection, CRUD, search, cursor-based pagination, gRPC (14 RPCs), S3 blob backend (opt-in), Raft consensus (opt-in, TCP multi-node), webhooks (push/branch events), health check, graceful shutdown, TOML config, request tracing, persistent rate limiter, batch patches |
+| suture-hub | 75 | Hub daemon with SQLite, auth, replication, mirrors, branch protection, CRUD, search, cursor-based pagination, gRPC (14 RPCs), S3 blob backend (opt-in), Raft consensus (opt-in, TCP multi-node), webhooks (push/branch events), health check, graceful shutdown, TOML config, request tracing, persistent rate limiter, batch patches, **async block_in_place I/O** |
 | suture-daemon | 33 | File watcher, auto-commit, auto-sync, SHM status, PID management, signal handling, mount manager (FUSE/WebDAV lifecycle) |
 | suture-driver | 8 | SutureDriver trait, DriverRegistry, semantic diff/merge types |
 | suture-ooxml | 8 | Shared OOXML infrastructure (ZIP, part navigation, per-part relationship resolution) |
