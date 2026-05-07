@@ -513,35 +513,9 @@ impl SutureHubServer {
         let store = self.storage.write().await;
 
         block_in_place(|| {
-        let mut existing_patches = Vec::new();
+            let mut existing_patches = Vec::new();
 
-        if let Err(e) = store.ensure_repo(&req.repo_id) {
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                PushResponse {
-                    success: false,
-                    error: Some(format!("storage error: {e}")),
-                    existing_patches: vec![],
-                },
-            ));
-        }
-
-        for blob in &req.blobs {
-            let hex = hash_to_hex(&blob.hash);
-            let data = match base64_decode(&blob.data) {
-                Ok(d) => d,
-                Err(e) => {
-                    return Err((
-                        StatusCode::BAD_REQUEST,
-                        PushResponse {
-                            success: false,
-                            error: Some(format!("invalid base64 in blob: {e}")),
-                            existing_patches: vec![],
-                        },
-                    ));
-                }
-            };
-            if let Err(e) = self.blob_store(&store, &req.repo_id, &hex, &data) {
+            if let Err(e) = store.ensure_repo(&req.repo_id) {
                 return Err((
                     StatusCode::INTERNAL_SERVER_ERROR,
                     PushResponse {
@@ -551,12 +525,23 @@ impl SutureHubServer {
                     },
                 ));
             }
-        }
 
-        for patch in &req.patches {
-            let inserted = match store.insert_patch(&req.repo_id, patch) {
-                Ok(i) => i,
-                Err(e) => {
+            for blob in &req.blobs {
+                let hex = hash_to_hex(&blob.hash);
+                let data = match base64_decode(&blob.data) {
+                    Ok(d) => d,
+                    Err(e) => {
+                        return Err((
+                            StatusCode::BAD_REQUEST,
+                            PushResponse {
+                                success: false,
+                                error: Some(format!("invalid base64 in blob: {e}")),
+                                existing_patches: vec![],
+                            },
+                        ));
+                    }
+                };
+                if let Err(e) = self.blob_store(&store, &req.repo_id, &hex, &data) {
                     return Err((
                         StatusCode::INTERNAL_SERVER_ERROR,
                         PushResponse {
@@ -566,134 +551,150 @@ impl SutureHubServer {
                         },
                     ));
                 }
-            };
-            if !inserted {
-                existing_patches.push(patch.id.clone());
             }
-        }
 
-        for patch in &req.patches {
-            if let Err(e) = store.log_operation("insert", "patches", &hash_to_hex(&patch.id), None)
-            {
-                tracing::warn!("Failed to log operation: {}", e);
+            for patch in &req.patches {
+                let inserted = match store.insert_patch(&req.repo_id, patch) {
+                    Ok(i) => i,
+                    Err(e) => {
+                        return Err((
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            PushResponse {
+                                success: false,
+                                error: Some(format!("storage error: {e}")),
+                                existing_patches: vec![],
+                            },
+                        ));
+                    }
+                };
+                if !inserted {
+                    existing_patches.push(patch.id.clone());
+                }
             }
-        }
 
-        for branch in &req.branches {
-            let target_hex = hash_to_hex(&branch.target_id);
-
-            if !req.force
-                && let Some(ref known) = req.known_branches
-                && let Some(known_branch) = known.iter().find(|kb| kb.name == branch.name)
-            {
-                let known_target = hash_to_hex(&known_branch.target_id);
-                if known_target != target_hex
-                    && let Ok(Some(current_target)) =
-                        store.get_branch_target(&req.repo_id, &branch.name)
-                    && !store
-                        .is_ancestor(&req.repo_id, &current_target, &target_hex)
-                        .unwrap_or_else(|e| {
-                            tracing::warn!("Failed to check ancestry: {e}");
-                            true
-                        })
+            for patch in &req.patches {
+                if let Err(e) =
+                    store.log_operation("insert", "patches", &hash_to_hex(&patch.id), None)
                 {
+                    tracing::warn!("Failed to log operation: {}", e);
+                }
+            }
+
+            for branch in &req.branches {
+                let target_hex = hash_to_hex(&branch.target_id);
+
+                if !req.force
+                    && let Some(ref known) = req.known_branches
+                    && let Some(known_branch) = known.iter().find(|kb| kb.name == branch.name)
+                {
+                    let known_target = hash_to_hex(&known_branch.target_id);
+                    if known_target != target_hex
+                        && let Ok(Some(current_target)) =
+                            store.get_branch_target(&req.repo_id, &branch.name)
+                        && !store
+                            .is_ancestor(&req.repo_id, &current_target, &target_hex)
+                            .unwrap_or_else(|e| {
+                                tracing::warn!("Failed to check ancestry: {e}");
+                                true
+                            })
+                    {
+                        return Err((
+                            StatusCode::CONFLICT,
+                            PushResponse {
+                                success: false,
+                                error: Some(format!(
+                                    "branch '{}' rejected: non-fast-forward push (use --force to override)",
+                                    branch.name
+                                )),
+                                existing_patches: vec![],
+                            },
+                        ));
+                    }
+                }
+
+                if store
+                    .is_branch_protected(&req.repo_id, &branch.name)
+                    .unwrap_or_else(|e| {
+                        tracing::warn!("Failed to check branch protection: {e}");
+                        false
+                    })
+                {
+                    let push_authors: std::collections::HashSet<&str> =
+                        req.patches.iter().map(|p| p.author.as_str()).collect();
+                    let is_owner =
+                        push_authors.len() == 1 && push_authors.contains(branch.name.as_str());
+                    if !is_owner {
+                        return Err((
+                            StatusCode::FORBIDDEN,
+                            PushResponse {
+                                success: false,
+                                error: Some(format!(
+                                    "branch '{}' is protected and can only be updated by its owner",
+                                    branch.name
+                                )),
+                                existing_patches: vec![],
+                            },
+                        ));
+                    }
+                }
+
+                if let Err(e) = store.set_branch(&req.repo_id, &branch.name, &target_hex) {
                     return Err((
-                        StatusCode::CONFLICT,
+                        StatusCode::INTERNAL_SERVER_ERROR,
                         PushResponse {
                             success: false,
-                            error: Some(format!(
-                                "branch '{}' rejected: non-fast-forward push (use --force to override)",
-                                branch.name
-                            )),
+                            error: Some(format!("storage error: {e}")),
                             existing_patches: vec![],
                         },
                     ));
                 }
             }
 
-            if store
-                .is_branch_protected(&req.repo_id, &branch.name)
-                .unwrap_or_else(|e| {
-                    tracing::warn!("Failed to check branch protection: {e}");
-                    false
-                })
-            {
-                let push_authors: std::collections::HashSet<&str> =
-                    req.patches.iter().map(|p| p.author.as_str()).collect();
-                let is_owner =
-                    push_authors.len() == 1 && push_authors.contains(branch.name.as_str());
-                if !is_owner {
-                    return Err((
-                        StatusCode::FORBIDDEN,
-                        PushResponse {
-                            success: false,
-                            error: Some(format!(
-                                "branch '{}' is protected and can only be updated by its owner",
-                                branch.name
-                            )),
-                            existing_patches: vec![],
-                        },
-                    ));
+            for branch in &req.branches {
+                let target_hex = hash_to_hex(&branch.target_id);
+                if let Err(e) = store.log_operation(
+                    "set",
+                    "branches",
+                    &format!("{}:{}", req.repo_id, branch.name),
+                    Some(&target_hex),
+                ) {
+                    tracing::warn!("Failed to log operation: {}", e);
                 }
             }
 
-            if let Err(e) = store.set_branch(&req.repo_id, &branch.name, &target_hex) {
-                return Err((
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    PushResponse {
-                        success: false,
-                        error: Some(format!("storage error: {e}")),
-                        existing_patches: vec![],
-                    },
-                ));
-            }
-        }
-
-        for branch in &req.branches {
-            let target_hex = hash_to_hex(&branch.target_id);
-            if let Err(e) = store.log_operation(
-                "set",
-                "branches",
-                &format!("{}:{}", req.repo_id, branch.name),
-                Some(&target_hex),
-            ) {
-                tracing::warn!("Failed to log operation: {}", e);
-            }
-        }
-
-        let repo_id = req.repo_id.clone();
-        let patch_data = serde_json::json!({
-            "patch_count": req.patches.len(),
-            "branch_count": req.branches.len(),
-            "existing_patches": existing_patches.clone(),
-        });
-        let manager = Arc::clone(&self.webhook_manager);
-        let storage = Arc::clone(&self.storage);
-        tokio::spawn(async move {
-            let hooks = {
-                let store = storage.read().await;
-                store.list_webhooks(&repo_id).unwrap_or_else(|e| {
-                    tracing::warn!("store list_webhooks failed: {e}");
-                    Default::default()
-                })
-            };
-            if !hooks.is_empty() {
-                let result = manager.trigger(&hooks, "push", &repo_id, patch_data).await;
-                if result.failed > 0 {
-                    tracing::warn!(
-                        "Hook trigger failed: {} of {} webhooks failed",
-                        result.failed,
-                        result.triggered
-                    );
+            let repo_id = req.repo_id.clone();
+            let patch_data = serde_json::json!({
+                "patch_count": req.patches.len(),
+                "branch_count": req.branches.len(),
+                "existing_patches": existing_patches.clone(),
+            });
+            let manager = Arc::clone(&self.webhook_manager);
+            let storage = Arc::clone(&self.storage);
+            tokio::spawn(async move {
+                let hooks = {
+                    let store = storage.read().await;
+                    store.list_webhooks(&repo_id).unwrap_or_else(|e| {
+                        tracing::warn!("store list_webhooks failed: {e}");
+                        Default::default()
+                    })
+                };
+                if !hooks.is_empty() {
+                    let result = manager.trigger(&hooks, "push", &repo_id, patch_data).await;
+                    if result.failed > 0 {
+                        tracing::warn!(
+                            "Hook trigger failed: {} of {} webhooks failed",
+                            result.failed,
+                            result.triggered
+                        );
+                    }
                 }
-            }
-        });
+            });
 
-        Ok(PushResponse {
-            success: true,
-            error: None,
-            existing_patches,
-        })
+            Ok(PushResponse {
+                success: true,
+                error: None,
+                existing_patches,
+            })
         })
     }
 
@@ -701,96 +702,98 @@ impl SutureHubServer {
         let store = self.storage.read().await;
 
         block_in_place(|| {
-        let exists = match store.repo_exists(&req.repo_id) {
-            Ok(e) => e,
-            Err(e) => {
-                tracing::error!("Failed to check repo existence: {e}");
+            let exists = match store.repo_exists(&req.repo_id) {
+                Ok(e) => e,
+                Err(e) => {
+                    tracing::error!("Failed to check repo existence: {e}");
+                    return PullResponse {
+                        success: false,
+                        error: Some(format!("database error: {e}")),
+                        patches: vec![],
+                        branches: vec![],
+                        blobs: vec![],
+                    };
+                }
+            };
+            if !exists {
                 return PullResponse {
                     success: false,
-                    error: Some(format!("database error: {e}")),
+                    error: Some(format!("repo not found: {}", req.repo_id)),
                     patches: vec![],
                     branches: vec![],
                     blobs: vec![],
                 };
             }
-        };
-        if !exists {
-            return PullResponse {
-                success: false,
-                error: Some(format!("repo not found: {}", req.repo_id)),
-                patches: vec![],
-                branches: vec![],
-                blobs: vec![],
-            };
-        }
 
-        let all_patches = store
-            .get_all_patches_unbounded(&req.repo_id)
-            .unwrap_or_else(|e| {
-                tracing::warn!("store get_all_patches failed: {e}");
+            let all_patches = store
+                .get_all_patches_unbounded(&req.repo_id)
+                .unwrap_or_else(|e| {
+                    tracing::warn!("store get_all_patches failed: {e}");
+                    Default::default()
+                });
+            let client_ancestors = collect_ancestors(&all_patches, &req.known_branches);
+            let mut new_patches = collect_new_patches(&all_patches, &client_ancestors);
+
+            if let Some(depth) = req.max_depth {
+                new_patches.truncate(depth as usize);
+            }
+
+            let branches = store.get_branches(&req.repo_id).unwrap_or_else(|e| {
+                tracing::warn!("store get_branches failed: {e}");
                 Default::default()
             });
-        let client_ancestors = collect_ancestors(&all_patches, &req.known_branches);
-        let mut new_patches = collect_new_patches(&all_patches, &client_ancestors);
 
-        if let Some(depth) = req.max_depth {
-            new_patches.truncate(depth as usize);
-        }
-
-        let branches = store.get_branches(&req.repo_id).unwrap_or_else(|e| {
-            tracing::warn!("store get_branches failed: {e}");
-            Default::default()
-        });
-
-        let mut needed_hashes: std::collections::HashSet<String> = std::collections::HashSet::new();
-        for patch in &new_patches {
-            if patch.operation_type == "batch" {
-                if let Ok(decoded) = base64_decode(&patch.payload)
-                    && let Ok(changes) = serde_json::from_str::<Vec<serde_json::Value>>(
-                        &String::from_utf8_lossy(&decoded),
-                    )
-                {
-                    for change in &changes {
-                        if let Some(payload_val) = change.get("payload").and_then(|v| v.as_array())
-                        {
-                            let hex_bytes: Vec<u8> = payload_val
-                                .iter()
-                                .filter_map(|v| v.as_u64().map(|n| n as u8))
-                                .collect();
-                            if let Ok(hex) = String::from_utf8(hex_bytes) {
-                                needed_hashes.insert(hex);
+            let mut needed_hashes: std::collections::HashSet<String> =
+                std::collections::HashSet::new();
+            for patch in &new_patches {
+                if patch.operation_type == "batch" {
+                    if let Ok(decoded) = base64_decode(&patch.payload)
+                        && let Ok(changes) = serde_json::from_str::<Vec<serde_json::Value>>(
+                            &String::from_utf8_lossy(&decoded),
+                        )
+                    {
+                        for change in &changes {
+                            if let Some(payload_val) =
+                                change.get("payload").and_then(|v| v.as_array())
+                            {
+                                let hex_bytes: Vec<u8> = payload_val
+                                    .iter()
+                                    .filter_map(|v| v.as_u64().map(|n| n as u8))
+                                    .collect();
+                                if let Ok(hex) = String::from_utf8(hex_bytes) {
+                                    needed_hashes.insert(hex);
+                                }
                             }
                         }
                     }
+                } else if !patch.payload.is_empty() {
+                    // Payload may be raw hex (from tests) or base64-encoded (from CLI).
+                    // Try raw hex first — if it looks like a hex hash, use it directly.
+                    // Otherwise try base64 decode.
+                    let hex = if patch.payload.chars().all(|c| c.is_ascii_hexdigit()) {
+                        patch.payload.clone()
+                    } else if let Ok(decoded) = base64_decode(&patch.payload) {
+                        String::from_utf8_lossy(&decoded).to_string()
+                    } else {
+                        patch.payload.clone()
+                    };
+                    needed_hashes.insert(hex);
                 }
-            } else if !patch.payload.is_empty() {
-                // Payload may be raw hex (from tests) or base64-encoded (from CLI).
-                // Try raw hex first — if it looks like a hex hash, use it directly.
-                // Otherwise try base64 decode.
-                let hex = if patch.payload.chars().all(|c| c.is_ascii_hexdigit()) {
-                    patch.payload.clone()
-                } else if let Ok(decoded) = base64_decode(&patch.payload) {
-                    String::from_utf8_lossy(&decoded).to_string()
-                } else {
-                    patch.payload.clone()
-                };
-                needed_hashes.insert(hex);
             }
-        }
-        let blobs = store
-            .get_blobs(&req.repo_id, &needed_hashes)
-            .unwrap_or_else(|e| {
-                tracing::warn!("store get_blobs failed: {e}");
-                Default::default()
-            });
+            let blobs = store
+                .get_blobs(&req.repo_id, &needed_hashes)
+                .unwrap_or_else(|e| {
+                    tracing::warn!("store get_blobs failed: {e}");
+                    Default::default()
+                });
 
-        PullResponse {
-            success: true,
-            error: None,
-            patches: new_patches,
-            branches,
-            blobs,
-        }
+            PullResponse {
+                success: true,
+                error: None,
+                patches: new_patches,
+                branches,
+                blobs,
+            }
         })
     }
 
@@ -6397,8 +6400,8 @@ mod tests {
     #[cfg(feature = "s3-backend")]
     #[test]
     fn test_blob_backend_used_when_set() {
-use crate::async_storage::block_in_place;
-use crate::blob_backend::BlobBackend;
+        use crate::async_storage::block_in_place;
+        use crate::blob_backend::BlobBackend;
 
         struct MockBackend {
             store_called: std::sync::atomic::AtomicBool,

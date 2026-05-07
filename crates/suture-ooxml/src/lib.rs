@@ -137,9 +137,7 @@ impl OoxmlDocument {
             .read_to_end(&mut raw_bytes)
             .map_err(|e| OoxmlError::Io(e.to_string()))?;
         if raw_bytes.len() >= MAX_FILE_SIZE {
-            return Err(OoxmlError::Io(
-                "file exceeds maximum size (500MB)".into(),
-            ));
+            return Err(OoxmlError::Io("file exceeds maximum size (500MB)".into()));
         }
         Self::from_bytes(&raw_bytes)
     }

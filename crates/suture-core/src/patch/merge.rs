@@ -379,7 +379,7 @@ mod tests {
                 addrs in proptest::collection::vec("[a-z]{1,5}", 0..40),
             ) {
                 let mut all_patches = Vec::new();
-                
+
                 for i in 0..n_base {
                     all_patches.push(Patch::new(
                         OperationType::Modify,
@@ -391,10 +391,10 @@ mod tests {
                         format!("base {i}"),
                     ));
                 }
-                
+
                 let actual_n_a = n_a.min(addrs.len());
                 let actual_n_b = n_b.min(addrs.len().saturating_sub(actual_n_a));
-                
+
                 for (i, addr) in addrs.iter().take(actual_n_a).enumerate() {
                     all_patches.push(Patch::new(
                         OperationType::Modify,
@@ -406,7 +406,7 @@ mod tests {
                         format!("a_{i}"),
                     ));
                 }
-                
+
                 for (i, addr) in addrs.iter().skip(actual_n_a).take(actual_n_b).enumerate() {
                     all_patches.push(Patch::new(
                         OperationType::Modify,
@@ -418,24 +418,24 @@ mod tests {
                         format!("b_{i}"),
                     ));
                 }
-                
+
                 let (ids, map): (Vec<PatchId>, HashMap<PatchId, Patch>) = {
                     let ids: Vec<PatchId> = all_patches.iter().map(|p| p.id).collect();
                     let map: HashMap<PatchId, Patch> = all_patches.iter().map(|p| (p.id, p.clone())).collect();
                     (ids, map)
                 };
-                
+
                 let base_end = n_base;
                 let a_end = n_base + actual_n_a;
                 let b_end = a_end + actual_n_b;
-                
+
                 // Branch A = base ++ A-extra,  Branch B = base ++ B-extra
                 let branch_a: Vec<PatchId> = ids[..base_end].iter().chain(ids[base_end..a_end].iter()).copied().collect();
                 let branch_b: Vec<PatchId> = ids[..base_end].iter().chain(ids[a_end..b_end].iter()).copied().collect();
-                
+
                 let r_ab = merge(&ids[..base_end], &branch_a, &branch_b, &map).unwrap();
                 let r_ba = merge(&ids[..base_end], &branch_b, &branch_a, &map).unwrap();
-                
+
                 let mut ids_ab = r_ab.all_patch_ids();
                 let mut ids_ba = r_ba.all_patch_ids();
                 ids_ab.sort();
@@ -454,7 +454,7 @@ mod tests {
                 addrs in proptest::collection::vec("[a-z]{1,5}", 0..20),
             ) {
                 let mut all_patches = Vec::new();
-                
+
                 for i in 0..n_base {
                     all_patches.push(Patch::new(
                         OperationType::Modify,
@@ -466,7 +466,7 @@ mod tests {
                         format!("base {i}"),
                     ));
                 }
-                
+
                 for (i, addr) in addrs.iter().enumerate() {
                     all_patches.push(Patch::new(
                         OperationType::Modify,
@@ -478,16 +478,16 @@ mod tests {
                         format!("a_{i}"),
                     ));
                 }
-                
+
                 let (ids, map): (Vec<PatchId>, HashMap<PatchId, Patch>) = {
                     let ids: Vec<PatchId> = all_patches.iter().map(|p| p.id).collect();
                     let map: HashMap<PatchId, Patch> = all_patches.iter().map(|p| (p.id, p.clone())).collect();
                     (ids, map)
                 };
-                
+
                 // merge(A, A, A) — all three arguments identical
                 let result = merge(&ids, &ids, &ids, &map).unwrap();
-                
+
                 prop_assert!(result.is_clean, "merge(A, A, A) must have no conflicts");
                 prop_assert!(result.patches_a_only.is_empty());
                 prop_assert!(result.patches_b_only.is_empty());
@@ -527,12 +527,12 @@ mod tests {
                     "bench".to_string(),
                     "patch_b".to_string(),
                 );
-                
+
                 let conflicts_ab = detect_conflicts(std::slice::from_ref(&pa), std::slice::from_ref(&pb));
                 let conflicts_ba = detect_conflicts(std::slice::from_ref(&pb), std::slice::from_ref(&pa));
-                
+
                 prop_assert_eq!(conflicts_ab.len(), conflicts_ba.len());
-                
+
                 if !conflicts_ab.is_empty() {
                     let mut addrs_ab: Vec<String> = conflicts_ab[0].conflict_addresses.clone();
                     let mut addrs_ba: Vec<String> = conflicts_ba[0].conflict_addresses.clone();

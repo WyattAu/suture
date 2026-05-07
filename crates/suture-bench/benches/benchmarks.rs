@@ -1050,7 +1050,7 @@ fn bench_merge_scalability(c: &mut Criterion) {
     for n_a in [10usize, 50, 100, 500] {
         for n_b in [10usize, 50, 100, 500] {
             group.bench_with_input(
-                BenchmarkId::new("merge_divergence", (n_a, n_b)),
+                BenchmarkId::new("merge_divergence", format!("{n_a}x{n_b}")),
                 &(n_a, n_b),
                 |b, &(n_a, n_b)| {
                     b.iter_with_setup(
@@ -1083,8 +1083,7 @@ fn bench_merge_scalability(c: &mut Criterion) {
                         },
                         |(patches_a, patches_b)| {
                             black_box(suture_core::patch::merge::detect_conflicts(
-                                &patches_a,
-                                &patches_b,
+                                &patches_a, &patches_b,
                             ));
                         },
                     );
