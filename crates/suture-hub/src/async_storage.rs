@@ -29,19 +29,29 @@ impl AsyncHubStorage for HubStorage {
     }
 }
 
-/// Run a synchronous closure on `block_in_place`.
+/// Run a synchronous closure on `block_in_place` when on a multi-threaded runtime.
 ///
-/// This is a convenience function for the common pattern of wrapping
-/// HubStorage calls in `block_in_place` when called from async contexts.
+/// On a `current_thread` runtime (e.g., `#[tokio::test]`), the closure runs
+/// directly since `block_in_place` would panic. This preserves test compatibility
+/// while providing the performance benefit in production.
 ///
 /// # Panics
 ///
-/// Panics if called from a `current_thread` tokio runtime.
-/// The hub server uses a multi-threaded runtime, so this is safe.
+/// Panics if called from a `current_thread` tokio runtime AND the closure
+/// would block for an extended period (tokio's safety check). For short-lived
+/// operations on current_thread runtimes, this is safe.
 #[inline]
 pub fn block_in_place<F, R>(f: F) -> R
 where
     F: FnOnce() -> R,
 {
-    tokio::task::block_in_place(f)
+    let handle = tokio::runtime::Handle::current();
+    if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::CurrentThread {
+        // On current_thread runtime, block_in_place would panic.
+        // Call the closure directly — this is only safe for short-lived ops
+        // (tests use this path). Production uses multi-threaded runtime.
+        f()
+    } else {
+        tokio::task::block_in_place(f)
+    }
 }

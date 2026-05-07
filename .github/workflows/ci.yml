@@ -209,3 +209,16 @@ jobs:
 
       - name: Clippy with features
         run: cargo clippy --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp --features "${{ matrix.features }}" -- -D warnings
+
+  security-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      - name: Run cargo audit
+        run: cargo audit
+      - name: Check for duplicate dependencies
+        run: |
+          echo "Duplicate crate count:"
+          cargo tree --workspace --duplicates | wc -l

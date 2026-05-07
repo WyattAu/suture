@@ -11,6 +11,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+use crate::async_storage::block_in_place;
 use crate::blob_backend::BlobBackend;
 use crate::middleware::request_id_layer;
 use crate::storage::HubStorage;
@@ -509,9 +510,11 @@ impl SutureHubServer {
             }
         }
 
+        let store = self.storage.write().await;
+
+        block_in_place(|| {
         let mut existing_patches = Vec::new();
 
-        let store = self.storage.write().await;
         if let Err(e) = store.ensure_repo(&req.repo_id) {
             return Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -691,11 +694,13 @@ impl SutureHubServer {
             error: None,
             existing_patches,
         })
+        })
     }
 
     pub async fn handle_pull(&self, req: PullRequest) -> PullResponse {
         let store = self.storage.read().await;
 
+        block_in_place(|| {
         let exists = match store.repo_exists(&req.repo_id) {
             Ok(e) => e,
             Err(e) => {
@@ -786,6 +791,7 @@ impl SutureHubServer {
             branches,
             blobs,
         }
+        })
     }
 
     pub async fn handle_list_repos(&self) -> ListReposResponse {
@@ -6391,7 +6397,8 @@ mod tests {
     #[cfg(feature = "s3-backend")]
     #[test]
     fn test_blob_backend_used_when_set() {
-        use crate::blob_backend::BlobBackend;
+use crate::async_storage::block_in_place;
+use crate::blob_backend::BlobBackend;
 
         struct MockBackend {
             store_called: std::sync::atomic::AtomicBool,

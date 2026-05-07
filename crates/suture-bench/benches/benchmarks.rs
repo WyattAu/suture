@@ -1009,6 +1009,93 @@ fn bench_large_yaml_commit(c: &mut Criterion) {
 }
 
 // =============================================================================
+// 6. Snapshot & Merge Scalability
+// =============================================================================
+
+fn bench_snapshot_head(c: &mut Criterion) {
+    let mut group = c.benchmark_group("snapshot_head");
+
+    for n_patches in [10u32, 50, 100, 500] {
+        group.bench_with_input(
+            BenchmarkId::new("snapshot_head", n_patches),
+            &n_patches,
+            |b, &n_patches| {
+                b.iter_with_setup(
+                    || {
+                        let dir = TempDir::new().unwrap();
+                        let mut repo = Repository::init(dir.path(), "bench").unwrap();
+                        for i in 0..n_patches {
+                            let file = format!("file_{i}.txt");
+                            let content = format!("content {i}\n");
+                            std::fs::write(dir.path().join(&file), content).unwrap();
+                            repo.add(&file).unwrap();
+                            repo.commit(&format!("patch {i}")).unwrap();
+                        }
+                        (dir, repo)
+                    },
+                    |(dir, repo)| {
+                        black_box(repo.snapshot_head().unwrap());
+                        drop(dir);
+                    },
+                );
+            },
+        );
+    }
+    group.finish();
+}
+
+fn bench_merge_scalability(c: &mut Criterion) {
+    let mut group = c.benchmark_group("merge_scalability");
+
+    for n_a in [10usize, 50, 100, 500] {
+        for n_b in [10usize, 50, 100, 500] {
+            group.bench_with_input(
+                BenchmarkId::new("merge_divergence", (n_a, n_b)),
+                &(n_a, n_b),
+                |b, &(n_a, n_b)| {
+                    b.iter_with_setup(
+                        || {
+                            let mut patches_a = Vec::with_capacity(n_a);
+                            for i in 0..n_a {
+                                patches_a.push(Patch::new(
+                                    OperationType::Modify,
+                                    TouchSet::single(format!("file_a_{i}")),
+                                    Some(format!("file_a_{i}")),
+                                    vec![],
+                                    vec![],
+                                    "bench".to_string(),
+                                    format!("edit a_{i}"),
+                                ));
+                            }
+                            let mut patches_b = Vec::with_capacity(n_b);
+                            for i in 0..n_b {
+                                patches_b.push(Patch::new(
+                                    OperationType::Modify,
+                                    TouchSet::single(format!("file_b_{i}")),
+                                    Some(format!("file_b_{i}")),
+                                    vec![],
+                                    vec![],
+                                    "bench".to_string(),
+                                    format!("edit b_{i}"),
+                                ));
+                            }
+                            (patches_a, patches_b)
+                        },
+                        |(patches_a, patches_b)| {
+                            black_box(suture_core::patch::merge::detect_conflicts(
+                                &patches_a,
+                                &patches_b,
+                            ));
+                        },
+                    );
+                },
+            );
+        }
+    }
+    group.finish();
+}
+
+// =============================================================================
 // Criterion groups
 // =============================================================================
 
@@ -1042,5 +1129,7 @@ criterion_group!(
     bench_hub_storage,
     bench_large_json_commit,
     bench_large_yaml_commit,
+    bench_snapshot_head,
+    bench_merge_scalability,
 );
 criterion_main!(benches);
