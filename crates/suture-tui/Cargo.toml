@@ -1,6 +1,6 @@
 [package]
 name = "suture-tui"
-version = "5.1.0"
+version = "5.1.1"
 edition = "2024"
 license.workspace = true
 repository.workspace = true
