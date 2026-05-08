@@ -1,12 +1,13 @@
 # Suture Version
 
-- **Current Version:** 5.1.0
-- **Crates.io:** 37 crates ready to publish
+- **Current Version:** 5.3.1
+- **Crates.io:** 37 crates published
 - **Current Phase:** GA — Production Ready
-- **Status:** Shipping v5.1.0
-- **Last Updated:** 2026-04-30
+- **Status:** Shipping v5.3.1
+- **Last Updated:** 2026-05-08
 - **Rust Edition:** 2024
-- **Tests:** 1,553+ passed, 0 failed, 18 ignored (1,231 unit + 21 raft + 186 E2E)
+- **Tests:** 1,662 passed, 0 failed, 20 ignored
+- **Security:** 0 unsound, 1 unmaintained (paste via rav1e, transitive, no fix available)
 
 ## Tier 2 Status (All Complete)
 
