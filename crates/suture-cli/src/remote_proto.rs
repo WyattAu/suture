@@ -295,7 +295,7 @@ pub async fn do_fetch(
     };
 
     let client = reqwest::Client::new();
-    let mut req_builder = client.post(format!("{url}/pull")).json(&pull_body);
+    let mut req_builder = client.post(format!("{url}/pull/compressed")).json(&pull_body);
 
     if let Some(token) = get_remote_token(repo, remote)? {
         req_builder = req_builder.bearer_auth(&token);
@@ -330,7 +330,9 @@ pub async fn do_fetch(
             eprint!("\r  blobs: {}/{}", i + 1, result.blobs.len());
         }
         let hash = suture_common::Hash::from_hex(&blob.hash.value)?;
-        let data = b64.decode(&blob.data)?;
+        let compressed = b64.decode(&blob.data)?;
+        let data = suture_protocol::decompress(&compressed)
+            .map_err(|e| format!("failed to decompress blob: {e}"))?;
         repo.cas().put_blob_with_hash(&data, &hash)?;
     }
     if !result.blobs.is_empty() {

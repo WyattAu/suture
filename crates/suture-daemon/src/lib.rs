@@ -362,7 +362,7 @@ impl AutoSync {
 
         let client = reqwest::Client::new();
         let resp = client
-            .post(format!("{remote_url}/pull"))
+            .post(format!("{remote_url}/pull/compressed"))
             .json(&pull_body)
             .send()
             .await
@@ -407,9 +407,11 @@ impl AutoSync {
             for blob in &blobs {
                 let hash = suture_common::Hash::from_hex(&blob.hash.value)
                     .map_err(|e| format!("invalid blob hash: {e}"))?;
-                let data = b64
+                let compressed = b64
                     .decode(&blob.data)
                     .map_err(|e| format!("failed to decode blob: {e}"))?;
+                let data = suture_protocol::decompress(&compressed)
+                    .map_err(|e| format!("failed to decompress blob: {e}"))?;
                 repo.cas()
                     .put_blob_with_hash(&data, &hash)
                     .map_err(|e| format!("failed to store blob: {e}"))?;
@@ -566,9 +568,33 @@ impl AutoSync {
             force: false,
         };
 
+        let b64 = base64::engine::general_purpose::STANDARD;
+        let mut compressed_blobs = Vec::with_capacity(push_body.blobs.len());
+        for blob in &push_body.blobs {
+            let raw = b64
+                .decode(&blob.data)
+                .map_err(|e| format!("failed to decode blob for compression: {e}"))?;
+            let compressed = suture_protocol::compress(&raw)
+                .map_err(|e| format!("failed to compress blob: {e}"))?;
+            compressed_blobs.push(BlobRef {
+                hash: blob.hash.clone(),
+                data: b64.encode(&compressed),
+                truncated: false,
+            });
+        }
+        let push_body = PushRequest {
+            repo_id: push_body.repo_id,
+            patches: push_body.patches,
+            branches: push_body.branches,
+            blobs: compressed_blobs,
+            signature: push_body.signature,
+            known_branches: push_body.known_branches,
+            force: push_body.force,
+        };
+
         let client = reqwest::Client::new();
         let resp = client
-            .post(format!("{remote_url}/push"))
+            .post(format!("{remote_url}/push/compressed"))
             .json(&push_body)
             .send()
             .await

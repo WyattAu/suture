@@ -344,9 +344,30 @@ async fn cmd_push_inner(
 
     let push_body = sign_push_request(repo, push_body)?;
 
+    let b64 = base64::engine::general_purpose::STANDARD;
+    let mut compressed_blobs = Vec::with_capacity(push_body.blobs.len());
+    for blob in &push_body.blobs {
+        let raw = b64.decode(&blob.data)?;
+        let compressed = suture_protocol::compress(&raw)
+            .map_err(|e| format!("failed to compress blob: {e}"))?;
+        compressed_blobs.push(crate::remote_proto::BlobRef {
+            hash: blob.hash.clone(),
+            data: b64.encode(&compressed),
+        });
+    }
+    let push_body = crate::remote_proto::PushRequest {
+        repo_id: push_body.repo_id,
+        patches: push_body.patches,
+        branches: push_body.branches,
+        blobs: compressed_blobs,
+        signature: push_body.signature,
+        known_branches: push_body.known_branches,
+        force: push_body.force,
+    };
+
     let client = reqwest::Client::new();
     let resp = client
-        .post(format!("{url}/push"))
+        .post(format!("{url}/push/compressed"))
         .json(&push_body)
         .send()
         .await?;
