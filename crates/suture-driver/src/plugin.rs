@@ -116,9 +116,22 @@ impl PluginRegistry {
             return;
         }
 
-        if let Ok(entries) = std::fs::read_dir(plugin_dir) {
-            let _sorted_entries: Vec<_> = entries.flatten().collect();
+        let Ok(entries) = std::fs::read_dir(plugin_dir) else {
+            return;
+        };
+        let mut sorted_entries: Vec<_> = entries.flatten().collect();
+        sorted_entries.sort_by_key(|e| e.file_name());
+        #[cfg(feature = "wasm-plugins")]
+        for entry in sorted_entries {
+            let path = entry.path();
+            if path.extension().map_or(false, |ext| ext == "wasm") {
+                if let Err(e) = self.load_wasm_plugin(&path) {
+                    eprintln!("suture: failed to load plugin {:?}: {e}", path);
+                }
+            }
         }
+        #[cfg(not(feature = "wasm-plugins"))]
+        let _ = sorted_entries; // Discovered but not loaded without wasm feature
     }
 }
 
@@ -166,17 +179,16 @@ impl WasmDriverPlugin {
             .func_wrap(
                 "suture",
                 "alloc",
-                |mut caller: wasmtime::Caller<'_, ()>, size: i32| -> i32 {
-                    let size = if size <= 0 {
+                |mut caller: wasmtime::Caller<'_, ()>, size_param: i32| -> i32 {
+                    if size_param <= 0 {
                         return -1;
                     };
-                    let size = size as usize;
+                    let size: u64 = size_param as u64;
                     let memory = match caller.get_export("memory") {
                         Some(wasmtime::Extern::Memory(mem)) => mem,
                         _ => return -1,
                     };
-                    let current_size = memory.data_size(&mut caller);
-                    let old_pages = memory.data_size(&mut caller) / 65536;
+                    let current_size: u64 = memory.data_size(&caller) as u64;
                     // Grow by at least enough pages to accommodate `size` bytes
                     let needed_pages = (size.saturating_sub(current_size % 65536) + 65535) / 65536;
                     match memory.grow(&mut caller, needed_pages) {

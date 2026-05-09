@@ -2872,9 +2872,9 @@ pub async fn get_blob_handler(
             StatusCode::NOT_FOUND,
             Json(serde_json::json!({"success": false, "error": "blob not found"})),
         ),
-        Err(e) => (
+        Err(_e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({"success": false, "error": e})),
+            Json(serde_json::json!({"success": false, "error": "internal storage error"})),
         ),
     }
 }

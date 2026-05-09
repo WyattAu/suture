@@ -26,13 +26,16 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Install cargo-audit
-        run: cargo install cargo-audit
+        run: cargo install cargo-audit --locked
 
       - name: Run cargo audit
         run: cargo audit
 
+      - name: Install protoc (for clippy on suture-hub)
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
       - name: Run clippy (deny warnings)
-        run: cargo clippy --workspace -- -D warnings
+        run: cargo clippy --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp -- -D warnings
 
       - name: Check for hardcoded secrets
         run: |

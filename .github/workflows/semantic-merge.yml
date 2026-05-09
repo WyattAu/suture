@@ -40,7 +40,7 @@ jobs:
             crates/suture-driver-xlsx \
             crates/suture-driver-pptx \
             crates/suture-driver-sql \
-            crates/suture-pdf \
+            crates/suture-driver-pdf \
             crates/suture-driver-image \
             crates/suture-driver-otio
 

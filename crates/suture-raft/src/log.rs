@@ -181,7 +181,7 @@ impl SqliteRaftLog {
             "INSERT INTO raft_log (\"index\", term, command) VALUES (?1, ?2, ?3)",
             rusqlite::params![index as i64, term as i64, command],
         ) {
-            eprintln!("raft: failed to append log entry: {e}");
+            tracing::error!("raft: failed to append log entry: {e}");
         }
         index
     }

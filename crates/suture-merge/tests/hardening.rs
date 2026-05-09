@@ -522,7 +522,7 @@ macro_rules! trivial_test {
             #[test]
             fn ours_equals_theirs() {
                 // Both made the same change → clean
-                let r = no_panic_merge($merge_fn, $valid, "SAME", "SAME");
+                let _r = no_panic_merge($merge_fn, $valid, "SAME", "SAME");
             }
         }
     };
@@ -556,7 +556,7 @@ trivial_test!(
 /// All drivers should handle "no change" identically
 #[test]
 fn consistency_all_drivers_no_change() {
-    let mut inputs: Vec<(
+    let inputs: Vec<(
         &str,
         &str,
         fn(&str, &str, &str) -> Result<MergeResult, MergeError>,

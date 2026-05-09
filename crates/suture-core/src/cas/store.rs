@@ -339,6 +339,7 @@ impl BlobStore {
                 }
             }
         }
+        hashes.sort();
         Ok(hashes)
     }
 

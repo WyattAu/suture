@@ -103,7 +103,7 @@ jobs:
   publish-crates:
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    needs: []  # Run in parallel with builds (no dependency on them)
+    needs: [build]  # Only publish after successful builds
 
     steps:
       - uses: actions/checkout@v4
@@ -203,7 +203,7 @@ jobs:
             echo "::notice::PYPI_API_TOKEN not set — skipping PyPI publish"
             exit 0
           fi
-          twine upload dist/* --skip-existing 2>/dev/null || twine upload dist/*
+          twine upload dist/* --skip-existing
 
   # ── Source tarball ────────────────────────────────────────────────
   source-tarball:

@@ -8,7 +8,9 @@ pub const SHM_MAGIC: u64 = 0x5755544D;
 pub const SHM_VERSION: u32 = 1;
 const SHM_SIZE: usize = 176;
 
-const PID_FILE: &str = "/tmp/suture-daemon.pid";
+pub fn pid_file_path() -> PathBuf {
+    std::env::temp_dir().join("suture-daemon.pid")
+}
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
@@ -70,7 +72,7 @@ unsafe impl Send for ShmStatus {}
 unsafe impl Sync for ShmStatus {}
 
 pub fn shm_path_for_pid(pid: u32) -> PathBuf {
-    PathBuf::from(format!("/tmp/suture-shm-{pid}"))
+    std::env::temp_dir().join(format!("suture-shm-{pid}"))
 }
 
 pub fn create_shm_segment(
@@ -173,7 +175,7 @@ pub fn cleanup_shm(path: &Path) -> Result<(), anyhow::Error> {
 }
 
 pub fn write_pid_file(pid: u32) -> Result<(), anyhow::Error> {
-    let path = Path::new(PID_FILE);
+    let path = pid_file_path();
     let mut file = File::create(path)?;
     file.write_all(pid.to_string().as_bytes())?;
     file.flush()?;
@@ -181,7 +183,7 @@ pub fn write_pid_file(pid: u32) -> Result<(), anyhow::Error> {
 }
 
 pub fn read_pid_file() -> Result<u32, anyhow::Error> {
-    let path = Path::new(PID_FILE);
+    let path = pid_file_path();
     if !path.exists() {
         anyhow::bail!("PID file not found: daemon may not be running");
     }
@@ -197,7 +199,7 @@ pub fn read_pid_file() -> Result<u32, anyhow::Error> {
 }
 
 pub fn remove_pid_file() -> Result<(), anyhow::Error> {
-    let path = Path::new(PID_FILE);
+    let path = pid_file_path();
     if path.exists() {
         std::fs::remove_file(path)?;
     }
@@ -320,12 +322,12 @@ mod tests {
     #[test]
     fn test_pid_file_round_trip() {
         let _guard = TEST_LOCK.lock().unwrap();
-        let orig_pid = Path::new(PID_FILE);
+        let orig_pid = pid_file_path();
         let orig_exists = orig_pid.exists();
         if orig_exists {
-            let bak = Path::new("/tmp/suture-daemon.pid.bak");
-            let _ = std::fs::copy(orig_pid, bak);
-            let _ = std::fs::remove_file(orig_pid);
+            let bak = std::env::temp_dir().join("suture-daemon.pid.bak");
+            let _ = std::fs::copy(&orig_pid, &bak);
+            let _ = std::fs::remove_file(&orig_pid);
         }
 
         write_pid_file(42424).expect("write should succeed");
@@ -333,12 +335,12 @@ mod tests {
         assert_eq!(read, 42424);
 
         remove_pid_file().expect("remove should succeed");
-        assert!(!Path::new(PID_FILE).exists());
+        assert!(!pid_file_path().exists());
 
         if orig_exists {
-            let bak = Path::new("/tmp/suture-daemon.pid.bak");
-            let _ = std::fs::copy(bak, orig_pid);
-            let _ = std::fs::remove_file(bak);
+            let bak = std::env::temp_dir().join("suture-daemon.pid.bak");
+            let _ = std::fs::copy(&bak, &orig_pid);
+            let _ = std::fs::remove_file(&bak);
         }
     }
 }

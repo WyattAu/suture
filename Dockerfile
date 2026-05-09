@@ -4,12 +4,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 COPY suture-platform /usr/local/bin/suture-platform
 RUN chmod +x /usr/local/bin/suture-platform
 
-RUN mkdir -p /data
+RUN mkdir -p /data && groupadd -r suture && useradd -r -g suture -d /data suture && chown -R suture:suture /data
 
 ENV SUTURE_DATA_DIR=/data
 ENV RUST_LOG=info
 ENV RUST_BACKTRACE=1
 EXPOSE 8080
 
+USER suture
 ENTRYPOINT ["tini", "--"]
 CMD ["suture-platform"]

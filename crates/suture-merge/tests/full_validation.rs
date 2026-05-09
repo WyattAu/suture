@@ -3,7 +3,6 @@
 //! Tests every format, every function, and every edge case.
 //! Run with: cargo test -p suture-merge --features all -- full_validation
 
-use std::io::Write;
 use suture_merge::*;
 
 // ============================================================================
@@ -238,7 +237,7 @@ fn consistency_no_changes() {
 #[test]
 fn consistency_all_formats_no_change() {
     // Every format should report no changes for identical content
-    let mut formats: Vec<(
+    let formats: Vec<(
         &str,
         &str,
         &str,
