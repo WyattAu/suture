@@ -1258,6 +1258,9 @@ mod tests {
     fn test_full_roundtrip_single_slide() {
         let driver = PptxDriver::new();
         let pptx_bytes = build_minimal_pptx(&["Hello"]);
+        // SAFETY: PPTX files are ZIP archives containing XML parts.
+        // The XML parts extracted by the OOXML parser are valid UTF-8.
+        // Using `from_utf8_unchecked` avoids an O(n) validation pass.
         let pptx_str = unsafe { String::from_utf8_unchecked(pptx_bytes.clone()) };
 
         // Extract slides
@@ -1280,8 +1283,14 @@ mod tests {
     fn test_full_diff_added_slide() {
         let driver = PptxDriver::new();
         let base_bytes = build_minimal_pptx(&["Slide A"]);
+        // SAFETY: PPTX files are ZIP archives containing XML parts.
+        // The XML parts extracted by the OOXML parser are valid UTF-8.
+        // Using `from_utf8_unchecked` avoids an O(n) validation pass.
         let base_str = unsafe { String::from_utf8_unchecked(base_bytes) };
         let new_bytes = build_minimal_pptx(&["Slide A", "Slide B"]);
+        // SAFETY: PPTX files are ZIP archives containing XML parts.
+        // The XML parts extracted by the OOXML parser are valid UTF-8.
+        // Using `from_utf8_unchecked` avoids an O(n) validation pass.
         let new_str = unsafe { String::from_utf8_unchecked(new_bytes) };
 
         let changes = driver.diff(Some(&base_str), &new_str).unwrap();

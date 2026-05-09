@@ -1259,7 +1259,7 @@ impl Repository {
         }
 
         // Build batched file changes
-        let mut file_changes = Vec::new();
+        let mut file_changes = Vec::with_capacity(staged.len());
         for (path, status) in &staged {
             let full_path = self.root.join(path);
 
@@ -1267,14 +1267,12 @@ impl Repository {
                 FileStatus::Added => {
                     let data = fs::read(&full_path)?;
                     let hash = self.cas.put_blob(&data)?;
-                    let payload = hash.to_hex().as_bytes().to_vec();
-                    (OperationType::Create, payload)
+                    (OperationType::Create, hash.to_hex().as_bytes().to_vec())
                 }
                 FileStatus::Modified => {
                     let data = fs::read(&full_path)?;
                     let hash = self.cas.put_blob(&data)?;
-                    let payload = hash.to_hex().as_bytes().to_vec();
-                    (OperationType::Modify, payload)
+                    (OperationType::Modify, hash.to_hex().as_bytes().to_vec())
                 }
                 FileStatus::Deleted => (OperationType::Delete, Vec::new()),
                 _ => continue,

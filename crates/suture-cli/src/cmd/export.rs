@@ -183,9 +183,10 @@ fn copy_template_recursive(
     ctx: &ExportContext,
     count: &mut usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let entries: Vec<_> = std::fs::read_dir(src)?
+    let mut entries: Vec<_> = std::fs::read_dir(src)?
         .filter_map(std::result::Result::ok)
         .collect();
+    entries.sort_by_key(|e| e.file_name());
 
     for entry in &entries {
         let src_path = entry.path();

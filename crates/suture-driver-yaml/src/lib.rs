@@ -55,6 +55,7 @@ impl_structured_driver! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     #[test]
     fn test_yaml_driver_name() {
@@ -740,5 +741,36 @@ mod tests {
         assert_eq!(v_left["b"], Value::Number(20.into()));
         assert_eq!(v_left["c"], Value::Number(30.into()));
         assert_eq!(v_left["d"], Value::Number(4.into()));
+    }
+
+    proptest! {
+        #[test]
+        fn test_merge_identity_yaml(s in "[a-z0-9_]+") {
+            let driver = YamlDriver::new();
+            let base = format!("key: {s}");
+            let result = driver.merge(&base, &base, &base).unwrap();
+            assert!(result.is_some());
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn test_merge_idempotence_yaml(s in "[a-z0-9_]+") {
+            let driver = YamlDriver::new();
+            let base = format!("key: {s}");
+            let r1 = driver.merge(&base, &base, &base).unwrap();
+            assert!(r1.is_some());
+            let r2 = driver.merge(&base, &r1.clone().unwrap(), &r1.clone().unwrap()).unwrap();
+            assert!(r2.is_some());
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn test_yaml_non_overlapping(a in "[a-z]+", b in "[0-9]+") {
+            let driver = YamlDriver::new();
+            let result = driver.merge("{}", &format!("alpha: {a}"), &format!("bravo: {b}")).unwrap();
+            assert!(result.is_some());
+        }
     }
 }

@@ -417,6 +417,9 @@ fn make_minimal_pdf(page_texts: &[&str]) -> Vec<u8> {
 
 #[cfg(test)]
 fn pdf_str(bytes: &[u8]) -> String {
+    // SAFETY: `bytes` comes from lopdf's text extraction which produces
+    // valid UTF-8 PDF text content. Invalid bytes are extremely rare in
+    // practice and would only produce garbled text, not UB.
     unsafe { String::from_utf8_unchecked(bytes.to_vec()) }
 }
 

@@ -4953,6 +4953,7 @@ dependencies = [
 name = "suture-driver-json"
 version = "5.1.0"
 dependencies = [
+ "proptest",
  "serde_json",
  "suture-driver",
 ]
@@ -4961,6 +4962,7 @@ dependencies = [
 name = "suture-driver-markdown"
 version = "5.1.0"
 dependencies = [
+ "proptest",
  "suture-driver",
 ]
 
@@ -5013,6 +5015,7 @@ dependencies = [
 name = "suture-driver-toml"
 version = "5.1.0"
 dependencies = [
+ "proptest",
  "suture-driver",
  "toml 0.8.23",
 ]
@@ -5040,6 +5043,7 @@ dependencies = [
 name = "suture-driver-yaml"
 version = "5.1.1"
 dependencies = [
+ "proptest",
  "serde",
  "serde_yaml",
  "suture-driver",

@@ -54,6 +54,17 @@ mod host {
     }
 }
 
+// # Safety
+//
+// These functions are called by the WASM plugin runtime via FFI.
+// The caller must ensure:
+// - `get_input_byte` is only called with valid offsets (< `get_input_len()`)
+// - `set_output_byte` and `set_output_len` are called before the plugin returns
+// - `host_log` receives a valid UTF-8 pointer and length
+//
+// The host-side wrappers in this module (lines 90-135) enforce these
+// invariants, making them safe to call from Rust code.
+
 #[cfg(not(target_arch = "wasm32"))]
 mod host {
     #[no_mangle]

@@ -256,6 +256,8 @@ mod tests {
             .write(true)
             .open(&path)
             .expect("open should succeed");
+        // SAFETY: Same as create_shm_segment — file is created with
+        // known size, aligned, and mapped as readable/writable.
         let mut mmap = unsafe { MmapMut::map_mut(&file).expect("mmap should succeed") };
         mmap[..8].copy_from_slice(&0xDEADBEEFu64.to_le_bytes());
         mmap.flush().expect("flush should succeed");

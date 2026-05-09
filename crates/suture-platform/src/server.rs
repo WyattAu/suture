@@ -49,7 +49,9 @@ pub async fn start(config: Config) -> anyhow::Result<()> {
     let plugins = Arc::new(std::sync::Mutex::new(PluginManager::new()));
 
     if let Ok(entries) = std::fs::read_dir("plugins") {
-        for entry in entries.flatten() {
+        let mut entries: Vec<_> = entries.flatten().collect();
+        entries.sort_by_key(|e| e.file_name());
+        for entry in entries {
             if entry.path().extension().is_some_and(|e| e == "wasm") {
                 let path = entry.path().to_string_lossy().to_string();
                 match plugins.lock().unwrap().load_file(&path) {

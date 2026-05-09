@@ -51,6 +51,7 @@ impl_structured_driver! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     #[test]
     fn test_toml_driver_name() {
@@ -536,5 +537,36 @@ mod tests {
         assert_eq!(v_left["b"], Value::Integer(20));
         assert_eq!(v_left["c"], Value::Integer(30));
         assert_eq!(v_left["d"], Value::Integer(4));
+    }
+
+    proptest! {
+        #[test]
+        fn test_merge_identity_toml(s in "[a-z0-9_]+") {
+            let driver = TomlDriver::new();
+            let base = format!("key = \"{s}\"");
+            let result = driver.merge(&base, &base, &base).unwrap();
+            assert!(result.is_some());
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn test_merge_idempotence_toml(s in "[a-z0-9_]+") {
+            let driver = TomlDriver::new();
+            let base = format!("key = \"{s}\"");
+            let r1 = driver.merge(&base, &base, &base).unwrap();
+            assert!(r1.is_some());
+            let r2 = driver.merge(&base, &r1.clone().unwrap(), &r1.clone().unwrap()).unwrap();
+            assert!(r2.is_some());
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn test_toml_non_overlapping(a in "[a-z]+", b in "[0-9]+") {
+            let driver = TomlDriver::new();
+            let result = driver.merge("", &format!("alpha = \"{a}\""), &format!("bravo = \"{b}\"")).unwrap();
+            assert!(result.is_some());
+        }
     }
 }

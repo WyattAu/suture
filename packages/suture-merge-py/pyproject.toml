@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "suture-merge-driver"
-version = "5.0.0"
+version = "5.3.1"
 description = "Git merge driver that semantically merges JSON, YAML, TOML, CSV, XML, Markdown, DOCX, XLSX, PPTX, and more"
 readme = "README.md"
 license = {text = "Apache-2.0"}

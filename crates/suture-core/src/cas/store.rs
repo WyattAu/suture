@@ -21,6 +21,9 @@ use std::sync::Mutex;
 use suture_common::Hash;
 use thiserror::Error;
 
+/// Default maximum number of entries in the in-memory blob cache.
+const BLOB_CACHE_CAPACITY: usize = 1024;
+
 /// Errors that can occur during CAS operations.
 #[derive(Error, Debug)]
 pub enum CasError {
@@ -76,6 +79,10 @@ pub struct BlobStore {
     /// Cached pack indices, loaded lazily on first pack access.
     /// Invalidated when `repack()` creates new pack files.
     pack_cache: Mutex<Option<PackCache>>,
+    /// In-memory LRU-like blob cache. Uses a simple ordered Vec as a ring buffer
+    /// to bound memory usage without external dependencies. Most-recently-accessed
+    /// entries are promoted to the front on cache hit.
+    blob_cache: Mutex<Vec<(Hash, Vec<u8>)>>,
 }
 
 impl BlobStore {
@@ -92,6 +99,7 @@ impl BlobStore {
             compression_level: compressor::DEFAULT_COMPRESSION_LEVEL,
             verify_on_read: true,
             pack_cache: Mutex::new(None),
+            blob_cache: Mutex::new(Vec::with_capacity(BLOB_CACHE_CAPACITY)),
         })
     }
 
@@ -109,6 +117,7 @@ impl BlobStore {
             compression_level: compressor::DEFAULT_COMPRESSION_LEVEL,
             verify_on_read: true,
             pack_cache: Mutex::new(None),
+            blob_cache: Mutex::new(Vec::with_capacity(BLOB_CACHE_CAPACITY)),
         })
     }
 
@@ -219,7 +228,17 @@ impl BlobStore {
     /// Decompresses if necessary and verifies the hash of the result
     /// (unless verification was disabled via `set_verify_on_read(false)`).
     pub fn get_blob(&self, hash: &Hash) -> Result<Vec<u8>, CasError> {
-        // Try loose blob first
+        // Check in-memory cache first
+        {
+            let mut cache = self.blob_cache.lock().unwrap();
+            if let Some(pos) = cache.iter().position(|(h, _)| h == hash) {
+                let entry = cache.remove(pos);
+                cache.insert(0, entry); // promote to front (most recently used)
+                return Ok(cache[0].1.clone());
+            }
+        }
+
+        // Try loose blob
         let blob_path = self.blob_path(hash);
         if blob_path.exists() {
             let raw = fs::read(&blob_path)?;
@@ -231,15 +250,27 @@ impl BlobStore {
             if self.verify_on_read {
                 hasher::verify_hash(&data, hash)?;
             }
-            return Ok(data);
+            self.cache_blob(*hash, data);
+            return Ok(self.blob_cache.lock().unwrap()[0].1.clone());
         }
 
         // Fall back to pack files
         if let Ok(data) = self.get_blob_packed(hash) {
-            return Ok(data);
+            self.cache_blob(*hash, data);
+            return Ok(self.blob_cache.lock().unwrap()[0].1.clone());
         }
 
         Err(CasError::BlobNotFound(hash.to_hex()))
+    }
+
+    /// Insert a blob into the in-memory cache with LRU eviction.
+    fn cache_blob(&self, hash: Hash, data: Vec<u8>) {
+        let mut cache = self.blob_cache.lock().unwrap();
+        // Evict oldest entry if at capacity
+        if cache.len() >= BLOB_CACHE_CAPACITY {
+            cache.pop();
+        }
+        cache.insert(0, (hash, data));
     }
 
     /// Check if a blob exists in the store.

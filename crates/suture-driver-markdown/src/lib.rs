@@ -449,6 +449,7 @@ impl SutureDriver for MarkdownDriver {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     #[test]
     fn test_driver_name() {
@@ -970,5 +971,37 @@ mod tests {
         assert!(result.is_some());
         let merged = result.unwrap();
         assert!(merged.contains("New") || merged.contains("Other"));
+    }
+
+    proptest! {
+        #[test]
+        fn test_merge_identity_md(s in "[a-z0-9_ ]+") {
+            let driver = MarkdownDriver::new();
+            let base = format!("# {s}\n\nBody content.");
+            let result = driver.merge(&base, &base, &base).unwrap();
+            assert!(result.is_some());
+            assert_eq!(result.unwrap(), base);
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn test_merge_idempotence_md(s in "[a-z0-9_ ]+") {
+            let driver = MarkdownDriver::new();
+            let base = format!("# {s}\n\nBody.");
+            let r1 = driver.merge(&base, &base, &base).unwrap();
+            assert!(r1.is_some());
+            let r2 = driver.merge(&base, &r1.clone().unwrap(), &r1.clone().unwrap()).unwrap();
+            assert!(r2.is_some());
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn test_md_non_overlapping(a in "[a-z]+", b in "[0-9]+") {
+            let driver = MarkdownDriver::new();
+            let result = driver.merge("root", &format!("## Section {a}\n\nContent."), &format!("## Section {b}\n\nContent.")).unwrap();
+            assert!(result.is_some());
+        }
     }
 }

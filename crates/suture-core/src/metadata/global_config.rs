@@ -149,6 +149,10 @@ mod tests {
     #[test]
     fn test_load_nonexistent_file_returns_defaults() {
         // Ensure no env vars interfere
+        // SAFETY: `std::env::set_var`/`remove_var` is marked unsafe in Rust
+        // because it modifies process-global state. This is acceptable here
+        // because global configuration is loaded once at startup in a
+        // single-threaded context before the repository is used.
         unsafe {
             std::env::remove_var("SUTURE_USER_NAME");
             std::env::remove_var("SUTURE_USER_EMAIL");
@@ -215,10 +219,18 @@ compression_level = 6
     #[test]
     fn test_env_var_override() {
         let config = GlobalConfig::default();
+        // SAFETY: `std::env::set_var`/`remove_var` is marked unsafe in Rust
+        // because it modifies process-global state. This is acceptable here
+        // because global configuration is loaded once at startup in a
+        // single-threaded context before the repository is used.
         unsafe {
             std::env::set_var("SUTURE_USER_NAME", "EnvUser");
         }
         assert_eq!(config.get("user.name"), Some("EnvUser".to_string()));
+        // SAFETY: `std::env::set_var`/`remove_var` is marked unsafe in Rust
+        // because it modifies process-global state. This is acceptable here
+        // because global configuration is loaded once at startup in a
+        // single-threaded context before the repository is used.
         unsafe {
             std::env::remove_var("SUTURE_USER_NAME");
         }

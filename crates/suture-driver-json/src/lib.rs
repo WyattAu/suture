@@ -43,6 +43,7 @@ impl_structured_driver! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     #[test]
     fn test_json_driver_name() {
@@ -770,5 +771,39 @@ mod tests {
         assert_eq!(v_left["b"], 20);
         assert_eq!(v_left["c"], 30);
         assert_eq!(v_left["d"], 4);
+    }
+
+    proptest! {
+        #[test]
+        fn test_merge_identity_json(s in "[a-z0-9_]+") {
+            let driver = JsonDriver::new();
+            let base = format!("{{\"key\": \"{s}\"}}");
+            let result = driver.merge(&base, &base, &base).unwrap();
+            assert!(result.is_some());
+            let merged: Value = serde_json::from_str(&result.unwrap()).unwrap();
+            let expected: Value = serde_json::from_str(&base).unwrap();
+            assert_eq!(merged, expected);
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn test_merge_idempotence_json(s in "[a-z0-9_]+") {
+            let driver = JsonDriver::new();
+            let base = format!("{{\"key\": \"{s}\"}}");
+            let r1 = driver.merge(&base, &base, &base).unwrap();
+            assert!(r1.is_some());
+            let r2 = driver.merge(&base, &r1.clone().unwrap(), &r1.clone().unwrap()).unwrap();
+            assert!(r2.is_some());
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn test_json_non_overlapping(a in "[a-z]+", b in "[0-9]+") {
+            let driver = JsonDriver::new();
+            let result = driver.merge("{}", &format!("{{\"a\": \"{a}\"}}"), &format!("{{\"b\": \"{b}\"}}")).unwrap();
+            assert!(result.is_some());
+        }
     }
 }

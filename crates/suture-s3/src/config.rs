@@ -156,6 +156,10 @@ mod tests {
 
     #[test]
     fn test_config_from_env() {
+        // SAFETY: `std::env::set_var`/`remove_var` is marked unsafe in Rust
+        // because it modifies process-global state. This is acceptable here
+        // because S3 configuration is loaded once at startup in a
+        // single-threaded context before the server starts.
         unsafe {
             std::env::set_var("S3_ENDPOINT", "http://minio:9000");
             std::env::set_var("S3_BUCKET", "test-bucket");
@@ -175,6 +179,10 @@ mod tests {
         assert_eq!(config.prefix, "custom/");
         assert!(!config.force_path_style);
 
+        // SAFETY: `std::env::set_var`/`remove_var` is marked unsafe in Rust
+        // because it modifies process-global state. This is acceptable here
+        // because S3 configuration is loaded once at startup in a
+        // single-threaded context before the server starts.
         unsafe {
             std::env::remove_var("S3_ENDPOINT");
             std::env::remove_var("S3_BUCKET");

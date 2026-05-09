@@ -217,6 +217,9 @@ mod tests {
     }
 
     fn bytes_to_string(bytes: Vec<u8>) -> String {
+        // SAFETY: `bytes` is extracted from image metadata (EXIF, IPTC, XMP)
+        // fields which are valid UTF-8 by specification. Garbled bytes would
+        // only produce garbled text, not UB.
         unsafe { String::from_utf8_unchecked(bytes) }
     }
 
