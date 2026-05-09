@@ -33,6 +33,9 @@ pub enum CasError {
     #[error("hash mismatch: expected {expected}, got {actual}")]
     HashMismatch { expected: String, actual: String },
 
+    #[error("lock poisoned: {0}")]
+    LockPoisoned(String),
+
     #[error("I/O error: {0}")]
     Io(#[from] io::Error),
 
@@ -230,7 +233,10 @@ impl BlobStore {
     pub fn get_blob(&self, hash: &Hash) -> Result<Vec<u8>, CasError> {
         // Check in-memory cache first
         {
-            let mut cache = self.blob_cache.lock().unwrap();
+            let mut cache = self
+                .blob_cache
+                .lock()
+                .map_err(|e| CasError::LockPoisoned(e.to_string()))?;
             if let Some(pos) = cache.iter().position(|(h, _)| h == hash) {
                 let entry = cache.remove(pos);
                 cache.insert(0, entry); // promote to front (most recently used)
@@ -251,13 +257,23 @@ impl BlobStore {
                 hasher::verify_hash(&data, hash)?;
             }
             self.cache_blob(*hash, data);
-            return Ok(self.blob_cache.lock().unwrap()[0].1.clone());
+            return Ok(self
+                .blob_cache
+                .lock()
+                .map_err(|e| CasError::LockPoisoned(e.to_string()))?[0]
+                .1
+                .clone());
         }
 
         // Fall back to pack files
         if let Ok(data) = self.get_blob_packed(hash) {
             self.cache_blob(*hash, data);
-            return Ok(self.blob_cache.lock().unwrap()[0].1.clone());
+            return Ok(self
+                .blob_cache
+                .lock()
+                .map_err(|e| CasError::LockPoisoned(e.to_string()))?[0]
+                .1
+                .clone());
         }
 
         Err(CasError::BlobNotFound(hash.to_hex()))
@@ -265,7 +281,10 @@ impl BlobStore {
 
     /// Insert a blob into the in-memory cache with LRU eviction.
     fn cache_blob(&self, hash: Hash, data: Vec<u8>) {
-        let mut cache = self.blob_cache.lock().unwrap();
+        let mut cache = match self.blob_cache.lock() {
+            Ok(guard) => guard,
+            Err(_) => return, // best-effort caching; blob is still on disk
+        };
         // Evict oldest entry if at capacity
         if cache.len() >= BLOB_CACHE_CAPACITY {
             cache.pop();

@@ -11,7 +11,7 @@ use suture_merge::*;
 
 #[cfg(any(feature = "docx", feature = "xlsx", feature = "pptx"))]
 fn make_minimal_zip(files: &[(&str, &str)]) -> Vec<u8> {
-    use std::io::Cursor;
+    use std::io::{Cursor, Write as _};
     let mut buf = Cursor::new(Vec::new());
     {
         let mut zip = zip::ZipWriter::new(&mut buf);
@@ -237,7 +237,7 @@ fn consistency_no_changes() {
 #[test]
 fn consistency_all_formats_no_change() {
     // Every format should report no changes for identical content
-    let formats: Vec<(
+    let mut formats: Vec<(
         &str,
         &str,
         &str,

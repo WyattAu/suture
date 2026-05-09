@@ -639,7 +639,12 @@ impl Filesystem for RwFilesystem {
             kind: InodeKind::Directory,
             path: path.clone(),
         };
-        let inode = self.inner.inode_map.unpoison_lock().lookup(&path).unwrap();
+        let inode = self
+            .inner
+            .inode_map
+            .unpoison_lock()
+            .lookup(&path)
+            .ok_or_else(Errno::new_not_exist)?;
         let attr = make_file_attr(&entry, inode, 0);
 
         Ok(ReplyEntry {

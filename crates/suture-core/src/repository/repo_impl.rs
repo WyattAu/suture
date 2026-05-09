@@ -1489,7 +1489,7 @@ impl Repository {
             .iter()
             .map(|s| s.index)
             .max()
-            .expect("stash list is non-empty (checked above)");
+            .ok_or(RepoError::NoStashes)?;
         self.stash_apply(highest)?;
         self.stash_drop(highest)?;
         Ok(())
