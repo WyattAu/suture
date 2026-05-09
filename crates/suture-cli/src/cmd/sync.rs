@@ -348,8 +348,8 @@ async fn cmd_push_inner(
     let mut compressed_blobs = Vec::with_capacity(push_body.blobs.len());
     for blob in &push_body.blobs {
         let raw = b64.decode(&blob.data)?;
-        let compressed = suture_protocol::compress(&raw)
-            .map_err(|e| format!("failed to compress blob: {e}"))?;
+        let compressed =
+            suture_protocol::compress(&raw).map_err(|e| format!("failed to compress blob: {e}"))?;
         compressed_blobs.push(crate::remote_proto::BlobRef {
             hash: blob.hash.clone(),
             data: b64.encode(&compressed),

@@ -295,7 +295,9 @@ pub async fn do_fetch(
     };
 
     let client = reqwest::Client::new();
-    let mut req_builder = client.post(format!("{url}/pull/compressed")).json(&pull_body);
+    let mut req_builder = client
+        .post(format!("{url}/pull/compressed"))
+        .json(&pull_body);
 
     if let Some(token) = get_remote_token(repo, remote)? {
         req_builder = req_builder.bearer_auth(&token);

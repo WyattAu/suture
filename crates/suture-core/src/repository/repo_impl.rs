@@ -3171,9 +3171,7 @@ impl Repository {
             };
 
             self.meta.store_patch(&new_patch)?;
-            let new_id = self
-                .dag
-                .add_patch(new_patch, vec![current_parent])?;
+            let new_id = self.dag.add_patch(new_patch, vec![current_parent])?;
 
             last_new_id = new_id;
             current_parent = new_id;
@@ -3472,9 +3470,7 @@ impl Repository {
                 };
 
                 self.meta.store_patch(&new_patch)?;
-                let new_id = self
-                    .dag
-                    .add_patch(new_patch, vec![current_parent])?;
+                let new_id = self.dag.add_patch(new_patch, vec![current_parent])?;
 
                 last_new_id = new_id;
                 current_parent = new_id;
