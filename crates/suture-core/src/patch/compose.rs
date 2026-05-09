@@ -120,7 +120,7 @@ pub fn compose_chain(
     let mut composed_touch = patches[0].touch_set.clone();
     let mut composed_path = patches[0].target_path.clone();
     let mut composed_payload = patches[0].payload.clone();
-    let mut composed_op = patches[0].operation_type.clone();
+    let mut composed_op = patches[0].operation_type;
 
     for p in &patches[1..] {
         for addr in p.touch_set.iter() {

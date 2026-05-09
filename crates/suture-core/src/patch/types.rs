@@ -16,6 +16,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
+use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 use suture_common::Hash;
 
@@ -34,7 +35,7 @@ pub struct FileChange {
 }
 
 /// The type of operation a patch represents.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OperationType {
     /// Create a new file or resource.
     Create,
@@ -178,7 +179,7 @@ impl TouchSet {
 /// - An operation type (create, modify, delete, rename, merge)
 /// - A touch set (files affected)
 /// - An optional payload (file content or metadata)
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Patch {
     /// Unique identifier (BLAKE3 hash of patch content).
     pub id: PatchId,
@@ -208,6 +209,29 @@ pub struct Patch {
 
     /// Human-readable description of the change.
     pub message: String,
+
+    /// Cached deserialization of batch file changes.
+    /// Populated lazily on first call to `file_changes()`.
+    /// Reset on clone (clone is rare; re-parse is cheap).
+    #[serde(skip)]
+    pub(crate) cached_file_changes: OnceLock<Option<Vec<FileChange>>>,
+}
+
+impl Clone for Patch {
+    fn clone(&self) -> Self {
+        Self {
+            id: self.id,
+            parent_ids: self.parent_ids.clone(),
+            operation_type: self.operation_type,
+            touch_set: self.touch_set.clone(),
+            target_path: self.target_path.clone(),
+            payload: self.payload.clone(),
+            timestamp: self.timestamp,
+            author: self.author.clone(),
+            message: self.message.clone(),
+            cached_file_changes: OnceLock::new(),
+        }
+    }
 }
 
 impl Patch {
@@ -238,6 +262,7 @@ impl Patch {
             timestamp,
             author,
             message,
+            cached_file_changes: OnceLock::new(),
         };
 
         // Compute ID from the patch's content (everything except the ID itself)
@@ -269,6 +294,7 @@ impl Patch {
             timestamp,
             author,
             message,
+            cached_file_changes: OnceLock::new(),
         }
     }
 
@@ -336,10 +362,15 @@ impl Patch {
     }
 
     /// If this is a Batch patch, deserialize the file changes.
+    ///
+    /// The result is cached in `cached_file_changes` after the first call,
+    /// so repeated calls on the same patch are O(1) instead of re-parsing JSON.
     #[must_use]
     pub fn file_changes(&self) -> Option<Vec<FileChange>> {
         if self.operation_type == OperationType::Batch {
-            serde_json::from_slice(&self.payload).ok()
+            self.cached_file_changes
+                .get_or_init(|| serde_json::from_slice(&self.payload).ok())
+                .clone()
         } else {
             None
         }

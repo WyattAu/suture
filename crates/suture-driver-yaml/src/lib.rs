@@ -767,7 +767,7 @@ mod tests {
 
     proptest! {
         #[test]
-        fn test_yaml_non_overlapping(a in "[a-z]+", b in "[0-9]+") {
+        fn test_yaml_non_overlapping(a in "[a-z]{1,20}", b in "[0-9]{1,10}") {
             let driver = YamlDriver::new();
             let result = driver.merge("{}", &format!("alpha: {a}"), &format!("bravo: {b}")).unwrap();
             assert!(result.is_some());

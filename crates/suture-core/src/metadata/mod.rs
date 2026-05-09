@@ -267,6 +267,7 @@ impl MetadataStore {
                         timestamp: timestamp as u64,
                         author,
                         message,
+                        cached_file_changes: std::sync::OnceLock::new(),
                     })
                 },
             )

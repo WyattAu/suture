@@ -966,7 +966,7 @@ impl Repository {
                 tags.push((name.to_owned(), id));
             }
         }
-        tags.sort_by_key(|a| a.0.clone());
+        tags.sort_by(|a, b| a.0.cmp(&b.0));
         Ok(tags)
     }
 
@@ -1027,8 +1027,9 @@ impl Repository {
     pub fn patches_since(&self, since_id: &PatchId) -> Vec<Patch> {
         let since_ancestors = self.dag.ancestors(since_id);
         // Include since_id itself in the "already known" set
-        let mut known = (*since_ancestors).clone();
+        let mut known = HashSet::with_capacity(since_ancestors.len() + 1);
         known.insert(*since_id);
+        known.extend(since_ancestors.iter());
 
         // Walk from all branch tips, collect patches not in `known`
         let mut new_ids: HashSet<PatchId> = HashSet::new();
@@ -1618,12 +1619,11 @@ impl Repository {
 
         // Check in-memory cache — only use it if the cached snapshot
         // corresponds to the current HEAD ID.
-        if let (Some(tree), Some(cached_id)) = (
-            self.cached_head_snapshot.borrow().clone(),
-            self.cached_head_id.borrow().as_ref().copied(),
-        ) && cached_id == head_id
+        // Check cached ID first (cheap) before cloning the tree (expensive).
+        if self.cached_head_id.borrow().as_ref().copied() == Some(head_id)
+            && let Some(tree) = self.cached_head_snapshot.borrow().as_ref()
         {
-            return Ok(tree);
+            return Ok(tree.clone());
         }
         // HEAD changed — stale cache, fall through
 
@@ -2236,8 +2236,8 @@ impl Repository {
                 }
                 let revert_patch =
                     Patch::new_batch(revert_changes, vec![head_id], self.author.clone(), msg);
-                let revert_id = self.dag.add_patch(revert_patch.clone(), vec![head_id])?;
                 self.meta.store_patch(&revert_patch)?;
+                let revert_id = self.dag.add_patch(revert_patch, vec![head_id])?;
 
                 let branch = BranchName::new(&branch_name)?;
                 self.dag.update_branch(&branch, revert_id)?;
@@ -2259,8 +2259,8 @@ impl Repository {
                     msg,
                 );
 
-                let revert_id = self.dag.add_patch(revert_patch.clone(), vec![head_id])?;
                 self.meta.store_patch(&revert_patch)?;
+                let revert_id = self.dag.add_patch(revert_patch, vec![head_id])?;
 
                 let branch = BranchName::new(&branch_name)?;
                 self.dag.update_branch(&branch, revert_id)?;
@@ -2288,8 +2288,8 @@ impl Repository {
                             msg,
                         );
 
-                        let revert_id = self.dag.add_patch(revert_patch.clone(), vec![head_id])?;
                         self.meta.store_patch(&revert_patch)?;
+                        let revert_id = self.dag.add_patch(revert_patch, vec![head_id])?;
 
                         let branch = BranchName::new(&branch_name)?;
                         self.dag.update_branch(&branch, revert_id)?;
@@ -2349,10 +2349,10 @@ impl Repository {
         let result = crate::patch::compose::compose_chain(&to_squash, &self.author, message)
             .map_err(|e| RepoError::PatchComposition(e.to_string()))?;
 
+        self.meta().store_patch(&result.patch)?;
         let new_id = self
             .dag_mut()
-            .add_patch(result.patch.clone(), vec![parent_of_first])?;
-        self.meta().store_patch(&result.patch)?;
+            .add_patch(result.patch, vec![parent_of_first])?;
 
         let branch = BranchName::new(&branch_name)
             .map_err(|e| RepoError::InvalidBranchName(e.to_string()))?;
@@ -2661,10 +2661,10 @@ impl Repository {
             format!("Merge branch '{source_tip}' into {head_branch}"),
         );
 
+        self.meta.store_patch(&merge_patch)?;
         let merge_id = self
             .dag
-            .add_patch(merge_patch.clone(), vec![*head_id, *source_tip])?;
-        self.meta.store_patch(&merge_patch)?;
+            .add_patch(merge_patch, vec![*head_id, *source_tip])?;
 
         let branch = BranchName::new(head_branch)?;
         self.dag.update_branch(&branch, merge_id)?;
@@ -3026,7 +3026,7 @@ impl Repository {
             )
         } else {
             Patch::new(
-                patch.operation_type.clone(),
+                patch.operation_type,
                 patch.touch_set.clone(),
                 patch.target_path.clone(),
                 patch.payload.clone(),
@@ -3036,11 +3036,12 @@ impl Repository {
             )
         };
 
-        let new_id = match self.dag.add_patch(new_patch.clone(), vec![head_id]) {
+        let new_patch_id = new_patch.id;
+        self.meta.store_patch(&new_patch)?;
+        let new_id = match self.dag.add_patch(new_patch, vec![head_id]) {
             Ok(id) => id,
             Err(DagError::DuplicatePatch(_)) => {
                 let head_ancestors = self.dag.ancestors(&head_id);
-                let new_patch_id = new_patch.id;
                 if head_ancestors.contains(&new_patch_id) {
                     return Ok(new_patch_id);
                 }
@@ -3048,7 +3049,6 @@ impl Repository {
             }
             Err(e) => return Err(RepoError::Dag(e)),
         };
-        self.meta.store_patch(&new_patch)?;
 
         let branch = BranchName::new(&branch_name)?;
         let old_tree = self.snapshot_head().unwrap_or_else(|_| FileTree::empty());
@@ -3160,7 +3160,7 @@ impl Repository {
                 )
             } else {
                 Patch::new(
-                    patch.operation_type.clone(),
+                    patch.operation_type,
                     patch.touch_set.clone(),
                     patch.target_path.clone(),
                     patch.payload.clone(),
@@ -3170,10 +3170,10 @@ impl Repository {
                 )
             };
 
+            self.meta.store_patch(&new_patch)?;
             let new_id = self
                 .dag
-                .add_patch(new_patch.clone(), vec![current_parent])?;
-            self.meta.store_patch(&new_patch)?;
+                .add_patch(new_patch, vec![current_parent])?;
 
             last_new_id = new_id;
             current_parent = new_id;
@@ -3261,8 +3261,9 @@ impl Repository {
     /// all patches that are NOT ancestors of `base`.
     pub fn patches_since_base(&self, base: &PatchId) -> Vec<Patch> {
         let base_ancestors = self.dag.ancestors(base);
-        let mut exclusion = (*base_ancestors).clone();
+        let mut exclusion = HashSet::with_capacity(base_ancestors.len() + 1);
         exclusion.insert(*base);
+        exclusion.extend(base_ancestors.iter());
 
         let (_, head_id) = self
             .head()
@@ -3460,7 +3461,7 @@ impl Repository {
                     )
                 } else {
                     Patch::new(
-                        patch.operation_type.clone(),
+                        patch.operation_type,
                         patch.touch_set.clone(),
                         patch.target_path.clone(),
                         patch.payload.clone(),
@@ -3470,10 +3471,10 @@ impl Repository {
                     )
                 };
 
+                self.meta.store_patch(&new_patch)?;
                 let new_id = self
                     .dag
-                    .add_patch(new_patch.clone(), vec![current_parent])?;
-                self.meta.store_patch(&new_patch)?;
+                    .add_patch(new_patch, vec![current_parent])?;
 
                 last_new_id = new_id;
                 current_parent = new_id;
