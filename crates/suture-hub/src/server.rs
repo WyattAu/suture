@@ -112,22 +112,20 @@ pub struct SutureHubServer {
 
 impl Default for SutureHubServer {
     fn default() -> Self {
-        Self::new_in_memory()
+        Self::new_in_memory().expect("in-memory hub server init must succeed")
     }
 }
 
 impl SutureHubServer {
     #[must_use]
     pub fn new() -> Self {
-        Self::new_in_memory()
+        Self::new_in_memory().expect("in-memory hub server init must succeed")
     }
 
-    #[must_use]
-    pub fn new_in_memory() -> Self {
-        Self {
-            storage: Arc::new(RwLock::new(
-                HubStorage::open_in_memory().expect("in-memory storage must open"),
-            )),
+    pub fn new_in_memory() -> Result<Self, crate::storage::StorageError> {
+        let storage = HubStorage::open_in_memory()?;
+        Ok(Self {
+            storage: Arc::new(RwLock::new(storage)),
             blob_backend: None,
             no_auth: false,
             rate_limits: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
@@ -145,7 +143,7 @@ impl SutureHubServer {
             ))),
             #[cfg(feature = "raft-cluster")]
             raft_node_id: 1,
-        }
+        })
     }
 
     pub fn with_db(path: &std::path::Path) -> Result<Self, crate::storage::StorageError> {
@@ -4711,8 +4709,9 @@ mod tests {
         }
     }
 
-    async fn start_test_hub() -> (Arc<SutureHubServer>, u16, String) {
-        let hub = Arc::new(SutureHubServer::new_in_memory());
+    async fn start_test_hub()
+    -> Result<(Arc<SutureHubServer>, u16, String), crate::storage::StorageError> {
+        let hub = Arc::new(SutureHubServer::new_in_memory()?);
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
@@ -4851,7 +4850,7 @@ mod tests {
                 .await
                 .is_ok()
             {
-                return (hub, port, base);
+                return Ok((hub, port, base));
             }
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
@@ -4860,7 +4859,7 @@ mod tests {
 
     async fn start_test_hub_with_lfs(
         hub: Arc<SutureHubServer>,
-    ) -> (Arc<SutureHubServer>, u16, String) {
+    ) -> Result<(Arc<SutureHubServer>, u16, String), crate::storage::StorageError> {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let base = format!("http://127.0.0.1:{}", port);
@@ -5007,18 +5006,19 @@ mod tests {
                 .await
                 .is_ok()
             {
-                return (hub, port, base);
+                return Ok((hub, port, base));
             }
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
         panic!("test server did not start in time");
     }
 
-    async fn start_test_hub_auth() -> (Arc<SutureHubServer>, u16, String) {
-        let (hub, port, base) = start_test_hub().await;
+    async fn start_test_hub_auth()
+    -> Result<(Arc<SutureHubServer>, u16, String), crate::storage::StorageError> {
+        let (hub, port, base) = start_test_hub().await?;
         // Pre-create an admin user for auth tests
         create_test_user_hub(&hub, "test-admin", "Test Admin", "admin").await;
-        (hub, port, base)
+        Ok((hub, port, base))
     }
 
     fn post_json(
@@ -5045,7 +5045,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_index() {
-        let (_hub, _port, base) = start_test_hub().await;
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
         let client = reqwest::Client::new();
         let resp = client.get(format!("{}/", &base)).send().await.unwrap();
         assert_eq!(resp.status(), 200);
@@ -5055,7 +5055,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_handshake() {
-        let (_hub, _port, base) = start_test_hub().await;
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
         let client = reqwest::Client::new();
         let resp = client
             .post(format!("{}/handshake", &base))
@@ -5071,7 +5071,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_repos_empty_and_populated() {
-        let (hub, _port, base) = start_test_hub().await;
+        let (hub, _port, base) = start_test_hub().await.unwrap();
         let client = reqwest::Client::new();
 
         let resp = client.get(format!("{}/repos", &base)).send().await.unwrap();
@@ -5113,7 +5113,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_repo_info() {
-        let (hub, _port, base) = start_test_hub().await;
+        let (hub, _port, base) = start_test_hub().await.unwrap();
         let client = reqwest::Client::new();
 
         let resp = client
@@ -5149,7 +5149,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_repo_branches() {
-        let (hub, _port, base) = start_test_hub().await;
+        let (hub, _port, base) = start_test_hub().await.unwrap();
         let client = reqwest::Client::new();
         let a_hex = "a".repeat(64);
 
@@ -5177,7 +5177,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_repo_patches() {
-        let (hub, _port, base) = start_test_hub().await;
+        let (hub, _port, base) = start_test_hub().await.unwrap();
         let client = reqwest::Client::new();
 
         for i in 0..3u32 {
@@ -5249,7 +5249,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_push_pull_roundtrip() {
-        let (_hub, _port, base) = start_test_hub().await;
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
         let client = reqwest::Client::new();
         let a_hex = "a".repeat(64);
         let b_hex = "b".repeat(64);
@@ -5313,7 +5313,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_push_compressed() {
-        let (_hub, _port, base) = start_test_hub().await;
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
         let client = reqwest::Client::new();
         let a_hex = "a".repeat(64);
         let blob_data = b"compressed test data";
@@ -5350,7 +5350,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_v2_handshake() {
-        let (_hub, _port, base) = start_test_hub().await;
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
         let client = reqwest::Client::new();
 
         let resp = client
@@ -5376,7 +5376,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_v2_push_pull() {
-        let (_hub, _port, base) = start_test_hub().await;
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
         let client = reqwest::Client::new();
         let a_hex = "a".repeat(64);
         let f_hash = blake3::hash(b"f").to_hex().to_string();
@@ -5438,7 +5438,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_auth_token_bootstrap() {
-        let (_hub, _port, base) = start_test_hub().await;
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
         let client = reqwest::Client::new();
 
         let resp = client
@@ -5454,7 +5454,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_auth_verify() {
-        let (_hub, _port, base) = start_test_hub().await;
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
         let client = reqwest::Client::new();
 
         let token_resp = client
@@ -5493,7 +5493,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_auth_register() {
-        let (hub, _port, base) = start_test_hub_auth().await;
+        let (hub, _port, base) = start_test_hub_auth().await.unwrap();
         let client = reqwest::Client::new();
         let admin_token = create_test_user_hub(&hub, "http-admin", "HTTP Admin", "admin").await;
 
@@ -5518,7 +5518,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_users_list() {
-        let (hub, _port, base) = start_test_hub_auth().await;
+        let (hub, _port, base) = start_test_hub_auth().await.unwrap();
         let client = reqwest::Client::new();
         let admin_token = create_test_user_hub(&hub, "ul-admin", "UL Admin", "admin").await;
 
@@ -5536,7 +5536,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_user_crud() {
-        let (hub, _port, base) = start_test_hub_auth().await;
+        let (hub, _port, base) = start_test_hub_auth().await.unwrap();
         let client = reqwest::Client::new();
         let admin_token = create_test_user_hub(&hub, "crud-admin", "CRUD Admin", "admin").await;
         create_test_user_hub(&hub, "crud-target", "CRUD Target", "reader").await;
@@ -5579,7 +5579,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_mirror_setup_and_status() {
-        let (_hub, _port, base) = start_test_hub().await;
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
         let client = reqwest::Client::new();
 
         let setup_resp = post_json(
@@ -5613,7 +5613,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_replication() {
-        let (hub, _port, base) = start_test_hub().await;
+        let (hub, _port, base) = start_test_hub().await.unwrap();
         let client = reqwest::Client::new();
         hub.set_replication_role("leader").await;
 
@@ -5651,7 +5651,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_branch_protection() {
-        let (_hub, _port, base) = start_test_hub().await;
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
         let client = reqwest::Client::new();
 
         let protect_resp = client
@@ -5675,7 +5675,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_404_unknown_route() {
-        let (_hub, _port, base) = start_test_hub().await;
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
         let client = reqwest::Client::new();
 
         let resp = client
@@ -5690,7 +5690,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_create_repo() {
-        let (hub, _port, base) = start_test_hub_auth().await;
+        let (hub, _port, base) = start_test_hub_auth().await.unwrap();
         let client = reqwest::Client::new();
         let admin_token = create_test_user_hub(&hub, "repo-admin", "Repo Admin", "admin").await;
 
@@ -5759,7 +5759,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_delete_repo() {
-        let (hub, _port, base) = start_test_hub_auth().await;
+        let (hub, _port, base) = start_test_hub_auth().await.unwrap();
         let client = reqwest::Client::new();
         let admin_token = create_test_user_hub(&hub, "del-admin", "Del Admin", "admin").await;
         let a_hex = "a".repeat(64);
@@ -5811,7 +5811,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_create_branch() {
-        let (hub, _port, base) = start_test_hub_auth().await;
+        let (hub, _port, base) = start_test_hub_auth().await.unwrap();
         let client = reqwest::Client::new();
         let admin_token = create_test_user_hub(&hub, "branch-admin", "Branch Admin", "admin").await;
         let a_hex = "a".repeat(64);
@@ -5858,7 +5858,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_delete_branch() {
-        let (hub, _port, base) = start_test_hub_auth().await;
+        let (hub, _port, base) = start_test_hub_auth().await.unwrap();
         let client = reqwest::Client::new();
         let admin_token = create_test_user_hub(&hub, "delbr-admin", "DelBr Admin", "admin").await;
         let a_hex = "a".repeat(64);
@@ -5900,7 +5900,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_get_blob() {
-        let (_hub, _port, base) = start_test_hub().await;
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
         let client = reqwest::Client::new();
         let a_hex = "a".repeat(64);
         let f_hash = blake3::hash(b"hello blob").to_hex().to_string();
@@ -5959,7 +5959,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_login() {
-        let (hub, _port, base) = start_test_hub().await;
+        let (hub, _port, base) = start_test_hub().await.unwrap();
         let client = reqwest::Client::new();
 
         // Create a user and store token in BOTH users and tokens tables
@@ -6005,7 +6005,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_search() {
-        let (_hub, _port, base) = start_test_hub().await;
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
         let client = reqwest::Client::new();
         let a_hex = "a".repeat(64);
 
@@ -6069,7 +6069,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_activity() {
-        let (_hub, _port, base) = start_test_hub().await;
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
         let client = reqwest::Client::new();
 
         // Activity should work even with no data
@@ -6086,7 +6086,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_delete_mirror() {
-        let (hub, _port, base) = start_test_hub_auth().await;
+        let (hub, _port, base) = start_test_hub_auth().await.unwrap();
         let client = reqwest::Client::new();
         let admin_token = create_test_user_hub(&hub, "mirror-admin", "Mirror Admin", "admin").await;
 
@@ -6133,7 +6133,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_mirror_status_get() {
-        let (_hub, _port, base) = start_test_hub().await;
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
         let client = reqwest::Client::new();
 
         // GET /mirror/status should work (no body needed)
@@ -6149,7 +6149,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_repo_tree() {
-        let (hub, _port, base) = start_test_hub().await;
+        let (hub, _port, base) = start_test_hub().await.unwrap();
         let client = reqwest::Client::new();
         let a_hex = "a".repeat(64);
         let b_hex = "b".repeat(64);
@@ -6229,7 +6229,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_repo_tree_empty() {
-        let (_hub, _port, base) = start_test_hub().await;
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
         let client = reqwest::Client::new();
 
         let resp = client
@@ -6259,8 +6259,10 @@ mod tests {
         std::fs::create_dir_all(obj_path.parent().unwrap()).unwrap();
         std::fs::write(&obj_path, b"existing data").unwrap();
 
-        let hub = SutureHubServer::new_in_memory().with_lfs_dir(tmp.path().to_path_buf());
-        let (_hub, _port, base) = start_test_hub_with_lfs(Arc::new(hub)).await;
+        let hub = SutureHubServer::new_in_memory()
+            .unwrap()
+            .with_lfs_dir(tmp.path().to_path_buf());
+        let (_hub, _port, base) = start_test_hub_with_lfs(Arc::new(hub)).await.unwrap();
         let client = reqwest::Client::new();
 
         let resp = post_json(
@@ -6286,8 +6288,10 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let repo_id = "test-repo";
 
-        let hub = SutureHubServer::new_in_memory().with_lfs_dir(tmp.path().to_path_buf());
-        let (_hub, _port, base) = start_test_hub_with_lfs(Arc::new(hub)).await;
+        let hub = SutureHubServer::new_in_memory()
+            .unwrap()
+            .with_lfs_dir(tmp.path().to_path_buf());
+        let (_hub, _port, base) = start_test_hub_with_lfs(Arc::new(hub)).await.unwrap();
         let client = reqwest::Client::new();
 
         let payload = b"hello lfs world".repeat(1000);
@@ -6358,8 +6362,10 @@ mod tests {
     #[tokio::test]
     async fn test_lfs_batch_download_missing() {
         let tmp = tempfile::tempdir().unwrap();
-        let hub = SutureHubServer::new_in_memory().with_lfs_dir(tmp.path().to_path_buf());
-        let (_hub, _port, base) = start_test_hub_with_lfs(Arc::new(hub)).await;
+        let hub = SutureHubServer::new_in_memory()
+            .unwrap()
+            .with_lfs_dir(tmp.path().to_path_buf());
+        let (_hub, _port, base) = start_test_hub_with_lfs(Arc::new(hub)).await.unwrap();
         let client = reqwest::Client::new();
 
         let resp = post_json(&client, &format!("{}/lfs/batch", &base), &serde_json::json!({
@@ -6376,8 +6382,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_lfs_no_storage_configured() {
-        let hub = SutureHubServer::new_in_memory();
-        let (_hub, _port, base) = start_test_hub_with_lfs(Arc::new(hub)).await;
+        let hub = SutureHubServer::new_in_memory().unwrap();
+        let (_hub, _port, base) = start_test_hub_with_lfs(Arc::new(hub)).await.unwrap();
         let client = reqwest::Client::new();
 
         let resp = post_json(&client, &format!("{}/lfs/batch", &base), &serde_json::json!({
@@ -6464,7 +6470,7 @@ mod tests {
     async fn test_apply_raft_command_create_repo() {
         use crate::raft::HubCommand;
 
-        let hub = SutureHubServer::new_in_memory();
+        let hub = SutureHubServer::new_in_memory().unwrap();
         hub.apply_raft_command(HubCommand::CreateRepo {
             repo_id: "raft-repo".to_string(),
         })
@@ -6480,7 +6486,7 @@ mod tests {
     async fn test_apply_raft_command_delete_repo() {
         use crate::raft::HubCommand;
 
-        let hub = SutureHubServer::new_in_memory();
+        let hub = SutureHubServer::new_in_memory().unwrap();
         {
             let store = hub.storage.write().await;
             store.ensure_repo("del-repo").unwrap();
@@ -6500,7 +6506,7 @@ mod tests {
     async fn test_apply_raft_command_branch() {
         use crate::raft::HubCommand;
 
-        let hub = SutureHubServer::new_in_memory();
+        let hub = SutureHubServer::new_in_memory().unwrap();
         {
             let store = hub.storage.write().await;
             store.ensure_repo("br-repo").unwrap();

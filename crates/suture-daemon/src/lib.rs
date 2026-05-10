@@ -1293,7 +1293,7 @@ mod tests {
         let port = listener.local_addr().unwrap().port();
         drop(listener);
 
-        let mut hub = suture_hub::SutureHubServer::new_in_memory();
+        let mut hub = suture_hub::SutureHubServer::new_in_memory().unwrap();
         hub.set_no_auth(true);
 
         let hub_addr = format!("127.0.0.1:{}", port);
@@ -1400,7 +1400,7 @@ mod tests {
         let port = listener.local_addr().unwrap().port();
         drop(listener);
 
-        let mut hub = suture_hub::SutureHubServer::new_in_memory();
+        let mut hub = suture_hub::SutureHubServer::new_in_memory().unwrap();
         hub.set_no_auth(true);
 
         let hub_addr = format!("127.0.0.1:{}", port);
@@ -1441,7 +1441,7 @@ mod tests {
         let port = listener.local_addr().unwrap().port();
         drop(listener);
 
-        let mut hub = suture_hub::SutureHubServer::new_in_memory();
+        let mut hub = suture_hub::SutureHubServer::new_in_memory().unwrap();
         hub.set_no_auth(true);
 
         let hub_addr = format!("127.0.0.1:{}", port);
@@ -1516,7 +1516,7 @@ mod tests {
         let port = listener.local_addr().unwrap().port();
         drop(listener);
 
-        let mut hub = suture_hub::SutureHubServer::new_in_memory();
+        let mut hub = suture_hub::SutureHubServer::new_in_memory().unwrap();
         hub.set_no_auth(true);
 
         let hub_addr = format!("127.0.0.1:{}", port);
@@ -1925,7 +1925,7 @@ mod tests {
         let port = listener.local_addr().unwrap().port();
         drop(listener);
 
-        let mut hub = suture_hub::SutureHubServer::new_in_memory();
+        let mut hub = suture_hub::SutureHubServer::new_in_memory().unwrap();
         hub.set_no_auth(true);
 
         let hub_addr = format!("127.0.0.1:{}", port);

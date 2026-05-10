@@ -241,7 +241,7 @@ async fn handshake_get() -> axum::Json<suture_hub::types::HandshakeResponse> {
 }
 
 async fn start_test_hub() -> String {
-    let mut hub = suture_hub::SutureHubServer::new_in_memory();
+    let mut hub = suture_hub::SutureHubServer::new_in_memory().unwrap();
     hub.set_no_auth(true);
     let hub = Arc::new(hub);
 
