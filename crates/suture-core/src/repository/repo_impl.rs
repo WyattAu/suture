@@ -1049,18 +1049,19 @@ impl Repository {
         }
 
         // Topological sort: parents before children (Kahn's algorithm)
-        let patches: HashMap<PatchId, Patch> = new_ids
-            .into_iter()
-            .filter_map(|id| self.dag.get_patch(&id).map(|p| (id, p.clone())))
+        // Only extract parent_ids to avoid cloning full Patch during sort.
+        let parent_map: HashMap<PatchId, Vec<PatchId>> = new_ids
+            .iter()
+            .filter_map(|id| self.dag.get_patch(id).map(|p| (*id, p.parent_ids.clone())))
             .collect();
 
         // Count in-edges from within our set
         let mut in_degree: HashMap<PatchId, usize> = HashMap::new();
         let mut children: HashMap<PatchId, Vec<PatchId>> = HashMap::new();
-        for (&id, patch) in &patches {
+        for (&id, parents) in &parent_map {
             in_degree.entry(id).or_insert(0);
-            for parent_id in &patch.parent_ids {
-                if patches.contains_key(parent_id) {
+            for parent_id in parents {
+                if parent_map.contains_key(parent_id) {
                     children.entry(*parent_id).or_default().push(id);
                     *in_degree.entry(id).or_insert(0) += 1;
                 }
@@ -1077,7 +1078,7 @@ impl Repository {
             roots.sort();
             roots.into_iter().collect()
         };
-        let mut sorted_ids: Vec<PatchId> = Vec::with_capacity(patches.len());
+        let mut sorted_ids: Vec<PatchId> = Vec::with_capacity(parent_map.len());
 
         while let Some(id) = queue.pop_front() {
             sorted_ids.push(id);
@@ -1097,7 +1098,7 @@ impl Repository {
 
         sorted_ids
             .into_iter()
-            .filter_map(|id| patches.get(&id).cloned())
+            .filter_map(|id| self.dag.get_patch(&id).cloned())
             .collect()
     }
 

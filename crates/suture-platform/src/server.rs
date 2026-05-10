@@ -54,7 +54,11 @@ pub async fn start(config: Config) -> anyhow::Result<()> {
         for entry in entries {
             if entry.path().extension().is_some_and(|e| e == "wasm") {
                 let path = entry.path().to_string_lossy().to_string();
-                match plugins.lock().unwrap().load_file(&path) {
+                match plugins
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .load_file(&path)
+                {
                     Ok(()) => tracing::info!("Loaded plugin: {}", path),
                     Err(e) => tracing::warn!("Failed to load plugin {}: {}", path, e),
                 }

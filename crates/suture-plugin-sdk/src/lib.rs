@@ -117,12 +117,17 @@ pub fn log(level: LogLevel, msg: &str) {
 ///
 /// The input is a JSON string `{"base": "...", "ours": "...", "theirs": "..."}`.
 pub fn read_input() -> String {
-    let len = unsafe { host::get_input_len() } as usize;
+    let len = unsafe {
+        // SAFETY: get_input_len returns the byte count of the input buffer.
+        // We only call get_input_byte with offsets 0..len.
+        host::get_input_len()
+    } as usize;
     if len == 0 {
         return String::new();
     }
     let mut bytes = Vec::with_capacity(len);
     for i in 0..len {
+        // SAFETY: offset is bounded by len from get_input_len() above.
         let byte = unsafe { host::get_input_byte(i as i32) };
         if byte < 0 {
             break;
@@ -135,10 +140,12 @@ pub fn read_input() -> String {
 /// Write the merge result to the output buffer.
 pub fn write_output(s: &str) {
     let bytes = s.as_bytes();
+    // SAFETY: set_output_len declares the buffer size to the host.
     unsafe {
         host::set_output_len(bytes.len() as i32);
     }
     for (i, &byte) in bytes.iter().enumerate() {
+        // SAFETY: offset is within the range declared by set_output_len above.
         unsafe {
             host::set_output_byte(i as i32, byte as i32);
         }

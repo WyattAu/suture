@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-use std::collections::HashMap;
+use indexmap::IndexMap;
 use std::hash::{Hash, Hasher};
 
-/// LRU-style cache for merge results, keyed by content hashes.
+/// LRU cache for merge results, keyed by content hashes.
+///
+/// Uses `IndexMap` to maintain insertion order — the oldest entry
+/// (front of the map) is evicted when capacity is reached, giving
+/// true LRU semantics rather than random eviction.
 ///
 /// Avoids re-running expensive semantic merges when the same triple
 /// (base, ours, theirs) is seen repeatedly (e.g., in CI rebases or
@@ -18,7 +22,7 @@ use std::hash::{Hash, Hasher};
 /// assert_eq!(cache.get("base", "ours", "theirs"), Some("merged result"));
 /// ```
 pub struct MergeCache {
-    entries: HashMap<(u64, u64, u64), String>,
+    entries: IndexMap<(u64, u64, u64), String>,
     max_entries: usize,
 }
 
@@ -26,7 +30,7 @@ impl MergeCache {
     #[must_use]
     pub fn new(max_entries: usize) -> Self {
         Self {
-            entries: HashMap::new(),
+            entries: IndexMap::new(),
             max_entries,
         }
     }
@@ -38,10 +42,10 @@ impl MergeCache {
     }
 
     pub fn insert(&mut self, base: &str, ours: &str, theirs: &str, result: String) {
-        if self.entries.len() >= self.max_entries
-            && let Some(first_key) = self.entries.keys().next().copied()
-        {
-            self.entries.remove(&first_key);
+        if self.entries.len() >= self.max_entries {
+            // IndexMap preserves insertion order — shift_remove_index(0)
+            // evicts the oldest (least recently inserted) entry.
+            self.entries.shift_remove_index(0);
         }
         let key = (hash(base), hash(ours), hash(theirs));
         self.entries.insert(key, result);
@@ -92,6 +96,10 @@ mod tests {
         cache.insert("d", "e", "f", "2".to_string());
         cache.insert("g", "h", "i", "3".to_string());
         assert_eq!(cache.len(), 2);
+        // First entry should be evicted (oldest)
+        assert_eq!(cache.get("a", "b", "c"), None);
+        assert_eq!(cache.get("d", "e", "f"), Some("2"));
+        assert_eq!(cache.get("g", "h", "i"), Some("3"));
     }
 
     #[test]
@@ -109,5 +117,18 @@ mod tests {
         cache.insert("base", "theirs", "ours", "result2".to_string());
         assert_eq!(cache.get("base", "ours", "theirs"), Some("result1"));
         assert_eq!(cache.get("base", "theirs", "ours"), Some("result2"));
+    }
+
+    #[test]
+    fn test_lru_order_eviction() {
+        let mut cache = MergeCache::new(3);
+        cache.insert("a", "b", "c", "1".to_string());
+        cache.insert("d", "e", "f", "2".to_string());
+        cache.insert("g", "h", "i", "3".to_string());
+        // At capacity. Insert one more — oldest ("a") evicted.
+        cache.insert("j", "k", "l", "4".to_string());
+        assert_eq!(cache.get("a", "b", "c"), None);
+        assert_eq!(cache.get("d", "e", "f"), Some("2"));
+        assert_eq!(cache.get("j", "k", "l"), Some("4"));
     }
 }

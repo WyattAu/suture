@@ -34,7 +34,6 @@
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
@@ -357,8 +356,8 @@ pub struct WasmPluginHost {
     /// would invalidate the store/instance references.
     #[allow(dead_code)]
     engine: Engine,
-    store: RefCell<Store<PluginState>>,
-    instance: RefCell<Instance>,
+    store: std::sync::Mutex<Store<PluginState>>,
+    instance: std::sync::Mutex<Instance>,
     metadata: PluginMetadata,
 }
 
@@ -499,8 +498,8 @@ impl WasmPluginHost {
 
         Ok(Self {
             engine,
-            store: RefCell::new(store),
-            instance: RefCell::new(instance),
+            store: std::sync::Mutex::new(store),
+            instance: std::sync::Mutex::new(instance),
             metadata,
         })
     }
@@ -528,7 +527,10 @@ impl WasmPluginHost {
         .to_string();
 
         {
-            let mut store = self.store.borrow_mut();
+            let mut store = self
+                .store
+                .lock()
+                .map_err(|e| PluginError::Runtime(format!("store lock poisoned: {e}")))?;
             let input_len = input.len();
             store.data_mut().input_buffer = input.into_bytes();
             store.data_mut().input_len = input_len;
@@ -539,8 +541,14 @@ impl WasmPluginHost {
                 .map_err(|e| PluginError::Runtime(e.to_string()))?;
         }
 
-        let mut store = self.store.borrow_mut();
-        let instance = self.instance.borrow();
+        let mut store = self
+            .store
+            .lock()
+            .map_err(|e| PluginError::Runtime(format!("store lock poisoned: {e}")))?;
+        let instance = self
+            .instance
+            .lock()
+            .map_err(|e| PluginError::Runtime(format!("instance lock poisoned: {e}")))?;
 
         let merge_fn = instance
             .get_typed_func::<(), i32>(&mut *store, "suture_merge")

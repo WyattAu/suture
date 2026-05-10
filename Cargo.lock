@@ -4879,6 +4879,7 @@ dependencies = [
 name = "suture-driver"
 version = "5.1.0"
 dependencies = [
+ "indexmap",
  "serde",
  "serde_json",
  "suture-common",
