@@ -509,14 +509,14 @@ macro_rules! trivial_test {
             #[test]
             fn base_equals_ours() {
                 // theirs changed, ours didn't → theirs wins
-                let r = no_panic_merge($merge_fn, $valid, $valid, "DIFFERENT");
+                let _r = no_panic_merge($merge_fn, $valid, $valid, "DIFFERENT");
                 // May be Clean or ParseError for "DIFFERENT", but never panic
             }
 
             #[test]
             fn base_equals_theirs() {
                 // ours changed, theirs didn't → ours wins
-                let r = no_panic_merge($merge_fn, $valid, "DIFFERENT", $valid);
+                let _r = no_panic_merge($merge_fn, $valid, "DIFFERENT", $valid);
             }
 
             #[test]

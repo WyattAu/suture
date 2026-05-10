@@ -6400,7 +6400,6 @@ mod tests {
     #[cfg(feature = "s3-backend")]
     #[test]
     fn test_blob_backend_used_when_set() {
-        use crate::async_storage::block_in_place;
         use crate::blob_backend::BlobBackend;
 
         struct MockBackend {
