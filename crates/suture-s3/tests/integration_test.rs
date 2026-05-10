@@ -12,6 +12,7 @@
 use suture_common::Hash;
 use suture_s3::{S3BlobStore, S3Config};
 
+#[allow(dead_code)]
 fn init() {
     let _ = env_logger::try_init();
 }

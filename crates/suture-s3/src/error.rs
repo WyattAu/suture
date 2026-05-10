@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq)]
 pub enum S3Error {
     #[error("blob not found: {0}")]
     NotFound(String),

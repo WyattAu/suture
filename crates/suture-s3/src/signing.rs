@@ -71,8 +71,8 @@ pub fn sign_request(request: &mut reqwest::Request, config: &S3Config) -> Result
         hex::encode(Sha256::digest(canonical_request.as_bytes()))
     );
 
-    let signing_key = derive_signing_key(&config.secret_key, &date_stamp, &config.region);
-    let signature = compute_hmac_hex(&signing_key, string_to_sign.as_bytes());
+    let signing_key = derive_signing_key(&config.secret_key, &date_stamp, &config.region)?;
+    let signature = compute_hmac_hex(&signing_key, string_to_sign.as_bytes())?;
 
     let authorization = format!(
         "{} Credential={}/{}, SignedHeaders={}, Signature={}",
@@ -101,25 +101,30 @@ pub fn sign_request(request: &mut reqwest::Request, config: &S3Config) -> Result
     Ok(())
 }
 
-fn derive_signing_key(secret_key: &str, date_stamp: &str, region: &str) -> Vec<u8> {
+fn derive_signing_key(
+    secret_key: &str,
+    date_stamp: &str,
+    region: &str,
+) -> Result<Vec<u8>, S3Error> {
     let k_date = compute_hmac(
         format!("AWS4{secret_key}").as_bytes(),
         date_stamp.as_bytes(),
-    );
-    let k_region = compute_hmac(&k_date, region.as_bytes());
-    let k_service = compute_hmac(&k_region, S3_SERVICE.as_bytes());
+    )?;
+    let k_region = compute_hmac(&k_date, region.as_bytes())?;
+    let k_service = compute_hmac(&k_region, S3_SERVICE.as_bytes())?;
 
     compute_hmac(&k_service, AWS4_REQUEST.as_bytes())
 }
 
-fn compute_hmac(key: &[u8], data: &[u8]) -> Vec<u8> {
-    let mut mac = HmacSha256::new_from_slice(key).expect("HMAC accepts any key size");
+fn compute_hmac(key: &[u8], data: &[u8]) -> Result<Vec<u8>, S3Error> {
+    // HmacSha256::new_from_slice accepts any key length per the hmac crate docs.
+    let mut mac = HmacSha256::new_from_slice(key).map_err(|e| S3Error::Signing(e.to_string()))?;
     mac.update(data);
-    mac.finalize().into_bytes().to_vec()
+    Ok(mac.finalize().into_bytes().to_vec())
 }
 
-fn compute_hmac_hex(key: &[u8], data: &[u8]) -> String {
-    hex::encode(compute_hmac(key, data))
+fn compute_hmac_hex(key: &[u8], data: &[u8]) -> Result<String, S3Error> {
+    Ok(hex::encode(compute_hmac(key, data)?))
 }
 
 fn uri_encode(uri: &str, encode_slash: bool) -> String {
@@ -172,12 +177,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_signing_key_derivation() {
+    fn test_signing_key_derivation() -> Result<(), Box<dyn std::error::Error>> {
         let key = derive_signing_key(
             "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
             "20150830",
             "us-east-1",
-        );
+        )?;
         // Verify the signing key is 32 bytes (SHA-256 HMAC output)
         assert_eq!(key.len(), 32, "signing key must be 32 bytes");
         // Verify deterministic: same inputs produce same output
@@ -185,11 +190,12 @@ mod tests {
             "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
             "20150830",
             "us-east-1",
-        );
+        )?;
         assert_eq!(key, key2, "signing key derivation must be deterministic");
         // Verify different inputs produce different keys
-        let key3 = derive_signing_key("different-secret-key", "20150830", "us-east-1");
+        let key3 = derive_signing_key("different-secret-key", "20150830", "us-east-1")?;
         assert_ne!(key, key3, "different secrets must produce different keys");
+        Ok(())
     }
 
     #[test]

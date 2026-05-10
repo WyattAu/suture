@@ -94,7 +94,7 @@ mod hash_proptests {
             0u8..255u8,
         );
         runner
-            .run(&strategy, |(mut data1, extra): (Vec<u8>, u8)| {
+            .run(&strategy, |(data1, extra): (Vec<u8>, u8)| {
                 let mut data2 = data1.clone();
                 let last = data2.last_mut().unwrap();
                 *last = last.wrapping_add(1);
