@@ -124,10 +124,10 @@ impl PluginRegistry {
         #[cfg(feature = "wasm-plugins")]
         for entry in sorted_entries {
             let path = entry.path();
-            if path.extension().map_or(false, |ext| ext == "wasm") {
-                if let Err(e) = self.load_wasm_plugin(&path) {
-                    eprintln!("suture: failed to load plugin {:?}: {e}", path);
-                }
+            if path.extension().is_some_and(|ext| ext == "wasm")
+                && let Err(e) = self.load_wasm_plugin(&path)
+            {
+                eprintln!("suture: failed to load plugin {:?}: {e}", path);
             }
         }
         #[cfg(not(feature = "wasm-plugins"))]
@@ -190,7 +190,7 @@ impl WasmDriverPlugin {
                     };
                     let current_size: u64 = memory.data_size(&caller) as u64;
                     // Grow by at least enough pages to accommodate `size` bytes
-                    let needed_pages = (size.saturating_sub(current_size % 65536) + 65535) / 65536;
+                    let needed_pages = size.saturating_sub(current_size % 65536).div_ceil(65536);
                     match memory.grow(&mut caller, needed_pages) {
                         Ok(_) => current_size as i32,
                         Err(_) => -1,

@@ -167,7 +167,7 @@ Major release — version unification, release pipeline, defence/compliance feat
 - **`suture reflog --show`** — Full patch details in reflog
 - **`suture notes add --append`** — Append to existing notes
 - **`suture verify`** — Per-commit Ed25519 signature verification (auto-signs when `signing.key` configured)
-- **`suture log --verify`** — Show signature status per commit (✓/✗/—)
+- **`suture log --verify`** — Show signature status per commit (PASS/FAIL/NONE)
 - **`suture stash show`** — Preview stash contents with file stats
 - **`suture clean`** — Remove untracked files (`--dry-run`, `--dirs`)
 - **`suture blame -L 10,20`** — Line range filtering

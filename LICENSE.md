@@ -21,17 +21,17 @@ require a commercial license:
 
 | Feature | Open Source | Commercial |
 |---------|------------|------------|
-| Merge engine | ✅ | ✅ |
-| All 18+ drivers | ✅ | ✅ |
-| Self-hosted hub | ✅ | ✅ |
-| Web UI | — | ✅ |
-| User auth (password) | — | ✅ |
-| OAuth (Google/GitHub) | — | ✅ |
-| SAML/SSO | — | ✅ |
-| Billing & subscriptions | — | ✅ |
-| Unlimited audit log | — | ✅ |
-| 99.99% SLA | — | ✅ |
-| Priority support | — | ✅ |
+| Merge engine | [x] | [x] |
+| All 18+ drivers | [x] | [x] |
+| Self-hosted hub | [x] | [x] |
+| Web UI | — | [x] |
+| User auth (password) | — | [x] |
+| OAuth (Google/GitHub) | — | [x] |
+| SAML/SSO | — | [x] |
+| Billing & subscriptions | — | [x] |
+| Unlimited audit log | — | [x] |
+| 99.99% SLA | — | [x] |
+| Priority support | — | [x] |
 
 ## Pricing
 

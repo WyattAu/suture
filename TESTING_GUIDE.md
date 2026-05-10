@@ -855,28 +855,28 @@ $S shortlog         # should show compact commit summary
 
 | # | Feature | Status |
 |---|---------|--------|
-| 1 | Init & Config | ☐ |
-| 2 | Ignore patterns | ☐ |
-| 3 | Basic workflow (add/commit/status/log/diff) | ☐ |
-| 4 | Branching (create/list/checkout/protect/delete/target) | ☐ |
-| 5 | Semantic merge — JSON | ☐ |
-| 6 | Semantic merge — CSV | ☐ |
-| 7 | Semantic merge — TOML | ☐ |
-| 8 | Semantic merge — XML | ☐ |
-| 9 | Semantic merge — Markdown | ☐ |
-| 10 | Plain text conflict | ☐ |
-| 11 | Fast-forward merge | ☐ |
-| 12 | Stash (push/pop/apply/drop/list) | ☐ |
-| 13 | Undo (soft reset) | ☐ |
-| 14 | Reset modes (hard/mixed) | ☐ |
-| 15 | Cherry-pick, Revert, Rebase, Squash | ☐ |
-| 16 | Tags, Notes, Reflog | ☐ |
-| 17 | Move, Remove, Remove --cached | ☐ |
-| 18 | Bisect | ☐ |
-| 19 | Key management | ☐ |
-| 20 | Worktree | ☐ |
-| 21 | GC & fsck | ☐ |
-| 22 | Log filtering | ☐ |
-| 23 | Diff between commits | ☐ |
-| 24 | Shell completions | ☐ |
-| 25 | Version, drivers, shortlog | ☐ |
+| 1 | Init & Config | [ ] |
+| 2 | Ignore patterns | [ ] |
+| 3 | Basic workflow (add/commit/status/log/diff) | [ ] |
+| 4 | Branching (create/list/checkout/protect/delete/target) | [ ] |
+| 5 | Semantic merge — JSON | [ ] |
+| 6 | Semantic merge — CSV | [ ] |
+| 7 | Semantic merge — TOML | [ ] |
+| 8 | Semantic merge — XML | [ ] |
+| 9 | Semantic merge — Markdown | [ ] |
+| 10 | Plain text conflict | [ ] |
+| 11 | Fast-forward merge | [ ] |
+| 12 | Stash (push/pop/apply/drop/list) | [ ] |
+| 13 | Undo (soft reset) | [ ] |
+| 14 | Reset modes (hard/mixed) | [ ] |
+| 15 | Cherry-pick, Revert, Rebase, Squash | [ ] |
+| 16 | Tags, Notes, Reflog | [ ] |
+| 17 | Move, Remove, Remove --cached | [ ] |
+| 18 | Bisect | [ ] |
+| 19 | Key management | [ ] |
+| 20 | Worktree | [ ] |
+| 21 | GC & fsck | [ ] |
+| 22 | Log filtering | [ ] |
+| 23 | Diff between commits | [ ] |
+| 24 | Shell completions | [ ] |
+| 25 | Version, drivers, shortlog | [ ] |
