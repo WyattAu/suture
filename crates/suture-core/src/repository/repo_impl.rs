@@ -54,6 +54,7 @@ use crate::metadata::MetaError;
 use crate::patch::conflict::Conflict;
 use crate::patch::merge::MergeResult;
 use crate::patch::types::{FileChange, OperationType, Patch, PatchId, TouchSet};
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -336,6 +337,8 @@ pub struct Repository {
     repo_config: crate::metadata::repo_config::RepoConfig,
     /// Whether this repository is a worktree (linked to a main repo).
     is_worktree: bool,
+    /// In-memory cache of (file_size, mtime) from last `has_uncommitted_changes()` call.
+    stat_cache: RefCell<HashMap<PathBuf, (u64, std::time::SystemTime)>>,
 }
 
 /// A single reflog entry with structured fields.
@@ -496,6 +499,7 @@ impl Repository {
             cached_head_branch: RefCell::new(None),
             repo_config: crate::metadata::repo_config::RepoConfig::default(),
             is_worktree: false,
+            stat_cache: RefCell::new(HashMap::new()),
         })
     }
     /// Open an existing Suture repository.
@@ -664,6 +668,7 @@ impl Repository {
             cached_head_branch: RefCell::new(None),
             repo_config,
             is_worktree,
+            stat_cache: RefCell::new(HashMap::new()),
         })
     }
     /// Open an in-memory repository for testing or embedded use.
@@ -712,6 +717,7 @@ impl Repository {
             cached_head_branch: RefCell::new(None),
             repo_config: crate::metadata::repo_config::RepoConfig::default(),
             is_worktree: false,
+            stat_cache: RefCell::new(HashMap::new()),
         })
     }
 
@@ -1026,36 +1032,35 @@ impl Repository {
     /// Returns patches reachable from branch tips but NOT ancestors of `since_id`.
     pub fn patches_since(&self, since_id: &PatchId) -> Vec<Patch> {
         let since_ancestors = self.dag.ancestors(since_id);
-        // Include since_id itself in the "already known" set
         let mut known = HashSet::with_capacity(since_ancestors.len() + 1);
         known.insert(*since_id);
         known.extend(since_ancestors.iter());
 
-        // Walk from all branch tips, collect patches not in `known`
-        let mut new_ids: HashSet<PatchId> = HashSet::new();
+        let mut parent_map: HashMap<PatchId, Vec<PatchId>> = HashMap::new();
         let mut stack: Vec<PatchId> = self.dag.list_branches().iter().map(|(_, id)| *id).collect();
 
         while let Some(id) = stack.pop() {
-            if !known.contains(&id)
-                && new_ids.insert(id)
-                && let Some(node) = self.dag.get_node(&id)
-            {
-                for parent in &node.patch.parent_ids {
-                    if !known.contains(parent) && !new_ids.contains(parent) {
-                        stack.push(*parent);
+            if !known.contains(&id) && parent_map.insert(id, Vec::new()).is_none() {
+                if let Some(node) = self.dag.get_node(&id) {
+                    let parents: Vec<PatchId> = node
+                        .patch
+                        .parent_ids
+                        .iter()
+                        .filter(|p| !known.contains(p))
+                        .copied()
+                        .collect();
+                    for parent in &parents {
+                        if !parent_map.contains_key(parent) {
+                            stack.push(*parent);
+                        }
                     }
+                    parent_map.insert(id, parents);
+                } else {
+                    parent_map.remove(&id);
                 }
             }
         }
 
-        // Topological sort: parents before children (Kahn's algorithm)
-        // Only extract parent_ids to avoid cloning full Patch during sort.
-        let parent_map: HashMap<PatchId, Vec<PatchId>> = new_ids
-            .iter()
-            .filter_map(|id| self.dag.get_patch(id).map(|p| (*id, p.parent_ids.clone())))
-            .collect();
-
-        // Count in-edges from within our set
         let mut in_degree: HashMap<PatchId, usize> = HashMap::new();
         let mut children: HashMap<PatchId, Vec<PatchId>> = HashMap::new();
         for (&id, parents) in &parent_map {
@@ -1068,7 +1073,6 @@ impl Repository {
             }
         }
 
-        // Sort initial zero-degree nodes for deterministic push ordering.
         let mut queue: VecDeque<PatchId> = {
             let mut roots: Vec<PatchId> = in_degree
                 .iter()
@@ -1078,8 +1082,8 @@ impl Repository {
             roots.sort();
             roots.into_iter().collect()
         };
-        let mut sorted_ids: Vec<PatchId> = Vec::with_capacity(parent_map.len());
 
+        let mut sorted_ids: Vec<PatchId> = Vec::with_capacity(parent_map.len());
         while let Some(id) = queue.pop_front() {
             sorted_ids.push(id);
             if let Some(kids) = children.get(&id) {
@@ -1260,31 +1264,35 @@ impl Repository {
             tracing::warn!("Failed to clear persisted merge state: {}", e);
         }
 
-        // Build batched file changes
-        let mut file_changes = Vec::with_capacity(staged.len());
-        for (path, status) in &staged {
-            let full_path = self.root.join(path);
-
-            let (op_type, payload) = match status {
-                FileStatus::Added => {
-                    let data = fs::read(&full_path)?;
-                    let hash = self.cas.put_blob(&data)?;
-                    (OperationType::Create, hash.to_hex().as_bytes().to_vec())
-                }
-                FileStatus::Modified => {
-                    let data = fs::read(&full_path)?;
-                    let hash = self.cas.put_blob(&data)?;
-                    (OperationType::Modify, hash.to_hex().as_bytes().to_vec())
-                }
-                FileStatus::Deleted => (OperationType::Delete, Vec::new()),
-                _ => continue,
-            };
-            file_changes.push(FileChange {
-                op: op_type,
-                path: path.clone(),
-                payload,
-            });
-        }
+        // Build batched file changes (parallel I/O via rayon)
+        let file_changes: Vec<FileChange> = staged
+            .par_iter()
+            .map(|(path, status)| {
+                let full_path = self.root.join(path);
+                let (op_type, payload) = match status {
+                    FileStatus::Added => {
+                        let data = fs::read(&full_path)?;
+                        let hash = self.cas.put_blob(&data)?;
+                        (OperationType::Create, hash.to_hex().as_bytes().to_vec())
+                    }
+                    FileStatus::Modified => {
+                        let data = fs::read(&full_path)?;
+                        let hash = self.cas.put_blob(&data)?;
+                        (OperationType::Modify, hash.to_hex().as_bytes().to_vec())
+                    }
+                    FileStatus::Deleted => (OperationType::Delete, Vec::new()),
+                    _ => return Ok(None),
+                };
+                Ok(Some(FileChange {
+                    op: op_type,
+                    path: path.clone(),
+                    payload,
+                }))
+            })
+            .collect::<Result<Vec<_>, RepoError>>()?
+            .into_iter()
+            .flatten()
+            .collect();
 
         if file_changes.is_empty() {
             return Err(RepoError::NothingToCommit);
@@ -1374,8 +1382,26 @@ impl Repository {
         }
 
         if let Ok(head_tree) = self.snapshot_head() {
+            let mut new_cache = HashMap::new();
             for (path, hash) in head_tree.iter() {
                 let full_path = self.root.join(path);
+                let metadata = match fs::metadata(&full_path) {
+                    Ok(m) => m,
+                    Err(_) => return Ok(true),
+                };
+                let size = metadata.len();
+                let mtime = metadata
+                    .modified()
+                    .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+
+                if let Some(&(cached_size, cached_mtime)) = self.stat_cache.borrow().get(&full_path)
+                    && size == cached_size
+                    && mtime == cached_mtime
+                {
+                    new_cache.insert(full_path, (size, mtime));
+                    continue;
+                }
+
                 if let Ok(data) = fs::read(&full_path) {
                     let current_hash = Hash::from_data(&data);
                     if &current_hash != hash {
@@ -1384,7 +1410,9 @@ impl Repository {
                 } else {
                     return Ok(true);
                 }
+                new_cache.insert(full_path, (size, mtime));
             }
+            *self.stat_cache.borrow_mut() = new_cache;
         }
 
         Ok(false)

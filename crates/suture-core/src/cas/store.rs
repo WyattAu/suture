@@ -14,6 +14,7 @@
 use crate::cas::compressor::{self, is_zstd_compressed};
 use crate::cas::hasher;
 use crate::cas::pack::{PackCache, PackError, PackFile, PackIndex};
+use std::collections::HashSet;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
@@ -86,6 +87,10 @@ pub struct BlobStore {
     /// to bound memory usage without external dependencies. Most-recently-accessed
     /// entries are promoted to the front on cache hit.
     blob_cache: Mutex<Vec<(Hash, Vec<u8>)>>,
+    /// Cache of known blob prefix directories (2-hex-char buckets).
+    /// Avoids redundant `fs::create_dir_all` syscalls when many blobs share
+    /// the same prefix. At most 256 entries (00–ff).
+    known_dirs: Mutex<HashSet<PathBuf>>,
 }
 
 impl BlobStore {
@@ -103,6 +108,7 @@ impl BlobStore {
             verify_on_read: true,
             pack_cache: Mutex::new(None),
             blob_cache: Mutex::new(Vec::with_capacity(BLOB_CACHE_CAPACITY)),
+            known_dirs: Mutex::new(HashSet::new()),
         })
     }
 
@@ -121,6 +127,7 @@ impl BlobStore {
             verify_on_read: true,
             pack_cache: Mutex::new(None),
             blob_cache: Mutex::new(Vec::with_capacity(BLOB_CACHE_CAPACITY)),
+            known_dirs: Mutex::new(HashSet::new()),
         })
     }
 
@@ -147,6 +154,24 @@ impl BlobStore {
         self.verify_on_read
     }
 
+    fn ensure_parent_dir(&self, parent: &std::path::Path) -> Result<(), CasError> {
+        {
+            let known = self
+                .known_dirs
+                .lock()
+                .map_err(|e| CasError::LockPoisoned(e.to_string()))?;
+            if known.contains(parent) {
+                return Ok(());
+            }
+        }
+        fs::create_dir_all(parent)?;
+        self.known_dirs
+            .lock()
+            .map_err(|e| CasError::LockPoisoned(e.to_string()))?
+            .insert(parent.to_path_buf());
+        Ok(())
+    }
+
     /// Store a blob, returning its BLAKE3 hash.
     ///
     /// If a blob with the same hash already exists, this is a no-op
@@ -162,7 +187,7 @@ impl BlobStore {
 
         // Ensure the prefix directory exists
         if let Some(parent) = blob_path.parent() {
-            fs::create_dir_all(parent)?;
+            self.ensure_parent_dir(parent)?;
         }
 
         // Write blob (optionally compressed)
@@ -186,7 +211,7 @@ impl BlobStore {
         }
 
         if let Some(parent) = blob_path.parent() {
-            fs::create_dir_all(parent)?;
+            self.ensure_parent_dir(parent)?;
         }
 
         if self.compress {
@@ -212,7 +237,7 @@ impl BlobStore {
         hasher::verify_hash(data, expected_hash)?;
 
         if let Some(parent) = blob_path.parent() {
-            fs::create_dir_all(parent)?;
+            self.ensure_parent_dir(parent)?;
         }
 
         if self.compress {
@@ -231,52 +256,37 @@ impl BlobStore {
     /// Decompresses if necessary and verifies the hash of the result
     /// (unless verification was disabled via `set_verify_on_read(false)`).
     pub fn get_blob(&self, hash: &Hash) -> Result<Vec<u8>, CasError> {
-        // Check in-memory cache first
         {
             let mut cache = self
                 .blob_cache
                 .lock()
                 .map_err(|e| CasError::LockPoisoned(e.to_string()))?;
             if let Some(pos) = cache.iter().position(|(h, _)| h == hash) {
-                let entry = cache.remove(pos);
-                cache.insert(0, entry); // promote to front (most recently used)
-                return Ok(cache[0].1.clone());
+                let (_, data) = cache.remove(pos);
+                cache.insert(0, (*hash, data.clone()));
+                return Ok(data);
             }
         }
 
-        // Try loose blob
-        let blob_path = self.blob_path(hash);
-        if blob_path.exists() {
-            let raw = fs::read(&blob_path)?;
-            let data = if is_zstd_compressed(&raw) {
+        let data = if self.blob_path(hash).exists() {
+            let raw = fs::read(self.blob_path(hash))?;
+            let result = if is_zstd_compressed(&raw) {
                 compressor::decompress(&raw)?
             } else {
                 raw
             };
             if self.verify_on_read {
-                hasher::verify_hash(&data, hash)?;
+                hasher::verify_hash(&result, hash)?;
             }
-            self.cache_blob(*hash, data);
-            return Ok(self
-                .blob_cache
-                .lock()
-                .map_err(|e| CasError::LockPoisoned(e.to_string()))?[0]
-                .1
-                .clone());
-        }
+            result
+        } else if let Ok(data) = self.get_blob_packed(hash) {
+            data
+        } else {
+            return Err(CasError::BlobNotFound(hash.to_hex()));
+        };
 
-        // Fall back to pack files
-        if let Ok(data) = self.get_blob_packed(hash) {
-            self.cache_blob(*hash, data);
-            return Ok(self
-                .blob_cache
-                .lock()
-                .map_err(|e| CasError::LockPoisoned(e.to_string()))?[0]
-                .1
-                .clone());
-        }
-
-        Err(CasError::BlobNotFound(hash.to_hex()))
+        self.cache_blob(*hash, data.clone());
+        Ok(data)
     }
 
     /// Insert a blob into the in-memory cache with LRU eviction.

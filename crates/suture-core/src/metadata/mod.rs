@@ -51,7 +51,7 @@ impl MetadataStore {
         let conn = Connection::open(path)?;
 
         // Enable WAL mode for better concurrency
-        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")?;
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA cache_size = -65536; PRAGMA mmap_size = 268435456;")?;
 
         let mut store = Self { conn };
         store.migrate()?;
@@ -516,11 +516,13 @@ impl MetadataStore {
             .execute("DELETE FROM file_trees WHERE patch_id = ?1", params![hex])?;
 
         let tx = self.conn.unchecked_transaction()?;
-        for (path, hash) in tree.iter() {
-            tx.execute(
+        {
+            let mut stmt = tx.prepare(
                 "INSERT INTO file_trees (patch_id, path, blob_hash) VALUES (?1, ?2, ?3)",
-                params![hex, path.as_str(), hash.to_hex()],
             )?;
+            for (path, hash) in tree.iter() {
+                stmt.execute(params![hex, path.as_str(), hash.to_hex()])?;
+            }
         }
         tx.commit()?;
         Ok(())

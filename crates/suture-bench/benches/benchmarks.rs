@@ -1095,6 +1095,241 @@ fn bench_merge_scalability(c: &mut Criterion) {
 }
 
 // =============================================================================
+// 7. Add All (stage all files)
+// =============================================================================
+
+fn bench_add_all(c: &mut Criterion) {
+    let mut group = c.benchmark_group("add_all");
+
+    for n in [10usize, 100, 500] {
+        group.bench_with_input(BenchmarkId::new("stage_n_files", n), &n, |b, &n| {
+            b.iter_with_setup(
+                || {
+                    let dir = TempDir::new().unwrap();
+                    let repo = Repository::init(dir.path(), "bench").unwrap();
+                    for i in 0..n {
+                        let path = format!("file_{}.txt", i);
+                        std::fs::write(dir.path().join(&path), format!("content {}", i)).unwrap();
+                    }
+                    (dir, repo)
+                },
+                |(_dir, repo)| {
+                    let count = black_box(repo.add_all().unwrap());
+                    assert_eq!(count, n);
+                },
+            );
+        });
+    }
+    group.finish();
+}
+
+// =============================================================================
+// 8. Status
+// =============================================================================
+
+fn bench_status(c: &mut Criterion) {
+    let mut group = c.benchmark_group("status");
+
+    group.bench_function("status_after_staging", |b| {
+        b.iter_with_setup(
+            || {
+                let dir = TempDir::new().unwrap();
+                let mut repo = Repository::init(dir.path(), "bench").unwrap();
+                for i in 0..100 {
+                    let path = format!("file_{}.txt", i);
+                    std::fs::write(dir.path().join(&path), format!("content {}", i)).unwrap();
+                    repo.add(&path).unwrap();
+                }
+                repo.commit("initial").unwrap();
+                for i in 0..50 {
+                    let path = format!("file_{}.txt", i);
+                    std::fs::write(dir.path().join(&path), format!("modified {}", i)).unwrap();
+                    repo.add(&path).unwrap();
+                }
+                (dir, repo)
+            },
+            |(_dir, repo)| {
+                let _ = black_box(repo.status().unwrap());
+            },
+        );
+    });
+
+    group.finish();
+}
+
+// =============================================================================
+// 9. Checkout Large
+// =============================================================================
+
+fn bench_checkout_large(c: &mut Criterion) {
+    let mut group = c.benchmark_group("checkout_large");
+
+    group.bench_function("checkout_100_files", |b| {
+        b.iter_with_setup(
+            || {
+                let dir = TempDir::new().unwrap();
+                let mut repo = Repository::init(dir.path(), "bench").unwrap();
+                for i in 0..100 {
+                    let path = format!("file_{}.txt", i);
+                    std::fs::write(dir.path().join(&path), format!("content {}", i)).unwrap();
+                    repo.add(&path).unwrap();
+                }
+                repo.commit("initial").unwrap();
+                repo.create_branch("feature", None).unwrap();
+                repo.checkout("feature").unwrap();
+                for i in 0..100 {
+                    let path = format!("file_{}.txt", i);
+                    std::fs::write(dir.path().join(&path), format!("feature {}", i)).unwrap();
+                    repo.add(&path).unwrap();
+                }
+                repo.commit("feature changes").unwrap();
+                repo.checkout("main").unwrap();
+                (dir, repo)
+            },
+            |(_dir, mut repo)| {
+                black_box(repo.checkout("feature").unwrap());
+                black_box(repo.checkout("main").unwrap());
+            },
+        );
+    });
+
+    group.finish();
+}
+
+// =============================================================================
+// 10. Blame
+// =============================================================================
+
+fn bench_blame(c: &mut Criterion) {
+    let mut group = c.benchmark_group("blame");
+
+    group.bench_function("blame_50_line_history", |b| {
+        b.iter_with_setup(
+            || {
+                let dir = TempDir::new().unwrap();
+                let mut repo = Repository::init(dir.path(), "bench").unwrap();
+                for i in 0..50 {
+                    let mut lines: Vec<String> = (0..50)
+                        .map(|l| format!("line {}: content {}", l, l + i))
+                        .collect();
+                    lines.push(format!("line 50: added in commit {}", i));
+                    let content = lines.join("\n");
+                    std::fs::write(dir.path().join("history.txt"), content).unwrap();
+                    repo.add("history.txt").unwrap();
+                    repo.commit(&format!("commit {}", i)).unwrap();
+                }
+                (dir, repo)
+            },
+            |(_dir, repo)| {
+                let entries = black_box(repo.blame("history.txt", None).unwrap());
+                assert_eq!(entries.len(), 51);
+            },
+        );
+    });
+
+    group.finish();
+}
+
+// =============================================================================
+// 11. Stash Push Pop
+// =============================================================================
+
+fn bench_stash_push_pop(c: &mut Criterion) {
+    let mut group = c.benchmark_group("stash_push_pop");
+
+    group.bench_function("push_pop", |b| {
+        b.iter_with_setup(
+            || {
+                let dir = TempDir::new().unwrap();
+                let mut repo = Repository::init(dir.path(), "bench").unwrap();
+                for i in 0..50 {
+                    let path = format!("file_{}.txt", i);
+                    std::fs::write(dir.path().join(&path), format!("content {}", i)).unwrap();
+                    repo.add(&path).unwrap();
+                }
+                repo.commit("initial").unwrap();
+                for i in 0..50 {
+                    let path = format!("file_{}.txt", i);
+                    std::fs::write(dir.path().join(&path), format!("modified {}", i)).unwrap();
+                    repo.add(&path).unwrap();
+                }
+                (dir, repo)
+            },
+            |(_dir, mut repo)| {
+                let count = black_box(repo.stash_push(Some("bench stash")).unwrap());
+                assert!(count > 0);
+                black_box(repo.stash_pop().unwrap());
+            },
+        );
+    });
+
+    group.finish();
+}
+
+// =============================================================================
+// 12. Resolve Ref Short Prefix
+// =============================================================================
+
+fn bench_resolve_ref_short(c: &mut Criterion) {
+    let mut group = c.benchmark_group("resolve_ref_short");
+
+    group.bench_function("resolve_4char_prefix_1000_patches", |b| {
+        b.iter_with_setup(
+            || {
+                let dir = TempDir::new().unwrap();
+                let mut repo = Repository::init(dir.path(), "bench").unwrap();
+                for i in 0..1000 {
+                    let path = format!("file_{}.txt", i % 10);
+                    std::fs::write(dir.path().join(&path), format!("content revision {}", i))
+                        .unwrap();
+                    repo.add(&path).unwrap();
+                    repo.commit(&format!("commit {}", i)).unwrap();
+                }
+                (dir, repo)
+            },
+            |(_dir, repo)| {
+                let _ = black_box(repo.resolve_ref("HEAD~500").unwrap());
+            },
+        );
+    });
+
+    group.finish();
+}
+
+// =============================================================================
+// 13. Repo Open
+// =============================================================================
+
+fn bench_repo_open(c: &mut Criterion) {
+    let mut group = c.benchmark_group("repo_open");
+
+    for n in [100usize, 500, 1000] {
+        group.bench_with_input(BenchmarkId::new("open_n_commits", n), &n, |b, &n| {
+            b.iter_with_setup(
+                || {
+                    let dir = TempDir::new().unwrap();
+                    let mut repo = Repository::init(dir.path(), "bench").unwrap();
+                    for i in 0..n {
+                        let path = format!("file_{}.txt", i % 10);
+                        std::fs::write(dir.path().join(&path), format!("content revision {}", i))
+                            .unwrap();
+                        repo.add(&path).unwrap();
+                        repo.commit(&format!("commit {}", i)).unwrap();
+                    }
+                    drop(repo);
+                    dir
+                },
+                |dir| {
+                    let _ = black_box(Repository::open(dir.path()).unwrap());
+                },
+            );
+        });
+    }
+
+    group.finish();
+}
+
+// =============================================================================
 // Criterion groups
 // =============================================================================
 
@@ -1130,5 +1365,12 @@ criterion_group!(
     bench_large_yaml_commit,
     bench_snapshot_head,
     bench_merge_scalability,
+    bench_add_all,
+    bench_status,
+    bench_checkout_large,
+    bench_blame,
+    bench_stash_push_pop,
+    bench_resolve_ref_short,
+    bench_repo_open,
 );
 criterion_main!(benches);

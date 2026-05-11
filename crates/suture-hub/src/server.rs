@@ -551,9 +551,9 @@ impl SutureHubServer {
                 }
             }
 
-            for patch in &req.patches {
-                let inserted = match store.insert_patch(&req.repo_id, patch) {
-                    Ok(i) => i,
+            let existing_indices =
+                match store.insert_patches_batch_with_existing(&req.repo_id, &req.patches) {
+                    Ok(indices) => indices,
                     Err(e) => {
                         return Err((
                             StatusCode::INTERNAL_SERVER_ERROR,
@@ -565,9 +565,8 @@ impl SutureHubServer {
                         ));
                     }
                 };
-                if !inserted {
-                    existing_patches.push(patch.id.clone());
-                }
+            for &i in &existing_indices {
+                existing_patches.push(req.patches[i].id.clone());
             }
 
             for patch in &req.patches {
@@ -1006,14 +1005,10 @@ impl SutureHubServer {
             }
         }
 
-        for patch in &pull_result.patches {
-            let inserted = store.insert_patch(&local_repo, patch).unwrap_or_else(|e| {
-                tracing::warn!("Failed to insert patch during mirror sync: {e}");
-                false
-            });
-            if inserted {
-                patches_synced += 1;
-            }
+        let patch_refs: Vec<&PatchProto> = pull_result.patches.iter().collect();
+        match store.insert_patches_batch(&local_repo, &patch_refs) {
+            Ok(inserted) => patches_synced = inserted as u64,
+            Err(e) => tracing::warn!("Failed to insert patches during mirror sync: {e}"),
         }
 
         let branches_synced = pull_result.branches.len() as u64;
@@ -1412,9 +1407,9 @@ impl SutureHubServer {
             }
         }
 
-        for patch in &req.patches {
-            let inserted = match store.insert_patch(&req.repo_id, patch) {
-                Ok(i) => i,
+        let existing_indices =
+            match store.insert_patches_batch_with_existing(&req.repo_id, &req.patches) {
+                Ok(indices) => indices,
                 Err(e) => {
                     return Err((
                         StatusCode::INTERNAL_SERVER_ERROR,
@@ -1426,9 +1421,8 @@ impl SutureHubServer {
                     ));
                 }
             };
-            if !inserted {
-                existing_patches.push(patch.id.clone());
-            }
+        for &i in &existing_indices {
+            existing_patches.push(req.patches[i].id.clone());
         }
 
         for patch in &req.patches {
@@ -1603,9 +1597,9 @@ impl SutureHubServer {
             }
         }
 
-        for patch in &req.patches {
-            let inserted = match store.insert_patch(&req.repo_id, patch) {
-                Ok(i) => i,
+        let existing_indices =
+            match store.insert_patches_batch_with_existing(&req.repo_id, &req.patches) {
+                Ok(indices) => indices,
                 Err(e) => {
                     let msg = format!("storage error: {e}");
                     return Err((
@@ -1618,9 +1612,8 @@ impl SutureHubServer {
                     ));
                 }
             };
-            if !inserted {
-                existing_patches.push(patch.id.clone());
-            }
+        for &i in &existing_indices {
+            existing_patches.push(req.patches[i].id.clone());
         }
 
         for patch in &req.patches {

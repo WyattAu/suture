@@ -74,7 +74,7 @@ impl HubStorage {
             std::fs::create_dir_all(parent)?;
         }
         let conn = Connection::open(path)?;
-        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")?;
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA cache_size = -65536; PRAGMA mmap_size = 268435456;")?;
         let mut store = Self {
             conn: std::sync::Mutex::new(conn),
             max_blob_size,
@@ -181,6 +181,7 @@ impl HubStorage {
             );
 
             CREATE INDEX IF NOT EXISTS idx_patches_repo ON patches(repo_id);
+            CREATE INDEX IF NOT EXISTS idx_patches_repo_ts ON patches(repo_id, timestamp, patch_id);
             CREATE INDEX IF NOT EXISTS idx_branches_repo ON branches(repo_id);
             CREATE INDEX IF NOT EXISTS idx_blobs_repo ON blobs(repo_id);
             CREATE INDEX IF NOT EXISTS idx_mirrors_repo ON mirrors(repo_name);
@@ -362,6 +363,109 @@ impl HubStorage {
             ],
         )?;
         Ok(conn.changes() > 0)
+    }
+
+    /// Store multiple patches in a single transaction. Returns the number of newly inserted patches.
+    pub fn insert_patches_batch(
+        &self,
+        repo_id: &str,
+        patches: &[&PatchProto],
+    ) -> Result<usize, StorageError> {
+        if patches.is_empty() {
+            return Ok(0);
+        }
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let tx = conn.unchecked_transaction()?;
+        {
+            let mut stmt = tx.prepare(
+                "INSERT OR IGNORE INTO patches (repo_id, patch_id, operation_type, touch_set, target_path, payload, parent_ids, author, message, timestamp)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            )?;
+            for patch in patches {
+                let id_hex = hash_to_hex(&patch.id);
+                let touch_set_json = serde_json::to_string(&patch.touch_set).unwrap_or_default();
+                let parent_ids_json = serde_json::to_string(
+                    &patch
+                        .parent_ids
+                        .iter()
+                        .map(|h| &h.value)
+                        .collect::<Vec<_>>(),
+                )
+                .unwrap_or_default();
+                stmt.execute(params![
+                    repo_id,
+                    id_hex,
+                    patch.operation_type,
+                    touch_set_json,
+                    patch.target_path,
+                    patch.payload,
+                    parent_ids_json,
+                    patch.author,
+                    patch.message,
+                    patch.timestamp as i64,
+                ])?;
+            }
+            drop(stmt);
+        }
+        let total_inserted = tx.changes() as usize;
+        tx.commit()?;
+        Ok(total_inserted)
+    }
+
+    /// Store multiple patches in a single transaction and return indices of already-existing patches.
+    pub fn insert_patches_batch_with_existing(
+        &self,
+        repo_id: &str,
+        patches: &[PatchProto],
+    ) -> Result<Vec<usize>, StorageError> {
+        if patches.is_empty() {
+            return Ok(vec![]);
+        }
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let tx = conn.unchecked_transaction()?;
+        let mut existing_indices = Vec::new();
+        {
+            let mut stmt = tx.prepare(
+                "INSERT OR IGNORE INTO patches (repo_id, patch_id, operation_type, touch_set, target_path, payload, parent_ids, author, message, timestamp)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            )?;
+            for (i, patch) in patches.iter().enumerate() {
+                let id_hex = hash_to_hex(&patch.id);
+                let touch_set_json = serde_json::to_string(&patch.touch_set).unwrap_or_default();
+                let parent_ids_json = serde_json::to_string(
+                    &patch
+                        .parent_ids
+                        .iter()
+                        .map(|h| &h.value)
+                        .collect::<Vec<_>>(),
+                )
+                .unwrap_or_default();
+                stmt.execute(params![
+                    repo_id,
+                    id_hex,
+                    patch.operation_type,
+                    touch_set_json,
+                    patch.target_path,
+                    patch.payload,
+                    parent_ids_json,
+                    patch.author,
+                    patch.message,
+                    patch.timestamp as i64,
+                ])?;
+                if tx.changes() == 0 {
+                    existing_indices.push(i);
+                }
+            }
+            drop(stmt);
+        }
+        tx.commit()?;
+        Ok(existing_indices)
     }
 
     /// Get a patch by ID within a repo.
