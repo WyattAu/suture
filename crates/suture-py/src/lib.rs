@@ -289,7 +289,7 @@ impl SutureRepo {
                 return Err(PyRuntimeError::new_err(format!(
                     "invalid reset mode: {}",
                     mode
-                )))
+                )));
             }
         };
         let patch_id = self
@@ -664,10 +664,10 @@ impl SutureRepo {
     ///
     /// Raises:
     ///     RuntimeError: If the file is not found in HEAD.
-    fn blame(&self, path: &str) -> PyResult<Vec<PyBlameEntry>> {
+    fn blame(&self, path: &str, at: Option<&str>) -> PyResult<Vec<PyBlameEntry>> {
         let entries = self
             .repo
-            .blame(path)
+            .blame(path, at)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         Ok(entries.into_iter().map(|e| e.into()).collect())
     }
@@ -698,7 +698,7 @@ impl SutureRepo {
     ///
     /// Returns:
     ///     The hex patch ID of the suggested next commit to test, or None if done.
-    fn bisect_good(&self, patch_id_hex: &str) -> PyResult<Option<String>> {
+    fn bisect_good(&mut self, patch_id_hex: &str) -> PyResult<Option<String>> {
         let _patch_id =
             Hash::from_hex(patch_id_hex).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         self.repo
@@ -714,7 +714,7 @@ impl SutureRepo {
     ///
     /// Returns:
     ///     The hex patch ID of the suggested next commit to test, or None if done.
-    fn bisect_bad(&self, patch_id_hex: &str) -> PyResult<Option<String>> {
+    fn bisect_bad(&mut self, patch_id_hex: &str) -> PyResult<Option<String>> {
         let _patch_id =
             Hash::from_hex(patch_id_hex).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         self.repo
@@ -1174,7 +1174,7 @@ fn suture(m: &Bound<'_, PyModule>) -> PyResult<()> {
                 "hash_bytes",
                 "is_repo",
             ],
-        ),
+        )?,
     )?;
     Ok(())
 }

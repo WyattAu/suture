@@ -38,3 +38,8 @@ proptest-regressions/
 node_modules/
 out/
 *.vsix
+
+# Rust build artifacts (outside target/)
+*.rmeta
+*.rlib
+*.d.rustc

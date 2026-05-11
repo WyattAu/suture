@@ -1950,12 +1950,29 @@ fn error_hint(msg: &str) -> Option<&'static str> {
 }
 
 #[cfg(test)]
-pub(crate) fn cwd_guard() -> std::sync::MutexGuard<'static, ()> {
-    static CWD_LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
-    CWD_LOCK
-        .get_or_init(|| std::sync::Mutex::new(()))
-        .lock()
-        .unwrap()
+pub(crate) fn cwd_guard() -> CwdGuard {
+    CwdGuard::new()
+}
+
+#[cfg(test)]
+struct CwdGuard(std::path::PathBuf);
+
+#[cfg(test)]
+impl CwdGuard {
+    fn new() -> Self {
+        #[cfg(target_os = "linux")]
+        unsafe {
+            libc::unshare(libc::CLONE_FS);
+        }
+        Self(std::env::current_dir().expect("failed to get current dir"))
+    }
+}
+
+#[cfg(test)]
+impl Drop for CwdGuard {
+    fn drop(&mut self) {
+        let _ = std::env::set_current_dir(&self.0);
+    }
 }
 
 #[cfg(test)]
@@ -2728,10 +2745,9 @@ mod tests {
         repo.add("hello.txt").unwrap();
         repo.commit("test commit").unwrap();
 
-        let prev = std::env::current_dir().unwrap();
         std::env::set_current_dir(&dir_path).unwrap();
         let result = cmd::verify::cmd_verify("HEAD", false).await;
-        std::env::set_current_dir(&prev).unwrap();
+
         assert!(result.is_ok());
         drop(dir);
     }
@@ -2780,10 +2796,9 @@ mod tests {
             .store_signature(&patch.id.to_hex(), &sig.to_bytes())
             .unwrap();
 
-        let prev = std::env::current_dir().unwrap();
         std::env::set_current_dir(&dir_path).unwrap();
         let result = cmd::verify::cmd_verify("HEAD", false).await;
-        std::env::set_current_dir(&prev).unwrap();
+
         assert!(result.is_ok());
         drop(dir);
     }
@@ -2795,7 +2810,7 @@ mod tests {
         let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
-        let prev = std::env::current_dir().unwrap();
+
         let mut repo =
             suture_core::repository::Repository::init(&dir_path, "Defence Analyst").unwrap();
 
@@ -2847,7 +2862,6 @@ mod tests {
         .await;
         assert!(result.is_ok());
 
-        std::env::set_current_dir(&prev).unwrap();
         drop(dir);
     }
 
@@ -2856,7 +2870,7 @@ mod tests {
         let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
-        let prev = std::env::current_dir().unwrap();
+
         let mut repo = suture_core::repository::Repository::init(&dir_path, "Analyst").unwrap();
 
         std::fs::write(
@@ -2885,7 +2899,6 @@ mod tests {
             cmd::diff::cmd_diff(Some(&head_hex), None, false, false, false, true, false).await;
         assert!(result.is_ok());
 
-        std::env::set_current_dir(&prev).unwrap();
         drop(dir);
     }
 
@@ -2894,7 +2907,7 @@ mod tests {
         let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
-        let prev = std::env::current_dir().unwrap();
+
         let mut repo =
             suture_core::repository::Repository::init(&dir_path, "Defence Officer").unwrap();
 
@@ -2935,7 +2948,6 @@ mod tests {
         let result = cmd::verify::cmd_verify("HEAD", false).await;
         assert!(result.is_ok());
 
-        std::env::set_current_dir(&prev).unwrap();
         drop(dir);
     }
 
@@ -2946,7 +2958,7 @@ mod tests {
         let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
-        let prev = std::env::current_dir().unwrap();
+
         let mut repo = suture_core::repository::Repository::init(&dir_path, "Director").unwrap();
 
         std::fs::write(
@@ -2978,7 +2990,7 @@ mod tests {
         assert!(result.is_ok());
 
         drop(repo);
-        std::env::set_current_dir(&prev).unwrap();
+
         drop(dir);
     }
 
@@ -2987,7 +2999,7 @@ mod tests {
         let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
-        let prev = std::env::current_dir().unwrap();
+
         let mut repo = suture_core::repository::Repository::init(&dir_path, "Writer").unwrap();
 
         let content = "Line 1: FADE IN\nLine 2: INT. OFFICE - DAY\nLine 3: John sits at desk\nLine 4: JOHN\nLine 5: (typing)\n";
@@ -3008,7 +3020,6 @@ mod tests {
         let result_range = cmd::blame::cmd_blame("script.txt", None, Some("2,4")).await;
         assert!(result_range.is_ok());
 
-        std::env::set_current_dir(&prev).unwrap();
         drop(dir);
     }
 
@@ -3019,7 +3030,7 @@ mod tests {
         let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
-        let prev = std::env::current_dir().unwrap();
+
         let mut repo =
             suture_core::repository::Repository::init(&dir_path, "ContentCreator").unwrap();
 
@@ -3055,7 +3066,6 @@ mod tests {
         assert!(export_dir.join("drafts/script_draft.md").exists());
         assert!(export_dir.join("drafts/budget.csv").exists());
 
-        std::env::set_current_dir(&prev).unwrap();
         drop(dir);
     }
 
@@ -3064,7 +3074,7 @@ mod tests {
         let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
-        let prev = std::env::current_dir().unwrap();
+
         let mut repo = suture_core::repository::Repository::init(&dir_path, "YouTuber").unwrap();
 
         std::fs::write(dir_path.join("video_notes.txt"), "Video planning notes").unwrap();
@@ -3076,7 +3086,6 @@ mod tests {
         let result = cmd::sync::cmd_sync("origin", true, false, None).await;
         assert!(result.is_ok());
 
-        std::env::set_current_dir(&prev).unwrap();
         drop(dir);
     }
 
@@ -3085,7 +3094,7 @@ mod tests {
         let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
-        let prev = std::env::current_dir().unwrap();
+
         let mut repo = suture_core::repository::Repository::init(&dir_path, "Producer").unwrap();
 
         std::fs::write(dir_path.join("script.txt"), "Original script content").unwrap();
@@ -3121,7 +3130,6 @@ mod tests {
         .await;
         assert!(result.is_ok());
 
-        std::env::set_current_dir(&prev).unwrap();
         drop(dir);
     }
 
@@ -3132,7 +3140,7 @@ mod tests {
         let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
-        let prev = std::env::current_dir().unwrap();
+
         let mut repo =
             suture_core::repository::Repository::init(&dir_path, "Collaborator").unwrap();
 
@@ -3186,7 +3194,6 @@ mod tests {
         let _ = cmd::stash::cmd_stash(&StashAction::Pop).await;
         let _ = cmd::reflog::cmd_reflog(false).await;
 
-        std::env::set_current_dir(&prev).unwrap();
         drop(dir);
     }
 
@@ -3195,7 +3202,7 @@ mod tests {
         let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
-        let prev = std::env::current_dir().unwrap();
+
         let mut repo = suture_core::repository::Repository::init(&dir_path, "Developer").unwrap();
 
         for i in 1..=3 {
@@ -3214,7 +3221,6 @@ mod tests {
         let _ = cmd::doctor::cmd_doctor(false).await;
         let _ = cmd::fsck::cmd_fsck(false).await;
 
-        std::env::set_current_dir(&prev).unwrap();
         drop(dir);
     }
 
@@ -3223,7 +3229,7 @@ mod tests {
         let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
-        let prev = std::env::current_dir().unwrap();
+
         let mut repo = suture_core::repository::Repository::init(&dir_path, "Developer").unwrap();
 
         std::fs::write(dir_path.join("tracked.txt"), "tracked").unwrap();
@@ -3247,7 +3253,6 @@ mod tests {
         assert!(!dir_path.join("untracked_b.txt").exists());
         assert!(dir_path.join("tracked.txt").exists());
 
-        std::env::set_current_dir(&prev).unwrap();
         drop(dir);
     }
 
@@ -3256,7 +3261,7 @@ mod tests {
         let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
-        let prev = std::env::current_dir().unwrap();
+
         let mut repo = suture_core::repository::Repository::init(&dir_path, "auditor").unwrap();
         repo.set_config("user.name", "auditor").unwrap();
 
@@ -3289,7 +3294,6 @@ mod tests {
         assert_eq!(total, 3);
         assert!(first_invalid.is_none());
 
-        std::env::set_current_dir(&prev).unwrap();
         drop(dir);
     }
 
@@ -3298,7 +3302,7 @@ mod tests {
         let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
-        let prev = std::env::current_dir().unwrap();
+
         let mut repo = suture_core::repository::Repository::init(&dir_path, "committer").unwrap();
         repo.set_config("user.name", "committer").unwrap();
 
@@ -3327,7 +3331,7 @@ mod tests {
         assert_eq!(entries[1].action, "commit");
 
         drop(repo);
-        std::env::set_current_dir(&prev).unwrap();
+
         drop(dir);
     }
 
@@ -3399,7 +3403,7 @@ mod tests {
         let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
-        let prev = std::env::current_dir().unwrap();
+
         let mut repo = suture_core::repository::Repository::init(&dir_path, "Analyst").unwrap();
 
         std::fs::write(
@@ -3445,7 +3449,6 @@ mod tests {
         .await;
         assert!(result.is_ok());
 
-        std::env::set_current_dir(&prev).unwrap();
         drop(dir);
     }
 
@@ -3454,7 +3457,7 @@ mod tests {
         let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
-        let prev = std::env::current_dir().unwrap();
+
         let mut repo = suture_core::repository::Repository::init(&dir_path, "Analyst").unwrap();
 
         std::fs::write(dir_path.join("doc1.txt"), "UNCLASSIFIED\nDoc one").unwrap();
@@ -3483,7 +3486,6 @@ mod tests {
         assert!(report_content.contains("CLASSIFICATION COMPLIANCE REPORT"));
         assert!(report_content.contains("Chain of Custody"));
 
-        std::env::set_current_dir(&prev).unwrap();
         drop(dir);
     }
 
@@ -3667,7 +3669,7 @@ mod tests {
         let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
-        let prev = std::env::current_dir().unwrap();
+
         let repo = suture_core::repository::Repository::init(&dir_path, "ContentCreator").unwrap();
 
         std::fs::write(dir_path.join("video_01.mp4"), "fake video data 1").unwrap();
@@ -3694,7 +3696,6 @@ mod tests {
         assert!(staged_paths.contains(&"video_02.mp4"));
         assert!(!staged_paths.contains(&"readme.txt"));
 
-        std::env::set_current_dir(&prev).unwrap();
         drop(dir);
     }
 
@@ -3703,7 +3704,7 @@ mod tests {
         let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
-        let prev = std::env::current_dir().unwrap();
+
         let mut repo = suture_core::repository::Repository::init(&dir_path, "editor").unwrap();
         repo.set_config("user.name", "Film Editor").unwrap();
 
@@ -3725,7 +3726,6 @@ mod tests {
         let result = cmd::timeline::cmd_timeline(&TimelineAction::List { otio_only: false }).await;
         assert!(result.is_ok());
 
-        std::env::set_current_dir(&prev).unwrap();
         drop(dir);
     }
 
@@ -3734,7 +3734,7 @@ mod tests {
         let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
-        let prev = std::env::current_dir().unwrap();
+
         let mut repo = suture_core::repository::Repository::init(&dir_path, "analyst").unwrap();
         repo.set_config("user.name", "Data Analyst").unwrap();
 
@@ -3754,7 +3754,6 @@ mod tests {
         .await;
         assert!(result.is_ok());
 
-        std::env::set_current_dir(&prev).unwrap();
         drop(dir);
     }
 
@@ -3763,7 +3762,7 @@ mod tests {
         let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
-        let prev = std::env::current_dir().unwrap();
+
         let repo = suture_core::repository::Repository::init(&dir_path, "user").unwrap();
 
         for i in 0..5 {
@@ -3782,7 +3781,6 @@ mod tests {
         .await;
         assert!(result.is_ok());
 
-        std::env::set_current_dir(&prev).unwrap();
         drop(dir);
     }
 
@@ -3791,7 +3789,7 @@ mod tests {
         let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
-        let prev = std::env::current_dir().unwrap();
+
         let mut repo = suture_core::repository::Repository::init(&dir_path, "auditor").unwrap();
         repo.set_config("user.name", "Security Officer").unwrap();
 
@@ -3815,7 +3813,6 @@ mod tests {
         let result = cmd::audit::cmd_audit(true, false, false, None).await;
         assert!(result.is_ok());
 
-        std::env::set_current_dir(&prev).unwrap();
         drop(dir);
     }
 
@@ -3824,7 +3821,7 @@ mod tests {
         let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
-        let prev = std::env::current_dir().unwrap();
+
         let mut repo = suture_core::repository::Repository::init(&dir_path, "user").unwrap();
 
         std::fs::write(dir_path.join("tracked.txt"), "kept").unwrap();
@@ -3842,7 +3839,6 @@ mod tests {
         assert!(dir_path.join("untracked.txt").exists());
         assert!(dir_path.join("temp.log").exists());
 
-        std::env::set_current_dir(&prev).unwrap();
         drop(dir);
     }
 }

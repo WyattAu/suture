@@ -6,7 +6,7 @@
 - **Status:** Shipping v5.3.1
 - **Last Updated:** 2026-05-08
 - **Rust Edition:** 2024
-- **Tests:** 1,662 passed, 0 failed, 20 ignored
+- **Tests:** ~1,413 passed, 0 failed, 20 ignored
 - **Security:** 0 unsound, 1 unmaintained (paste via rav1e, transitive, no fix available)
 
 ## Tier 2 Status (All Complete)
@@ -574,12 +574,12 @@ None — all previously deferred items resolved.
 
 | Gate | Status | Details |
 |------|--------|---------|
-| Tests | [x] 1450+ passing | 0 failures across 37 crates (1 ignored: perf 10K) |
+| Tests | [x] ~1,413 passing | 0 failures across 37 crates (1 ignored: perf 10K) |
 | Property-based tests | [x] 21 proptest suites | 10K+ cases via proptest |
 | Benchmarks | [x] 28 Criterion functions | repo ops, semantic merge, protocol, compression |
 | Clippy | [x] Zero warnings | `cargo clippy --workspace -- -D warnings` clean |
 | Ed25519 signing | [x] Wired into push | `suture key generate`, auto-sign on push |
-| E2E tests | [x] 50 integration tests | init→commit→branch→merge→gc→fsck→bisect→tag→stash→integrity→stress→git |
+| E2E tests | [x] 16 workflow tests | init→commit→branch→merge→gc→fsck→bisect→tag→stash→integrity→stress→git |
 | Binary E2E | [x] 71 tests | DOCX/XLSX/PPTX full lifecycle (init→add→commit→branch→modify→merge→diff→log) |
 | Formal verification | [x] 5 Lean 4 theorems | Touch-set conflict equivalence, disjoint commutativity, symmetry, identity, merge determinism |
 | HTTP integration | [x] 61 tests (with features) | handshake, repos, patches, push/pull, V2, auth, mirrors, CRUD, search, batch, health |

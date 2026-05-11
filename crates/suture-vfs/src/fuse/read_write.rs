@@ -810,13 +810,27 @@ impl Filesystem for RwFilesystem {
     }
 }
 
-// SAFETY: RwFilesystem wraps Arc<InnerFs> where every field of InnerFs is
-// either a Mutex, AtomicU64, or PathBuf — all of which are Send + Sync.
-// The Arc ensures shared ownership, and Mutex provides interior
-// synchronization for all mutable state.
+// SAFETY: RwFilesystem does not auto-derive Send because `InnerFs.repo` is
+// `Mutex<Repository>`, and `Repository` transitively contains
+// `Rc<BTreeSet<PatchId>>` (via `PatchDag::ancestor_cache`). `Rc` is !Send.
+// The manual impl is sound because:
+// - All access to `Repository` (and thus the `Rc` inside `PatchDag`) is
+//   serialized through `Mutex<Repository>`.
+// - No `Rc` is ever leaked outside the Mutex guard — the FUSE callbacks
+//   only call methods like `add()`, `commit()`, `snapshot_head()`, none of
+//   which return `Rc` values.
+// - Transferring `RwFilesystem` between threads moves the `Arc<InnerFs>`;
+//   the `Rc` inside `PatchDag` is never directly moved across threads.
 unsafe impl Send for RwFilesystem {}
-// SAFETY: Same justification as Send — all shared state behind the Arc
-// is protected by Mutex or is an atomic type, so concurrent access is safe.
+// SAFETY: Same root cause as Send — `Repository` contains `Rc` via
+// `PatchDag::ancestor_cache`, preventing auto-derived Sync.
+// The manual impl is sound because:
+// - FUSE dispatches callbacks sequentially per mount (single-threaded
+//   session), so `&RwFilesystem` is not meaningfully shared across threads
+//   in practice.
+// - Even under hypothetical concurrent access, all mutable state in
+//   `InnerFs` is protected by `Mutex`, ensuring the `Rc` inside
+//   `PatchDag` is only ever accessed by one thread at a time.
 unsafe impl Sync for RwFilesystem {}
 
 pub async fn mount_rw(

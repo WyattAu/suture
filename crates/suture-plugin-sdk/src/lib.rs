@@ -67,18 +67,25 @@ mod host {
 
 #[cfg(not(target_arch = "wasm32"))]
 mod host {
+    // SAFETY: These are no-op stubs used only for compilation on non-WASM
+    // targets. The real implementations are provided by the WASM host.
+    // On native, the SDK is never actually called, so the stubs are safe.
     #[no_mangle]
     pub unsafe extern "C" fn get_input_len() -> i32 {
         0
     }
+    // SAFETY: See get_input_len comment above.
     #[no_mangle]
     pub unsafe extern "C" fn get_input_byte(_offset: i32) -> i32 {
         -1
     }
+    // SAFETY: See get_input_len comment above.
     #[no_mangle]
     pub unsafe extern "C" fn set_output_byte(_offset: i32, _byte: i32) {}
+    // SAFETY: See get_input_len comment above.
     #[no_mangle]
     pub unsafe extern "C" fn set_output_len(_len: i32) {}
+    // SAFETY: See get_input_len comment above.
     #[no_mangle]
     pub unsafe extern "C" fn host_log(_level: i32, _msg_ptr: *const u8, _msg_len: i32) {}
 }

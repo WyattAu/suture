@@ -12,6 +12,24 @@ pub fn pid_file_path() -> PathBuf {
     std::env::temp_dir().join("suture-daemon.pid")
 }
 
+/// Status structure mapped directly into a file-backed memory region.
+///
+/// # Shared-memory layout contract
+///
+/// This struct is written by the daemon process and read by CLI clients
+/// via a memory-mapped file. The following invariants must be maintained:
+///
+/// - `#[repr(C)]` guarantees a stable, predictable field order and
+///   alignment that is identical across processes and compiler versions.
+/// - The compile-time assertion below ensures `size_of::<ShmStatus>()`
+///   exactly equals `SHM_SIZE` (176 bytes). Adding, removing, or
+///   reordering fields without updating `SHM_SIZE` will cause a compile
+///   error.
+/// - All fields must be plain-old-data (no heap pointers, no `Drop` impls,
+///   no interior mutability) so that a bitwise copy is always a valid
+///   value, which is required for safe cross-process mapping.
+/// - New fields must be appended at the end (before `padding`) to avoid
+///   breaking the ABI for older readers.
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct ShmStatus {
@@ -63,12 +81,17 @@ impl ShmStatus {
     }
 }
 
-// SAFETY: ShmStatus is #[repr(C)] and contains only plain-old-data fields
-// (u64, u32, [u8; 64], [u64; 7]) with no interior mutability or pointers.
-// Sharing or transferring across threads is always safe.
+// SAFETY: ShmStatus is #[repr(C)] with only POD fields (u64, u32,
+// [u8; N], [u64; N]). It has no interior mutability, no heap pointers,
+// and no Drop impl. Transferring ownership between threads cannot cause
+// UB because there is no shared mutable state; the struct is `Copy` and
+// bitwise-move is equivalent to a value copy.
 unsafe impl Send for ShmStatus {}
-// SAFETY: Same justification as Send above — all fields are POD with no
-// interior mutability, so concurrent read-only access is sound.
+// SAFETY: All fields are POD with no interior mutability. `&ShmStatus`
+// provides only read-only access, and the struct is `Copy`, so sharing
+// references across threads is always sound. Note: cross-process writes
+// to the memory-mapped file are handled by the OS page-level visibility
+// model, not by Rust's `Sync` trait.
 unsafe impl Sync for ShmStatus {}
 
 pub fn shm_path_for_pid(pid: u32) -> PathBuf {
