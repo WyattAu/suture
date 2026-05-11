@@ -59,6 +59,11 @@ type MirrorRow = (String, String, String, Option<i64>, String);
 type MirrorListRow = (i64, String, String, String, Option<i64>, String);
 
 impl HubStorage {
+    /// Get a reference to the inner connection mutex (for backup/restore).
+    pub fn conn(&self) -> &std::sync::Mutex<Connection> {
+        &self.conn
+    }
+
     /// Open or create the hub database at the given path.
     pub fn open(path: &Path) -> Result<Self, StorageError> {
         Self::open_with_limits(path, 50 * 1024 * 1024, 10000)
@@ -154,7 +159,8 @@ impl HubStorage {
                 token TEXT PRIMARY KEY,
                 created_at INTEGER NOT NULL,
                 description TEXT,
-                expires_at INTEGER NOT NULL
+                expires_at INTEGER NOT NULL,
+                scopes TEXT NOT NULL DEFAULT 'read,write'
             );
 
             CREATE TABLE IF NOT EXISTS branch_protection (
@@ -280,6 +286,18 @@ impl HubStorage {
             )?;
         }
 
+        let has_scopes: bool = conn.query_row(
+            "SELECT COUNT(*) > 0 FROM pragma_table_info('tokens') WHERE name = 'scopes'",
+            [],
+            |row| row.get(0),
+        )?;
+
+        if !has_scopes {
+            conn.execute_batch(
+                "ALTER TABLE tokens ADD COLUMN scopes TEXT NOT NULL DEFAULT 'read,write';",
+            )?;
+        }
+
         Ok(())
     }
 
@@ -311,6 +329,47 @@ impl HubStorage {
             ids.push(row?);
         }
         Ok(ids)
+    }
+
+    pub fn repo_count(&self) -> Result<u64, StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM repos", [], |row| row.get(0))?;
+        Ok(count as u64)
+    }
+
+    pub fn total_patch_count(&self) -> Result<u64, StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM patches", [], |row| row.get(0))?;
+        Ok(count as u64)
+    }
+
+    pub fn total_blob_stats(&self) -> Result<(u64, u64), StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM blobs", [], |row| row.get(0))?;
+        let size: i64 = conn.query_row(
+            "SELECT COALESCE(SUM(LENGTH(data)), 0) FROM blobs",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok((count as u64, size as u64))
+    }
+
+    pub fn user_count(&self) -> Result<u64, StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM users", [], |row| row.get(0))?;
+        Ok(count as u64)
     }
 
     /// Check if a repo exists.
@@ -1104,6 +1163,7 @@ impl HubStorage {
         created_at: u64,
         description: &str,
         expires_at: i64,
+        scopes: &str,
     ) -> Result<(), StorageError> {
         let token_hash = format!("{:x}", sha2::Sha256::digest(token.as_bytes()));
         let conn = self
@@ -1111,8 +1171,8 @@ impl HubStorage {
             .lock()
             .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
         conn.execute(
-            "INSERT INTO tokens (token, created_at, description, expires_at) VALUES (?1, ?2, ?3, ?4)",
-            params![token_hash, created_at as i64, description, expires_at],
+            "INSERT INTO tokens (token, created_at, description, expires_at, scopes) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![token_hash, created_at as i64, description, expires_at, scopes],
         )?;
         Ok(())
     }
@@ -1133,6 +1193,32 @@ impl HubStorage {
             |row| row.get(0),
         )?;
         Ok(count > 0)
+    }
+
+    pub fn get_token_scopes(&self, token: &str) -> Result<Vec<String>, StorageError> {
+        let token_hash = format!("{:x}", sha2::Sha256::digest(token.as_bytes()));
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let scopes_str: Result<String, rusqlite::Error> = conn.query_row(
+            "SELECT scopes FROM tokens WHERE token = ?1 AND expires_at > ?2",
+            params![token_hash, now],
+            |row| row.get(0),
+        );
+        match scopes_str {
+            Ok(s) => Ok(s
+                .split(',')
+                .map(|s| s.trim().to_lowercase())
+                .filter(|s| !s.is_empty())
+                .collect()),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(vec![]),
+            Err(e) => Err(StorageError::Database(e)),
+        }
     }
 
     pub fn has_tokens(&self) -> Result<bool, StorageError> {

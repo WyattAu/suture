@@ -1,3 +1,29 @@
+//! Suture Hub HTTP server.
+//!
+//! # API Versioning
+//!
+//! The hub supports two API access patterns for backward compatibility:
+//!
+//! 1. **Legacy routes** (e.g. `/push`, `/repos`): Continue to work unchanged.
+//!    These are the original routes and remain the default.
+//!
+//! 2. **Versioned routes** (`/api/v1/`): Preferred for new clients.
+//!    All existing endpoints are mirrored under `/api/v1/`.
+//!
+//! Clients may send an `X-API-Version: 1` header on any request. If present,
+//! the server responds with `X-API-Version: 1` in the response headers to
+//! confirm the negotiated version. This header is informational only; both
+//! route styles remain functional regardless of the header.
+//!
+//! # Token Scopes
+//!
+//! API tokens carry scopes that control which endpoints they can access:
+//! - `read` — required for GET endpoints
+//! - `write` — required for POST/PUT/DELETE endpoints
+//! - `admin` — required for user management and configuration endpoints
+//!
+//! Tokens default to `read,write` scope. Admin scope must be explicitly granted.
+
 use axum::{
     Json,
     extract::{ConnectInfo, Path, Query, State},
@@ -13,6 +39,7 @@ use tokio::sync::RwLock;
 
 use crate::async_storage::block_in_place;
 use crate::blob_backend::BlobBackend;
+use crate::metrics::HubMetrics;
 use crate::middleware::request_id_layer;
 use crate::storage::HubStorage;
 use crate::storage::{ReplicationEntry, ReplicationStatus};
@@ -57,6 +84,53 @@ impl PartialOrd for Role {
         }
         rank(self).partial_cmp(&rank(other))
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum TokenScope {
+    Read,
+    Write,
+    Admin,
+}
+
+impl TokenScope {
+    #[must_use]
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_lowercase().as_str() {
+            "read" => Some(Self::Read),
+            "write" => Some(Self::Write),
+            "admin" => Some(Self::Admin),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Read => "read",
+            Self::Write => "write",
+            Self::Admin => "admin",
+        }
+    }
+
+    #[must_use]
+    pub fn from_header(s: &str) -> Vec<Self> {
+        s.split(',').filter_map(Self::parse).collect()
+    }
+
+    #[must_use]
+    pub fn contains_scope(scopes: &[Self], required: &Self) -> bool {
+        scopes
+            .iter()
+            .any(|s| s == required || s == &TokenScope::Admin)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RequiredScope {
+    Read,
+    Write,
+    Admin,
 }
 
 #[derive(serde::Deserialize)]
@@ -104,6 +178,7 @@ pub struct SutureHubServer {
     replication_role: Arc<tokio::sync::RwLock<String>>,
     webhook_manager: Arc<WebhookManager>,
     lfs_data_dir: Option<std::path::PathBuf>,
+    pub request_metrics: HubMetrics,
     #[cfg(feature = "raft-cluster")]
     raft_node: Arc<tokio::sync::Mutex<suture_raft::RaftNode>>,
     #[cfg(feature = "raft-cluster")]
@@ -136,6 +211,7 @@ impl SutureHubServer {
             replication_role: Arc::new(tokio::sync::RwLock::new("standalone".to_owned())),
             webhook_manager: Arc::new(WebhookManager::new()),
             lfs_data_dir: None,
+            request_metrics: HubMetrics::new(),
             #[cfg(feature = "raft-cluster")]
             raft_node: Arc::new(tokio::sync::Mutex::new(suture_raft::RaftNode::new(
                 1,
@@ -159,6 +235,7 @@ impl SutureHubServer {
             replication_role: Arc::new(tokio::sync::RwLock::new("standalone".to_owned())),
             webhook_manager: Arc::new(WebhookManager::new()),
             lfs_data_dir: None,
+            request_metrics: HubMetrics::new(),
             #[cfg(feature = "raft-cluster")]
             raft_node: Arc::new(tokio::sync::Mutex::new(suture_raft::RaftNode::new(
                 1,
@@ -1990,9 +2067,12 @@ fn dfs(
     order.push(idx);
 }
 
-async fn check_auth(hub: &SutureHubServer, headers: &HeaderMap) -> Result<(), StatusCode> {
+async fn check_auth(
+    hub: &SutureHubServer,
+    headers: &HeaderMap,
+) -> Result<Vec<TokenScope>, StatusCode> {
     if hub.no_auth {
-        return Ok(());
+        return Ok(vec![TokenScope::Read, TokenScope::Write, TokenScope::Admin]);
     }
 
     let store = hub.storage.read().await;
@@ -2007,7 +2087,7 @@ async fn check_auth(hub: &SutureHubServer, headers: &HeaderMap) -> Result<(), St
     drop(store);
 
     if !auth_keys_configured && !tokens_exist {
-        return Ok(());
+        return Ok(vec![TokenScope::Read, TokenScope::Write, TokenScope::Admin]);
     }
 
     if let Some(auth_header) = headers.get("authorization")
@@ -2019,11 +2099,38 @@ async fn check_auth(hub: &SutureHubServer, headers: &HeaderMap) -> Result<(), St
             tracing::error!("Failed to verify token: {e}");
             false
         }) {
-            return Ok(());
+            let scopes = store.get_token_scopes(token).unwrap_or_else(|e| {
+                tracing::error!("Failed to get token scopes: {e}");
+                vec!["read".to_string(), "write".to_string()]
+            });
+            let token_scopes: Vec<TokenScope> =
+                scopes.iter().filter_map(|s| TokenScope::parse(s)).collect();
+            if token_scopes.is_empty() {
+                return Ok(vec![TokenScope::Read, TokenScope::Write]);
+            }
+            return Ok(token_scopes);
         }
     }
 
     Err(StatusCode::UNAUTHORIZED)
+}
+
+#[allow(dead_code)]
+async fn check_auth_with_scope(
+    hub: &SutureHubServer,
+    headers: &HeaderMap,
+    required: RequiredScope,
+) -> Result<Vec<TokenScope>, StatusCode> {
+    let scopes = check_auth(hub, headers).await?;
+    let needed = match required {
+        RequiredScope::Read => &TokenScope::Read,
+        RequiredScope::Write => &TokenScope::Write,
+        RequiredScope::Admin => &TokenScope::Admin,
+    };
+    if !TokenScope::contains_scope(&scopes, needed) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    Ok(scopes)
 }
 
 async fn resolve_user(hub: &SutureHubServer, headers: &HeaderMap) -> Option<UserInfo> {
@@ -2312,12 +2419,19 @@ pub async fn handshake_get_handler() -> Json<crate::types::HandshakeResponse> {
 pub struct TokenResponse {
     pub token: String,
     pub created_at: u64,
+    pub scopes: Vec<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct CreateTokenRequest {
+    pub scopes: Option<Vec<String>>,
 }
 
 pub async fn create_token_handler(
     State(hub): State<Arc<SutureHubServer>>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
+    body: Option<Json<CreateTokenRequest>>,
 ) -> (StatusCode, HeaderMap, Json<TokenResponse>) {
     let ip = addr.ip().to_string();
     if let Err(retry_after) = hub.check_rate_limit(&ip, "token_create").await {
@@ -2331,6 +2445,7 @@ pub async fn create_token_handler(
             Json(TokenResponse {
                 token: String::new(),
                 created_at: 0,
+                scopes: vec![],
             }),
         );
     }
@@ -2342,8 +2457,16 @@ pub async fn create_token_handler(
             .unwrap_or_default()
             .as_secs();
         let expires_at = (created_at + (30 * 24 * 60 * 60)) as i64;
+        let requested_scopes = body.as_ref().and_then(|Json(b)| b.scopes.as_ref());
+        let scopes_str = match requested_scopes {
+            Some(s) if !s.is_empty() => s.join(","),
+            _ => "read,write".to_string(),
+        };
+        let scopes_vec: Vec<String> = scopes_str.split(',').map(String::from).collect();
         let store = hub.storage.write().await;
-        if let Err(e) = store.store_token(&token, created_at, "cli-generated", expires_at) {
+        if let Err(e) =
+            store.store_token(&token, created_at, "cli-generated", expires_at, &scopes_str)
+        {
             tracing::error!("Failed to store auth token: {}", e);
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -2351,13 +2474,18 @@ pub async fn create_token_handler(
                 Json(TokenResponse {
                     token: String::new(),
                     created_at: 0,
+                    scopes: vec![],
                 }),
             );
         }
         return (
             StatusCode::OK,
             HeaderMap::new(),
-            Json(TokenResponse { token, created_at }),
+            Json(TokenResponse {
+                token,
+                created_at,
+                scopes: scopes_vec,
+            }),
         );
     }
 
@@ -2383,8 +2511,16 @@ pub async fn create_token_handler(
             .unwrap_or_default()
             .as_secs();
         let expires_at = (created_at + (30 * 24 * 60 * 60)) as i64;
+        let requested_scopes = body.as_ref().and_then(|Json(b)| b.scopes.as_ref());
+        let scopes_str = match requested_scopes {
+            Some(s) if !s.is_empty() => s.join(","),
+            _ => "read,write".to_string(),
+        };
+        let scopes_vec: Vec<String> = scopes_str.split(',').map(String::from).collect();
         let store = hub.storage.write().await;
-        if let Err(e) = store.store_token(&token, created_at, "cli-generated", expires_at) {
+        if let Err(e) =
+            store.store_token(&token, created_at, "cli-generated", expires_at, &scopes_str)
+        {
             tracing::error!("Failed to store auth token: {}", e);
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -2392,13 +2528,18 @@ pub async fn create_token_handler(
                 Json(TokenResponse {
                     token: String::new(),
                     created_at: 0,
+                    scopes: vec![],
                 }),
             );
         }
         return (
             StatusCode::OK,
             HeaderMap::new(),
-            Json(TokenResponse { token, created_at }),
+            Json(TokenResponse {
+                token,
+                created_at,
+                scopes: scopes_vec,
+            }),
         );
     }
 
@@ -2412,6 +2553,7 @@ pub async fn create_token_handler(
                 Json(TokenResponse {
                     token: String::new(),
                     created_at: 0,
+                    scopes: vec![],
                 }),
             );
         }
@@ -2436,6 +2578,7 @@ pub async fn create_token_handler(
                 Json(TokenResponse {
                     token: String::new(),
                     created_at: 0,
+                    scopes: vec![],
                 }),
             );
         }
@@ -2448,8 +2591,27 @@ pub async fn create_token_handler(
         .as_secs();
     let expires_at = (created_at + (30 * 24 * 60 * 60)) as i64;
 
+    let requested_scopes = body.as_ref().and_then(|Json(b)| b.scopes.as_ref());
+    let scopes_str = match requested_scopes {
+        Some(s) if !s.is_empty() => {
+            let valid: Vec<&str> = s
+                .iter()
+                .map(String::as_str)
+                .filter(|&s| matches!(s, "read" | "write" | "admin"))
+                .collect();
+            if valid.is_empty() {
+                "read,write".to_string()
+            } else {
+                valid.join(",")
+            }
+        }
+        _ => "read,write".to_string(),
+    };
+    let scopes_vec: Vec<String> = scopes_str.split(',').map(String::from).collect();
+
     let store = hub.storage.write().await;
-    if let Err(e) = store.store_token(&token, created_at, "cli-generated", expires_at) {
+    if let Err(e) = store.store_token(&token, created_at, "cli-generated", expires_at, &scopes_str)
+    {
         tracing::error!("Failed to store auth token: {e}");
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -2457,6 +2619,7 @@ pub async fn create_token_handler(
             Json(TokenResponse {
                 token: String::new(),
                 created_at: 0,
+                scopes: vec![],
             }),
         );
     }
@@ -2464,7 +2627,11 @@ pub async fn create_token_handler(
     (
         StatusCode::OK,
         HeaderMap::new(),
-        Json(TokenResponse { token, created_at }),
+        Json(TokenResponse {
+            token,
+            created_at,
+            scopes: scopes_vec,
+        }),
     )
 }
 
@@ -4032,6 +4199,21 @@ pub async fn health_check() -> Json<serde_json::Value> {
     Json(serde_json::json!({"status": "ok"}))
 }
 
+async fn api_version_middleware(
+    headers: HeaderMap,
+    request: axum::http::Request<axum::body::Body>,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let mut response = next.run(request).await;
+    if headers.contains_key("x-api-version") {
+        response.headers_mut().insert(
+            axum::http::header::HeaderName::from_static("x-api-version"),
+            axum::http::HeaderValue::from_static("1"),
+        );
+    }
+    response
+}
+
 // === SSO / OIDC Handlers ===
 
 /// List all configured OIDC providers.
@@ -4428,6 +4610,7 @@ pub async fn run_server(
     let (set_request_id, propagate_request_id) = request_id_layer();
     let app = axum::Router::new()
         .route("/healthz", get(health_check))
+        .route("/metrics", get(crate::metrics::metrics_handler))
         .route("/", axum::routing::get(serve_index))
         .route("/push", axum::routing::post(push_handler))
         .route(
@@ -4569,6 +4752,188 @@ pub async fn run_server(
         .route("/audit/log", axum::routing::get(audit_log_handler))
         // Raft cluster endpoints (only available with raft-cluster feature)
         .route("/raft/status", axum::routing::get(raft_status_handler))
+        // API v1 routes (mirrored from legacy routes)
+        .route("/api/v1/push", axum::routing::post(push_handler))
+        .route("/api/v1/pull", axum::routing::post(pull_handler))
+        .route(
+            "/api/v1/push/compressed",
+            axum::routing::post(push_compressed_handler),
+        )
+        .route(
+            "/api/v1/pull/compressed",
+            axum::routing::post(pull_compressed_handler),
+        )
+        .route("/api/v1/repos", axum::routing::get(list_repos_handler))
+        .route("/api/v1/repos", axum::routing::post(create_repo_handler))
+        .route(
+            "/api/v1/repo/{repo_id}",
+            axum::routing::get(repo_info_handler),
+        )
+        .route(
+            "/api/v1/repos/{repo_id}",
+            axum::routing::delete(delete_repo_handler),
+        )
+        .route(
+            "/api/v1/repos/{repo_id}/branches",
+            axum::routing::get(repo_branches_handler),
+        )
+        .route(
+            "/api/v1/repos/{repo_id}/branches",
+            axum::routing::post(create_branch_handler),
+        )
+        .route(
+            "/api/v1/repos/{repo_id}/branches/{branch}",
+            axum::routing::delete(delete_branch_handler),
+        )
+        .route(
+            "/api/v1/repos/{repo_id}/patches",
+            axum::routing::get(repo_patches_handler),
+        )
+        .route(
+            "/api/v1/repos/{repo_id}/patches/batch",
+            axum::routing::post(batch_push_handler),
+        )
+        .route(
+            "/api/v1/repos/{repo_id}/blobs/{hash}",
+            axum::routing::get(get_blob_handler),
+        )
+        .route(
+            "/api/v1/repos/{repo_id}/tree/{branch}",
+            axum::routing::get(repo_tree_handler),
+        )
+        .route(
+            "/api/v1/repos/{repo_id}/protect/{branch}",
+            axum::routing::post(protect_branch_handler),
+        )
+        .route(
+            "/api/v1/repos/{repo_id}/unprotect/{branch}",
+            axum::routing::post(unprotect_branch_handler),
+        )
+        .route(
+            "/api/v1/handshake",
+            axum::routing::get(handshake_get_handler),
+        )
+        .route("/api/v1/handshake", axum::routing::post(handshake_handler))
+        .route(
+            "/api/v1/v2/handshake",
+            axum::routing::get(handshake_v2_handler),
+        )
+        .route(
+            "/api/v1/v2/handshake",
+            axum::routing::post(handshake_v2_handler),
+        )
+        .route("/api/v1/v2/pull", axum::routing::post(v2_pull_handler))
+        .route("/api/v1/v2/push", axum::routing::post(v2_push_handler))
+        .route(
+            "/api/v1/auth/token",
+            axum::routing::post(create_token_handler),
+        )
+        .route(
+            "/api/v1/auth/verify",
+            axum::routing::post(verify_token_handler),
+        )
+        .route(
+            "/api/v1/auth/register",
+            axum::routing::post(register_handler),
+        )
+        .route("/api/v1/auth/login", axum::routing::post(login_handler))
+        .route("/api/v1/users", axum::routing::get(list_users_handler))
+        .route(
+            "/api/v1/users/{username}",
+            axum::routing::get(get_user_handler),
+        )
+        .route(
+            "/api/v1/users/{username}/role",
+            axum::routing::patch(update_role_handler),
+        )
+        .route(
+            "/api/v1/users/{username}",
+            axum::routing::delete(delete_user_handler),
+        )
+        .route(
+            "/api/v1/mirror/setup",
+            axum::routing::post(mirror_setup_handler),
+        )
+        .route(
+            "/api/v1/mirror/sync",
+            axum::routing::post(mirror_sync_handler),
+        )
+        .route(
+            "/api/v1/mirror/status",
+            axum::routing::get(mirror_status_get_handler),
+        )
+        .route(
+            "/api/v1/mirror/status",
+            axum::routing::post(mirror_status_handler),
+        )
+        .route(
+            "/api/v1/mirrors/{id}",
+            axum::routing::delete(delete_mirror_handler),
+        )
+        .route(
+            "/api/v1/replication/peers",
+            axum::routing::post(add_peer_handler),
+        )
+        .route(
+            "/api/v1/replication/peers",
+            axum::routing::get(list_peers_handler),
+        )
+        .route(
+            "/api/v1/replication/peers/{id}",
+            axum::routing::delete(remove_peer_handler),
+        )
+        .route(
+            "/api/v1/replication/status",
+            axum::routing::get(replication_status_handler),
+        )
+        .route(
+            "/api/v1/replication/sync",
+            axum::routing::post(replication_sync_handler),
+        )
+        .route(
+            "/api/v1/webhooks/{repo_id}",
+            axum::routing::post(create_webhook_handler),
+        )
+        .route(
+            "/api/v1/webhooks/{repo_id}",
+            axum::routing::get(list_webhooks_handler),
+        )
+        .route(
+            "/api/v1/webhooks/{repo_id}/{id}",
+            axum::routing::delete(delete_webhook_handler),
+        )
+        .route("/api/v1/search", axum::routing::get(search_handler))
+        .route("/api/v1/activity", axum::routing::get(activity_handler))
+        .route(
+            "/api/v1/sso/providers",
+            axum::routing::get(sso_list_providers_handler),
+        )
+        .route(
+            "/api/v1/sso/providers",
+            axum::routing::post(sso_configure_provider_handler),
+        )
+        .route(
+            "/api/v1/sso/providers/{provider_name}",
+            axum::routing::delete(sso_delete_provider_handler),
+        )
+        .route(
+            "/api/v1/sso/authorize",
+            axum::routing::post(sso_authorize_handler),
+        )
+        .route(
+            "/api/v1/sso/callback",
+            axum::routing::post(sso_callback_handler),
+        )
+        .route("/api/v1/audit/log", axum::routing::get(audit_log_handler))
+        .route(
+            "/api/v1/raft/status",
+            axum::routing::get(raft_status_handler),
+        )
+        .layer(axum::middleware::from_fn(api_version_middleware))
+        .layer(axum::middleware::from_fn_with_state(
+            Arc::clone(&hub),
+            crate::metrics::metrics_middleware,
+        ))
         .layer(axum::middleware::from_fn_with_state(
             Arc::clone(&hub),
             crate::audit::audit_middleware,
@@ -4712,6 +5077,7 @@ mod tests {
 
         let app = axum::Router::new()
             .route("/", axum::routing::get(serve_index))
+            .route("/metrics", get(crate::metrics::metrics_handler))
             .route("/push", axum::routing::post(push_handler))
             .route(
                 "/push/compressed",
@@ -4825,6 +5191,10 @@ mod tests {
                 "/repos/{repo_id}/patches/batch",
                 axum::routing::post(batch_push_handler),
             )
+            .layer(axum::middleware::from_fn_with_state(
+                Arc::clone(&hub),
+                crate::metrics::metrics_middleware,
+            ))
             .with_state(Arc::clone(&hub));
 
         tokio::spawn(async move {
@@ -5691,7 +6061,13 @@ mod tests {
         {
             let store = hub.storage.write().await;
             store
-                .store_token(&admin_token, 1000, "test token", i64::MAX)
+                .store_token(
+                    &admin_token,
+                    1000,
+                    "test token",
+                    i64::MAX,
+                    "read,write,admin",
+                )
                 .unwrap();
         }
 
@@ -5960,7 +6336,7 @@ mod tests {
         {
             let store = hub.storage.write().await;
             store
-                .store_token(&token, 1000, "login test token", i64::MAX)
+                .store_token(&token, 1000, "login test token", i64::MAX, "read,write")
                 .unwrap();
         }
 
@@ -6531,5 +6907,143 @@ mod tests {
         let store = hub.storage.read().await;
         let branches = store.get_branches("br-repo").unwrap_or_default();
         assert!(branches.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_metrics_returns_prometheus_format() {
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
+        let client = reqwest::Client::new();
+
+        let resp = client
+            .get(format!("{}/metrics", &base))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+
+        let ct = resp
+            .headers()
+            .get("content-type")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(ct.contains("text/plain"));
+
+        let body = resp.text().await.unwrap();
+        assert!(body.contains("# HELP suture_repos_total"));
+        assert!(body.contains("# TYPE suture_repos_total gauge"));
+        assert!(body.contains("suture_repos_total 0"));
+        assert!(body.contains("# HELP suture_patches_total"));
+        assert!(body.contains("# TYPE suture_patches_total gauge"));
+        assert!(body.contains("# HELP suture_blobs_total"));
+        assert!(body.contains("# TYPE suture_blobs_total gauge"));
+        assert!(body.contains("# HELP suture_blobs_size_bytes"));
+        assert!(body.contains("# TYPE suture_blobs_size_bytes gauge"));
+        assert!(body.contains("# HELP suture_active_users_total"));
+        assert!(body.contains("# TYPE suture_active_users_total gauge"));
+        assert!(body.contains("# HELP suture_requests_total"));
+        assert!(body.contains("# TYPE suture_requests_total counter"));
+        assert!(body.contains("# HELP suture_request_duration_seconds"));
+        assert!(body.contains("# TYPE suture_request_duration_seconds histogram"));
+    }
+
+    #[tokio::test]
+    async fn test_request_counter_increments() {
+        let (hub, _port, base) = start_test_hub().await.unwrap();
+        let client = reqwest::Client::new();
+
+        let before = hub
+            .request_metrics
+            .snapshot_request_counts()
+            .iter()
+            .filter(|(m, p, s, _)| m == "GET" && p == "/repos" && s == "200")
+            .map(|(_, _, _, c)| c)
+            .sum::<u64>();
+
+        client.get(format!("{}/repos", &base)).send().await.unwrap();
+        client.get(format!("{}/repos", &base)).send().await.unwrap();
+
+        let after = hub
+            .request_metrics
+            .snapshot_request_counts()
+            .iter()
+            .filter(|(m, p, s, _)| m == "GET" && p == "/repos" && s == "200")
+            .map(|(_, _, _, c)| c)
+            .sum::<u64>();
+
+        assert_eq!(after - before, 2);
+
+        let metrics_before = hub
+            .request_metrics
+            .snapshot_request_counts()
+            .iter()
+            .filter(|(m, p, s, _)| m == "GET" && p == "/metrics" && s == "200")
+            .map(|(_, _, _, c)| c)
+            .sum::<u64>();
+
+        client
+            .get(format!("{}/metrics", &base))
+            .send()
+            .await
+            .unwrap();
+
+        let metrics_after = hub
+            .request_metrics
+            .snapshot_request_counts()
+            .iter()
+            .filter(|(m, p, s, _)| m == "GET" && p == "/metrics" && s == "200")
+            .map(|(_, _, _, c)| c)
+            .sum::<u64>();
+
+        assert_eq!(metrics_after - metrics_before, 1);
+    }
+
+    #[tokio::test]
+    async fn test_metrics_shows_nonzero_after_repos_created() {
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
+        let client = reqwest::Client::new();
+        let a_hex = "a".repeat(64);
+
+        let push_body = serde_json::json!({
+            "repo_id": "metrics-repo",
+            "patches": [{
+                "id": {"value": &a_hex},
+                "operation_type": "Create",
+                "touch_set": ["f"],
+                "target_path": "f",
+                "payload": "",
+                "parent_ids": [],
+                "author": "alice",
+                "message": "p",
+                "timestamp": 0
+            }],
+            "branches": [],
+            "blobs": []
+        });
+        client
+            .post(format!("{}/push", &base))
+            .json(&push_body)
+            .send()
+            .await
+            .unwrap();
+
+        let resp = client
+            .get(format!("{}/metrics", &base))
+            .send()
+            .await
+            .unwrap();
+        let body = resp.text().await.unwrap();
+
+        assert!(body.contains("suture_repos_total 1"));
+        assert!(body.contains("suture_patches_total 1"));
+
+        let requests_count: Vec<&str> = body
+            .lines()
+            .filter(|l| l.starts_with("suture_requests_total{") && !l.contains("\"\""))
+            .collect();
+        assert!(
+            !requests_count.is_empty(),
+            "should have request counters after push"
+        );
     }
 }

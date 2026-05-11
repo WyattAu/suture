@@ -8,6 +8,7 @@
 pub mod cache;
 pub mod error;
 pub mod interner;
+pub mod merge_strategy;
 pub mod plugin;
 pub mod registry;
 pub mod strategy;
@@ -17,9 +18,12 @@ pub mod types;
 pub use cache::MergeCache;
 pub use error::DriverError;
 pub use interner::KeyInterner;
+pub use merge_strategy::{
+    LockfileMergeStrategy, MergeStrategy, MergeStrategyError, MergeStrategyResult,
+};
 pub use plugin::{BuiltinDriverPlugin, DriverPlugin, PluginError, PluginRegistry};
 pub use registry::DriverRegistry;
-pub use strategy::{MergeStrategy, optimal_merge_strategy};
+pub use strategy::{MergeGranularity, optimal_merge_granularity};
 pub use types::{DiffHunk, DiffHunkType, DiffSummary, VisualDiff};
 
 /// Format-specific driver for translating between file formats and Suture patches.

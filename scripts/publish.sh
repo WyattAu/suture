@@ -2,9 +2,40 @@
 set -euo pipefail
 
 REAL=false
-if [[ "${1:-}" == "--real" ]]; then
-  REAL=true
-fi
+DRY_RUN=false
+BUMP=""
+GENERATE_MANIFEST=false
+
+usage() {
+  cat <<'USAGE'
+Usage: publish.sh [OPTIONS]
+
+Options:
+  --real            Publish to crates.io (default: dry-run)
+  --dry-run         Explicit dry-run mode (same as default)
+  --bump minor|patch Bump all crate versions before publishing
+  --manifest        Generate a version manifest JSON to stdout
+  --help            Show this help
+
+Examples:
+  ./scripts/publish.sh                  # dry-run
+  ./scripts/publish.sh --dry-run        # explicit dry-run
+  ./scripts/publish.sh --bump patch     # bump patch versions, then dry-run
+  ./scripts/publish.sh --bump minor --real  # bump minor versions, then publish
+  ./scripts/publish.sh --manifest       # output crate versions as JSON
+USAGE
+}
+
+for arg in "${1:-}"; do
+  case "$arg" in
+    --real)      REAL=true ;;
+    --dry-run)   DRY_RUN=true ;;
+    --bump)      BUMP="${2:-}"; shift ;;
+    --manifest)  GENERATE_MANIFEST=true ;;
+    --help|-h)   usage; exit 0 ;;
+    *)           echo "Unknown option: $arg"; usage; exit 1 ;;
+  esac
+done
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -35,12 +66,17 @@ PUBLISH_ORDER=(
   suture-driver-example
   suture-raft
   suture-s3
+  suture-plugin-sdk
+  suture-wasm-plugin
+  suture-merge
   suture-hub
   suture-daemon
   suture-tui
   suture-lsp
   suture-vfs
-  suture-merge
+  suture-connector-airtable
+  suture-connector-gsheets
+  suture-connector-notion
   suture-cli
 )
 
@@ -50,11 +86,62 @@ DEP_SKIPPED=()
 
 cd "$PROJECT_DIR"
 
+if $GENERATE_MANIFEST; then
+  echo "{"
+  echo "  \"generated_at\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\","
+  echo "  \"crates\": ["
+  first=true
+  for crate in "${PUBLISH_ORDER[@]}"; do
+    version=""
+    if [[ -f "crates/$crate/Cargo.toml" ]]; then
+      version=$(grep -m1 '^version' "crates/$crate/Cargo.toml" | sed 's/.*"\([^"]*\)".*/\1/')
+    fi
+    if $first; then first=false; else echo ","; fi
+    printf '    {"name": "%s", "version": "%s"}' "$crate" "${version:-unknown}"
+  done
+  echo ""
+  echo "  ]"
+  echo "}"
+  exit 0
+fi
+
+bump_version() {
+  local toml="$1"
+  local part="$2"
+  sed -i -E "s/^(version[[:space:]]*=[[:space:]]*\")([0-9]+)\.([0-9]+)\.([0-9]+)(\")/\1$(echo "\2.\3.\4" | awk -F. -v p="$part" '{
+    if (p == "minor") printf "%d.%d.0", $1, $2+1
+    else if (p == "patch") printf "%d.%d.%d", $1, $2, $3+1
+  }')\4/" "$toml"
+}
+
+if [[ -n "$BUMP" ]]; then
+  if [[ "$BUMP" != "minor" && "$BUMP" != "patch" ]]; then
+    echo "ERROR: --bump must be 'minor' or 'patch'"
+    exit 1
+  fi
+  echo "=== Bumping ${BUMP} versions ==="
+  echo ""
+  for crate in "${PUBLISH_ORDER[@]}"; do
+    toml="crates/$crate/Cargo.toml"
+    if [[ -f "$toml" ]]; then
+      old_version=$(grep -m1 '^version' "$toml" | sed 's/.*"\([^"]*\)".*/\1/')
+      bump_version "$toml" "$BUMP"
+      new_version=$(grep -m1 '^version' "$toml" | sed 's/.*"\([^"]*\)".*/\1/')
+      printf "  %-35s %s -> %s\n" "$crate" "$old_version" "$new_version"
+    else
+      printf "  %-35s (skipped, no Cargo.toml)\n" "$crate"
+    fi
+  done
+  echo ""
+fi
+
 echo "=== Suture Publish Script ==="
 echo ""
 
 if $REAL; then
   echo "MODE: REAL PUBLISH (crates will be published to crates.io)"
+elif $DRY_RUN; then
+  echo "MODE: DRY-RUN (explicit --dry-run)"
 else
   echo "MODE: DRY-RUN (no crates will be published)"
 fi
@@ -72,14 +159,12 @@ echo ""
 
 for crate in "${PUBLISH_ORDER[@]}"; do
   if $REAL; then
-    # --no-verify skips checking deps on crates.io (avoids index propagation delay)
-    # --allow-dirty allows uncommitted changes (CI checkout may leave dirty state)
     cmd=(cargo publish -p "$crate" --allow-dirty --no-verify)
   else
     cmd=(cargo publish --dry-run -p "$crate" --allow-dirty)
   fi
 
-  printf "[%2d/%2d] %-30s ... " "$(( ${#PASSED[@]} + ${#FAILED[@]} + 1 ))" "${#PUBLISH_ORDER[@]}" "$crate"
+  printf "[%2d/%2d] %-35s ... " "$(( ${#PASSED[@]} + ${#FAILED[@]} + 1 ))" "${#PUBLISH_ORDER[@]}" "$crate"
 
   if output=$("${cmd[@]}" 2>&1); then
     echo "OK"

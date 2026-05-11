@@ -745,6 +745,42 @@ impl RaftNode {
         Ok(())
     }
 
+    pub fn compact_log(
+        &mut self,
+        last_included_index: u64,
+        last_included_term: u64,
+        snapshot_data: Vec<u8>,
+    ) -> Result<(), RaftError> {
+        if last_included_index > self.commit_index {
+            return Err(RaftError::InvalidIndex(last_included_index));
+        }
+
+        let actual_term = self
+            .log
+            .term_for(last_included_index)
+            .unwrap_or(self.log.snapshot_term());
+        if actual_term != last_included_term && self.log.term_for(last_included_index).is_some() {
+            return Err(RaftError::Log(format!(
+                "term mismatch: expected {last_included_term}, got {actual_term}"
+            )));
+        }
+
+        let snapshot = Snapshot {
+            data: snapshot_data,
+            last_included_index,
+            last_included_term,
+            created_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64,
+        };
+
+        self.log.compact(last_included_index);
+        self.snapshot = Some(snapshot);
+
+        Ok(())
+    }
+
     pub fn install_snapshot(&mut self, snapshot: Snapshot) -> Result<(), RaftError> {
         if snapshot.last_included_index <= self.log.last_index() {
             return Ok(());
@@ -1921,5 +1957,156 @@ mod tests {
             }
             _ => panic!("expected pre-vote response"),
         }
+    }
+
+    #[test]
+    fn test_compact_log_truncates_entries() {
+        let mut node = RaftNode::new(1, vec![]);
+
+        for _ in 0..25 {
+            node.tick();
+        }
+        assert_eq!(node.state(), &NodeState::Leader);
+
+        node.propose(vec![1]).unwrap();
+        node.propose(vec![2]).unwrap();
+        node.propose(vec![3]).unwrap();
+        node.propose(vec![4]).unwrap();
+        node.propose(vec![5]).unwrap();
+
+        let result = node.compact_log(3, 1, vec![0xAA, 0xBB]);
+        assert!(result.is_ok());
+
+        assert!(node.log.get(1).is_none());
+        assert!(node.log.get(2).is_none());
+        assert!(node.log.get(3).is_none());
+        assert_eq!(node.log.get(4).unwrap().command, vec![4]);
+        assert_eq!(node.log.get(5).unwrap().command, vec![5]);
+        assert_eq!(node.log.snapshot_index(), 3);
+        assert_eq!(node.log.snapshot_term(), 1);
+    }
+
+    #[test]
+    fn test_compact_log_persists_snapshot() {
+        let mut node = RaftNode::new(1, vec![]);
+
+        for _ in 0..25 {
+            node.tick();
+        }
+        assert_eq!(node.state(), &NodeState::Leader);
+
+        node.propose(vec![1]).unwrap();
+        node.propose(vec![2]).unwrap();
+
+        node.compact_log(2, 1, vec![0xDE, 0xAD]).unwrap();
+
+        let snap = node.snapshot().unwrap();
+        assert_eq!(snap.last_included_index, 2);
+        assert_eq!(snap.last_included_term, 1);
+        assert_eq!(snap.data, vec![0xDE, 0xAD]);
+    }
+
+    #[test]
+    fn test_compact_log_rejects_uncommitted() {
+        let mut leader = RaftNode::new(1, vec![2]);
+
+        for _ in 0..10 {
+            leader.tick();
+        }
+        leader.handle_message(
+            2,
+            RaftMessage::RequestVoteResponse {
+                term: 0,
+                vote_granted: true,
+                is_pre_vote: true,
+            },
+        );
+        leader.handle_message(
+            2,
+            RaftMessage::RequestVoteResponse {
+                term: 1,
+                vote_granted: true,
+                is_pre_vote: false,
+            },
+        );
+        assert_eq!(leader.state(), &NodeState::Leader);
+
+        leader.propose(vec![1]).unwrap();
+
+        assert_eq!(leader.commit_index, 0);
+
+        let result = leader.compact_log(1, 1, vec![0]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_compact_log_follower_install_snapshot() {
+        let mut leader = RaftNode::new(1, vec![2]);
+
+        for _ in 0..10 {
+            leader.tick();
+        }
+        leader.handle_message(
+            2,
+            RaftMessage::RequestVoteResponse {
+                term: 0,
+                vote_granted: true,
+                is_pre_vote: true,
+            },
+        );
+        leader.handle_message(
+            2,
+            RaftMessage::RequestVoteResponse {
+                term: 1,
+                vote_granted: true,
+                is_pre_vote: false,
+            },
+        );
+        assert_eq!(leader.state(), &NodeState::Leader);
+
+        leader.propose(vec![10]).unwrap();
+        leader.propose(vec![20]).unwrap();
+        leader.propose(vec![30]).unwrap();
+
+        leader.handle_message(
+            2,
+            RaftMessage::AppendEntriesResponse {
+                term: 1,
+                success: true,
+                match_index: 3,
+            },
+        );
+
+        leader.compact_log(3, 1, vec![0xCA, 0xFE]).unwrap();
+
+        let snapshot = leader.snapshot().unwrap().clone();
+
+        let mut follower = RaftNode::new(2, vec![]);
+
+        follower.install_snapshot(snapshot).unwrap();
+
+        assert_eq!(follower.log.snapshot_index(), 3);
+        assert_eq!(follower.log.snapshot_term(), 1);
+        let follower_snap = follower.snapshot().unwrap();
+        assert_eq!(follower_snap.data, vec![0xCA, 0xFE]);
+
+        follower.handle_message(
+            1,
+            RaftMessage::AppendEntriesRequest {
+                term: 1,
+                leader_id: 1,
+                prev_log_index: 3,
+                prev_log_term: 1,
+                entries: vec![LogEntry {
+                    index: 4,
+                    term: 1,
+                    command: vec![40],
+                }],
+                leader_commit: 4,
+            },
+        );
+
+        assert_eq!(follower.log.last_index(), 4);
+        assert_eq!(follower.log.get(4).unwrap().command, vec![40]);
     }
 }

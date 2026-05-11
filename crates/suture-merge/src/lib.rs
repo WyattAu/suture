@@ -23,7 +23,10 @@
 mod error;
 mod registry;
 
-pub use error::{MergeError, MergeResult, MergeStatus};
+pub use error::{
+    ConflictResolution, MergeConflict, MergeError, MergeOutput, MergeResult, MergeStatus,
+    merge_with_conflicts, resolve_conflict,
+};
 
 use error::perform_merge;
 use registry::build_registry;

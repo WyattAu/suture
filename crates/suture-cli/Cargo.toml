@@ -37,6 +37,7 @@ suture-driver-html = { path = "../suture-driver-html", version = "5.0.0" }
 suture-driver-ical = { path = "../suture-driver-ical", version = "5.0.0" }
 suture-driver-feed = { path = "../suture-driver-feed", version = "5.0.0" }
 suture-driver-otio = { path = "../suture-driver-otio", version = "5.0.0" }
+suture-hub = { path = "../suture-hub", version = "5.0.0" }
 suture-tui = { path = "../suture-tui", version = "5.0.0" }
 clap = { version = "4.5", features = ["derive"] }
 clap_complete = "4.6"

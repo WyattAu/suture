@@ -2,7 +2,11 @@ use crate::config::S3Config;
 use crate::error::S3Error;
 use crate::signing::sign_request;
 use suture_common::Hash;
-use tracing::{debug, instrument};
+use tracing::{debug, instrument, warn};
+
+const MULTIPART_THRESHOLD: usize = 8 * 1024 * 1024;
+const PART_SIZE: usize = 5 * 1024 * 1024;
+const MAX_RETRIES: usize = 3;
 
 pub struct S3BlobStore {
     config: S3Config,
@@ -24,6 +28,9 @@ impl S3BlobStore {
 
     #[instrument(skip(self, data), fields(hash = %hash))]
     pub async fn put_blob(&self, hash: &Hash, data: &[u8]) -> Result<(), S3Error> {
+        if data.len() > MULTIPART_THRESHOLD {
+            return self.put_blob_multipart(hash, data).await;
+        }
         let key = self.object_key(hash);
         let url = self.config.build_url(&key);
         debug!(%url, "PUT blob to S3");
@@ -44,6 +51,135 @@ impl S3BlobStore {
                 Err(S3Error::UnexpectedStatus(status, body))
             }
         }
+    }
+
+    pub async fn put_blob_multipart(&self, hash: &Hash, data: &[u8]) -> Result<(), S3Error> {
+        let key = self.object_key(hash);
+        debug!(%key, size = data.len(), "starting multipart upload");
+
+        let upload_id = self.initiate_multipart(&key).await?;
+        let parts: Vec<(usize, String)> = self.upload_parts(&key, &upload_id, data).await?;
+
+        match self.complete_multipart(&key, &upload_id, &parts).await {
+            Ok(()) => {
+                debug!(%key, "multipart upload completed");
+                Ok(())
+            }
+            Err(e) => {
+                warn!(%key, %upload_id, error = %e, "multipart failed, aborting");
+                let _ = self.abort_multipart(&key, &upload_id).await;
+                Err(e)
+            }
+        }
+    }
+
+    async fn initiate_multipart(&self, key: &str) -> Result<String, S3Error> {
+        let url = format!("{}?uploads={}", self.config.build_url(key), "");
+        let mut request = self.client.post(&url).build()?;
+        sign_request(&mut request, &self.config)?;
+
+        let response = self.client.execute(request).await?;
+        let status = response.status().as_u16();
+
+        if !(200..300).contains(&status) {
+            let body = response.text().await.unwrap_or_default();
+            return Err(S3Error::UnexpectedStatus(status, body));
+        }
+
+        let body = response.text().await.unwrap_or_default();
+        extract_upload_id(&body).ok_or_else(|| {
+            S3Error::MultipartUpload("missing UploadId in CreateMultipartUpload response".into())
+        })
+    }
+
+    async fn upload_parts(
+        &self,
+        key: &str,
+        upload_id: &str,
+        data: &[u8],
+    ) -> Result<Vec<(usize, String)>, S3Error> {
+        let chunk_count = data.len().div_ceil(PART_SIZE);
+        let mut parts = Vec::with_capacity(chunk_count);
+
+        for (i, chunk) in data.chunks(PART_SIZE).enumerate() {
+            let part_number = i + 1;
+            let url = format!(
+                "{}?partNumber={part_number}&uploadId={upload_id}",
+                self.config.build_url(key)
+            );
+
+            let etag = with_retry(MAX_RETRIES, || {
+                let client = &self.client;
+                let config = &self.config;
+                let url = url.clone();
+                let chunk = chunk.to_vec();
+                async move {
+                    let mut request = client.put(&url).body(chunk).build()?;
+                    sign_request(&mut request, config)?;
+                    let response = client.execute(request).await?;
+
+                    match response.status().as_u16() {
+                        200 => {
+                            let etag = response
+                                .headers()
+                                .get("ETag")
+                                .and_then(|v| v.to_str().ok())
+                                .unwrap_or("")
+                                .to_string();
+                            Ok(etag)
+                        }
+                        status => {
+                            let body = response.text().await.unwrap_or_default();
+                            Err(S3Error::UnexpectedStatus(status, body))
+                        }
+                    }
+                }
+            })
+            .await?;
+
+            parts.push((part_number, etag));
+        }
+
+        Ok(parts)
+    }
+
+    async fn complete_multipart(
+        &self,
+        key: &str,
+        upload_id: &str,
+        parts: &[(usize, String)],
+    ) -> Result<(), S3Error> {
+        let url = format!("{}?uploadId={upload_id}", self.config.build_url(key));
+
+        let mut xml = String::from("<CompleteMultipartUpload>");
+        for (part_number, etag) in parts {
+            xml.push_str(&format!(
+                "<Part><PartNumber>{part_number}</PartNumber><ETag>{etag}</ETag></Part>"
+            ));
+        }
+        xml.push_str("</CompleteMultipartUpload>");
+
+        let mut request = self.client.post(&url).body(xml).build()?;
+        sign_request(&mut request, &self.config)?;
+
+        let response = self.client.execute(request).await?;
+        let status = response.status().as_u16();
+
+        if (200..300).contains(&status) {
+            Ok(())
+        } else {
+            let body = response.text().await.unwrap_or_default();
+            Err(S3Error::UnexpectedStatus(status, body))
+        }
+    }
+
+    async fn abort_multipart(&self, key: &str, upload_id: &str) -> Result<(), S3Error> {
+        let url = format!("{}?uploadId={upload_id}", self.config.build_url(key));
+        let mut request = self.client.delete(&url).build()?;
+        sign_request(&mut request, &self.config)?;
+        let response = self.client.execute(request).await?;
+        let _ = response.status();
+        Ok(())
     }
 
     #[instrument(skip(self), fields(hash = %hash))]
@@ -164,6 +300,42 @@ fn parse_list_response(xml: &str, prefix: &str) -> Vec<Hash> {
     }
 
     hashes
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+async fn with_retry<F, Fut, T>(max_retries: usize, mut f: F) -> Result<T, S3Error>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<T, S3Error>>,
+{
+    let mut attempt = 0;
+    loop {
+        match f().await {
+            Ok(value) => return Ok(value),
+            Err(ref e) if is_transient(e) && attempt < max_retries => {
+                attempt += 1;
+                let delay = std::time::Duration::from_millis(100 * 2u64.pow(attempt as u32 - 1));
+                warn!(attempt, max_retries, ?delay, error = %e, "retrying transient S3 error");
+                tokio::time::sleep(delay).await;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
+fn is_transient(err: &S3Error) -> bool {
+    match err {
+        S3Error::UnexpectedStatus(status, _) => (500..600).contains(status),
+        S3Error::Connection(_) => true,
+        _ => false,
+    }
+}
+
+fn extract_upload_id(xml: &str) -> Option<String> {
+    xml.split("<UploadId>")
+        .nth(1)
+        .and_then(|s| s.split("</UploadId>").next())
+        .map(|s| s.trim().to_owned())
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -294,5 +466,100 @@ mod tests {
         let hex_str = "c".repeat(64);
         let hash = Hash::from_hex(&hex_str).unwrap();
         assert_eq!(store.object_key(&hash), format!("suture/blobs/{hex_str}"));
+    }
+
+    #[test]
+    fn test_multipart_threshold_boundary() {
+        let store = S3BlobStore::new(make_config());
+        assert_eq!(MULTIPART_THRESHOLD, 8 * 1024 * 1024);
+        assert_eq!(PART_SIZE, 5 * 1024 * 1024);
+    }
+
+    #[test]
+    fn test_is_transient_5xx() {
+        assert!(is_transient(&S3Error::UnexpectedStatus(
+            500,
+            "internal".into()
+        )));
+        assert!(is_transient(&S3Error::UnexpectedStatus(
+            503,
+            "unavailable".into()
+        )));
+        assert!(!is_transient(&S3Error::UnexpectedStatus(
+            404,
+            "not found".into()
+        )));
+        assert!(!is_transient(&S3Error::UnexpectedStatus(
+            403,
+            "denied".into()
+        )));
+        assert!(is_transient(&S3Error::Connection("timeout".into())));
+        assert!(!is_transient(&S3Error::NotFound("key".into())));
+        assert!(!is_transient(&S3Error::AccessDenied("denied".into())));
+    }
+
+    #[tokio::test]
+    async fn test_with_retry_succeeds_immediately() {
+        let result = with_retry(3, || async { Ok::<_, S3Error>(42i32) }).await;
+        assert_eq!(result.unwrap(), 42);
+    }
+
+    #[tokio::test]
+    async fn test_with_retry_retries_transient_then_succeeds() {
+        let mut attempts = 0;
+        let result = with_retry(3, || {
+            attempts += 1;
+            async move {
+                if attempts < 3 {
+                    Err(S3Error::UnexpectedStatus(503, "service unavailable".into()))
+                } else {
+                    Ok::<_, S3Error>("done")
+                }
+            }
+        })
+        .await;
+        assert_eq!(result.unwrap(), "done");
+        assert_eq!(attempts, 3);
+    }
+
+    #[tokio::test]
+    async fn test_with_retry_exhausts_retries() {
+        let mut attempts = 0;
+        let result = with_retry(2, || {
+            attempts += 1;
+            async move { Err::<(), _>(S3Error::Connection("timeout".into())) }
+        })
+        .await;
+        assert!(result.is_err());
+        assert_eq!(attempts, 3);
+    }
+
+    #[tokio::test]
+    async fn test_with_retry_no_retry_on_non_transient() {
+        let mut attempts = 0;
+        let result = with_retry(3, || {
+            attempts += 1;
+            async move { Err::<(), _>(S3Error::NotFound("key".into())) }
+        })
+        .await;
+        assert!(result.is_err());
+        assert_eq!(attempts, 1);
+    }
+
+    #[test]
+    fn test_extract_upload_id() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<InitiateMultipartUploadResult>
+    <Bucket>test-bucket</Bucket>
+    <Key>suture/blobs/abc</Key>
+    <UploadId>upload-id-12345</UploadId>
+</InitiateMultipartUploadResult>"#;
+        assert_eq!(extract_upload_id(xml), Some("upload-id-12345".to_string()));
+    }
+
+    #[test]
+    fn test_extract_upload_id_missing() {
+        let xml = "<InitiateMultipartUploadResult></InitiateMultipartUploadResult>";
+        assert_eq!(extract_upload_id(xml), None);
     }
 }

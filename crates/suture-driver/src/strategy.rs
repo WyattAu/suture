@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-/// Merge strategy selected based on file size.
+/// Merge granularity selected based on file size.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MergeStrategy {
+pub enum MergeGranularity {
     /// Full semantic merge — best for small files where precision matters most.
     FullSemantic,
     /// Merge at key-path level only — good for medium files.
@@ -10,25 +10,25 @@ pub enum MergeStrategy {
     SectionBased,
 }
 
-/// Select an optimal merge strategy based on file size.
+/// Select an optimal merge granularity based on file size.
 ///
 /// These thresholds are heuristics and can be tuned per use-case.
 ///
 /// # Thresholds
 ///
-/// | Size | Strategy |
-/// |------|----------|
+/// | Size | Granularity |
+/// |------|-------------|
 /// | < 1 KiB | `FullSemantic` |
 /// | < 100 KiB | `KeyPathOnly` |
 /// | >= 100 KiB | `SectionBased` |
 #[must_use]
-pub fn optimal_merge_strategy(file_size: usize) -> MergeStrategy {
+pub fn optimal_merge_granularity(file_size: usize) -> MergeGranularity {
     if file_size < 1024 {
-        MergeStrategy::FullSemantic
+        MergeGranularity::FullSemantic
     } else if file_size < 100_000 {
-        MergeStrategy::KeyPathOnly
+        MergeGranularity::KeyPathOnly
     } else {
-        MergeStrategy::SectionBased
+        MergeGranularity::SectionBased
     }
 }
 
@@ -38,39 +38,54 @@ mod tests {
 
     #[test]
     fn test_small_file() {
-        assert_eq!(optimal_merge_strategy(512), MergeStrategy::FullSemantic);
+        assert_eq!(
+            optimal_merge_granularity(512),
+            MergeGranularity::FullSemantic
+        );
     }
 
     #[test]
     fn test_boundary_small() {
-        assert_eq!(optimal_merge_strategy(1023), MergeStrategy::FullSemantic);
+        assert_eq!(
+            optimal_merge_granularity(1023),
+            MergeGranularity::FullSemantic
+        );
     }
 
     #[test]
     fn test_medium_file() {
-        assert_eq!(optimal_merge_strategy(2048), MergeStrategy::KeyPathOnly);
+        assert_eq!(
+            optimal_merge_granularity(2048),
+            MergeGranularity::KeyPathOnly
+        );
     }
 
     #[test]
     fn test_boundary_medium() {
-        assert_eq!(optimal_merge_strategy(99_999), MergeStrategy::KeyPathOnly);
+        assert_eq!(
+            optimal_merge_granularity(99_999),
+            MergeGranularity::KeyPathOnly
+        );
     }
 
     #[test]
     fn test_large_file() {
-        assert_eq!(optimal_merge_strategy(100_000), MergeStrategy::SectionBased);
+        assert_eq!(
+            optimal_merge_granularity(100_000),
+            MergeGranularity::SectionBased
+        );
     }
 
     #[test]
     fn test_very_large_file() {
         assert_eq!(
-            optimal_merge_strategy(10_000_000),
-            MergeStrategy::SectionBased
+            optimal_merge_granularity(10_000_000),
+            MergeGranularity::SectionBased
         );
     }
 
     #[test]
     fn test_zero_size() {
-        assert_eq!(optimal_merge_strategy(0), MergeStrategy::FullSemantic);
+        assert_eq!(optimal_merge_granularity(0), MergeGranularity::FullSemantic);
     }
 }

@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+use std::collections::HashMap;
+
 use serde_json::Value;
 use suture_driver::impl_structured_driver;
 use suture_driver::{DriverError, SemanticChange, SutureDriver};
@@ -9,10 +11,129 @@ impl JsonDriver {
     fn json_pointer_escape(s: &str) -> String {
         s.replace('~', "~0").replace('/', "~1")
     }
+
+    fn is_cargo_lock(value: &Value) -> bool {
+        value
+            .get("package")
+            .and_then(|p| p.as_array())
+            .is_some_and(|arr| {
+                arr.iter()
+                    .any(|pkg| pkg.get("name").is_some() && pkg.get("version").is_some())
+            })
+    }
+
+    fn parse_cargo_lock_packages(value: &Value) -> Option<Vec<(String, String)>> {
+        let packages = value.get("package")?.as_array()?;
+        let mut entries = Vec::new();
+        for pkg in packages {
+            let name = pkg.get("name")?.as_str()?.to_string();
+            let version = pkg.get("version")?.as_str()?.to_string();
+            entries.push((name, version));
+        }
+        Some(entries)
+    }
+
+    fn merge_cargo_lock(base: &Value, ours: &Value, theirs: &Value) -> Option<Value> {
+        let base_packages = Self::parse_cargo_lock_packages(base)?;
+        let ours_packages = Self::parse_cargo_lock_packages(ours)?;
+        let theirs_packages = Self::parse_cargo_lock_packages(theirs)?;
+
+        let base_map: HashMap<&str, &str> = base_packages
+            .iter()
+            .map(|(n, v)| (n.as_str(), v.as_str()))
+            .collect();
+        let ours_map: HashMap<&str, &str> = ours_packages
+            .iter()
+            .map(|(n, v)| (n.as_str(), v.as_str()))
+            .collect();
+        let theirs_map: HashMap<&str, &str> = theirs_packages
+            .iter()
+            .map(|(n, v)| (n.as_str(), v.as_str()))
+            .collect();
+
+        let all_names: std::collections::HashSet<&str> = base_map
+            .keys()
+            .chain(ours_map.keys())
+            .chain(theirs_map.keys())
+            .copied()
+            .collect();
+
+        let ours_array = ours.get("package")?.as_array()?;
+        let theirs_array = theirs.get("package")?.as_array()?;
+        let base_array = base.get("package")?.as_array()?;
+
+        let ours_entries: HashMap<&str, &Value> = ours_array
+            .iter()
+            .filter_map(|pkg| {
+                let name = pkg.get("name")?.as_str()?;
+                Some((name, pkg))
+            })
+            .collect();
+        let theirs_entries: HashMap<&str, &Value> = theirs_array
+            .iter()
+            .filter_map(|pkg| {
+                let name = pkg.get("name")?.as_str()?;
+                Some((name, pkg))
+            })
+            .collect();
+        let base_entries: HashMap<&str, &Value> = base_array
+            .iter()
+            .filter_map(|pkg| {
+                let name = pkg.get("name")?.as_str()?;
+                Some((name, pkg))
+            })
+            .collect();
+
+        let mut merged_packages = Vec::new();
+        let mut merged_names: std::collections::HashSet<&str> = std::collections::HashSet::new();
+
+        for &name in &all_names {
+            if merged_names.contains(name) {
+                continue;
+            }
+            let base_ver = base_map.get(name).copied();
+            let ours_ver = ours_map.get(name).copied();
+            let theirs_ver = theirs_map.get(name).copied();
+
+            let entry = match (base_ver, ours_ver, theirs_ver) {
+                (_, Some(o), Some(t)) => {
+                    if o == t {
+                        ours_entries.get(name).copied()
+                    } else if Some(o) == base_ver {
+                        theirs_entries.get(name).copied()
+                    } else if Some(t) == base_ver {
+                        ours_entries.get(name).copied()
+                    } else {
+                        None
+                    }
+                }
+                (_, Some(_), None) => ours_entries.get(name).copied(),
+                (_, None, Some(_)) => theirs_entries.get(name).copied(),
+                (Some(_), None, None) => base_entries.get(name).copied(),
+                (None, None, None) => unreachable!(),
+            };
+
+            match entry {
+                Some(pkg) => {
+                    merged_packages.push((*pkg).clone());
+                    merged_names.insert(name);
+                }
+                None => return None,
+            }
+        }
+
+        let mut result = base.clone();
+        if let Some(obj) = result.as_object_mut() {
+            obj.insert("package".to_string(), Value::Array(merged_packages));
+        }
+        Some(result)
+    }
 }
 
+struct JsonDriverInner;
+
 impl_structured_driver! {
-    driver = JsonDriver,
+    driver = JsonDriverInner,
     name = "JSON",
     extensions = [".json"],
     value_ty = Value,
@@ -38,6 +159,71 @@ impl_structured_driver! {
     serialize_val = |v| serde_json::to_string_pretty(v).map_err(|e| DriverError::SerializationError(e.to_string())),
 
     arrow = "→",
+}
+
+impl Default for JsonDriver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl JsonDriver {
+    #[must_use]
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl SutureDriver for JsonDriver {
+    fn name(&self) -> &str {
+        "JSON"
+    }
+
+    fn supported_extensions(&self) -> &[&str] {
+        &[".json"]
+    }
+
+    fn diff(
+        &self,
+        base_content: Option<&str>,
+        new_content: &str,
+    ) -> Result<Vec<SemanticChange>, DriverError> {
+        JsonDriverInner.diff(base_content, new_content)
+    }
+
+    fn format_diff(
+        &self,
+        base_content: Option<&str>,
+        new_content: &str,
+    ) -> Result<String, DriverError> {
+        JsonDriverInner.format_diff(base_content, new_content)
+    }
+
+    fn merge(&self, base: &str, ours: &str, theirs: &str) -> Result<Option<String>, DriverError> {
+        let base_val: Value =
+            serde_json::from_str(base).map_err(|e| DriverError::ParseError(e.to_string()))?;
+        let ours_val: Value =
+            serde_json::from_str(ours).map_err(|e| DriverError::ParseError(e.to_string()))?;
+        let theirs_val: Value =
+            serde_json::from_str(theirs).map_err(|e| DriverError::ParseError(e.to_string()))?;
+
+        if Self::is_cargo_lock(&base_val)
+            || Self::is_cargo_lock(&ours_val)
+            || Self::is_cargo_lock(&theirs_val)
+        {
+            match Self::merge_cargo_lock(&base_val, &ours_val, &theirs_val) {
+                Some(merged) => {
+                    return Ok(Some(
+                        serde_json::to_string_pretty(&merged)
+                            .map_err(|e| DriverError::SerializationError(e.to_string()))?,
+                    ));
+                }
+                None => return Ok(None),
+            }
+        }
+
+        JsonDriverInner.merge(base, ours, theirs)
+    }
 }
 
 #[cfg(test)]
@@ -805,5 +991,172 @@ mod tests {
             let result = driver.merge("{}", &format!("{{\"a\": \"{a}\"}}"), &format!("{{\"b\": \"{b}\"}}")).unwrap();
             assert!(result.is_some());
         }
+    }
+
+    // === Cargo.lock merge tests ===
+
+    #[test]
+    fn test_is_cargo_lock_detects_lockfile() {
+        let lockfile = serde_json::json!({
+            "package": [
+                {"name": "serde", "version": "1.0.0", "checksum": "abc123"}
+            ]
+        });
+        assert!(JsonDriver::is_cargo_lock(&lockfile));
+
+        let not_lockfile = serde_json::json!({"name": "Alice"});
+        assert!(!JsonDriver::is_cargo_lock(&not_lockfile));
+    }
+
+    #[test]
+    fn test_lockfile_one_side_adds_other_changes_existing() {
+        let driver = JsonDriver::new();
+        let base = serde_json::to_string_pretty(&serde_json::json!({
+            "package": [
+                {"name": "serde", "version": "1.0.0", "checksum": "abc"},
+                {"name": "tokio", "version": "1.0.0", "checksum": "def"}
+            ]
+        }))
+        .unwrap();
+
+        let ours = serde_json::to_string_pretty(&serde_json::json!({
+            "package": [
+                {"name": "serde", "version": "1.0.0", "checksum": "abc"},
+                {"name": "tokio", "version": "1.0.0", "checksum": "def"},
+                {"name": "clap", "version": "4.0.0", "checksum": "ghi"}
+            ]
+        }))
+        .unwrap();
+
+        let theirs = serde_json::to_string_pretty(&serde_json::json!({
+            "package": [
+                {"name": "serde", "version": "1.1.0", "checksum": "xyz"},
+                {"name": "tokio", "version": "1.0.0", "checksum": "def"}
+            ]
+        }))
+        .unwrap();
+
+        let result = driver.merge(&base, &ours, &theirs).unwrap();
+        assert!(
+            result.is_some(),
+            "adding dep on one side and changing version on other should merge"
+        );
+        let merged: Value = serde_json::from_str(&result.unwrap()).unwrap();
+        let packages = merged["package"].as_array().unwrap();
+
+        let serde_pkg = packages.iter().find(|p| p["name"] == "serde").unwrap();
+        assert_eq!(
+            serde_pkg["version"], "1.1.0",
+            "theirs version change should be kept"
+        );
+
+        let clap_pkg = packages.iter().find(|p| p["name"] == "clap");
+        assert!(clap_pkg.is_some(), "ours new dependency should be added");
+    }
+
+    #[test]
+    fn test_lockfile_both_change_same_dep_version_conflict() {
+        let driver = JsonDriver::new();
+        let base = serde_json::to_string_pretty(&serde_json::json!({
+            "package": [
+                {"name": "serde", "version": "1.0.0", "checksum": "abc"}
+            ]
+        }))
+        .unwrap();
+
+        let ours = serde_json::to_string_pretty(&serde_json::json!({
+            "package": [
+                {"name": "serde", "version": "1.1.0", "checksum": "def"}
+            ]
+        }))
+        .unwrap();
+
+        let theirs = serde_json::to_string_pretty(&serde_json::json!({
+            "package": [
+                {"name": "serde", "version": "1.2.0", "checksum": "ghi"}
+            ]
+        }))
+        .unwrap();
+
+        let result = driver.merge(&base, &ours, &theirs).unwrap();
+        assert!(
+            result.is_none(),
+            "both sides changing same dep to different versions should conflict"
+        );
+    }
+
+    #[test]
+    fn test_lockfile_both_add_different_deps_clean() {
+        let driver = JsonDriver::new();
+        let base = serde_json::to_string_pretty(&serde_json::json!({
+            "package": [
+                {"name": "serde", "version": "1.0.0", "checksum": "abc"}
+            ]
+        }))
+        .unwrap();
+
+        let ours = serde_json::to_string_pretty(&serde_json::json!({
+            "package": [
+                {"name": "serde", "version": "1.0.0", "checksum": "abc"},
+                {"name": "clap", "version": "4.0.0", "checksum": "def"}
+            ]
+        }))
+        .unwrap();
+
+        let theirs = serde_json::to_string_pretty(&serde_json::json!({
+            "package": [
+                {"name": "serde", "version": "1.0.0", "checksum": "abc"},
+                {"name": "tokio", "version": "1.0.0", "checksum": "ghi"}
+            ]
+        }))
+        .unwrap();
+
+        let result = driver.merge(&base, &ours, &theirs).unwrap();
+        assert!(
+            result.is_some(),
+            "both sides adding different deps should merge cleanly"
+        );
+        let merged: Value = serde_json::from_str(&result.unwrap()).unwrap();
+        let packages = merged["package"].as_array().unwrap();
+        assert_eq!(packages.len(), 3);
+        assert!(packages.iter().any(|p| p["name"] == "clap"));
+        assert!(packages.iter().any(|p| p["name"] == "tokio"));
+        assert!(packages.iter().any(|p| p["name"] == "serde"));
+    }
+
+    #[test]
+    fn test_lockfile_one_side_changes_version_other_unchanged() {
+        let driver = JsonDriver::new();
+        let base = serde_json::to_string_pretty(&serde_json::json!({
+            "package": [
+                {"name": "serde", "version": "1.0.0", "checksum": "abc"},
+                {"name": "tokio", "version": "1.0.0", "checksum": "def"}
+            ]
+        }))
+        .unwrap();
+
+        let ours = serde_json::to_string_pretty(&serde_json::json!({
+            "package": [
+                {"name": "serde", "version": "1.1.0", "checksum": "xyz"},
+                {"name": "tokio", "version": "1.0.0", "checksum": "def"}
+            ]
+        }))
+        .unwrap();
+
+        let theirs = serde_json::to_string_pretty(&serde_json::json!({
+            "package": [
+                {"name": "serde", "version": "1.0.0", "checksum": "abc"},
+                {"name": "tokio", "version": "1.0.0", "checksum": "def"}
+            ]
+        }))
+        .unwrap();
+
+        let result = driver.merge(&base, &ours, &theirs).unwrap();
+        assert!(result.is_some());
+        let merged: Value = serde_json::from_str(&result.unwrap()).unwrap();
+        let packages = merged["package"].as_array().unwrap();
+        let serde_pkg = packages.iter().find(|p| p["name"] == "serde").unwrap();
+        assert_eq!(serde_pkg["version"], "1.1.0");
+        assert_eq!(serde_pkg["checksum"], "xyz");
     }
 }

@@ -22,6 +22,9 @@ pub enum S3Error {
 
     #[error("unexpected status {0}: {1}")]
     UnexpectedStatus(u16, String),
+
+    #[error("multipart upload failed: {0}")]
+    MultipartUpload(String),
 }
 
 impl From<reqwest::Error> for S3Error {

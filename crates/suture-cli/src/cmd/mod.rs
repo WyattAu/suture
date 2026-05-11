@@ -24,6 +24,7 @@ pub mod gc;
 pub mod git;
 pub mod grep;
 pub mod hook;
+pub mod hub;
 pub mod ignore;
 pub mod init;
 pub mod key;

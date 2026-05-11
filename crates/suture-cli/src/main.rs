@@ -801,6 +801,11 @@ EXAMPLES:
         #[command(subcommand)]
         action: BisectAction,
     },
+    /// Manage the Suture Hub (backup and restore)
+    Hub {
+        #[command(subcommand)]
+        action: HubAction,
+    },
     /// Manage repository hooks
     #[command(after_long_help = "\
 EXAMPLES:
@@ -1355,6 +1360,26 @@ pub(crate) enum ClassificationAction {
 }
 
 #[derive(Subcommand, Debug)]
+pub(crate) enum HubAction {
+    /// Create a backup of the hub database
+    Backup {
+        /// Path to the hub SQLite database
+        #[arg(long)]
+        db: std::path::PathBuf,
+        /// Output directory for the backup
+        output_dir: std::path::PathBuf,
+    },
+    /// Restore a hub from a backup
+    Restore {
+        /// Path to the hub SQLite database
+        #[arg(long)]
+        db: std::path::PathBuf,
+        /// Path to the backup directory
+        backup_dir: std::path::PathBuf,
+    },
+}
+
+#[derive(Subcommand, Debug)]
 pub(crate) enum HookAction {
     /// List all configured hooks
     List,
@@ -1734,6 +1759,19 @@ async fn main() {
             verify,
         } => cmd::rev_parse::cmd_rev_parse(&refs, short, verify).await,
         Commands::Bisect { action } => cmd::bisect::cmd_bisect(&action).await,
+        Commands::Hub { action } => {
+            let hub_action = match action {
+                HubAction::Backup { db, output_dir } => cmd::hub::HubAction::Backup {
+                    db_path: db,
+                    output_dir,
+                },
+                HubAction::Restore { db, backup_dir } => cmd::hub::HubAction::Restore {
+                    db_path: db,
+                    backup_dir,
+                },
+            };
+            cmd::hub::cmd_hub(&hub_action).await
+        }
         Commands::Hook { action } => {
             let hook_action = match action {
                 HookAction::List => cmd::hook::HookAction::List,

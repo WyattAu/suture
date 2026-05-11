@@ -23,6 +23,37 @@
 use suture_driver::{DriverError, SemanticChange, SutureDriver};
 use suture_ooxml::OoxmlDocument;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum TrackChangesStatus {
+    Clean,
+    HasTrackChanges,
+    AcceptedTrackChanges,
+}
+
+impl Block {
+    fn detect_track_changes(xml: &str) -> TrackChangesStatus {
+        let has_ins = xml.contains("<w:ins ") || xml.contains("<w:ins>");
+        let has_del = xml.contains("<w:del ") || xml.contains("<w:del>");
+        if has_ins || has_del {
+            TrackChangesStatus::HasTrackChanges
+        } else {
+            TrackChangesStatus::Clean
+        }
+    }
+}
+
+fn detect_track_changes_transition(base_xml: &str, side_xml: &str) -> Option<TrackChangesStatus> {
+    let base_tc = Block::detect_track_changes(base_xml);
+    let side_tc = Block::detect_track_changes(side_xml);
+    if base_tc == TrackChangesStatus::HasTrackChanges && side_tc == TrackChangesStatus::Clean {
+        Some(TrackChangesStatus::AcceptedTrackChanges)
+    } else if side_tc == TrackChangesStatus::HasTrackChanges {
+        Some(TrackChangesStatus::HasTrackChanges)
+    } else {
+        None
+    }
+}
+
 /// Convert bytes to String, replacing invalid UTF-8 sequences with the Unicode replacement character.
 /// This is safe for binary formats like OOXML (ZIP/XML) where the content should be valid UTF-8
 /// per specification (ECMA-376, ISO 29500), but we defensively handle edge cases.
@@ -36,12 +67,11 @@ fn bytes_to_string_lossy(bytes: Vec<u8>) -> String {
 /// Tables are treated as atomic blocks — their entire XML is preserved.
 #[derive(Debug, Clone)]
 struct Block {
-    /// The block type.
     kind: BlockKind,
-    /// Raw XML string of this element.
     raw_xml: String,
-    /// Extracted plain text from all `<w:t>` elements within this block.
     text: String,
+    #[allow(dead_code)]
+    track_changes: TrackChangesStatus,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -192,6 +222,7 @@ fn extract_blocks(body_content: &str) -> Vec<Block> {
                             kind: BlockKind::Paragraph,
                             raw_xml,
                             text: String::new(),
+                            track_changes: TrackChangesStatus::Clean,
                         });
                         pos = end_abs;
                         continue;
@@ -205,10 +236,12 @@ fn extract_blocks(body_content: &str) -> Vec<Block> {
                     let end_abs = abs_start + end + 6;
                     let raw_xml = body_content[abs_start..end_abs].to_string();
                     let text = Block::extract_text(&raw_xml);
+                    let track_changes = Block::detect_track_changes(&raw_xml);
                     blocks.push(Block {
                         kind: BlockKind::Paragraph,
                         raw_xml,
                         text,
+                        track_changes,
                     });
                     pos = end_abs;
                 } else {
@@ -230,10 +263,12 @@ fn extract_blocks(body_content: &str) -> Vec<Block> {
                     let end_abs = abs_start + end + 8;
                     let raw_xml = body_content[abs_start..end_abs].to_string();
                     let text = Block::extract_text(&raw_xml);
+                    let track_changes = Block::detect_track_changes(&raw_xml);
                     blocks.push(Block {
                         kind: BlockKind::Table,
                         raw_xml,
                         text,
+                        track_changes,
                     });
                     pos = end_abs;
                 } else {
@@ -279,7 +314,16 @@ fn rebuild_document_xml(body: &BodyParse, merged_blocks: &[Block]) -> String {
     out
 }
 
-/// Three-way merge of block lists by index.
+/// Three-way merge of block lists by index, with track-changes awareness.
+///
+/// Track changes rules:
+/// - If one side accepted track changes (removed `<w:ins>`/`<w:del>` tags from
+///   a block that had them in base), the accepted version takes precedence.
+/// - If both sides add track changes in different paragraphs, merge them cleanly.
+/// - If both sides modify the same block and both have track changes conflicts,
+///   flag as conflict (return None).
+/// - If one side accepted changes and the other added new track changes to a
+///   different paragraph, the accepted changes take precedence for that block.
 fn merge_blocks(base: &[Block], ours: &[Block], theirs: &[Block]) -> Option<Vec<Block>> {
     let max_len = base.len().max(ours.len()).max(theirs.len());
     let mut merged = Vec::with_capacity(max_len);
@@ -302,8 +346,36 @@ fn merge_blocks(base: &[Block], ours: &[Block], theirs: &[Block]) -> Option<Vec<
             }
             (Some(_), Some(o), None) => merged.push(o.clone()),
             (Some(_), None, Some(t)) => merged.push(t.clone()),
-            (Some(_), None, None) => {} // Both deleted
+            (Some(_), None, None) => {}
             (Some(b), Some(o), Some(t)) => {
+                let ours_accepted = detect_track_changes_transition(&b.raw_xml, &o.raw_xml);
+                let theirs_accepted = detect_track_changes_transition(&b.raw_xml, &t.raw_xml);
+
+                // Both sides accepted track changes: pick either (they should be equivalent)
+                if ours_accepted == Some(TrackChangesStatus::AcceptedTrackChanges)
+                    && theirs_accepted == Some(TrackChangesStatus::AcceptedTrackChanges)
+                {
+                    merged.push(o.clone());
+                    continue;
+                }
+
+                // One side accepted track changes, the other didn't modify: accepted wins
+                if ours_accepted == Some(TrackChangesStatus::AcceptedTrackChanges)
+                    && t.text == b.text
+                {
+                    merged.push(o.clone());
+                    continue;
+                }
+                if theirs_accepted == Some(TrackChangesStatus::AcceptedTrackChanges)
+                    && o.text == b.text
+                {
+                    merged.push(t.clone());
+                    continue;
+                }
+
+                // Both sides added track changes in different paragraphs (this block is different
+                // from the other), handled by normal text comparison below.
+
                 if o.text == t.text {
                     merged.push(o.clone());
                 } else if o.text == b.text {
@@ -311,7 +383,8 @@ fn merge_blocks(base: &[Block], ours: &[Block], theirs: &[Block]) -> Option<Vec<
                 } else if t.text == b.text {
                     merged.push(o.clone());
                 } else {
-                    return None; // Conflict
+                    // Text conflict — don't try to resolve track change conflicts
+                    return None;
                 }
             }
             (None, None, None) => unreachable!(),
@@ -1023,5 +1096,189 @@ mod tests {
 
     fn docx_bytes(bytes: &[u8]) -> String {
         unsafe { String::from_utf8_unchecked(bytes.to_vec()) }
+    }
+
+    // === Track changes tests ===
+
+    fn make_track_changes_docx(items: &[(&str, bool)]) -> Vec<u8> {
+        let content_types = r#"<?xml version="1.0"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>"#;
+
+        let mut doc_xml = String::from(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\
+             <w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body>",
+        );
+        for (text, has_tc) in items {
+            let escaped = text
+                .replace('&', "&amp;")
+                .replace('<', "&lt;")
+                .replace('>', "&gt;");
+            if *has_tc {
+                doc_xml.push_str(&format!(
+                    "<w:p><w:ins w:id=\"1\" w:author=\"Alice\" w:date=\"2025-01-01T00:00:00Z\">\
+                     <w:r><w:t>{escaped}</w:t></w:r></w:ins></w:p>"
+                ));
+            } else {
+                doc_xml.push_str(&format!("<w:p><w:r><w:t>{escaped}</w:t></w:r></w:p>"));
+            }
+        }
+        doc_xml.push_str("</w:body></w:document>");
+
+        let mut buf = Vec::new();
+        {
+            let mut zip = zip::ZipWriter::new(Cursor::new(&mut buf));
+            zip.start_file(
+                "[Content_Types].xml",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
+            zip.write_all(content_types.as_bytes()).unwrap();
+            zip.start_file(
+                "word/document.xml",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
+            zip.write_all(doc_xml.as_bytes()).unwrap();
+            zip.finish().unwrap();
+        }
+        buf
+    }
+
+    #[test]
+    fn test_detect_track_changes_in_block() {
+        let xml_with_ins =
+            "<w:p><w:ins w:id=\"1\" w:author=\"A\"><w:r><w:t>text</w:t></w:r></w:ins></w:p>";
+        assert_eq!(
+            Block::detect_track_changes(xml_with_ins),
+            TrackChangesStatus::HasTrackChanges
+        );
+
+        let xml_with_del =
+            "<w:p><w:del w:id=\"2\" w:author=\"B\"><w:r><w:t>old</w:t></w:r></w:del></w:p>";
+        assert_eq!(
+            Block::detect_track_changes(xml_with_del),
+            TrackChangesStatus::HasTrackChanges
+        );
+
+        let xml_clean = "<w:p><w:r><w:t>plain text</w:t></w:r></w:p>";
+        assert_eq!(
+            Block::detect_track_changes(xml_clean),
+            TrackChangesStatus::Clean
+        );
+    }
+
+    #[test]
+    fn test_merge_track_changes_one_side_only() {
+        let d = DocxDriver::new();
+
+        // Base: two plain paragraphs
+        let base = make_track_changes_docx(&[("Hello", false), ("World", false)]);
+
+        // Ours: second paragraph has track changes
+        let ours = make_track_changes_docx(&[("Hello", false), ("World modified", true)]);
+
+        // Theirs: unchanged
+        let theirs = make_track_changes_docx(&[("Hello", false), ("World", false)]);
+
+        let result = d
+            .merge(&docx_str(&base), &docx_str(&ours), &docx_str(&theirs))
+            .unwrap();
+        assert!(
+            result.is_some(),
+            "one side with track changes, other unchanged should merge"
+        );
+
+        let merged_str = result.unwrap();
+        assert!(merged_str.contains("World modified"));
+    }
+
+    #[test]
+    fn test_merge_track_changes_both_sides_different_paragraphs() {
+        let d = DocxDriver::new();
+
+        // Base: three paragraphs
+        let base =
+            make_track_changes_docx(&[("Para A", false), ("Para B", false), ("Para C", false)]);
+
+        // Ours: track changes in Para A
+        let ours = make_track_changes_docx(&[
+            ("Para A changed", true),
+            ("Para B", false),
+            ("Para C", false),
+        ]);
+
+        // Theirs: track changes in Para C
+        let theirs = make_track_changes_docx(&[
+            ("Para A", false),
+            ("Para B", false),
+            ("Para C changed", true),
+        ]);
+
+        let result = d
+            .merge(&docx_str(&base), &docx_str(&ours), &docx_str(&theirs))
+            .unwrap();
+        assert!(
+            result.is_some(),
+            "track changes in different paragraphs should merge cleanly"
+        );
+
+        let merged_str = result.unwrap();
+        assert!(merged_str.contains("Para A changed"));
+        assert!(merged_str.contains("Para C changed"));
+    }
+
+    #[test]
+    fn test_merge_one_side_accepts_all_changes() {
+        let d = DocxDriver::new();
+
+        // Base: paragraph with track changes (insertion)
+        let base = make_track_changes_docx(&[("Inserted text", true), ("Normal text", false)]);
+
+        // Ours: accepted track changes (removed <w:ins> wrapper, kept the text)
+        let ours = make_track_changes_docx(&[("Inserted text", false), ("Normal text", false)]);
+
+        // Theirs: unchanged from base
+        let theirs = make_track_changes_docx(&[("Inserted text", true), ("Normal text", false)]);
+
+        let result = d
+            .merge(&docx_str(&base), &docx_str(&ours), &docx_str(&theirs))
+            .unwrap();
+        assert!(
+            result.is_some(),
+            "one side accepting track changes should merge cleanly"
+        );
+
+        let merged_str = result.unwrap();
+        // The accepted version (without <w:ins>) should take precedence
+        assert!(
+            !merged_str.contains("<w:ins"),
+            "accepted changes should remove <w:ins> tags"
+        );
+    }
+
+    #[test]
+    fn test_merge_track_changes_conflict() {
+        let d = DocxDriver::new();
+
+        // Base: plain paragraph
+        let base = make_track_changes_docx(&[("Original", false)]);
+
+        // Ours: modified with track changes
+        let ours = make_track_changes_docx(&[("Ours version", true)]);
+
+        // Theirs: modified differently with track changes
+        let theirs = make_track_changes_docx(&[("Theirs version", true)]);
+
+        let result = d
+            .merge(&docx_str(&base), &docx_str(&ours), &docx_str(&theirs))
+            .unwrap();
+        assert!(
+            result.is_none(),
+            "conflicting track changes in same paragraph should flag as conflict"
+        );
     }
 }

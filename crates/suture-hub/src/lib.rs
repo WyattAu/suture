@@ -2,8 +2,10 @@
 
 pub mod async_storage;
 pub mod audit;
+pub mod backup;
 pub mod blob_backend;
 pub mod grpc;
+pub mod metrics;
 pub mod middleware;
 pub mod server;
 pub mod sso;

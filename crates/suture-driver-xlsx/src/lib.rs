@@ -32,6 +32,14 @@ fn bytes_to_string_lossy(bytes: Vec<u8>) -> String {
 type Cell = (usize, usize, String);
 type SheetData = (String, Vec<Cell>);
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FormulaCell {
+    row: usize,
+    col: usize,
+    formula: Option<String>,
+    value: String,
+}
+
 pub struct XlsxDriver;
 
 impl XlsxDriver {
@@ -224,6 +232,214 @@ impl XlsxDriver {
         cells
     }
 
+    /// Parse a worksheet XML to extract cells with formula awareness.
+    fn parse_sheet_xml_with_formulas(xml: &str, shared_strings: &[String]) -> Vec<FormulaCell> {
+        let mut cells = Vec::new();
+        let mut in_cell = false;
+        let mut cell_ref = String::new();
+        let mut cell_type = String::new();
+        let mut cell_value = String::new();
+        let mut cell_formula = String::new();
+        let mut has_formula = false;
+        let mut in_inline_str = false;
+
+        for line in xml.lines() {
+            let trimmed = line.trim();
+
+            let mut search_from = 0;
+            loop {
+                let c_pos = if in_cell {
+                    None
+                } else {
+                    let remaining = &trimmed[search_from..];
+                    remaining
+                        .find("<c ")
+                        .or_else(|| remaining.find("<c>"))
+                        .map(|pos| search_from + pos)
+                };
+
+                if !in_cell {
+                    match c_pos {
+                        Some(pos) => {
+                            in_cell = true;
+                            cell_ref.clear();
+                            cell_type.clear();
+                            cell_value.clear();
+                            cell_formula.clear();
+                            has_formula = false;
+                            in_inline_str = false;
+
+                            let c_tag = &trimmed[pos..];
+                            let c_tag_end = c_tag.find('>').unwrap_or(c_tag.len());
+                            let c_tag_only = &c_tag[..c_tag_end];
+
+                            if let Some(r) = Self::extract_attr(c_tag_only, "r") {
+                                cell_ref = r;
+                            }
+                            if let Some(t) = Self::extract_attr(c_tag_only, "t") {
+                                cell_type = t;
+                            }
+                            search_from = pos + c_tag_end;
+                        }
+                        None => break,
+                    }
+                }
+
+                if in_cell {
+                    let cell_region = &trimmed[search_from..];
+
+                    // Extract formula from <f>...</f>
+                    if let Some(start) = cell_region.find("<f>") {
+                        let after = &cell_region[start + 3..];
+                        if let Some(end) = after.find("</f>") {
+                            cell_formula = after[..end].to_string();
+                            has_formula = true;
+                        }
+                    } else if let Some(start) = cell_region.find("<f ") {
+                        let after = &cell_region[start + 3..];
+                        if let Some(end) = after.find("</f>") {
+                            cell_formula = after[..end].to_string();
+                            has_formula = true;
+                        }
+                    }
+
+                    if let Some(start) = cell_region.find("<v>") {
+                        let after = &cell_region[start + 3..];
+                        if let Some(end) = after.find("</v>") {
+                            cell_value = after[..end].to_string();
+                        }
+                    }
+
+                    if cell_region.contains("<is>") || cell_region.contains("<is ") {
+                        in_inline_str = true;
+                    }
+                    if in_inline_str {
+                        if let Some(start) = cell_region.find("<t>") {
+                            let after = &cell_region[start + 3..];
+                            if let Some(end) = after.find("</t>") {
+                                cell_value = after[..end].to_string();
+                            }
+                        }
+                        if cell_region.contains("</is>") {
+                            in_inline_str = false;
+                        }
+                    }
+
+                    if cell_region.contains("</c>") {
+                        if let Some((row, col)) = Self::parse_a1(&cell_ref) {
+                            let display_value = match cell_type.as_str() {
+                                "s" => cell_value
+                                    .parse::<usize>()
+                                    .ok()
+                                    .and_then(|idx| shared_strings.get(idx).cloned())
+                                    .unwrap_or_else(|| cell_value.clone()),
+                                "b" => match cell_value.as_str() {
+                                    "1" | "true" => "TRUE".to_owned(),
+                                    _ => "FALSE".to_owned(),
+                                },
+                                _ => cell_value.clone(),
+                            };
+                            if !display_value.is_empty() || has_formula {
+                                cells.push(FormulaCell {
+                                    row,
+                                    col,
+                                    formula: if has_formula {
+                                        Some(cell_formula.clone())
+                                    } else {
+                                        None
+                                    },
+                                    value: display_value,
+                                });
+                            }
+                        }
+                        in_cell = false;
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+        cells
+    }
+
+    /// Formula-aware three-way merge of cells.
+    ///
+    /// When both sides modify the same cell's formula, flag as conflict.
+    /// When one side changes formula and the other changes value, flag as conflict.
+    /// When changes are in different cells, merge cleanly.
+    fn merge_cells_formula_aware(
+        base: &[FormulaCell],
+        ours: &[FormulaCell],
+        theirs: &[FormulaCell],
+    ) -> Option<Vec<FormulaCell>> {
+        let base_map: HashMap<(usize, usize), &FormulaCell> =
+            base.iter().map(|c| ((c.row, c.col), c)).collect();
+        let ours_map: HashMap<(usize, usize), &FormulaCell> =
+            ours.iter().map(|c| ((c.row, c.col), c)).collect();
+        let theirs_map: HashMap<(usize, usize), &FormulaCell> =
+            theirs.iter().map(|c| ((c.row, c.col), c)).collect();
+
+        let all_keys: BTreeSet<_> = base_map
+            .keys()
+            .chain(ours_map.keys())
+            .chain(theirs_map.keys())
+            .collect();
+        let mut merged = Vec::new();
+
+        for &(row, col) in all_keys {
+            let b = base_map.get(&(row, col));
+            let o = ours_map.get(&(row, col));
+            let t = theirs_map.get(&(row, col));
+
+            match (b, o, t) {
+                (None, None, None) => unreachable!(),
+                (None, Some(o), None) => merged.push((*o).clone()),
+                (None, None, Some(t)) => merged.push((*t).clone()),
+                (None, Some(o), Some(t)) => {
+                    if o.formula == t.formula && o.value == t.value {
+                        merged.push((*o).clone());
+                    } else {
+                        return None;
+                    }
+                }
+                (Some(_), Some(o), None) => merged.push((*o).clone()),
+                (Some(_), None, Some(t)) => merged.push((*t).clone()),
+                (Some(_), None, None) => {}
+                (Some(b), Some(o), Some(t)) => {
+                    let ours_changed_formula = o.formula != b.formula;
+                    let ours_changed_value = o.value != b.value;
+                    let theirs_changed_formula = t.formula != b.formula;
+                    let theirs_changed_value = t.value != b.value;
+
+                    // Both changed formula in same cell -> conflict
+                    if ours_changed_formula && theirs_changed_formula && o.formula != t.formula {
+                        return None;
+                    }
+
+                    // One side changed formula, other changed value -> conflict
+                    if ours_changed_formula && !theirs_changed_formula && theirs_changed_value {
+                        return None;
+                    }
+                    if theirs_changed_formula && !ours_changed_formula && ours_changed_value {
+                        return None;
+                    }
+
+                    // Clean merge: use standard three-way logic
+                    if o.value == t.value && o.formula == t.formula {
+                        merged.push((*o).clone());
+                    } else if o.value == b.value && o.formula == b.formula {
+                        merged.push((*t).clone());
+                    } else if t.value == b.value && t.formula == b.formula {
+                        merged.push((*o).clone());
+                    } else {
+                        return None;
+                    }
+                }
+            }
+        }
+        Some(merged)
+    }
+
     /// Parse all sheets from an XLSX document.
     #[allow(clippy::type_complexity)]
     fn parse_sheets(doc: &OoxmlDocument) -> Result<Vec<SheetData>, DriverError> {
@@ -289,6 +505,7 @@ impl XlsxDriver {
         changes
     }
 
+    #[allow(dead_code)]
     fn merge_cells(base: &[Cell], ours: &[Cell], theirs: &[Cell]) -> Option<Vec<Cell>> {
         let base_map: HashMap<(usize, usize), &String> =
             base.iter().map(|(r, c, v)| ((*r, *c), v)).collect();
@@ -442,9 +659,9 @@ impl SutureDriver for XlsxDriver {
         let theirs_doc = OoxmlDocument::from_bytes(theirs)
             .map_err(|e| DriverError::ParseError(e.to_string()))?;
 
-        let base_sheets = Self::parse_sheets(&base_doc)?;
-        let ours_sheets = Self::parse_sheets(&ours_doc)?;
-        let theirs_sheets = Self::parse_sheets(&theirs_doc)?;
+        let base_sheets = Self::parse_sheets_with_formulas(&base_doc)?;
+        let ours_sheets = Self::parse_sheets_with_formulas(&ours_doc)?;
+        let theirs_sheets = Self::parse_sheets_with_formulas(&theirs_doc)?;
 
         let all_names: BTreeSet<&str> = base_sheets
             .iter()
@@ -453,7 +670,7 @@ impl SutureDriver for XlsxDriver {
             .map(|(n, _)| n.as_str())
             .collect();
 
-        let mut merged_sheets: Vec<(String, Vec<Cell>)> = Vec::new();
+        let mut merged_sheets: Vec<(String, Vec<FormulaCell>)> = Vec::new();
         for &name in &all_names {
             let base_cells = base_sheets
                 .iter()
@@ -468,7 +685,7 @@ impl SutureDriver for XlsxDriver {
                 .find(|(n, _)| n == name)
                 .map_or(&[][..], |(_, c)| c.as_slice());
 
-            match Self::merge_cells(base_cells, ours_cells, theirs_cells) {
+            match Self::merge_cells_formula_aware(base_cells, ours_cells, theirs_cells) {
                 Some(cells) => merged_sheets.push((name.to_owned(), cells)),
                 None => return Ok(None),
             }
@@ -490,7 +707,7 @@ impl SutureDriver for XlsxDriver {
             if let Some(path) = name_to_path.get(name)
                 && let Some(part) = doc.parts.get_mut(path)
             {
-                part.content = Self::rebuild_sheet_xml(&part.content, cells);
+                part.content = Self::rebuild_sheet_xml_with_formulas(&part.content, cells);
             }
         }
 
@@ -518,6 +735,7 @@ impl XlsxDriver {
     /// This preserves everything outside `<sheetData>...</sheetData>`
     /// (column widths, sheet views, merge cells, etc.) and only replaces
     /// the actual cell data.
+    #[allow(dead_code)]
     fn rebuild_sheet_xml(original_xml: &str, cells: &[Cell]) -> String {
         // Find <sheetData> and </sheetData> boundaries
         let data_start = match original_xml.find("<sheetData") {
@@ -564,6 +782,87 @@ impl XlsxDriver {
         new_data.push_str("</sheetData>");
 
         // Reassemble: before sheetData + new sheetData + after sheetData
+        let mut result = String::new();
+        result.push_str(&original_xml[..data_start]);
+        result.push_str(&new_data);
+        result.push_str(&original_xml[data_end + "</sheetData>".len()..]);
+        result
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn parse_sheets_with_formulas(
+        doc: &OoxmlDocument,
+    ) -> Result<Vec<(String, Vec<FormulaCell>)>, DriverError> {
+        let shared_strings = Self::parse_shared_strings(doc);
+
+        let mut sheet_files: Vec<String> = doc
+            .parts
+            .keys()
+            .filter(|k| k.contains("worksheets/") && k.ends_with(".xml"))
+            .cloned()
+            .collect();
+        sheet_files.sort();
+
+        let mut sheets = Vec::new();
+        for path in &sheet_files {
+            let part = doc
+                .get_part(path)
+                .ok_or_else(|| DriverError::ParseError(format!("sheet part {path} missing")))?;
+            let name = path.rsplit('/').next().unwrap_or("sheet");
+            let name = name.strip_suffix(".xml").unwrap_or(name);
+            let cells = Self::parse_sheet_xml_with_formulas(&part.content, &shared_strings);
+            sheets.push((name.to_owned(), cells));
+        }
+
+        Ok(sheets)
+    }
+
+    fn rebuild_sheet_xml_with_formulas(original_xml: &str, cells: &[FormulaCell]) -> String {
+        let data_start = match original_xml.find("<sheetData") {
+            Some(pos) => {
+                let after = &original_xml[pos..];
+                after.find('>').map_or(pos, |i| pos + i + 1)
+            }
+            None => return original_xml.to_owned(),
+        };
+
+        let Some(data_end) = original_xml.find("</sheetData>") else {
+            return original_xml.to_owned();
+        };
+
+        let mut rows: BTreeMap<usize, Vec<(usize, &FormulaCell)>> = BTreeMap::new();
+        for cell in cells {
+            rows.entry(cell.row).or_default().push((cell.col, cell));
+        }
+
+        let mut new_data = String::from("<sheetData>");
+        for (row_num, cols) in &rows {
+            let _ = write!(new_data, "<row r=\"{row_num}\">");
+            for (_col, cell) in cols {
+                let col_letter = col_to_letter(cell.col);
+                let ref_str = format!("{col_letter}{row_num}");
+
+                let mut cell_xml = format!("<c r=\"{ref_str}\"");
+                if let Some(ref formula) = cell.formula {
+                    let _ = write!(cell_xml, "><f>{formula}</f><v>{}</v></c>", cell.value);
+                } else if cell.value.parse::<f64>().is_ok() {
+                    let _ = write!(cell_xml, "><v>{}</v></c>", cell.value);
+                } else if cell.value == "TRUE" || cell.value == "FALSE" {
+                    let bval = if cell.value == "TRUE" { "1" } else { "0" };
+                    let _ = write!(cell_xml, " t=\"b\"><v>{bval}</v></c>");
+                } else {
+                    let _ = write!(
+                        cell_xml,
+                        " t=\"inlineStr\"><is><t>{}</t></is></c>",
+                        cell.value
+                    );
+                }
+                new_data.push_str(&cell_xml);
+            }
+            new_data.push_str("</row>");
+        }
+        new_data.push_str("</sheetData>");
+
         let mut result = String::new();
         result.push_str(&original_xml[..data_start]);
         result.push_str(&new_data);
@@ -755,5 +1054,116 @@ mod tests {
         assert!(rebuilt.contains("new")); // New cell value
         assert!(rebuilt.contains("added")); // Added cell value
         assert!(!rebuilt.contains("old")); // Old value replaced
+    }
+
+    // === Formula-aware merge tests ===
+
+    fn fc(row: usize, col: usize, formula: &str, value: &str) -> FormulaCell {
+        FormulaCell {
+            row,
+            col,
+            formula: Some(formula.to_string()),
+            value: value.to_string(),
+        }
+    }
+
+    fn vc(row: usize, col: usize, value: &str) -> FormulaCell {
+        FormulaCell {
+            row,
+            col,
+            formula: None,
+            value: value.to_string(),
+        }
+    }
+
+    #[test]
+    fn test_parse_sheet_xml_with_formulas() {
+        let xml = r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<sheetData>
+<row r="1"><c r="A1"><f>SUM(B1:B10)</f><v>100</v></c><c r="B1"><v>42</v></c></row>
+</sheetData>
+</worksheet>"#;
+        let cells = XlsxDriver::parse_sheet_xml_with_formulas(xml, &[]);
+        assert_eq!(cells.len(), 2);
+        assert_eq!(cells[0].formula.as_deref(), Some("SUM(B1:B10)"));
+        assert_eq!(cells[0].value, "100");
+        assert_eq!(cells[1].formula, None);
+        assert_eq!(cells[1].value, "42");
+    }
+
+    #[test]
+    fn test_formula_conflict_both_change_same_cell_formula() {
+        let base = vec![fc(1, 1, "SUM(A1:A10)", "100")];
+        let ours = vec![fc(1, 1, "SUM(A1:A20)", "200")];
+        let theirs = vec![fc(1, 1, "AVERAGE(A1:A10)", "50")];
+
+        let result = XlsxDriver::merge_cells_formula_aware(&base, &ours, &theirs);
+        assert!(
+            result.is_none(),
+            "both sides changing formula in same cell should conflict"
+        );
+    }
+
+    #[test]
+    fn test_formula_conflict_one_changes_formula_other_changes_value() {
+        let base = vec![fc(1, 1, "SUM(A1:A10)", "100")];
+        let ours = vec![fc(1, 1, "SUM(A1:A20)", "200")];
+        let theirs = vec![fc(1, 1, "SUM(A1:A10)", "150")];
+
+        let result = XlsxDriver::merge_cells_formula_aware(&base, &ours, &theirs);
+        assert!(
+            result.is_none(),
+            "one side changing formula and other changing value should conflict"
+        );
+    }
+
+    #[test]
+    fn test_formula_clean_merge_different_cells() {
+        let base = vec![fc(1, 1, "SUM(A1:A10)", "100"), vc(1, 2, "Label")];
+        let ours = vec![fc(1, 1, "SUM(A1:A20)", "200"), vc(1, 2, "Label")];
+        let theirs = vec![fc(1, 1, "SUM(A1:A10)", "100"), vc(1, 2, "Changed Label")];
+
+        let result = XlsxDriver::merge_cells_formula_aware(&base, &ours, &theirs);
+        assert!(
+            result.is_some(),
+            "changes in different cells should merge cleanly"
+        );
+        let merged = result.unwrap();
+        let a1 = merged.iter().find(|c| c.row == 1 && c.col == 1).unwrap();
+        assert_eq!(a1.formula.as_deref(), Some("SUM(A1:A20)"));
+        assert_eq!(a1.value, "200");
+        let b1 = merged.iter().find(|c| c.row == 1 && c.col == 2).unwrap();
+        assert_eq!(b1.value, "Changed Label");
+    }
+
+    #[test]
+    fn test_formula_both_same_formula_change_clean() {
+        let base = vec![fc(1, 1, "SUM(A1:A10)", "100")];
+        let ours = vec![fc(1, 1, "SUM(A1:A20)", "200")];
+        let theirs = vec![fc(1, 1, "SUM(A1:A20)", "200")];
+
+        let result = XlsxDriver::merge_cells_formula_aware(&base, &ours, &theirs);
+        assert!(
+            result.is_some(),
+            "both sides making identical formula changes should merge cleanly"
+        );
+    }
+
+    #[test]
+    fn test_rebuild_sheet_xml_with_formulas() {
+        let original = r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<sheetFormatPr defaultColWidth="10"/>
+<sheetData><row r="1"><c r="A1"><v>old</v></c></row></sheetData>
+<sheetViews><sheetView tabSelected="1"/></sheetViews>
+</worksheet>"#;
+
+        let cells = vec![fc(1, 1, "SUM(B1:B10)", "100"), vc(2, 1, "Header")];
+        let rebuilt = XlsxDriver::rebuild_sheet_xml_with_formulas(original, &cells);
+
+        assert!(rebuilt.contains("<sheetFormatPr"));
+        assert!(rebuilt.contains("<f>SUM(B1:B10)</f>"));
+        assert!(rebuilt.contains("<v>100</v>"));
+        assert!(rebuilt.contains("Header"));
+        assert!(!rebuilt.contains("old"));
     }
 }
