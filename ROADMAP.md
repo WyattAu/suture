@@ -1,345 +1,562 @@
-# Suture Roadmap -- Forward Path Analysis
+# Suture Production Roadmap
 
-**Date:** 2026-05-10
-**Version:** 5.3.1 (post-audit)
-**Author:** Automated audit + architectural review
+**Version:** 5.3.1
+**Date:** 2026-05-12
+**Author:** Full monorepo audit and architectural review
+**Test Baseline:** 1,747 tests, 0 failures, 20 ignored, 0 clippy warnings
 
 ---
 
-## 1. Current State Assessment
+## 0. Current State
 
-### 1.1 Quantitative Baseline
+### 0.1 Quantitative Baseline
 
 | Metric | Value |
 |--------|-------|
-| Workspace crates | 42 |
-| Total Rust LoC | 108,029 |
+| Workspace crates | 43 |
+| Rust LoC | 108,029 |
 | Test functions | 1,747 |
-| Test modules | 104 |
-| Public API surface (core) | 274 functions |
+| Test failures | 0 |
+| Clippy warnings | 0 |
 | Semantic drivers | 17 |
-| Lean 4 formal proofs | 8 theorems/lemmas |
-| Cargo audit findings | 0 critical, 1 unmaintained (paste via rav1e, transitive, no fix) |
-| Clippy warnings | 0 (clean with `-D warnings`) |
-| Formatting | Clean (`rustfmt`) |
-| CI workflows | 8 (ci, release, security, performance, semantic-merge, pages, docker, example-merge) |
+| CLI subcommands | 58+ |
+| Lean 4 proofs | 8 theorems |
+| Unsafe blocks (production) | 51 |
+| CI workflows | 8 |
+| crates.io crates | 37 |
+| Editor plugins | 3 (Neovim, JetBrains, VS Code) |
+| Language bindings | 2 (Node.js, Python) |
 
-### 1.2 Quality Gate Status
+### 0.2 Maturity Assessment
 
-| Gate | Status | Evidence |
-|------|--------|----------|
-| Unit tests | PASS | 1,747 test functions, 0 failures |
-| Integration tests | PASS | 56 E2E tests (27 driver correctness + 29 workflow) |
-| Property-based tests | PASS | 21 proptest suites across core |
-| Formal verification | PASS | 8 Lean 4 theorems (conflict equivalence, commutativity, symmetry, identity, determinism) |
-| Security audit | PASS | `cargo audit` clean (1 allowed unmaintained) |
-| Static analysis | PASS | `cargo clippy --workspace -- -D warnings` clean |
-| Formatting | PASS | `cargo fmt --all -- --check` clean |
-| Pre-commit hook | INSTALLED | `scripts/pre-commit` -> `.git/hooks/pre-commit` |
+| Layer | Status | Notes |
+|-------|--------|-------|
+| Core VCS engine | Production-ready | 355 tests, 21 proptest suites, formal proofs |
+| Semantic merge | Production-ready | 17 drivers, 56 E2E correctness/realistic tests |
+| CLI | Production-ready | 58+ commands, shell completions, man pages |
+| Hub (HTTP + gRPC) | Production-ready | Auth, webhooks, S3, Raft, batch patches |
+| Wire protocol | Production-ready | V2 handshake, Zstd compression, delta encoding |
+| VFS (FUSE3 + WebDAV) | Production-ready | Read/write FUSE, WebDAV server |
+| TUI | Production-ready | 7 tabs, hunk-level conflict resolver |
+| Desktop App | Scaffolded | Tauri v2, 25+ commands, no CI |
+| SaaS Platform | Functional | Stripe billing, OAuth, orgs, merge API |
+| Connectors | Scaffolded | Airtable (functional), Google Sheets, Notion |
+| WASM plugins | Experimental | ABI, fuel limits, sandbox |
+| Python bindings | Excluded | PyO3, not in CI |
+| Helm chart | Scaffolded | Basic templates, no README docs |
 
-### 1.3 Architectural Strengths
+### 0.3 Technical Debt Register
 
-1. **Patch-DAG model with BLAKE3 CAS**: Content-addressed storage with SIMD-accelerated hashing. Every blob stored once, deduplication is free.
-2. **Semantic merge across 17 file formats**: JSON, YAML, TOML, CSV, XML, Markdown, DOCX, XLSX, PPTX, OTIO, SQL, PDF, Image, Example, HTML, SVG, iCal. This is the core differentiator.
-3. **Formal verification**: Lean 4 proofs for merge algebra properties (touch-set conflict equivalence, disjoint commutativity, merge symmetry, identity element, determinism). This is unusual for a VCS.
-4. **Raft consensus**: Multi-node cluster with TCP transport, persisted log, election timeouts per Raft paper section 5.2. Production-ready distributed option.
-5. **Supply chain integrity**: Shannon entropy analysis with 13 XZ-style attack detection indicators. Not a standard VCS feature.
-6. **Zero-copy wire protocol**: Zstd compression, delta encoding, V2 handshake with capability negotiation.
-7. **Comprehensive CLI**: 58+ subcommands covering the full VCS lifecycle (init, add, commit, branch, merge, rebase, bisect, blame, stash, reflog, fsck, gc, export, sync, archive, grep, etc.).
-
-### 1.4 Technical Debt Identified
-
-#### Critical (blocks reliability)
-
-| ID | Issue | Impact | Fix Effort |
-|----|-------|--------|------------|
-| TD-1 | CWD-dependent CLI tests require `--test-threads=1` | CI parallelism bottleneck, mutex poisoning risk | Medium: refactor tests to use tempdir per test, remove static mutex |
-| TD-2 | FUSE VFS `unsafe impl Send/Sync` on `RwFilesystem` | Soundness concern -- FUSE callbacks are single-threaded but impl claims thread-safety | Medium: audit callback threading model, justify or remove |
-| TD-3 | SHM `unsafe impl Send/Sync` on `ShmStatus` | Memory-mapped struct shared across processes without formal proof of layout stability | Low: add static_assert for repr(C), document layout guarantees |
-| TD-4 | `from_utf8_unchecked` in 8+ locations (DOCX, XLSX, PPTX, PDF, Image drivers) | Correct only if input is actually valid UTF-8; binary ZIP data passed through could theoretically corrupt | Medium: add debug-assert validation in debug builds, document invariants. NOTE: workspace zip feature unification causes Deflate compression, making zip bytes non-UTF-8. Tests fixed to use merge_raw() instead of string round-trip. |
-
-#### High (blocks adoption)
-
-| ID | Issue | Impact | Fix Effort |
-|----|-------|--------|------------|
-| TD-5 | `suture-py` excluded from workspace | Python bindings not tested in CI, version drift risk | Low: fix PyO3 build, re-include |
-| TD-6 | `desktop-app` excluded from workspace | Tauri app not built/tested in CI | Medium: add Tauri CI matrix |
-| TD-7 | No MSRV (Minimum Supported Rust Version) policy | Users on older Rust may hit edition/feature incompatibilities | Low: add `rust-toolchain.toml` pin, test with MSRV |
-| TD-8 | VERSION.md claims "1,662 tests" but actual count is ~1,747 | Documentation drift from reality | Trivial: update count. Fixed: now 1,747 tests across workspace. |
-
-#### Medium (blocks scale)
-
-| ID | Issue | Impact | Fix Effort |
-|----|-------|--------|------------|
-| TD-9 | 48 `unsafe` blocks in production code (excluding tests/FFI) | Surface area for soundness bugs | Medium: audit each, justify with SAFETY comments, eliminate where possible |
-| TD-10 | No code coverage measurement | Cannot prove >80% branch coverage claim | Low: add `cargo-tarpaulin` or `cargo-llvm-cov` to CI |
-| TD-11 | Flatbuffers mentioned in requirements.md but not implemented | Wire protocol uses custom serialization, not Flatbuffers | Low: update requirements.md to match reality, or evaluate FlatBuffers migration |
-| TD-12 | NFSv4/SMB3/ProjFS mentioned in requirements.md but not implemented | Only FUSE3 and WebDAV implemented | Low: update requirements.md |
-| TD-13 | QUIC transport mentioned in requirements.md but not implemented | Only TCP for gRPC | Low: update requirements.md |
-| TD-14 | PostgreSQL/Redis mentioned in requirements.md but not implemented | Only SQLite for hub | Low: update requirements.md |
-
-#### Low (polish)
-
-| ID | Issue | Impact | Fix Effort |
-|----|-------|--------|------------|
-| TD-15 | `librust_out.rmeta` in repo root | Build artifact committed or ignored incorrectly | Trivial: git rm, add to .gitignore |
-| TD-16 | 5 E2E tests ignored (FUSE/VFS integration require root) | Tests not running in CI | Low: add to CI with rootless fallback or container |
-
-#### Resolved This Session
-
-| ID | Issue | Resolution |
-|----|-------|------------|
-| -- | 2 DOCX track-changes tests failing in workspace build | Root cause: zip crate feature unification changes default compression from Stored to Deflate, making zip bytes non-UTF-8. Tests rewritten to use merge_raw() + OoxmlDocument::from_bytes(). |
-| -- | 1 clippy warning (unused variable in suture-s3) | Removed unused binding. |
-| -- | e2e push_pull_roundtrip test failing | Test hub missing /push/compressed and /pull/compressed routes. Routes added. |
-| -- | 7 fuzz bin targets running under cargo test indefinitely | Added harness=false to all [[bin]] fuzz targets in suture-fuzz Cargo.toml. |
-| -- | 5 broken doc links across repo | Fixed stale crate refs, broken relative paths, and incorrect driver count. |
+| ID | Severity | Description | Effort |
+|----|----------|-------------|--------|
+| TD-1 | Critical | CLI CWD mutex forces --test-threads=1 in all CI | 3d |
+| TD-2 | Critical | FUSE unsafe impl Send/Sync soundness | 2d |
+| TD-3 | Critical | SHM unsafe impl Send/Sync -- no repr(C) proof | 0.5d |
+| TD-4 | Critical | from_utf8_unchecked in 8+ binary drivers -- needs debug-assert | 1d |
+| TD-5 | High | suture-py excluded from workspace/CI | 2d |
+| TD-6 | High | desktop-app excluded from workspace/CI | 3d |
+| TD-7 | High | No MSRV policy or rust-toolchain.toml pin | 0.5d |
+| TD-8 | High | 51 unsafe blocks need SAFETY audit and comments | 3d |
+| TD-9 | Medium | Code coverage measured but no threshold enforcement | 1d |
+| TD-10 | Medium | No performance regression gating in CI | 2d |
+| TD-11 | Medium | requirements.md lists deferred features as if planned | 0.5d |
+| TD-12 | Low | 5 E2E tests ignored (FUSE needs root) | 2d |
+| TD-13 | Low | Desktop app not in workspace | 1d |
 
 ---
 
-## 2. Roadmap
+## Phase 1: Hardening and Soundness (v5.4)
 
-### Phase 1: Hardening (v5.4) -- 2 weeks
+**Goal:** Eliminate all soundness concerns and critical technical debt.
 
-**Goal:** Eliminate all critical and high-priority technical debt.
+**Duration:** 2 weeks
+**Exit criteria:** Zero critical TD items. All unsafe blocks documented. Tests run with --test-threads > 1.
 
-| Task | Priority | Effort | Owner |
-|------|----------|--------|-------|
-| TD-1: Refactor CLI tests to eliminate CWD mutex | Critical | 3d | Core |
-| TD-2: Audit and document FUSE Send/Sync | Critical | 2d | VFS |
-| TD-3: Add repr(C) + static_assert to ShmStatus | Critical | 0.5d | Daemon |
-| TD-4: Add debug-assert validation to from_utf8_unchecked | Critical | 1d | Drivers |
-| TD-8: Update VERSION.md test count | High | 0.5d | Docs |
-| TD-10: Add code coverage to CI | High | 1d | CI |
-| TD-15: Remove stray build artifact | Low | 0.1d | Repo |
-| TD-9: Audit all 48 unsafe blocks, add SAFETY comments | Medium | 3d | Core |
+### 1.1 Unsafe Audit
 
-**Exit criteria:** Zero critical TD items. Code coverage visible in CI. All unsafe blocks documented.
+Audit all 51 unsafe blocks. For each, add a `// SAFETY:` comment explaining the invariant. Remove any that can be replaced with safe Rust.
 
-### Phase 2: Requirements Reconciliation (v5.5) -- 1 week
+**Hotspots:**
+- `suture-daemon/src/shm.rs` (9 blocks) -- memory-mapped IPC
+- `suture-plugin-sdk/src/lib.rs` (10 blocks) -- WASM host ABI
+- `suture-core/src/metadata/global_config.rs` (6 blocks) -- global config
+- `suture-vfs/src/fuse/read_write.rs` (4 blocks) -- FUSE callbacks
 
-**Goal:** Align `requirements.md` with actual implementation. Remove aspirational claims for unimplemented features.
+### 1.2 Soundness Fixes
 
-| Task | Priority | Effort |
-|------|----------|--------|
-| TD-11: Update FlatBuffers claim in requirements.md | Medium | 0.5d |
-| TD-12: Update NFSv4/SMB3/ProjFS claims | Medium | 0.5d |
-| TD-13: Update QUIC transport claim | Medium | 0.5d |
-| TD-14: Update PostgreSQL/Redis claim | Medium | 0.5d |
-| Write ADR for each deferred feature with rationale | High | 1d |
+| Task | Details |
+|------|---------|
+| TD-1: Eliminate CWD mutex | Refactor CLI integration tests to use `tempdir()` per test with unique CWD. Remove static `Mutex<()>`. Target: `--test-threads=4` in CI. |
+| TD-2: FUSE Send/Sync | Audit FUSE callback threading model. libfuse3 guarantees single-threaded callback dispatch per filesystem. Document or remove unsafe impl. |
+| TD-3: SHM repr(C) | Add `#[repr(C)]` to `ShmStatus`. Add `const_assert!` for layout stability. Document cross-process layout requirements. |
+| TD-4: Binary driver UTF-8 | Add `debug_assert!(std::str::from_utf8(bytes).is_ok())` before every `from_utf8_unchecked` call. In release, the invariant holds because we control ZIP extraction. |
 
-**Exit criteria:** `requirements.md` describes the system as it exists, not as it was imagined. ADRs exist for each deferred item.
+### 1.3 CI Hardening
 
-### Phase 3: Performance Engineering (v6.0) -- 4 weeks
+| Task | Details |
+|------|---------|
+| Re-include suture-e2e in main test job | Remove exclusion, add --test-threads=1 only for suture-cli |
+| Re-include suture-daemon in main test job | Already has 32 passing tests |
+| Add clippy --all-features to CI | Currently only default features checked |
+| Add cargo doc to CI | Catch documentation build failures |
 
-**Goal:** Establish quantitative performance baselines and optimize hot paths.
+---
 
-| Task | Priority | Effort |
-|------|----------|--------|
-| Benchmark suite expansion (suture-bench: 44 functions currently) | High | 2d |
-| Identify O(n^2) or worse paths via profiling (perf/criterion) | Critical | 5d |
-| Incremental file tree computation (already done for commits) | Done | -- |
-| Lazy patch loading for `suture log` on large repos | High | 3d |
-| Blob cache hit/miss metrics and tuning | Medium | 2d |
-| WASM plugin cold-start optimization | Medium | 3d |
-| Large file handling (>100MB) streaming | High | 5d |
-| Parallel patch application for batch merges | Medium | 3d |
-| SQLite query optimization (WAL tuning, indexes) | Medium | 2d |
+## Phase 2: Requirements Reconciliation (v5.5)
 
-**Target metrics:**
+**Goal:** Align documentation with reality. No aspirational claims.
 
-| Operation | Current | Target |
-|-----------|---------|--------|
-| `suture init` | <100ms | <50ms |
-| `suture add .` (10K files) | O(n) | O(n), <2s |
-| `suture commit` | <500ms | <200ms |
-| `suture log` (10K commits) | O(n) | O(n), <500ms |
-| `suture merge` (100 files, 10 conflicts) | O(n*m) | O(n+m) per file |
-| `suture push` (1K patches, 10K blobs) | Linear | Linear, >50MB/s |
-| Semantic merge (DOCX 100 paragraphs) | O(p^2) worst case | O(p) average |
+**Duration:** 1 week
 
-### Phase 4: Ecosystem Maturity (v6.1) -- 4 weeks
+### 2.1 Documentation Cleanup
 
-**Goal:** Make suture-merge the go-to semantic merge library.
+| Task | Details |
+|------|---------|
+| Reconcile requirements.md | Mark all deferred features (FlatBuffers, QUIC, NFSv4, PostgreSQL, Redis, ProjFS, iceoryx) with `[DEFERRED]` and rationale ADR |
+| Update all stale version references | Grep for `5.0.0`, `5.1.0`, `0.8.1` across all .md files |
+| Update deploy-runbook.md | Bump version references to 5.3.1 |
+| Verify all internal links | Automated link checker in CI |
+| Remove librust_out.rmeta from .gitignore | Already removed; add pattern to .gitignore |
 
-| Task | Priority | Effort |
-|------|----------|--------|
-| TD-5: Re-include suture-py in workspace CI | High | 2d |
-| TD-6: Add Tauri desktop-app to CI | High | 3d |
-| suture-merge v0.3: add merge_yaml(), merge_toml(), merge_csv(), merge_xml() | High | 3d |
-| suture-merge API stabilization (semver guarantee) | High | 2d |
-| VS Code extension: real-time merge preview | Medium | 5d |
-| JetBrains plugin: merge conflict resolution UI | Medium | 5d |
-| WASM plugin SDK documentation and example | Medium | 3d |
-| crates.io publishing automation (33 crates) | High | 2d |
-| Homebrew/AUR/Nix package updates | Medium | 1d |
+### 2.2 ADRs to Write
 
-### Phase 5: Distributed Systems Depth (v7.0) -- 8 weeks
+| ADR | Topic |
+|-----|-------|
+| ADR-015 | Why SQLite over PostgreSQL (simplicity, single-node, Raft for scale) |
+| ADR-016 | Why TCP+Zstd over QUIC (adequate latency, simpler implementation) |
+| ADR-017 | Why bincode over FlatBuffers (sufficient performance, lower complexity) |
+| ADR-018 | Why FUSE3+WebDAV over NFSv4/SMB3 (user-space, cross-platform) |
 
-**Goal:** Make the hub deployment story production-grade.
+---
 
-| Task | Priority | Effort |
-|------|----------|--------|
-| Hub configuration validation and schema | High | 2d |
-| Hub backup/restore tooling | High | 3d |
-| Hub monitoring (Prometheus metrics endpoint) | High | 3d |
-| Hub rate limiting per-user (currently global) | Medium | 2d |
-| Hub replication lag visibility | Medium | 2d |
-| S3 blob backend production hardening (multipart upload, retry) | High | 5d |
-| Raft log compaction (snapshotting) | Critical | 5d |
-| Raft membership changes (add/remove nodes at runtime) | High | 3d |
-| gRPC reflection for debugging | Low | 1d |
-| Hub API versioning strategy | High | 2d |
-| Authentication improvements (OAuth2, API tokens with scopes) | High | 5d |
+## Phase 3: Performance Engineering (v6.0)
 
-### Phase 6: Advanced Merge (v7.1) -- 6 weeks
+**Goal:** Establish quantitative baselines and optimize hot paths.
 
-**Goal:** Expand semantic merge to cover more formats and harder cases.
+**Duration:** 4 weeks
 
-| Task | Priority | Effort |
-|------|----------|--------|
-| DOCX: track-changes-aware merge | High | 5d |
-| XLSX: formula-aware merge (detect formula conflicts) | High | 5d |
-| PPTX: animation/timing merge | Medium | 5d |
-| OTIO: transition/effect merge | Medium | 3d |
-| Image: pixel-level diff for PNG/JPEG | Low | 5d |
-| Config file merge (INI, dotenv, properties) | Medium | 3d |
-| Lockfile merge (Cargo.lock, package-lock.json, yarn.lock) | High | 3d |
-| Database schema migration merge (SQL ALTER statements) | Medium | 5d |
-| Merge conflict resolution API (programmatic) | High | 3d |
-| Merge strategy plugins (user-defined) | Medium | 5d |
+### 3.1 Benchmark Infrastructure
 
-### Phase 7: Scale and Reliability (v8.0) -- 8 weeks
+| Task | Details |
+|------|---------|
+| Add Criterion to CI | Run suture-bench on every PR, fail if regression > 10% |
+| Baseline all operations | Record p50/p95/p99 for init, add, commit, log, merge, push, pull |
+| Publish performance.md | Auto-generated from CI benchmarks |
+
+### 3.2 Optimization Targets
+
+| Operation | Current | Target | Approach |
+|-----------|---------|--------|----------|
+| `suture init` | <100ms | <50ms | Pre-allocate SQLite pages |
+| `suture add .` (10K files) | O(n) | O(n), <2s | Parallel file hashing with rayon |
+| `suture commit` | <500ms | <200ms | Incremental file tree (already partial) |
+| `suture log` (10K commits) | O(n) | O(n), <500ms | Lazy patch deserialization |
+| `suture merge` (100 files) | O(n*m) | O(n+m) | Parallel per-file merge |
+| `suture push` (1K patches) | Linear | Linear, >50MB/s | Batch blob compression |
+| Semantic merge (DOCX 100 paragraphs) | O(p^2) | O(p) | Index-based paragraph lookup |
+
+### 3.3 Scale Testing
+
+| Scenario | Target |
+|----------|--------|
+| 100K files, 10K commits | All operations < 30s |
+| 1K patches, 100K blobs push/pull | > 50MB/s throughput |
+| 500-clip OTIO timeline merge | < 5s |
+
+---
+
+## Phase 4: Ecosystem and Distribution (v6.1)
+
+**Goal:** Make suture-merge the standard semantic merge library.
+
+**Duration:** 4 weeks
+
+### 4.1 Library Maturity
+
+| Task | Details |
+|------|---------|
+| suture-merge API stabilization | Commit to semver. Document stability guarantees. |
+| suture-merge v1.0 | If API is stable enough, publish as 1.0. |
+| Add merge_sql(), merge_ical(), merge_feed() | Currently missing from library crate |
+| Publish all 37 crates | Automated dry-run in CI |
+
+### 4.2 Language Bindings
+
+| Task | Details |
+|------|---------|
+| suture-py: re-include in CI | Fix PyO3 build, add to test matrix |
+| suture-py: publish to PyPI | Automated build and upload |
+| suture-node: CI verification | Already in workspace, add dedicated test job |
+
+### 4.3 Editor Integration
+
+| Task | Details |
+|------|---------|
+| VS Code: real-time merge preview | Show semantic diff inline |
+| JetBrains: merge conflict resolution UI | Integrate with IDEA merge tool |
+| Neovim: stable release | Tag and publish to MELPA/lazy.nvim |
+
+### 4.4 Distribution
+
+| Task | Details |
+|------|---------|
+| Homebrew formula update | v6.1 with test block |
+| AUR PKGBUILD update | Arch Linux |
+| Nix flake update | Pin to v6.1 |
+| Docker image multi-arch | linux/amd64, linux/arm64 |
+| Install script verification | Test on Ubuntu, macOS, Fedora, Arch |
+
+---
+
+## Phase 5: Enterprise Infrastructure (v7.0)
+
+**Goal:** Hub deployment story is production-grade.
+
+**Duration:** 8 weeks
+
+### 5.1 Hub Hardening
+
+| Task | Details |
+|------|---------|
+| Backup/restore tooling | `suture hub backup` / `suture hub restore` (SQLite dump + blob export) |
+| Prometheus metrics endpoint | `/metrics` with request latency, active connections, repo count |
+| Per-user rate limiting | Currently global; scope to authenticated user |
+| Replication lag visibility | Raft commit index vs applied index |
+| API versioning | `/api/v1/` prefix with deprecation headers |
+| OAuth2 improvements | Scope-based tokens, refresh token rotation |
+| Hub configuration schema | TOML schema validation on startup |
+
+### 5.2 S3 Backend
+
+| Task | Details |
+|------|---------|
+| Multipart upload | For blobs > 100MB |
+| Automatic retry with exponential backoff | Transient failure handling |
+| Bucket lifecycle policies | Automatic blob expiration |
+
+### 5.3 Raft Hardening
+
+| Task | Details |
+|------|---------|
+| Log compaction | Already implemented; test at scale (1M entries) |
+| Membership changes | Already implemented; add CLI commands |
+| Snapshot transfer | Optimize large snapshot propagation |
+| Leader step-down on network partition | Verify correctness |
+
+### 5.4 Observability
+
+| Task | Details |
+|------|---------|
+| Structured JSON logging | Replace eprintln with tracing-subscriber |
+| Distributed tracing | OpenTelemetry integration |
+| Error taxonomy | Structured error codes with machine-readable format |
+| Health check endpoint | Already exists; add deep health (DB, S3, Raft) |
+
+---
+
+## Phase 6: Advanced Merge (v7.1)
+
+**Goal:** Expand semantic merge to harder cases.
+
+**Duration:** 6 weeks
+
+### 6.1 Document Merge Depth
+
+| Task | Details |
+|------|---------|
+| DOCX: track-changes-aware merge | Detect and preserve Word track changes |
+| XLSX: formula-aware merge | Detect formula conflicts (not just value) |
+| PPTX: animation/timing merge | Preserve slide animations across merges |
+| OOXML: comment/annotation merge | Preserve reviewer comments |
+
+### 6.2 New Format Support
+
+| Format | Priority | Notes |
+|--------|----------|-------|
+| Lockfile (Cargo.lock, package-lock.json) | High | Already have merge strategy scaffold |
+| Config files (INI, dotenv, .properties) | Medium | Simple key-value merge |
+| Email (MBOX, EML) | Low | Thread-level merge |
+| Spreadsheet formulas (XLSX deep) | Medium | AST-level formula diff/merge |
+
+### 6.3 Programmatic Merge API
+
+| Task | Details |
+|------|---------|
+| Merge conflict callback | Allow callers to resolve conflicts programmatically |
+| Custom merge strategies | User-defined conflict resolution per file type |
+| Merge plugins | Load strategy from WASM plugin at runtime |
+
+---
+
+## Phase 7: Scale and Reliability (v8.0)
 
 **Goal:** Prove suture works at enterprise scale.
 
-| Task | Priority | Effort |
-|------|----------|--------|
-| Repository size limits and enforcement | High | 2d |
-| Partial clone (sparse checkout) | High | 5d |
-| Shallow clone (depth-limited history) | Medium | 3d |
-| Garbage collection tuning (incremental, background) | High | 5d |
-| fsck improvements (parallel, repair mode) | Medium | 3d |
-| Concurrent push handling (hub) | High | 5d |
-| Repository mirroring (hub-to-hub) | Medium | 3d |
-| Access control (per-repo, per-branch permissions) | High | 5d |
-| Webhooks reliability (retry queue, dead letter) | Medium | 3d |
-| Observability (structured logging, tracing, error taxonomy) | High | 3d |
+**Duration:** 8 weeks
 
-### Phase 8: Formal Verification Expansion (v8.1) -- 4 weeks
+### 7.1 Large Repository Support
+
+| Task | Details |
+|------|---------|
+| Partial clone (sparse checkout) | Download only requested paths |
+| Shallow clone | Depth-limited history fetch |
+| Pack files | Combine small blobs into packed files (like Git pack) |
+| Repository size limits | Configurable max repo/blob size with enforcement |
+
+### 7.2 Garbage Collection
+
+| Task | Details |
+|------|---------|
+| Background GC | Incremental GC running concurrently |
+| GC scheduling | Automatic trigger on repo size threshold |
+| Parallel fsck | Multi-threaded integrity checking |
+| Repair mode | `suture fsck --fix` to correct inconsistencies |
+
+### 7.3 Access Control
+
+| Task | Details |
+|------|---------|
+| Per-repo permissions | Owner, collaborator, reader roles |
+| Per-branch protection | Protected branches, required reviews |
+| Team management | Organizations with team-level repo access |
+| Audit logging | All permission changes logged |
+
+### 7.4 Reliability
+
+| Task | Details |
+|------|---------|
+| Concurrent push handling | Hub handles multiple simultaneous pushes |
+| Hub-to-hub mirroring | Repository replication across hubs |
+| Webhook retry queue | Dead letter queue for failed deliveries |
+| Graceful degradation | Degrade features under load, not fail |
+
+---
+
+## Phase 8: Formal Verification Expansion (v8.1)
 
 **Goal:** Expand Lean 4 proof coverage for critical algorithms.
 
-| Current proofs | Target proofs |
-|----------------|---------------|
-| Touch-set conflict equivalence | Patch-DAG acyclicity invariant |
-| Disjoint commutativity | LCA correctness |
-| Merge symmetry | Three-way merge completeness |
-| Identity element | Blob CAS consistency |
-| Merge determinism | Ed25519 signature non-forgeability (assuming curve) |
-| Diff determinism | Raft election safety |
-| Patch composition associativity | Conflict marker well-formedness |
-| Reflog append-only invariant | GC reachability correctness |
+**Duration:** 4 weeks
 
-### Phase 9: Platform Deepening (v9.0) -- 6 weeks
+### 8.1 Current Proofs
+
+| Property | Status |
+|----------|--------|
+| Touch-set conflict equivalence | Proven |
+| Disjoint commutativity | Proven |
+| Merge symmetry | Proven |
+| Identity element | Proven |
+| Merge determinism | Proven |
+| Diff determinism | Proven |
+| Patch composition associativity | Proven |
+| Reflog append-only invariant | Proven |
+
+### 8.2 Target Proofs
+
+| Property | Effort |
+|----------|--------|
+| Patch-DAG acyclicity invariant | 3d |
+| LCA (lowest common ancestor) correctness | 5d |
+| Three-way merge completeness | 3d |
+| Blob CAS consistency (no aliasing) | 2d |
+| Ed25519 signature non-forgeability (assuming curve) | 5d |
+| Raft election safety (at most one leader per term) | 5d |
+| Conflict marker well-formedness | 2d |
+| GC reachability correctness (no live blob pruned) | 3d |
+
+---
+
+## Phase 9: Platform Deepening (v9.0)
 
 **Goal:** Native integrations with professional tools.
 
-| Task | Priority | Effort |
-|------|----------|--------|
-| DaVinci Resolve plugin (via Python/PyO3) | High | 10d |
-| Premiere Pro panel (via CEP/UXP) | Medium | 10d |
-| Final Cut Pro XML round-trip | Medium | 5d |
-| Avid AAF interchange | Low | 10d |
-| Excel add-in (via Office.js or COM) | Medium | 10d |
-| Google Docs integration (via API) | Low | 5d |
-| Notion/Airtable/Google Sheets connectors (already scaffolded) | Medium | 5d |
+**Duration:** 6 weeks
 
-### Phase 10: v1.0 Release Preparation (v10.0) -- 4 weeks
+### 9.1 Video/Post-Production
+
+| Task | Details |
+|------|---------|
+| DaVinci Resolve plugin | Via Python/PyO3 bridge to Resolve scripting API |
+| Premiere Pro panel | CEP/UXP extension using suture-merge DLL |
+| Final Cut Pro XML round-trip | FCPXML import/export |
+| Avid AAF interchange | AAF media metadata merge |
+
+### 9.2 Document/Office
+
+| Task | Details |
+|------|---------|
+| Excel add-in | Office.js COM add-in for merge preview |
+| Google Docs API | Server-side merge via Google Docs API |
+| LibreOffice macro | Basic integration for ODF merge |
+
+### 9.3 Data/DevOps
+
+| Task | Details |
+|------|---------|
+| Airtable connector | Already scaffolded; wire into CLI |
+| Google Sheets connector | Already scaffolded; wire into CLI |
+| Notion connector | Already scaffolded; wire into CLI |
+| Terraform state merge | Semantic merge for .tfstate JSON |
+| Kubernetes manifest merge | YAML-aware merge for K8s resources |
+
+---
+
+## Phase 10: Desktop App (v9.1)
+
+**Goal:** Native desktop application for non-developer users.
+
+**Duration:** 4 weeks
+
+### 10.1 Re-include in Workspace
+
+| Task | Details |
+|------|---------|
+| Fix Tauri build in workspace | Resolve dependency conflicts |
+| Add CI matrix | macOS + Windows + Linux build |
+| Add smoke tests | Basic init/commit/branch/merge through UI |
+
+### 10.2 Feature Completion
+
+| Task | Details |
+|------|---------|
+| Real-time sync status | Show push/pull progress |
+| Visual merge conflict resolution | Side-by-side editor |
+| Repository browser | File tree with history sidebar |
+| System tray notifications | Background sync alerts |
+
+---
+
+## Phase 11: WASM Plugin Ecosystem (v9.2)
+
+**Goal:** User-extensible merge drivers via WASM.
+
+**Duration:** 4 weeks
+
+### 11.1 SDK Stabilization
+
+| Task | Details |
+|------|---------|
+| Publish suture-plugin-sdk to crates.io | Stable API for plugin authors |
+| WASM plugin documentation | Tutorial: write a custom merge driver |
+| Example plugins | TOML, INI, protobuf as WASM plugins |
+
+### 11.2 Runtime Hardening
+
+| Task | Details |
+|------|---------|
+| Fuel metering | Enforce CPU time limits per plugin |
+| Memory limits | Enforce memory limits per plugin |
+| Plugin signing | Verify plugin authenticity |
+| Plugin marketplace | Registry for community plugins |
+
+---
+
+## Phase 12: v1.0 Release (v10.0)
 
 **Goal:** Ship a stable, documented, well-supported v1.0.
 
-| Task | Priority | Effort |
-|------|----------|--------|
-| API stability audit (semver check on all public types) | Critical | 5d |
-| Documentation complete (API reference, migration guide, troubleshooting) | High | 10d |
-| Performance regression suite in CI | High | 3d |
-| Security audit (external, if budget allows) | High | 5d |
-| Compatibility matrix (OS/Rust versions) | Medium | 2d |
-| Release notes automation | Medium | 2d |
-| Breaking change detection in CI | High | 2d |
-| User survey and feedback incorporation | Medium | 3d |
+**Duration:** 4 weeks
+
+### 12.1 Stability
+
+| Task | Details |
+|------|---------|
+| API stability audit | Semver check on all 37 public crate APIs |
+| Breaking change detection | cargo-semver-checks in CI |
+| Compatibility matrix | Test on Rust 1.75+, Ubuntu 22.04+, macOS 13+, Windows 10+ |
+
+### 12.2 Documentation
+
+| Task | Details |
+|------|---------|
+| API reference (rustdoc) | Complete docs for all public types |
+| Migration guide | v0.x to v1.0 upgrade path |
+| Troubleshooting guide | Common issues and solutions |
+| Architecture decision records | All ADRs published |
+| Video tutorials | 3-5 minute walkthroughs for core workflows |
+
+### 12.3 Release Infrastructure
+
+| Task | Details |
+|------|---------|
+| Automated release | GitHub Actions: build, sign, upload, publish |
+| SHA256 checksums | For all binary artifacts |
+| GPG signing | Detached signatures for release binaries |
+| Release notes automation | Changelog to release notes |
 
 ---
 
-## 3. Strategic Decisions
-
-### 3.1 What NOT to Do
-
-| Decision | Rationale |
-|----------|-----------|
-| Do not migrate to PostgreSQL/Redis | SQLite is sufficient for single-hub deployments. Multi-hub scenarios are rare and can use SQLite + Raft. Added operational complexity is not justified by current user base. |
-| Do not implement QUIC transport | TCP + Zstd compression achieves adequate latency. QUIC adds implementation complexity (connection migration, 0-RTT) without clear benefit for hub-to-client traffic patterns. |
-| Do not implement NFSv4/SMB3/ProjFS | FUSE3 + WebDAV covers the primary use cases. NFSv4/SMB3 require kernel-level development. ProjFS is Windows-only. |
-| Do not migrate to FlatBuffers | Current wire format (bincode + Zstd) is performant and well-tested. FlatBuffers adds build complexity and the zero-copy benefit is marginal for patch-sized payloads. |
-| Do not pursue HFT-level nanosecond optimization | Suture is a VCS, not a trading system. Microsecond-level latency is sufficient. Focus optimization effort on large-file and large-repo scenarios instead. |
-
-### 3.2 What to Double Down On
-
-| Decision | Rationale |
-|----------|-----------|
-| Semantic merge quality | This is the sole differentiator from Git. Every driver improvement directly increases value. |
-| suture-merge library adoption | The library crate is the growth vector. Low friction (cargo add), high impact (semantic merge in any Rust project). |
-| Formal verification | Unique in the VCS space. Builds trust for safety-critical domains (defence, medical, finance). |
-| Lean 4 proof expansion | Proves correctness claims. Marketing asset for regulated industries. |
-| Performance on large repos | Enterprise adoption requires handling repos with 100K+ files and 100K+ commits. |
-
----
-
-## 4. Risk Register
-
-| Risk | Probability | Impact | Mitigation |
-|------|-------------|--------|------------|
-| Rust edition upgrade breaks compilation | Medium | High | Pin rust-toolchain.toml, test with nightly before stable |
-| SQLite WAL corruption on crash | Low | Critical | WAL checkpoint on graceful shutdown, fsck on startup |
-| BLAKE3 collision (theoretical) | Negligible | Critical | Monitor BLAKE3 research, plan migration path |
-| Raft split-brain | Low | Critical | Persist election state, use BTreeMap for deterministic ordering |
-| WASM plugin sandbox escape | Low | Critical | Limit host imports, review wasmtime security advisories |
-| Cargo dependency supply chain attack | Medium | High | cargo audit in CI, lockfile pinning, entropy analysis |
-| Driver correctness regression | Medium | High | Property-based tests for each driver, E2E lifecycle tests |
-| Performance regression | Medium | Medium | Criterion benchmarks in CI with regression detection |
-
----
-
-## 5. Metrics Targets
-
-| Metric | Current (v5.3.1) | v6.0 Target | v8.0 Target | v10.0 Target |
-|--------|-------------------|-------------|-------------|--------------|
-| Test count | 1,747 | 1,900 | 2,200 | 2,500 |
-| Branch coverage (critical paths) | Unknown | >80% | >90% | >95% |
-| Lean 4 proofs | 8 | 12 | 16 | 20 |
-| Semantic drivers | 18 | 20 | 25 | 30 |
-| crates.io crates published | 37 | 37 | 40 | 42 |
-| CLI commands | 58 | 62 | 65 | 70 |
-| Unsafe blocks (production) | 48 | 30 | 20 | 15 |
-| Clippy warnings | 0 | 0 | 0 | 0 |
-| Cargo audit critical | 0 | 0 | 0 | 0 |
-| CI pipeline time | ~15m | <12m | <15m | <15m |
-| suture-merge downloads/month | TBD | 1K | 5K | 20K |
-
----
-
-## 6. Version Timeline
+## Version Timeline
 
 | Version | Focus | Est. Date |
 |---------|-------|-----------|
-| v5.4 | Hardening (TD-1 through TD-9) | 2026-05-24 |
-| v5.5 | Requirements reconciliation | 2026-05-31 |
-| v6.0 | Performance engineering | 2026-06-28 |
-| v6.1 | Ecosystem maturity | 2026-07-26 |
-| v7.0 | Distributed systems depth | 2026-09-20 |
-| v7.1 | Advanced merge | 2026-11-01 |
-| v8.0 | Scale and reliability | 2027-01-10 |
-| v8.1 | Formal verification expansion | 2027-02-07 |
-| v9.0 | Platform deepening | 2027-03-21 |
-| v10.0 | v1.0 release | 2027-04-18 |
+| v5.4 | Hardening and soundness | 2026-05-26 |
+| v5.5 | Requirements reconciliation | 2026-06-02 |
+| v6.0 | Performance engineering | 2026-06-30 |
+| v6.1 | Ecosystem and distribution | 2026-07-28 |
+| v7.0 | Enterprise infrastructure | 2026-09-22 |
+| v7.1 | Advanced merge | 2026-11-03 |
+| v8.0 | Scale and reliability | 2027-01-12 |
+| v8.1 | Formal verification expansion | 2027-02-09 |
+| v9.0 | Platform deepening | 2027-03-23 |
+| v9.1 | Desktop app | 2027-04-20 |
+| v9.2 | WASM plugin ecosystem | 2027-05-18 |
+| v10.0 | v1.0 release | 2027-06-15 |
+
+---
+
+## Metrics Targets
+
+| Metric | v5.3.1 (now) | v6.0 | v8.0 | v10.0 |
+|--------|-------------|------|------|-------|
+| Tests | 1,747 | 1,900 | 2,200 | 2,500 |
+| Branch coverage (critical) | Unknown | >80% | >90% | >95% |
+| Lean 4 proofs | 8 | 8 | 16 | 20 |
+| Semantic drivers | 17 | 18 | 22 | 25 |
+| crates.io crates | 37 | 37 | 40 | 42 |
+| CLI commands | 58 | 60 | 65 | 70 |
+| Unsafe blocks | 51 | 35 | 20 | 15 |
+| Clippy warnings | 0 | 0 | 0 | 0 |
+| CI pipeline time | ~15m | <10m | <12m | <12m |
+| suture-merge downloads/mo | TBD | 1K | 5K | 20K |
+
+---
+
+## Risk Register
+
+| Risk | Probability | Impact | Mitigation |
+|------|-------------|--------|------------|
+| Rust edition upgrade breaks compilation | Medium | High | Pin rust-toolchain.toml, test with nightly |
+| SQLite WAL corruption on crash | Low | Critical | WAL checkpoint on shutdown, fsck on startup |
+| BLAKE3 collision (theoretical) | Negligible | Critical | Monitor research, plan migration |
+| Raft split-brain | Low | Critical | Persist election state, BTreeMap ordering |
+| WASM sandbox escape | Low | Critical | Limit host imports, review wasmtime advisories |
+| Supply chain attack via dependency | Medium | High | cargo audit in CI, lockfile pinning, entropy analysis |
+| Driver regression | Medium | High | Property-based tests, E2E lifecycle tests |
+| Performance regression | Medium | Medium | Criterion in CI with regression gating |
+| Desktop app Tauri breaking changes | Medium | Medium | Pin Tauri version, test before upgrade |
+| crates.io publish failure | Low | Low | Dry-run in CI, manual review before publish |
+
+---
+
+## Strategic Decisions
+
+### What NOT to Do
+
+| Decision | Rationale |
+|----------|-----------|
+| Do not migrate to PostgreSQL | SQLite + Raft covers single-node and distributed. Added complexity not justified. |
+| Do not implement QUIC | TCP + Zstd achieves adequate latency. QUIC adds complexity without clear benefit. |
+| Do not implement NFSv4/SMB3 | FUSE3 + WebDAV covers primary use cases. Kernel-level dev not justified. |
+| Do not migrate to FlatBuffers | bincode + Zstd is performant and well-tested. |
+| Do not optimize for nanosecond latency | VCS operations are I/O bound. Focus on large-file and large-repo scale. |
+
+### What to Double Down On
+
+| Decision | Rationale |
+|----------|-----------|
+| Semantic merge quality | Sole differentiator from Git. Every driver improvement increases value. |
+| suture-merge library adoption | Growth vector. Low friction (cargo add), high impact. |
+| Formal verification | Unique in VCS space. Builds trust for regulated industries. |
+| Performance at scale | Enterprise adoption requires 100K+ files, 100K+ commits. |
+| Editor integrations | Where users spend their time. Reduce context switching. |
