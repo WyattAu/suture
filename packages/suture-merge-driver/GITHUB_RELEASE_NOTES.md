@@ -147,11 +147,11 @@ Files without a matching driver fall back to Git's standard line-based merge.
 
 ## Documentation
 
-- [Quick Start Guide](../docs/quickstart.md) -- 60-second getting started
-- [Merge Driver Guide](../docs/merge-driver-guide.md) -- comprehensive driver configuration, troubleshooting, CI/CD integration, and enterprise deployment
-- [CLI Reference](../docs/cli-reference.md) -- full command documentation
-- [Semantic Merge Explained](../docs/semantic-merge.md) -- how the merge algorithm works
-- [Performance Baseline](../docs/performance.md) -- benchmark results
+- [Quick Start Guide](../../docs/quickstart.md) -- 60-second getting started
+- [Merge Driver Guide](../../docs/merge-driver-guide.md) -- comprehensive driver configuration, troubleshooting, CI/CD integration, and enterprise deployment
+- [CLI Reference](../../docs/cli-reference.md) -- full command documentation
+- [Semantic Merge Explained](../../docs/semantic-merge.md) -- how the merge algorithm works
+- [Performance Baseline](../../docs/performance.md) -- benchmark results
 
 ## Contributors
 

@@ -231,7 +231,6 @@ cargo publish -p suture-driver-sql
 cargo publish -p suture-driver-html
 cargo publish -p suture-driver-markdown
 cargo publish -p suture-driver-svg
-cargo publish -p suture-driver-properties
 cargo publish -p suture-driver-docx
 cargo publish -p suture-driver-xlsx
 cargo publish -p suture-driver-pptx
@@ -264,7 +263,7 @@ cargo publish -p suture-platform
 ### Batch republish (if some crates already exist at v5.1.0)
 
 ```bash
-for crate in suture-common suture-core suture-driver suture-driver-json suture-driver-yaml suture-driver-toml suture-driver-xml suture-driver-csv suture-driver-sql suture-driver-html suture-driver-markdown suture-driver-svg suture-driver-properties suture-driver-docx suture-driver-xlsx suture-driver-pptx suture-driver-pdf suture-driver-image suture-driver-feed suture-driver-ical suture-driver-otio suture-driver-example suture-hub suture-daemon suture-cli suture-tui suture-lsp suture-merge suture-raft suture-vfs suture-s3 suture-wasm-plugin suture-bench suture-platform; do
+for crate in suture-common suture-core suture-driver suture-driver-json suture-driver-yaml suture-driver-toml suture-driver-xml suture-driver-csv suture-driver-sql suture-driver-html suture-driver-markdown suture-driver-svg suture-driver-docx suture-driver-xlsx suture-driver-pptx suture-driver-pdf suture-driver-image suture-driver-feed suture-driver-ical suture-driver-otio suture-driver-example suture-hub suture-daemon suture-cli suture-tui suture-lsp suture-merge suture-raft suture-vfs suture-s3 suture-wasm-plugin suture-bench suture-platform; do
   cargo publish -p $crate 2>/dev/null || echo "SKIP: $crate"
 done
 ```

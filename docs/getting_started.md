@@ -130,4 +130,4 @@ suture-cli merge main colorist/work
 
 - See [API Reference](api_reference.md) for programmatic usage
 - See [Driver SDK](driver_sdk.md) to implement support for new file formats
-- See the [Yellow Papers](../.specs/01_research/) for the mathematical foundations
+- See the [Architecture spec](../architectural_spec.md) for the mathematical foundations and merge algebra

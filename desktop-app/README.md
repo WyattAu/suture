@@ -47,11 +47,11 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ## Building
 
 ```bash
-# From the repository root
-cargo build -p suture-desktop --features tauri
-
-# Development mode with hot reload
+# From the desktop-app directory
 cargo tauri dev
+
+# Production build
+cargo tauri build
 ```
 
 ## Version

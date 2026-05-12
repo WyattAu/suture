@@ -22,7 +22,7 @@ Suture is a patch-based version control system with semantic merge capabilities.
        │ suture-core │ │suture-driver │ │suture-protocol│             │
        │ CAS, DAG,   │ │ trait +      │ │ wire format,  │             │
        │ patches,    │ │ registry     │ │ compression   │             │
-       │ repo engine │ │ (17 drivers) │ │ delta encoding│             │
+       │ repo engine │         │ (18 drivers) │ │ delta encoding│             │
        └──────┬──────┘ └──────┬──────┘ └───────┬───────┘             │
               │               │                │                     │
        ┌──────▼──────┐       │                │                     │
