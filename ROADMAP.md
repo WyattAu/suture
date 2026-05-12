@@ -1,9 +1,11 @@
 # Suture Production Roadmap
 
-**Version:** 5.3.1
+**Version:** 5.4.0 (Phase 1-2 complete)
 **Date:** 2026-05-12
 **Author:** Full monorepo audit and architectural review
-**Test Baseline:** 1,747 tests, 0 failures, 20 ignored, 0 clippy warnings
+**Status:** Phase 1 ✅ | Phase 2 ✅ | Phase 3 pending
+
+## 0. Current State (Updated 2026-05-12)
 
 ---
 
@@ -490,9 +492,9 @@ Audit all 51 unsafe blocks. For each, add a `// SAFETY:` comment explaining the 
 
 | Version | Focus | Est. Date |
 |---------|-------|-----------|
-| v5.4 | Hardening and soundness | 2026-05-26 |
-| v5.5 | Requirements reconciliation | 2026-06-02 |
-| v6.0 | Performance engineering | 2026-06-30 |
+| v5.4 | Hardening and soundness | ✅ 2026-05-12 |
+| v5.5 | Requirements reconciliation | ✅ 2026-05-12 |
+| v6.0 | Performance engineering | 2026-06-14 |
 | v6.1 | Ecosystem and distribution | 2026-07-28 |
 | v7.0 | Enterprise infrastructure | 2026-09-22 |
 | v7.1 | Advanced merge | 2026-11-03 |
@@ -507,7 +509,7 @@ Audit all 51 unsafe blocks. For each, add a `// SAFETY:` comment explaining the 
 
 ## Metrics Targets
 
-| Metric | v5.3.1 (now) | v6.0 | v8.0 | v10.0 |
+| Metric | v5.4.0 (now) | v6.0 | v8.0 | v10.0 |
 |--------|-------------|------|------|-------|
 | Tests | 1,747 | 1,900 | 2,200 | 2,500 |
 | Branch coverage (critical) | Unknown | >80% | >90% | >95% |
@@ -515,7 +517,8 @@ Audit all 51 unsafe blocks. For each, add a `// SAFETY:` comment explaining the 
 | Semantic drivers | 17 | 18 | 22 | 25 |
 | crates.io crates | 37 | 37 | 40 | 42 |
 | CLI commands | 58 | 60 | 65 | 70 |
-| Unsafe blocks | 51 | 35 | 20 | 15 |
+| Unsafe blocks | 33 | 25 | 20 | 15 |
+| Unsafe blocks with SAFETY | 33 | 33 | 33 | 33 |
 | Clippy warnings | 0 | 0 | 0 | 0 |
 | CI pipeline time | ~15m | <10m | <12m | <12m |
 | suture-merge downloads/mo | TBD | 1K | 5K | 20K |
