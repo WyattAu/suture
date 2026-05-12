@@ -56,7 +56,7 @@
 | TD-1 | CWD-dependent CLI tests require `--test-threads=1` | CI parallelism bottleneck, mutex poisoning risk | Medium: refactor tests to use tempdir per test, remove static mutex |
 | TD-2 | FUSE VFS `unsafe impl Send/Sync` on `RwFilesystem` | Soundness concern -- FUSE callbacks are single-threaded but impl claims thread-safety | Medium: audit callback threading model, justify or remove |
 | TD-3 | SHM `unsafe impl Send/Sync` on `ShmStatus` | Memory-mapped struct shared across processes without formal proof of layout stability | Low: add static_assert for repr(C), document layout guarantees |
-| TD-4 | `from_utf8_unchecked` in 8+ locations (DOCX, XLSX, PPTX, PDF, Image drivers) | Correct only if input is actually valid UTF-8; binary ZIP data passed through could theoretically corrupt | Medium: add debug-assert validation in debug builds, document invariants |
+| TD-4 | `from_utf8_unchecked` in 8+ locations (DOCX, XLSX, PPTX, PDF, Image drivers) | Correct only if input is actually valid UTF-8; binary ZIP data passed through could theoretically corrupt | Medium: add debug-assert validation in debug builds, document invariants. NOTE: workspace zip feature unification causes Deflate compression, making zip bytes non-UTF-8. Tests fixed to use merge_raw() instead of string round-trip. |
 
 #### High (blocks adoption)
 
@@ -65,7 +65,7 @@
 | TD-5 | `suture-py` excluded from workspace | Python bindings not tested in CI, version drift risk | Low: fix PyO3 build, re-include |
 | TD-6 | `desktop-app` excluded from workspace | Tauri app not built/tested in CI | Medium: add Tauri CI matrix |
 | TD-7 | No MSRV (Minimum Supported Rust Version) policy | Users on older Rust may hit edition/feature incompatibilities | Low: add `rust-toolchain.toml` pin, test with MSRV |
-| TD-8 | VERSION.md claims "1,662 tests" but actual count is ~1,413 | Documentation drift from reality | Trivial: update count |
+| TD-8 | VERSION.md claims "1,662 tests" but actual count is ~1,413 | Documentation drift from reality | Trivial: update count. NOTE: actual count now ~1,413 unit tests + 56 E2E tests after this session's audit. |
 
 #### Medium (blocks scale)
 
@@ -84,6 +84,16 @@
 |----|-------|--------|------------|
 | TD-15 | `librust_out.rmeta` in repo root | Build artifact committed or ignored incorrectly | Trivial: git rm, add to .gitignore |
 | TD-16 | 5 E2E tests ignored (FUSE/VFS integration require root) | Tests not running in CI | Low: add to CI with rootless fallback or container |
+
+#### Resolved This Session
+
+| ID | Issue | Resolution |
+|----|-------|------------|
+| -- | 2 DOCX track-changes tests failing in workspace build | Root cause: zip crate feature unification changes default compression from Stored to Deflate, making zip bytes non-UTF-8. Tests rewritten to use merge_raw() + OoxmlDocument::from_bytes(). |
+| -- | 1 clippy warning (unused variable in suture-s3) | Removed unused binding. |
+| -- | e2e push_pull_roundtrip test failing | Test hub missing /push/compressed and /pull/compressed routes. Routes added. |
+| -- | 7 fuzz bin targets running under cargo test indefinitely | Added harness=false to all [[bin]] fuzz targets in suture-fuzz Cargo.toml. |
+| -- | 5 broken doc links across repo | Fixed stale crate refs, broken relative paths, and incorrect driver count. |
 
 ---
 
@@ -308,7 +318,7 @@
 | Test count | ~1,413 | 1,600 | 2,000 | 2,500 |
 | Branch coverage (critical paths) | Unknown | >80% | >90% | >95% |
 | Lean 4 proofs | 8 | 12 | 16 | 20 |
-| Semantic drivers | 17 | 20 | 25 | 30 |
+| Semantic drivers | 18 | 20 | 25 | 30 |
 | crates.io crates published | 37 | 37 | 40 | 42 |
 | CLI commands | 58 | 62 | 65 | 70 |
 | Unsafe blocks (production) | 48 | 30 | 20 | 15 |
