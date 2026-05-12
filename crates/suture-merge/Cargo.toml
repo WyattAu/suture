@@ -25,6 +25,7 @@ suture-driver-feed = { path = "../suture-driver-feed", version = "5.0.0", option
 suture-driver-docx = { path = "../suture-driver-docx", version = "5.0.0", optional = true }
 suture-driver-xlsx = { path = "../suture-driver-xlsx", version = "5.0.0", optional = true }
 suture-driver-pptx = { path = "../suture-driver-pptx", version = "5.0.0", optional = true }
+suture-driver-properties = { path = "../suture-driver-properties", version = "5.0.0", optional = true }
 
 [features]
 default = ["json", "yaml", "toml", "csv"]
@@ -41,7 +42,8 @@ feed = ["dep:suture-driver-feed"]
 docx = ["dep:suture-driver-docx"]
 xlsx = ["dep:suture-driver-xlsx"]
 pptx = ["dep:suture-driver-pptx"]
-all = ["json", "yaml", "toml", "csv", "xml", "markdown", "svg", "html", "ical", "feed", "docx", "xlsx", "pptx"]
+properties = ["dep:suture-driver-properties"]
+all = ["json", "yaml", "toml", "csv", "xml", "markdown", "svg", "html", "ical", "feed", "docx", "xlsx", "pptx", "properties"]
 
 [dev-dependencies]
 zip = { version = "2.2", default-features = false }

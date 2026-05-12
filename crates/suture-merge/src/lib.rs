@@ -97,6 +97,11 @@ pub fn merge_pptx(base: &str, ours: &str, theirs: &str) -> Result<MergeResult, M
     perform_merge(&suture_driver_pptx::PptxDriver, base, ours, theirs)
 }
 
+#[cfg(feature = "properties")]
+pub fn merge_properties(base: &str, ours: &str, theirs: &str) -> Result<MergeResult, MergeError> {
+    perform_merge(&suture_driver_properties::PropertiesDriver, base, ours, theirs)
+}
+
 pub fn merge_auto(
     base: &str,
     ours: &str,
@@ -108,6 +113,43 @@ pub fn merge_auto(
     let registry = build_registry();
     let driver = registry.get(ext)?;
     perform_merge(driver, base, ours, theirs)
+}
+
+#[cfg(feature = "json")]
+pub fn merge_lockfile(
+    path: &str,
+    base: &str,
+    ours: &str,
+    theirs: &str,
+) -> Result<MergeResult, MergeError> {
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+
+    match ext {
+        "json" => merge_json(base, ours, theirs),
+        #[cfg(feature = "yaml")]
+        "yaml" | "yml" => merge_yaml(base, ours, theirs),
+        _ => {
+            let strategy = suture_driver::LockfileMergeStrategy::new();
+            let result = suture_driver::MergeStrategy::merge(
+                &strategy,
+                base.as_bytes(),
+                ours.as_bytes(),
+                theirs.as_bytes(),
+            )
+            .map_err(|e| MergeError::ParseError(e.to_string()))?;
+            Ok(MergeResult {
+                merged: String::from_utf8_lossy(&result.content).into_owned(),
+                status: if result.had_conflicts {
+                    MergeStatus::Conflict
+                } else {
+                    MergeStatus::Clean
+                },
+            })
+        }
+    }
 }
 
 pub fn diff(
@@ -132,6 +174,79 @@ pub fn format_diff(
     let registry = build_registry();
     let driver = registry.get(ext)?;
     Ok(driver.format_diff(Some(base), modified)?)
+}
+
+/// Callback trait for programmatic conflict resolution.
+/// Implement this to define custom conflict resolution logic
+/// (e.g., always take ours for .json files, always take theirs for .lock files).
+#[cfg(feature = "json")]
+pub trait ConflictResolver {
+    /// Given a conflict, return how to resolve it.
+    fn resolve(&self, conflict: &MergeConflict) -> ConflictResolution;
+}
+
+/// Merge and auto-resolve any conflicts using a resolver.
+/// Returns a MergeResult with Clean status if all conflicts were resolved.
+///
+/// # Example
+///
+/// ```rust
+/// use suture_merge::{merge_resolve, ConflictResolver, ConflictResolution, MergeConflict, MergeStatus};
+///
+/// struct TakeTheirs;
+/// impl ConflictResolver for TakeTheirs {
+///     fn resolve(&self, _conflict: &MergeConflict) -> ConflictResolution {
+///         ConflictResolution::Theirs
+///     }
+/// }
+///
+/// let base  = r#"{"key": "original"}"#;
+/// let ours  = r#"{"key": "ours"}"#;
+/// let theirs = r#"{"key": "theirs"}"#;
+///
+/// let result = merge_resolve(Some("data.json"), base, ours, theirs, &TakeTheirs).unwrap();
+/// assert_eq!(result.status, MergeStatus::Clean);
+/// assert!(result.merged.contains(r#""key": "theirs""#));
+/// ```
+#[cfg(feature = "json")]
+pub fn merge_resolve(
+    extension: Option<&str>,
+    base: &str,
+    ours: &str,
+    theirs: &str,
+    resolver: &dyn ConflictResolver,
+) -> Result<MergeResult, MergeError> {
+    let path = extension.unwrap_or("file.json");
+    let output = merge_with_conflicts(base, ours, theirs, path);
+
+    match output.status {
+        MergeStatus::Clean => {
+            let merged = output.content.unwrap_or_else(|| ours.to_string());
+            Ok(MergeResult {
+                merged,
+                status: MergeStatus::Clean,
+            })
+        }
+        MergeStatus::Conflict => {
+            let resolved_parts: Vec<String> = output
+                .conflicts
+                .iter()
+                .map(|c| {
+                    let resolution = resolver.resolve(c);
+                    resolve_conflict(c, &resolution)
+                })
+                .collect();
+            let merged = if resolved_parts.is_empty() {
+                ours.to_string()
+            } else {
+                resolved_parts.join("\n")
+            };
+            Ok(MergeResult {
+                merged,
+                status: MergeStatus::Clean,
+            })
+        }
+    }
 }
 
 #[cfg(test)]
@@ -325,6 +440,72 @@ mod tests {
     fn merge_error_unsupported_format() {
         let err = MergeError::UnsupportedFormat("xyz".to_string());
         assert!(err.to_string().contains("xyz"));
+    }
+
+    #[test]
+    #[cfg(feature = "json")]
+    fn merge_resolve_clean() {
+        let base = r#"{"name": "Alice", "age": 30}"#;
+        let ours = r#"{"name": "Alice", "age": 31}"#;
+        let theirs = r#"{"name": "Alice", "city": "NYC"}"#;
+
+        struct TakeOurs;
+        impl ConflictResolver for TakeOurs {
+            fn resolve(&self, _conflict: &MergeConflict) -> ConflictResolution {
+                ConflictResolution::Ours
+            }
+        }
+
+        let result =
+            merge_resolve(Some("data.json"), base, ours, theirs, &TakeOurs).unwrap();
+        assert_eq!(result.status, MergeStatus::Clean);
+        assert!(result.merged.contains(r#""age": 31"#));
+        assert!(result.merged.contains(r#""city": "NYC""#));
+    }
+
+    #[test]
+    fn merge_lockfile_json_delegates_to_merge_json() {
+        let base = r#"{"name": "Alice", "age": 30}"#;
+        let ours = r#"{"name": "Alice", "age": 31}"#;
+        let theirs = r#"{"name": "Alice", "city": "NYC"}"#;
+
+        let result = merge_lockfile("package-lock.json", base, ours, theirs).unwrap();
+        assert_eq!(result.status, MergeStatus::Clean);
+        assert!(result.merged.contains(r#""age": 31"#));
+        assert!(result.merged.contains(r#""city": "NYC""#));
+    }
+
+    #[test]
+    fn merge_lockfile_strategy_ours_changed() {
+        let base = "base";
+        let ours = "ours-changed";
+        let theirs = "base";
+
+        let result = merge_lockfile("Cargo.lock", base, ours, theirs).unwrap();
+        assert_eq!(result.status, MergeStatus::Clean);
+        assert_eq!(result.merged, "ours-changed");
+    }
+
+    #[test]
+    fn merge_lockfile_strategy_theirs_changed() {
+        let base = "base";
+        let ours = "base";
+        let theirs = "theirs-changed";
+
+        let result = merge_lockfile("yarn.lock", base, ours, theirs).unwrap();
+        assert_eq!(result.status, MergeStatus::Clean);
+        assert_eq!(result.merged, "theirs-changed");
+    }
+
+    #[test]
+    fn merge_lockfile_strategy_both_changed() {
+        let base = "base";
+        let ours = "ours-changed";
+        let theirs = "theirs-changed";
+
+        let result = merge_lockfile("Cargo.lock", base, ours, theirs).unwrap();
+        assert_eq!(result.status, MergeStatus::Conflict);
+        assert_eq!(result.merged, "theirs-changed");
     }
 
     #[test]

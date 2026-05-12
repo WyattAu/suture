@@ -5102,6 +5102,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "suture-driver-properties"
+version = "5.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "suture-common",
+ "suture-driver",
+]
+
+[[package]]
 name = "suture-driver-sql"
 version = "5.1.0"
 dependencies = [
@@ -5266,6 +5276,7 @@ dependencies = [
  "suture-driver-json",
  "suture-driver-markdown",
  "suture-driver-pptx",
+ "suture-driver-properties",
  "suture-driver-svg",
  "suture-driver-toml",
  "suture-driver-xlsx",
