@@ -111,6 +111,10 @@ pub enum LogLevel {
 /// This is safe to call from within `suture_merge`.
 pub fn log(level: LogLevel, msg: &str) {
     let bytes = msg.as_bytes();
+    // SAFETY: `msg` is a &str so its bytes are guaranteed valid UTF-8.
+    // The pointer from as_bytes().as_ptr() is valid for the string's lifetime,
+    // and bytes.len() is the exact byte length. No mutation occurs between
+    // pointer creation and this call.
     unsafe {
         host::host_log(level as i32, bytes.as_ptr(), bytes.len() as i32);
     }

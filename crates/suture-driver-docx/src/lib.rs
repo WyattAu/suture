@@ -1095,6 +1095,9 @@ mod tests {
     }
 
     fn docx_bytes(bytes: &[u8]) -> String {
+        // SAFETY: DOCX files contain OOXML parts which are valid UTF-8 per the
+        // Open XML specification (ECMA-376). The test helper constructs these
+        // parts from &str literals, so the bytes are known-valid UTF-8.
         unsafe { String::from_utf8_unchecked(bytes.to_vec()) }
     }
 

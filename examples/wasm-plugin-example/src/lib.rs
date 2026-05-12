@@ -28,9 +28,12 @@ extern "C" {
 
 /// Read the full JSON input from the host.
 fn read_input() -> String {
+    // SAFETY: get_input_len() is a host-provided FFI import with no preconditions.
     let len = unsafe { get_input_len() } as usize;
     let mut bytes = Vec::with_capacity(len);
     for i in 0..len {
+        // SAFETY: offset i is in 0..len where len was returned by get_input_len(),
+        // satisfying the host ABI contract for get_input_byte.
         bytes.push(unsafe { get_input_byte(i as i32) } as u8);
     }
     String::from_utf8(bytes).unwrap_or_default()
@@ -39,8 +42,12 @@ fn read_input() -> String {
 /// Write the merge result to the output buffer.
 fn write_output(s: &str) {
     let bytes = s.as_bytes();
+    // SAFETY: set_output_len() declares the output buffer size to the host.
+    // The subsequent loop writes within this range.
     unsafe { set_output_len(bytes.len() as i32); }
     for (i, &byte) in bytes.iter().enumerate() {
+        // SAFETY: offset i is within the range declared by set_output_len() above,
+        // satisfying the host ABI contract for set_output_byte.
         unsafe { set_output_byte(i as i32, byte as i32); }
     }
 }
@@ -48,6 +55,9 @@ fn write_output(s: &str) {
 /// Set the error message before returning -1.
 fn set_error(msg: &str) {
     let bytes = msg.as_bytes();
+    // SAFETY: bytes.as_ptr() points to valid UTF-8 (from &str), and bytes.len()
+    // is the correct byte length. The pointer remains valid for the duration
+    // of this call since no mutation occurs.
     unsafe {
         host_log(4, bytes.as_ptr(), bytes.len() as i32);
     }

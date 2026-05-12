@@ -296,6 +296,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[serial_test::serial]
     #[tokio::test]
     async fn test_apply_patch() {
         let dir = tempfile::tempdir().unwrap();

@@ -825,9 +825,10 @@ unsafe impl Send for RwFilesystem {}
 // SAFETY: Same root cause as Send — `Repository` contains `Rc` via
 // `PatchDag::ancestor_cache`, preventing auto-derived Sync.
 // The manual impl is sound because:
-// - FUSE dispatches callbacks sequentially per mount (single-threaded
-//   session), so `&RwFilesystem` is not meaningfully shared across threads
-//   in practice.
+// - libfuse3 dispatches callbacks sequentially per mount session
+//   (single-threaded fuse_session_loop_mt creates one worker thread
+//   per session, but callbacks within a session never overlap).
+//   Reference: libfuse/include/fuse_lowlevel.h §Threading.
 // - Even under hypothetical concurrent access, all mutable state in
 //   `InnerFs` is protected by `Mutex`, ensuring the `Rc` inside
 //   `PatchDag` is only ever accessed by one thread at a time.

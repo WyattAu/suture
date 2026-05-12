@@ -1040,6 +1040,7 @@ mod tests {
         assert!(script.contains("exit $?"));
     }
 
+    #[serial_test::serial]
     #[test]
     fn test_install_uninstall_flow() {
         let _cwd = crate::cwd_guard();

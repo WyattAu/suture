@@ -2771,6 +2771,7 @@ mod tests {
         }
     }
 
+    #[serial_test::serial]
     #[tokio::test]
     async fn test_verify_unsigned_commit() {
         let _cwd = cwd_guard();
@@ -2790,6 +2791,7 @@ mod tests {
         drop(dir);
     }
 
+    #[serial_test::serial]
     #[tokio::test]
     async fn test_verify_signed_commit() {
         let _cwd = cwd_guard();
@@ -2843,6 +2845,7 @@ mod tests {
 
     // ── Defence Workflow Tests ──
 
+    #[serial_test::serial]
     #[tokio::test]
     async fn test_defence_audit_trail_workflow() {
         let _cwd = cwd_guard();
@@ -2903,6 +2906,7 @@ mod tests {
         drop(dir);
     }
 
+    #[serial_test::serial]
     #[tokio::test]
     async fn test_defence_classification_detection() {
         let _cwd = cwd_guard();
@@ -2940,6 +2944,7 @@ mod tests {
         drop(dir);
     }
 
+    #[serial_test::serial]
     #[tokio::test]
     async fn test_defence_signed_commit_verify() {
         let _cwd = cwd_guard();
@@ -2991,6 +2996,7 @@ mod tests {
 
     // ── Film Workflow Tests ──
 
+    #[serial_test::serial]
     #[tokio::test]
     async fn test_film_branching_workflow() {
         let _cwd = cwd_guard();
@@ -3032,6 +3038,7 @@ mod tests {
         drop(dir);
     }
 
+    #[serial_test::serial]
     #[tokio::test]
     async fn test_film_blame_history() {
         let _cwd = cwd_guard();
@@ -3063,6 +3070,7 @@ mod tests {
 
     // ── YouTube/PE Workflow Tests ──
 
+    #[serial_test::serial]
     #[tokio::test]
     async fn test_youtube_export_workflow() {
         let _cwd = cwd_guard();
@@ -3107,6 +3115,7 @@ mod tests {
         drop(dir);
     }
 
+    #[serial_test::serial]
     #[tokio::test]
     async fn test_youtube_sync_workflow() {
         let _cwd = cwd_guard();
@@ -3127,6 +3136,7 @@ mod tests {
         drop(dir);
     }
 
+    #[serial_test::serial]
     #[tokio::test]
     async fn test_youtube_diff_summary() {
         let _cwd = cwd_guard();
@@ -3173,6 +3183,7 @@ mod tests {
 
     // ── General Workflow Tests ──
 
+    #[serial_test::serial]
     #[tokio::test]
     async fn test_collaboration_workflow() {
         let _cwd = cwd_guard();
@@ -3235,6 +3246,7 @@ mod tests {
         drop(dir);
     }
 
+    #[serial_test::serial]
     #[tokio::test]
     async fn test_undo_redo_workflow() {
         let _cwd = cwd_guard();
@@ -3262,6 +3274,7 @@ mod tests {
         drop(dir);
     }
 
+    #[serial_test::serial]
     #[tokio::test]
     async fn test_clean_workflow() {
         let _cwd = cwd_guard();
@@ -3294,6 +3307,7 @@ mod tests {
         drop(dir);
     }
 
+    #[serial_test::serial]
     #[tokio::test]
     async fn test_audit_verify_clean_chain() {
         let _cwd = cwd_guard();
@@ -3335,6 +3349,7 @@ mod tests {
         drop(dir);
     }
 
+    #[serial_test::serial]
     #[tokio::test]
     async fn test_audit_log_commits() {
         let _cwd = cwd_guard();
@@ -3436,6 +3451,7 @@ mod tests {
         }
     }
 
+    #[serial_test::serial]
     #[tokio::test]
     async fn test_classification_scan() {
         let _cwd = cwd_guard();
@@ -3490,6 +3506,7 @@ mod tests {
         drop(dir);
     }
 
+    #[serial_test::serial]
     #[tokio::test]
     async fn test_classification_report() {
         let _cwd = cwd_guard();
@@ -3702,6 +3719,7 @@ mod tests {
         }
     }
 
+    #[serial_test::serial]
     #[tokio::test]
     async fn test_batch_stage_workflow() {
         let _cwd = cwd_guard();
@@ -3737,6 +3755,7 @@ mod tests {
         drop(dir);
     }
 
+    #[serial_test::serial]
     #[tokio::test]
     async fn test_timeline_workflow() {
         let _cwd = cwd_guard();
@@ -3767,6 +3786,7 @@ mod tests {
         drop(dir);
     }
 
+    #[serial_test::serial]
     #[tokio::test]
     async fn test_report_workflow() {
         let _cwd = cwd_guard();
@@ -3795,6 +3815,7 @@ mod tests {
         drop(dir);
     }
 
+    #[serial_test::serial]
     #[tokio::test]
     async fn test_batch_stage_pattern_workflow() {
         let _cwd = cwd_guard();
@@ -3822,6 +3843,7 @@ mod tests {
         drop(dir);
     }
 
+    #[serial_test::serial]
     #[tokio::test]
     async fn test_audit_verify_workflow() {
         let _cwd = cwd_guard();
@@ -3854,6 +3876,7 @@ mod tests {
         drop(dir);
     }
 
+    #[serial_test::serial]
     #[tokio::test]
     async fn test_clean_dry_run_workflow() {
         let _cwd = cwd_guard();
