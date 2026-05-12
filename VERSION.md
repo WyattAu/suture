@@ -4,9 +4,9 @@
 - **Crates.io:** 37 crates published
 - **Current Phase:** GA — Production Ready
 - **Status:** Shipping v5.3.1
-- **Last Updated:** 2026-05-08
+- **Last Updated:** 2026-05-12
 - **Rust Edition:** 2024
-- **Tests:** ~1,413 passed, 0 failed, 20 ignored
+- **Tests:** 1,747 passed, 0 failed, 20 ignored
 - **Security:** 0 unsound, 1 unmaintained (paste via rav1e, transitive, no fix available)
 
 ## Tier 2 Status (All Complete)
@@ -574,7 +574,7 @@ None — all previously deferred items resolved.
 
 | Gate | Status | Details |
 |------|--------|---------|
-| Tests | [x] ~1,413 passing | 0 failures across 37 crates (1 ignored: perf 10K) |
+| Tests | [x] 1,747 passing | 0 failures across 37 crates (20 ignored: perf 10K, merge-driver scripts, platform external) |
 | Property-based tests | [x] 21 proptest suites | 10K+ cases via proptest |
 | Benchmarks | [x] 28 Criterion functions | repo ops, semantic merge, protocol, compression |
 | Clippy | [x] Zero warnings | `cargo clippy --workspace -- -D warnings` clean |

@@ -203,7 +203,7 @@ Drivers are format-specific plugins that implement the `SutureDriver` trait from
    ```toml
    [package]
    name = "suture-driver-<name>"
-   version = "5.0.0"
+    version = "5.3.1"
    edition = "2024"
 
    [dependencies]
@@ -353,7 +353,7 @@ scripts/publish.sh
 scripts/publish.sh --real
 ```
 
-The script publishes all 39 crates to crates.io in dependency order.
+The script publishes all 37 crates to crates.io in dependency order.
 
 ## License
 

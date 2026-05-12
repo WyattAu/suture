@@ -14,7 +14,7 @@
 |--------|-------|
 | Workspace crates | 42 |
 | Total Rust LoC | 108,029 |
-| Test functions | 1,413 |
+| Test functions | 1,747 |
 | Test modules | 104 |
 | Public API surface (core) | 274 functions |
 | Semantic drivers | 17 |
@@ -28,7 +28,7 @@
 
 | Gate | Status | Evidence |
 |------|--------|----------|
-| Unit tests | PASS | 1,413 test functions, 0 failures |
+| Unit tests | PASS | 1,747 test functions, 0 failures |
 | Integration tests | PASS | 56 E2E tests (27 driver correctness + 29 workflow) |
 | Property-based tests | PASS | 21 proptest suites across core |
 | Formal verification | PASS | 8 Lean 4 theorems (conflict equivalence, commutativity, symmetry, identity, determinism) |
@@ -65,7 +65,7 @@
 | TD-5 | `suture-py` excluded from workspace | Python bindings not tested in CI, version drift risk | Low: fix PyO3 build, re-include |
 | TD-6 | `desktop-app` excluded from workspace | Tauri app not built/tested in CI | Medium: add Tauri CI matrix |
 | TD-7 | No MSRV (Minimum Supported Rust Version) policy | Users on older Rust may hit edition/feature incompatibilities | Low: add `rust-toolchain.toml` pin, test with MSRV |
-| TD-8 | VERSION.md claims "1,662 tests" but actual count is ~1,413 | Documentation drift from reality | Trivial: update count. NOTE: actual count now ~1,413 unit tests + 56 E2E tests after this session's audit. |
+| TD-8 | VERSION.md claims "1,662 tests" but actual count is ~1,747 | Documentation drift from reality | Trivial: update count. Fixed: now 1,747 tests across workspace. |
 
 #### Medium (blocks scale)
 
@@ -315,7 +315,7 @@
 
 | Metric | Current (v5.3.1) | v6.0 Target | v8.0 Target | v10.0 Target |
 |--------|-------------------|-------------|-------------|--------------|
-| Test count | ~1,413 | 1,600 | 2,000 | 2,500 |
+| Test count | 1,747 | 1,900 | 2,200 | 2,500 |
 | Branch coverage (critical paths) | Unknown | >80% | >90% | >95% |
 | Lean 4 proofs | 8 | 12 | 16 | 20 |
 | Semantic drivers | 18 | 20 | 25 | 30 |

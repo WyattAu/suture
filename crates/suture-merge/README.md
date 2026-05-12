@@ -72,8 +72,7 @@ assert!(matches!(result.status, MergeStatus::Clean | MergeStatus::Conflict));
 
 ```toml
 [dependencies]
-suture-merge = "0.2"
-```
+suture-merge = "5.3"```
 
 Or with specific formats:
 

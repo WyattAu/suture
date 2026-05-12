@@ -173,3 +173,5 @@ helm install suture-hub deploy/helm/suture-hub
 ```
 
 See [Helm Chart README](../deploy/helm/suture-hub/README.md) for full values reference.
+
+NOTE: Helm chart documentation is pending. See `deploy/helm/` for chart values.

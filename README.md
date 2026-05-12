@@ -135,7 +135,7 @@ Self-hosted is always free (AGPL-3.0).
 
 ## Platform Features
 
-- **Semantic merge API** — REST endpoint for all 18 format drivers
+- **Semantic merge API** — REST endpoint for all 17 format drivers
 - **WASM plugin system** — custom merge drivers in any language
 - **OAuth** — Google and GitHub sign-in
 - **Organizations** — teams with role-based access (owner/admin/member/viewer)
@@ -177,12 +177,12 @@ conflict highlighting, one-click auto-merge, status bar integration.
 ```
 suture/
 ├── crates/
-│   ├── suture-core/            # Merge engine (342 tests)
-│   ├── suture-driver-*/        # 18 format drivers
+│   ├── suture-core/            # Merge engine (355 tests)
+│   ├── suture-driver-*/        # 17 format drivers
 │   ├── suture-cli/             # CLI (115 tests)
-│   ├── suture-hub/             # Coordination server (50 tests)
+│   ├── suture-hub/             # Coordination server (75 tests)
 │   ├── suture-platform/        # Hosted SaaS (REST API, billing, auth)
-│   ├── suture-raft/            # Consensus (48 tests)
+│   ├── suture-raft/            # Consensus (30 tests)
 │   ├── suture-vfs/             # FUSE filesystem
 │   ├── suture-wasm-plugin/     # WASM plugin system
 │   ├── suture-tui/             # Terminal UI (37 tests)
