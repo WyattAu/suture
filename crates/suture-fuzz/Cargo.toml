@@ -19,27 +19,34 @@ regex = "1"
 [[bin]]
 name = "fuzz_patch_deserialize"
 path = "fuzz_targets/fuzz_patch_deserialize.rs"
+harness = false
 
 [[bin]]
 name = "fuzz_hash_parse"
 path = "fuzz_targets/fuzz_hash_parse.rs"
+harness = false
 
 [[bin]]
 name = "fuzz_json_merge"
 path = "fuzz_targets/fuzz_json_merge.rs"
+harness = false
 
 [[bin]]
 name = "fuzz_yaml_merge"
 path = "fuzz_targets/fuzz_yaml_merge.rs"
+harness = false
 
 [[bin]]
 name = "fuzz_toml_merge"
 path = "fuzz_targets/fuzz_toml_merge.rs"
+harness = false
 
 [[bin]]
 name = "fuzz_classification"
 path = "fuzz_targets/fuzz_classification.rs"
+harness = false
 
 [[bin]]
 name = "fuzz_diff_input"
 path = "fuzz_targets/fuzz_diff_input.rs"
+harness = false
