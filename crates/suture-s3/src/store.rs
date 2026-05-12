@@ -470,7 +470,6 @@ mod tests {
 
     #[test]
     fn test_multipart_threshold_boundary() {
-        let store = S3BlobStore::new(make_config());
         assert_eq!(MULTIPART_THRESHOLD, 8 * 1024 * 1024);
         assert_eq!(PART_SIZE, 5 * 1024 * 1024);
     }

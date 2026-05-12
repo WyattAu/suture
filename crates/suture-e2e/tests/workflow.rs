@@ -251,8 +251,16 @@ async fn start_test_hub() -> String {
             axum::routing::post(suture_hub::server::push_handler),
         )
         .route(
+            "/push/compressed",
+            axum::routing::post(suture_hub::server::push_compressed_handler),
+        )
+        .route(
             "/pull",
             axum::routing::post(suture_hub::server::pull_handler),
+        )
+        .route(
+            "/pull/compressed",
+            axum::routing::post(suture_hub::server::pull_compressed_handler),
         )
         .route("/handshake", axum::routing::get(handshake_get))
         .route(

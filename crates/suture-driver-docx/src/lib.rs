@@ -1171,6 +1171,19 @@ mod tests {
         );
     }
 
+    /// Extract the text content of all `<w:t>` elements from a parsed OOXML document.
+    fn extract_merged_text(merged_bytes: &[u8]) -> String {
+        let doc = OoxmlDocument::from_bytes(merged_bytes)
+            .expect("merged output must be a valid OOXML document");
+        let main_path = doc
+            .main_document_path()
+            .expect("merged document must have a main part");
+        let part = doc
+            .get_part(main_path)
+            .expect("merged document must contain main part");
+        part.content.clone()
+    }
+
     #[test]
     fn test_merge_track_changes_one_side_only() {
         let d = DocxDriver::new();
@@ -1184,16 +1197,16 @@ mod tests {
         // Theirs: unchanged
         let theirs = make_track_changes_docx(&[("Hello", false), ("World", false)]);
 
-        let result = d
-            .merge(&docx_str(&base), &docx_str(&ours), &docx_str(&theirs))
-            .unwrap();
-        assert!(
-            result.is_some(),
-            "one side with track changes, other unchanged should merge"
-        );
+        let merged_bytes = d
+            .merge_raw(&base, &ours, &theirs)
+            .unwrap()
+            .expect("one side with track changes, other unchanged should merge");
 
-        let merged_str = result.unwrap();
-        assert!(merged_str.contains("World modified"));
+        let xml = extract_merged_text(&merged_bytes);
+        assert!(
+            xml.contains("World modified"),
+            "merged document.xml should contain 'World modified', got: {xml}"
+        );
     }
 
     #[test]
@@ -1218,17 +1231,20 @@ mod tests {
             ("Para C changed", true),
         ]);
 
-        let result = d
-            .merge(&docx_str(&base), &docx_str(&ours), &docx_str(&theirs))
-            .unwrap();
-        assert!(
-            result.is_some(),
-            "track changes in different paragraphs should merge cleanly"
-        );
+        let merged_bytes = d
+            .merge_raw(&base, &ours, &theirs)
+            .unwrap()
+            .expect("track changes in different paragraphs should merge cleanly");
 
-        let merged_str = result.unwrap();
-        assert!(merged_str.contains("Para A changed"));
-        assert!(merged_str.contains("Para C changed"));
+        let xml = extract_merged_text(&merged_bytes);
+        assert!(
+            xml.contains("Para A changed"),
+            "merged should contain 'Para A changed'"
+        );
+        assert!(
+            xml.contains("Para C changed"),
+            "merged should contain 'Para C changed'"
+        );
     }
 
     #[test]
@@ -1244,18 +1260,15 @@ mod tests {
         // Theirs: unchanged from base
         let theirs = make_track_changes_docx(&[("Inserted text", true), ("Normal text", false)]);
 
-        let result = d
-            .merge(&docx_str(&base), &docx_str(&ours), &docx_str(&theirs))
-            .unwrap();
-        assert!(
-            result.is_some(),
-            "one side accepting track changes should merge cleanly"
-        );
+        let merged_bytes = d
+            .merge_raw(&base, &ours, &theirs)
+            .unwrap()
+            .expect("one side accepting track changes should merge cleanly");
 
-        let merged_str = result.unwrap();
+        let xml = extract_merged_text(&merged_bytes);
         // The accepted version (without <w:ins>) should take precedence
         assert!(
-            !merged_str.contains("<w:ins"),
+            !xml.contains("<w:ins"),
             "accepted changes should remove <w:ins> tags"
         );
     }
@@ -1273,9 +1286,7 @@ mod tests {
         // Theirs: modified differently with track changes
         let theirs = make_track_changes_docx(&[("Theirs version", true)]);
 
-        let result = d
-            .merge(&docx_str(&base), &docx_str(&ours), &docx_str(&theirs))
-            .unwrap();
+        let result = d.merge_raw(&base, &ours, &theirs).unwrap();
         assert!(
             result.is_none(),
             "conflicting track changes in same paragraph should flag as conflict"
