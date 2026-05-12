@@ -1,9 +1,9 @@
 # Suture Production Roadmap
 
-**Version:** 5.4.0 (Phase 1-3 complete)
+**Version:** 5.4.0 (Phase 1-5 complete)
 **Date:** 2026-05-12
 **Author:** Full monorepo audit and architectural review
-**Status:** Phase 1 ✅ | Phase 2 ✅ | Phase 3 ✅ | Phase 4 pending
+**Status:** Phase 1 ✅ | Phase 2 ✅ | Phase 3 ✅ | Phase 4 ✅ | Phase 5 ✅ | Phase 6 pending
 
 ## 0. Current State (Updated 2026-05-12)
 
@@ -495,8 +495,9 @@ Audit all 51 unsafe blocks. For each, add a `// SAFETY:` comment explaining the 
 | v5.4 | Hardening and soundness | ✅ 2026-05-12 |
 | v5.5 | Requirements reconciliation | ✅ 2026-05-12 |
 | v6.0 | Performance engineering | ✅ 2026-05-12 |
-| v6.1 | Ecosystem and distribution | 2026-06-14 |
-| v7.0 | Enterprise infrastructure | 2026-09-22 |
+| v6.1 | Ecosystem and distribution | ✅ 2026-05-12 |
+| v7.0 | Enterprise infrastructure | ✅ 2026-05-12 |
+| v7.1 | Advanced merge | TBD |
 | v7.1 | Advanced merge | 2026-11-03 |
 | v8.0 | Scale and reliability | 2027-01-12 |
 | v8.1 | Formal verification expansion | 2027-02-09 |
