@@ -180,7 +180,7 @@ pub fn diff_trees(old_tree: &FileTree, new_tree: &FileTree) -> Vec<DiffEntry> {
     }
 
     // Sort by path for deterministic output
-    diffs.sort_by_key(|a| a.path.clone());
+    diffs.sort_by(|a, b| a.path.cmp(&b.path));
     diffs
 }
 

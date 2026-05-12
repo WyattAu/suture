@@ -1445,12 +1445,14 @@ impl Repository {
         }
 
         if let Ok(head_tree) = self.snapshot_head() {
+            // Build a set of staged paths for O(1) lookup (avoids O(n*m) nested scan).
+            let staged_paths: HashSet<String> = files.iter().map(|(p, _)| p.clone()).collect();
             for (path, hash) in head_tree.iter() {
                 let full_path = self.root.join(path);
                 if let Ok(data) = fs::read(&full_path) {
                     let current_hash = Hash::from_data(&data);
                     if &current_hash != hash {
-                        let already = files.iter().any(|(p, _)| p == path);
+                        let already = staged_paths.contains(path);
                         if !already {
                             let hash = self.cas.put_blob(&data)?;
                             files.push((path.clone(), Some(hash.to_hex())));

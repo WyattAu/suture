@@ -273,6 +273,11 @@ pub fn three_way_merge_lines(
     let mut auto_merged = 0usize;
     let mut conflicts = 0usize;
 
+    // Pre-compute conflict marker strings to avoid repeated allocations
+    let conflict_start = format!("<<<<<<< {ours_label}");
+    let conflict_divider = "=======".to_owned();
+    let conflict_end = format!(">>>>>>> {theirs_label}");
+
     // Build a map of base line index → what each side did at that position
     // Use `mut` so we can `remove` entries to avoid infinite loops on Insert actions.
     let mut ours_map = build_change_map(base, &ours_diff);
@@ -304,18 +309,18 @@ pub fn three_way_merge_lines(
                 // Check if they made the same change
                 if a.output_lines() == b.output_lines() {
                     // Same change — take either
-                    merged.extend(a.output_lines());
+                    merged.extend_from_slice(a.output_lines());
                     i += a.advance();
                     auto_merged += 1;
                 } else {
                     // Conflict!
                     is_clean = false;
                     conflicts += 1;
-                    merged.push(format!("<<<<<<< {ours_label}"));
-                    merged.extend(a.output_lines());
-                    merged.push("=======".to_owned());
-                    merged.extend(b.output_lines());
-                    merged.push(format!(">>>>>>> {theirs_label}"));
+                    merged.push(conflict_start.clone());
+                    merged.extend_from_slice(a.output_lines());
+                    merged.push(conflict_divider.clone());
+                    merged.extend_from_slice(b.output_lines());
+                    merged.push(conflict_end.clone());
                     // Advance past the longer action
                     i += a.advance().max(b.advance());
                 }
@@ -330,19 +335,19 @@ pub fn three_way_merge_lines(
     match (ours_trailing, theirs_trailing) {
         (None, None) => {}
         (Some(a), None) | (None, Some(a)) => {
-            merged.extend(a.output_lines());
+            merged.extend_from_slice(a.output_lines());
         }
         (Some(a), Some(b)) => {
             if a.output_lines() == b.output_lines() {
-                merged.extend(a.output_lines());
+                merged.extend_from_slice(a.output_lines());
             } else {
                 is_clean = false;
                 conflicts += 1;
-                merged.push(format!("<<<<<<< {ours_label}"));
-                merged.extend(a.output_lines());
-                merged.push("=======".to_owned());
-                merged.extend(b.output_lines());
-                merged.push(format!(">>>>>>> {theirs_label}"));
+                merged.push(conflict_start.clone());
+                merged.extend_from_slice(a.output_lines());
+                merged.push(conflict_divider.clone());
+                merged.extend_from_slice(b.output_lines());
+                merged.push(conflict_end.clone());
             }
         }
     }
@@ -375,10 +380,10 @@ impl SideAction {
         }
     }
 
-    fn output_lines(&self) -> Vec<String> {
+    fn output_lines(&self) -> &[String] {
         match self {
-            Self::DeleteInsert { inserted, .. } => inserted.clone(),
-            Self::Insert { lines } => lines.clone(),
+            Self::DeleteInsert { inserted, .. } => inserted,
+            Self::Insert { lines } => lines,
         }
     }
 }

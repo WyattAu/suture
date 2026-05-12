@@ -1,6 +1,6 @@
 # Suture Performance Baseline
 
-**Date:** 2026-04-18
+**Date:** 2026-05-12
 **Platform:** Linux x86_64, release profile (optimized)
 **Toolchain:** Rust stable, Criterion.rs 0.5
 
@@ -261,3 +261,22 @@ diffing, or switch to Myers' algorithm for files above a threshold.
 - **CSV is slowest** at scale due to row-based parsing — O(rows × cols)
 - **Conflict detection** is fast (<100µs for most formats) because it only needs to find the first mismatch
 - **JSON scales sub-linearly** past 1K keys (likely due to serde_json's optimized parser)
+
+---
+
+## 7. Recent Optimizations (v5.4.0)
+
+### 7.1 Merge Engine (2026-05-12)
+
+| Optimization | File | Impact |
+|---|---|---|
+| `output_lines()` returns `&[String]` instead of `Vec<String>` | `engine/merge.rs` | Eliminates Vec allocation per merge line group. Three-way merge hot loop calls this 2-4x per conflict region. |
+| Pre-compute conflict markers once per merge | `engine/merge.rs` | Avoids `format!()` allocation for `<<<<<<<`, `=======`, `>>>>>>>` markers on every conflict region. |
+| `diff_trees()` uses `sort_by` instead of `sort_by_key` | `engine/diff.rs` | Avoids cloning every path string during diff entry sorting. For diffs with thousands of files, saves thousands of allocations. |
+
+### 7.2 Stash Operations (2026-05-12)
+
+| Optimization | File | Impact |
+|---|---|---|
+| O(n*m) → O(n+m) stash push lookup | `repository/repo_impl.rs` | Builds a `HashSet<String>` of staged paths before the head-tree loop. Replaces `files.iter().any(|(p, _)| p == path)` (linear scan per file) with `hashset.contains(path)` (O(1)). For repos with many tracked files, this eliminates quadratic behavior during `suture stash push`. |
+
