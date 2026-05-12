@@ -1,9 +1,9 @@
 # Suture Production Roadmap
 
-**Version:** 5.4.0 (Phase 1-5 complete)
+**Version:** 5.4.0 (Phase 1-6 complete)
 **Date:** 2026-05-12
 **Author:** Full monorepo audit and architectural review
-**Status:** Phase 1 ✅ | Phase 2 ✅ | Phase 3 ✅ | Phase 4 ✅ | Phase 5 ✅ | Phase 6 pending
+**Status:** Phase 1 ✅ | Phase 2 ✅ | Phase 3 ✅ | Phase 4 ✅ | Phase 5 ✅ | Phase 6 ✅ | Phase 7 pending
 
 ## 0. Current State (Updated 2026-05-12)
 
@@ -497,9 +497,8 @@ Audit all 51 unsafe blocks. For each, add a `// SAFETY:` comment explaining the 
 | v6.0 | Performance engineering | ✅ 2026-05-12 |
 | v6.1 | Ecosystem and distribution | ✅ 2026-05-12 |
 | v7.0 | Enterprise infrastructure | ✅ 2026-05-12 |
-| v7.1 | Advanced merge | TBD |
-| v7.1 | Advanced merge | 2026-11-03 |
-| v8.0 | Scale and reliability | 2027-01-12 |
+| v7.1 | Advanced merge | ✅ 2026-05-12 |
+| v8.0 | Scale and reliability | TBD |
 | v8.1 | Formal verification expansion | 2027-02-09 |
 | v9.0 | Platform deepening | 2027-03-23 |
 | v9.1 | Desktop app | 2027-04-20 |
@@ -515,7 +514,7 @@ Audit all 51 unsafe blocks. For each, add a `// SAFETY:` comment explaining the 
 | Tests | 1,747 | 1,900 | 2,200 | 2,500 |
 | Branch coverage (critical) | Unknown | >80% | >90% | >95% |
 | Lean 4 proofs | 8 | 8 | 16 | 20 |
-| Semantic drivers | 17 | 18 | 22 | 25 |
+| Semantic drivers | 18 | 20 | 24 | 28 |
 | crates.io crates | 37 | 37 | 40 | 42 |
 | CLI commands | 58 | 60 | 65 | 70 |
 | Unsafe blocks | 33 | 25 | 20 | 15 |
