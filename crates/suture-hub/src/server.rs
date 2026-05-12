@@ -4195,8 +4195,80 @@ pub async fn delete_webhook_handler(
     }
 }
 
-pub async fn health_check() -> Json<serde_json::Value> {
-    Json(serde_json::json!({"status": "ok"}))
+pub async fn health_check(
+    State(hub): State<Arc<SutureHubServer>>,
+) -> Json<serde_json::Value> {
+    let version = env!("CARGO_PKG_VERSION");
+
+    let db_status = {
+        let store = hub.storage.read().await;
+        let status = block_in_place(|| {
+            store
+                .conn()
+                .lock()
+                .map_err(|e| format!("lock poison: {e}"))
+                .and_then(|conn| {
+                    conn.query_row("SELECT 1", [], |row| row.get::<_, i32>(0))
+                        .map_err(|e| format!("query: {e}"))
+                })
+        });
+        match status {
+            Ok(_) => serde_json::json!({"status": "ok"}),
+            Err(e) => serde_json::json!({"status": "unhealthy", "error": e}),
+        }
+    };
+
+    let blob_status = {
+        let backend = hub.blob_backend.as_ref();
+        match backend {
+            None => {
+                serde_json::json!({"status": "ok", "backend": "sqlite"})
+            }
+            Some(b) => {
+                let name = b.backend_name();
+                match b.has_blob("__health_check__", "0000000000000000000000000000000000000000000000000000000000000000") {
+                    Ok(_) => serde_json::json!({"status": "ok", "backend": name}),
+                    Err(e) => serde_json::json!({"status": "unavailable", "backend": name, "error": e}),
+                }
+            }
+        }
+    };
+
+    let raft_status = {
+        #[cfg(feature = "raft-cluster")]
+        {
+            let is_leader = hub.is_leader().await;
+            Some(serde_json::json!({"status": "ok", "is_leader": is_leader}))
+        }
+        #[cfg(not(feature = "raft-cluster"))]
+        {
+            None::<serde_json::Value>
+        }
+    };
+
+    let db_ok = db_status["status"] == "ok";
+    let blob_ok = blob_status["status"] == "ok";
+    let raft_ok = raft_status
+        .as_ref()
+        .map_or(true, |r| r["status"] == "ok");
+
+    let overall = if db_ok && blob_ok && raft_ok {
+        "ok"
+    } else if db_ok {
+        "degraded"
+    } else {
+        "unhealthy"
+    };
+
+    Json(serde_json::json!({
+        "status": overall,
+        "version": version,
+        "components": {
+            "database": db_status,
+            "blob_storage": blob_status,
+            "raft": raft_status,
+        }
+    }))
 }
 
 async fn api_version_middleware(
@@ -4948,9 +5020,26 @@ pub async fn run_server(
     let shutdown_tx = tokio::sync::broadcast::channel::<()>(1).0;
     let shutdown_tx_ctrlc = shutdown_tx.clone();
 
+    let shutdown_signal = async {
+        let ctrl_c = tokio::signal::ctrl_c();
+        #[cfg(unix)]
+        let sigterm = {
+            use tokio::signal::unix::{signal, SignalKind};
+            let mut sig = signal(SignalKind::terminate()).expect("failed to install SIGTERM handler");
+            async move { sig.recv().await; }
+        };
+        #[cfg(unix)]
+        tokio::select! {
+            _ = ctrl_c => {},
+            _ = sigterm => {},
+        }
+        #[cfg(not(unix))]
+        let _ = ctrl_c.await;
+    };
+
     tokio::spawn(async move {
-        tokio::signal::ctrl_c().await.ok();
-        tracing::info!("received ctrl-c, initiating graceful shutdown");
+        shutdown_signal.await;
+        tracing::info!("received shutdown signal, initiating graceful shutdown");
         let _ = shutdown_tx_ctrlc.send(());
     });
 

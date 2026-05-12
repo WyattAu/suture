@@ -8,6 +8,7 @@ pub trait BlobBackend: Send + Sync {
     fn has_blob(&self, repo_id: &str, hash_hex: &str) -> Result<bool, String>;
     fn delete_blob(&self, repo_id: &str, hash_hex: &str) -> Result<(), String>;
     fn list_blobs(&self, repo_id: &str) -> Result<Vec<String>, String>;
+    fn backend_name(&self) -> &'static str;
 }
 
 pub struct SqliteBlobBackend {
@@ -82,6 +83,10 @@ impl BlobBackend for SqliteBlobBackend {
             hashes.push(row.map_err(|e| format!("list blobs: {e}"))?);
         }
         Ok(hashes)
+    }
+
+    fn backend_name(&self) -> &'static str {
+        "sqlite"
     }
 }
 
@@ -160,6 +165,10 @@ pub mod s3_adapter {
                     .map_err(|e| format!("s3 list: {e}"))?;
                 Ok(hashes.iter().map(|h| h.to_hex()).collect())
             })
+        }
+
+        fn backend_name(&self) -> &'static str {
+            "s3"
         }
     }
 }

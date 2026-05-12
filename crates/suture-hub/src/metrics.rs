@@ -13,15 +13,19 @@ use crate::server::SutureHubServer;
 type RequestKey = (String, String, String);
 type RequestCounts = HashMap<RequestKey, u64>;
 
+const MAX_DURATION_SAMPLES: usize = 4096;
+
 #[derive(Clone, Default)]
 pub struct HubMetrics {
     request_counts: Arc<Mutex<RequestCounts>>,
+    request_duration_ms: Arc<Mutex<Vec<u64>>>,
 }
 
 impl HubMetrics {
     pub fn new() -> Self {
         Self {
             request_counts: Arc::new(Mutex::new(HashMap::new())),
+            request_duration_ms: Arc::new(Mutex::new(Vec::with_capacity(MAX_DURATION_SAMPLES))),
         }
     }
 
@@ -35,6 +39,19 @@ impl HubMetrics {
         *counts.entry(key).or_insert(0) += 1;
     }
 
+    pub fn record_duration(&self, elapsed_ms: u64) {
+        let mut durations = self
+            .request_duration_ms
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if durations.len() >= MAX_DURATION_SAMPLES {
+            // Drop the oldest half to make room
+            let drop_count = MAX_DURATION_SAMPLES / 2;
+            durations.drain(..drop_count);
+        }
+        durations.push(elapsed_ms);
+    }
+
     pub fn snapshot_request_counts(&self) -> Vec<(String, String, String, u64)> {
         let counts = self
             .request_counts
@@ -46,6 +63,13 @@ impl HubMetrics {
                 (method.clone(), path.clone(), status.clone(), *count)
             })
             .collect()
+    }
+
+    pub fn snapshot_durations_ms(&self) -> Vec<u64> {
+        self.request_duration_ms
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 }
 
@@ -98,14 +122,31 @@ pub async fn metrics_handler(State(hub): State<Arc<SutureHubServer>>) -> impl In
     }
     lines.push(String::new());
 
+    let durations = hub.request_metrics.snapshot_durations_ms();
+    let total_count = durations.len() as u64;
+    let total_sum_ms: u64 = durations.iter().sum();
+    let total_sum_secs = total_sum_ms as f64 / 1000.0;
+
+    // Bucket boundaries in milliseconds: 10ms, 100ms, 1s, +Inf
+    let bucket_boundaries_ms: &[(f64, u64)] = &[
+        (0.01, 10),   // 10ms
+        (0.1, 100),   // 100ms
+        (1.0, 1000),  // 1s
+    ];
+
+    let mut cumulative: u64 = 0;
     lines.push("# HELP suture_request_duration_seconds HTTP request duration".to_string());
     lines.push("# TYPE suture_request_duration_seconds histogram".to_string());
-    lines.push("suture_request_duration_seconds_bucket{le=\"0.01\"} 0".to_string());
-    lines.push("suture_request_duration_seconds_bucket{le=\"0.1\"} 0".to_string());
-    lines.push("suture_request_duration_seconds_bucket{le=\"1.0\"} 0".to_string());
-    lines.push("suture_request_duration_seconds_bucket{le=\"+Inf\"} 0".to_string());
-    lines.push("suture_request_duration_seconds_sum 0".to_string());
-    lines.push("suture_request_duration_seconds_count 0".to_string());
+    for (le_secs, le_ms) in bucket_boundaries_ms {
+        cumulative += durations.iter().filter(|&&d| d <= *le_ms).count() as u64;
+        lines.push(format!(
+            "suture_request_duration_seconds_bucket{{le=\"{le_secs}\"}} {cumulative}"
+        ));
+    }
+    // +Inf bucket includes everything
+    lines.push(format!("suture_request_duration_seconds_bucket{{le=\"+Inf\"}} {total_count}"));
+    lines.push(format!("suture_request_duration_seconds_sum {total_sum_secs}"));
+    lines.push(format!("suture_request_duration_seconds_count {total_count}"));
 
     let body = lines.join("\n");
     (
@@ -122,11 +163,14 @@ pub async fn metrics_middleware(
     let method = req.method().clone();
     let path = req.uri().path().to_owned();
 
+    let start = std::time::Instant::now();
     let response = next.run(req).await;
+    let elapsed_ms = start.elapsed().as_millis() as u64;
 
     let status = response.status().as_u16();
     hub.request_metrics
         .record_request(method.as_str(), &path, status);
+    hub.request_metrics.record_duration(elapsed_ms);
 
     response
 }
