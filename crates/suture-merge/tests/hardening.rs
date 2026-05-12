@@ -556,7 +556,7 @@ trivial_test!(
 /// All drivers should handle "no change" identically
 #[test]
 fn consistency_all_drivers_no_change() {
-    let mut inputs: Vec<(
+    let inputs: Vec<(
         &str,
         &str,
         fn(&str, &str, &str) -> Result<MergeResult, MergeError>,

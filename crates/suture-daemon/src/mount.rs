@@ -9,6 +9,7 @@ pub enum MountType {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum MountStatus {
     /// Test-only: mount operation has been initiated but not yet completed.
     #[cfg(test)]

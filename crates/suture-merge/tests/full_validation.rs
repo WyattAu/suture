@@ -237,7 +237,7 @@ fn consistency_no_changes() {
 #[test]
 fn consistency_all_formats_no_change() {
     // Every format should report no changes for identical content
-    let mut formats: Vec<(
+    let formats: Vec<(
         &str,
         &str,
         &str,
