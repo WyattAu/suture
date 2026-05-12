@@ -12,37 +12,37 @@ Crates must be published in dependency order. The publish script handles this au
 
 ### Core library chain (no external dependencies beyond workspace)
 ```
-suture-common (v1.1.0)
-└── suture-core (v1.1.0)       ← depends on suture-common
-    ├── suture-protocol (v1.1.0) ← depends on suture-common, suture-core
-    ├── suture-driver (v1.1.0)  ← depends on suture-common, suture-core
-    │   ├── suture-ooxml (v1.1.0) ← depends on suture-driver
-    │   ├── suture-driver-json (v1.1.0)
-    │   ├── suture-driver-yaml (v1.1.0)
-    │   ├── suture-driver-toml (v1.1.0)
-    │   ├── suture-driver-csv (v1.1.0)
-    │   ├── suture-driver-xml (v1.1.0)
-    │   ├── suture-driver-markdown (v1.1.0)
-    │   ├── suture-driver-docx (v1.1.0) ← depends on suture-driver, suture-ooxml
-    │   ├── suture-driver-xlsx (v1.1.0) ← depends on suture-driver, suture-ooxml
-    │   ├── suture-driver-pptx (v1.1.0) ← depends on suture-driver, suture-ooxml
-    │   ├── suture-driver-sql (v1.1.0)
-    │   ├── suture-driver-pdf (v1.1.0)
-    │   ├── suture-driver-image (v1.1.0)
-    │   ├── suture-driver-otio (v1.1.0) ← depends on suture-driver, suture-core, suture-common
-    │   └── suture-driver-example (v1.1.0)
-    ├── suture-tui (v1.1.0)     ← depends on suture-core, suture-common, suture-driver, drivers
-    ├── suture-lsp (v1.1.0)     ← depends on suture-core, suture-common
+suture-common (v5.1.0)
+└── suture-core (v5.1.0)       ← depends on suture-common
+    ├── suture-protocol (v5.1.0) ← depends on suture-common, suture-core
+    ├── suture-driver (v5.1.0)  ← depends on suture-common, suture-core
+    │   ├── suture-ooxml (v5.1.0) ← depends on suture-driver
+    │   ├── suture-driver-json (v5.1.0)
+    │   ├── suture-driver-yaml (v5.1.0)
+    │   ├── suture-driver-toml (v5.1.0)
+    │   ├── suture-driver-csv (v5.1.0)
+    │   ├── suture-driver-xml (v5.1.0)
+    │   ├── suture-driver-markdown (v5.1.0)
+    │   ├── suture-driver-docx (v5.1.0) ← depends on suture-driver, suture-ooxml
+    │   ├── suture-driver-xlsx (v5.1.0) ← depends on suture-driver, suture-ooxml
+    │   ├── suture-driver-pptx (v5.1.0) ← depends on suture-driver, suture-ooxml
+    │   ├── suture-driver-sql (v5.1.0)
+    │   ├── suture-driver-pdf (v5.1.0)
+    │   ├── suture-driver-image (v5.1.0)
+    │   ├── suture-driver-otio (v5.1.0) ← depends on suture-driver, suture-core, suture-common
+    │   └── suture-driver-example (v5.1.0)
+    ├── suture-tui (v5.1.0)     ← depends on suture-core, suture-common, suture-driver, drivers
+    ├── suture-lsp (v5.1.0)     ← depends on suture-core, suture-common
     ├── suture-raft (v0.1.0)    ← depends on async-trait, serde, tokio, tracing, thiserror
     ├── suture-s3 (v0.1.0)      ← depends on suture-common, reqwest, etc.
     ├── suture-vfs (v0.1.0)     ← depends on suture-core, suture-protocol, fuse3, axum
-    └── suture-daemon (v1.1.0)  ← depends on suture-core, suture-common, suture-protocol
+    └── suture-daemon (v5.1.0)  ← depends on suture-core, suture-common, suture-protocol
 ```
 
 ### Application crates
 ```
-suture-hub (v1.1.0)             ← depends on suture-core, suture-common, suture-protocol
-suture-cli (v2.5.0)             ← depends on suture-core, suture-common, suture-protocol, suture-driver, drivers, suture-tui
+suture-hub (v5.1.0)             ← depends on suture-core, suture-common, suture-protocol
+suture-cli (v5.3.1)             ← depends on suture-core, suture-common, suture-protocol, suture-driver, drivers, suture-tui
 ```
 
 ### Not published (require special toolchains or are tooling-only)

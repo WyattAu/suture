@@ -123,7 +123,7 @@ jobs:
 
       # Verify everything builds and tests pass before publishing
       - name: Test workspace
-        run: cargo test --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp --exclude suture-driver-pdf --exclude suture-driver-image --exclude suture-driver-svg --exclude suture-driver-pptx
+        run: cargo test --workspace --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp --exclude suture-driver-pdf --exclude suture-driver-image --exclude suture-driver-svg --exclude suture-driver-pptx
 
       # Publish crates in dependency order using the existing script
       - name: Publish to crates.io

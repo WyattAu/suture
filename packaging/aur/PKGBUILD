@@ -1,6 +1,6 @@
 # Maintainer: Wyatt Au <wyatt@au.gg>
 pkgname=suture
-pkgver=5.1.0
+pkgver=5.3.1
 pkgrel=1
 pkgdesc="Patch-based version control system with semantic merge"
 arch=('x86_64' 'aarch64')

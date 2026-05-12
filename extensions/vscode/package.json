@@ -2,9 +2,9 @@
   "name": "suture",
   "displayName": "Suture — Semantic Version Control",
   "description": "Version control that understands your files. Git merge driver for JSON, YAML, DOCX, XLSX, and 20+ formats.",
-  "version": "5.0.0",
+  "version": "5.3.1",
   "publisher": "wyattau",
-  "engines": { "vscode": "^1.80.0" },
+  "engines": { "vscode": "^1.85.0" },
   "categories": ["Other", "Programming Languages", "SCM Providers"],
   "keywords": ["git", "merge", "driver", "semantic", "version control", "json", "yaml"],
   "activationEvents": [

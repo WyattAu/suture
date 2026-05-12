@@ -2,7 +2,7 @@
     <id>com.suture.intellij</id>
     <name>Suture VCS</name>
     <description>Integration with Suture patch-based version control system</description>
-    <version>1.0.0</version>
+    <version>5.3.1</version>
     <vendor>Suture</vendor>
 
     <depends>com.intellij.modules.platform</depends>

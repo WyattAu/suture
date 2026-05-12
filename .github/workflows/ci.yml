@@ -36,7 +36,7 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Clippy (stable)
-        run: cargo clippy --workspace --exclude suture-py --exclude suture-fuzz -- -D warnings
+        run: cargo clippy --workspace --exclude suture-fuzz -- -D warnings
 
   test-workspace:
     runs-on: ${{ matrix.os }}
@@ -73,6 +73,11 @@ jobs:
         run: choco install protoc -y
 
       - name: Run workspace tests
+        if: runner.os != 'Windows'
+        run: cargo test --workspace --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon
+
+      - name: Run workspace tests (Windows)
+        if: runner.os == 'Windows'
         run: cargo test --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon
 
   test-cli:
@@ -202,13 +207,13 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
       - name: Check with features
-        run: cargo check --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp --features "${{ matrix.features }}"
+        run: cargo check --workspace --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp --features "${{ matrix.features }}"
 
       - name: Test with features
-        run: cargo test --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp --features "${{ matrix.features }}"
+        run: cargo test --workspace --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp --features "${{ matrix.features }}"
 
       - name: Clippy with features
-        run: cargo clippy --workspace --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp --features "${{ matrix.features }}" -- -D warnings
+        run: cargo clippy --workspace --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp --features "${{ matrix.features }}" -- -D warnings
 
   coverage:
     runs-on: ubuntu-latest
@@ -237,7 +242,6 @@ jobs:
         run: |
           cargo llvm-cov clean --workspace
           cargo llvm-cov --workspace \
-            --exclude suture-py \
             --exclude suture-e2e \
             --exclude suture-bench \
             --exclude suture-fuzz \
@@ -257,7 +261,6 @@ jobs:
         run: |
           echo "## Coverage Summary"
           cargo llvm-cov --workspace \
-            --exclude suture-py \
             --exclude suture-e2e \
             --exclude suture-bench \
             --exclude suture-fuzz \

@@ -1,7 +1,7 @@
 class Suture < Formula
   desc "Patch-based version control system with semantic merge"
   homepage "https://github.com/WyattAu/suture"
-  url "https://github.com/WyattAu/suture/archive/refs/tags/v5.1.0.tar.gz"
+  url "https://github.com/WyattAu/suture/archive/refs/tags/v5.3.1.tar.gz"
   sha256 "PLACEHOLDER"
   license "Apache-2.0"
   head "https://github.com/WyattAu/suture.git", branch: "main"

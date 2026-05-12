@@ -1,5 +1,7 @@
 # suture.nvim
 
+![Version](https://img.shields.io/badge/version-5.3.1-blue)
+
 Suture VCS integration for Neovim.
 
 ## Features
