@@ -10,6 +10,6 @@ name = "suture_py"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.25", features = ["extension-module"] }
+pyo3 = { version = "0.28", features = ["extension-module"] }
 suture-core = { path = "../suture-core", version = "5.1.0" }
 suture-common = { path = "../suture-common", version = "5.1.0" }
