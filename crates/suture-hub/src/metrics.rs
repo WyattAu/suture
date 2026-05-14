@@ -129,9 +129,9 @@ pub async fn metrics_handler(State(hub): State<Arc<SutureHubServer>>) -> impl In
 
     // Bucket boundaries in milliseconds: 10ms, 100ms, 1s, +Inf
     let bucket_boundaries_ms: &[(f64, u64)] = &[
-        (0.01, 10),   // 10ms
-        (0.1, 100),   // 100ms
-        (1.0, 1000),  // 1s
+        (0.01, 10),  // 10ms
+        (0.1, 100),  // 100ms
+        (1.0, 1000), // 1s
     ];
 
     let mut cumulative: u64 = 0;
@@ -144,9 +144,15 @@ pub async fn metrics_handler(State(hub): State<Arc<SutureHubServer>>) -> impl In
         ));
     }
     // +Inf bucket includes everything
-    lines.push(format!("suture_request_duration_seconds_bucket{{le=\"+Inf\"}} {total_count}"));
-    lines.push(format!("suture_request_duration_seconds_sum {total_sum_secs}"));
-    lines.push(format!("suture_request_duration_seconds_count {total_count}"));
+    lines.push(format!(
+        "suture_request_duration_seconds_bucket{{le=\"+Inf\"}} {total_count}"
+    ));
+    lines.push(format!(
+        "suture_request_duration_seconds_sum {total_sum_secs}"
+    ));
+    lines.push(format!(
+        "suture_request_duration_seconds_count {total_count}"
+    ));
 
     let body = lines.join("\n");
     (

@@ -105,7 +105,9 @@ struct Args {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     use tracing_subscriber::EnvFilter;
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env().add_directive("suture_hub=info".parse().unwrap()))
+        .with_env_filter(
+            EnvFilter::from_default_env().add_directive("suture_hub=info".parse().unwrap()),
+        )
         .init();
     let args = Args::parse();
 

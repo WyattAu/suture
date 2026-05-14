@@ -2,12 +2,13 @@
 
 - **Current Version:** 5.4.0
 - **Crates.io:** 37 crates published
-- **Current Phase:** Phase 7 pending — Scale and Reliability
-- **Status:** Phases 1-6 complete
-- **Last Updated:** 2026-05-12
+- **Current Phase:** Phase 12 complete — v1.0 Release Prep
+- **Status:** Phases 1-12 complete
+- **Last Updated:** 2026-05-14
 - **Rust Edition:** 2024
 - **Tests:** 1,747 passed, 0 failed, 20 ignored
 - **Security:** 0 unsound, 33 unsafe blocks (all with SAFETY comments), 1 unmaintained dep (paste via rav1e, transitive)
+- **Lean 4 Proofs:** 16 theorems (8 original + 8 new in Phase 8)
 
 ## Tier 2 Status (All Complete)
 
@@ -581,7 +582,7 @@ None — all previously deferred items resolved.
 | Ed25519 signing | [x] Wired into push | `suture key generate`, auto-sign on push |
 | E2E tests | [x] 16 workflow tests | init→commit→branch→merge→gc→fsck→bisect→tag→stash→integrity→stress→git |
 | Binary E2E | [x] 71 tests | DOCX/XLSX/PPTX full lifecycle (init→add→commit→branch→modify→merge→diff→log) |
-| Formal verification | [x] 5 Lean 4 theorems | Touch-set conflict equivalence, disjoint commutativity, symmetry, identity, merge determinism |
+| Formal verification | [x] 16 Lean 4 theorems | Touch-set conflict equivalence, disjoint commutativity, symmetry, identity, merge determinism, DAG acyclicity, LCA correctness, three-way merge completeness, CAS injectivity, GC reachability, touch set monotonicity, reflog append-only |
 | HTTP integration | [x] 61 tests (with features) | handshake, repos, patches, push/pull, V2, auth, mirrors, CRUD, search, batch, health |
 | Semantic drivers | [x] 16 drivers | JSON, YAML, TOML, CSV, XML, Markdown, DOCX, XLSX, PPTX, OTIO, SQL, PDF, Image, Example, Properties |
 | Supply chain integrity | [x] NEW | Shannon entropy, 13 risk indicators, XZ-style attack detection |

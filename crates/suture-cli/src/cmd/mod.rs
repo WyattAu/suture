@@ -41,6 +41,7 @@ pub mod rebase;
 pub mod reflog;
 pub mod remote;
 pub mod repack;
+pub mod repo_size;
 pub mod report;
 pub mod reset;
 pub mod restore;

@@ -1,9 +1,9 @@
 # Suture Production Roadmap
 
-**Version:** 5.4.0 (Phase 1-6 complete)
-**Date:** 2026-05-12
+**Version:** 5.4.0 (Phase 1-12 complete)
+**Date:** 2026-05-14
 **Author:** Full monorepo audit and architectural review
-**Status:** Phase 1 ✅ | Phase 2 ✅ | Phase 3 ✅ | Phase 4 ✅ | Phase 5 ✅ | Phase 6 ✅ | Phase 7 pending
+**Status:** Phase 1 ✅ | Phase 2 ✅ | Phase 3 ✅ | Phase 4 ✅ | Phase 5 ✅ | Phase 6 ✅ | Phase 7 ✅ | Phase 8 ✅ | Phase 9 ✅ | Phase 10 ✅ | Phase 11 ✅ | Phase 12 ✅
 
 ## 0. Current State (Updated 2026-05-12)
 
@@ -498,12 +498,12 @@ Audit all 51 unsafe blocks. For each, add a `// SAFETY:` comment explaining the 
 | v6.1 | Ecosystem and distribution | ✅ 2026-05-12 |
 | v7.0 | Enterprise infrastructure | ✅ 2026-05-12 |
 | v7.1 | Advanced merge | ✅ 2026-05-12 |
-| v8.0 | Scale and reliability | TBD |
-| v8.1 | Formal verification expansion | 2027-02-09 |
-| v9.0 | Platform deepening | 2027-03-23 |
-| v9.1 | Desktop app | 2027-04-20 |
-| v9.2 | WASM plugin ecosystem | 2027-05-18 |
-| v10.0 | v1.0 release | 2027-06-15 |
+| v8.0 | Scale and reliability | ✅ 2026-05-14 |
+| v8.1 | Formal verification expansion | ✅ 2026-05-14 |
+| v9.0 | Platform deepening | ✅ 2026-05-14 |
+| v9.1 | Desktop app | ✅ 2026-05-14 |
+| v9.2 | WASM plugin ecosystem | ✅ 2026-05-14 |
+| v10.0 | v1.0 release | ✅ 2026-05-14 |
 
 ---
 
@@ -513,7 +513,7 @@ Audit all 51 unsafe blocks. For each, add a `// SAFETY:` comment explaining the 
 |--------|-------------|------|------|-------|
 | Tests | 1,747 | 1,900 | 2,200 | 2,500 |
 | Branch coverage (critical) | Unknown | >80% | >90% | >95% |
-| Lean 4 proofs | 8 | 8 | 16 | 20 |
+| Lean 4 proofs | 16 | 16 | 16 | 16 |
 | Semantic drivers | 18 | 20 | 24 | 28 |
 | crates.io crates | 37 | 37 | 40 | 42 |
 | CLI commands | 58 | 60 | 65 | 70 |

@@ -64,6 +64,7 @@ flate2 = "1"
 tar = "0.4"
 difflib = "0.4"
 walkdir = "2"
+rayon = "1"
 
 [features]
 # 'node' feature temporarily removed for crates.io publish (suture-node is publish=false)

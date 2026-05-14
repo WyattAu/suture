@@ -4,6 +4,11 @@
 //!
 //! Dead-simple semantic merge for structured files, including DOCX, XLSX, and PPTX binary documents.
 //!
+//! # API Stability
+//!
+//! The public API of this crate is considered **stable** as of v5.4.0.
+//! Breaking changes will only occur with a semver major version bump.
+//!
 //! ## Quick Start
 //!
 //! ```rust
@@ -99,7 +104,12 @@ pub fn merge_pptx(base: &str, ours: &str, theirs: &str) -> Result<MergeResult, M
 
 #[cfg(feature = "properties")]
 pub fn merge_properties(base: &str, ours: &str, theirs: &str) -> Result<MergeResult, MergeError> {
-    perform_merge(&suture_driver_properties::PropertiesDriver, base, ours, theirs)
+    perform_merge(
+        &suture_driver_properties::PropertiesDriver,
+        base,
+        ours,
+        theirs,
+    )
 }
 
 pub fn merge_auto(
@@ -456,8 +466,7 @@ mod tests {
             }
         }
 
-        let result =
-            merge_resolve(Some("data.json"), base, ours, theirs, &TakeOurs).unwrap();
+        let result = merge_resolve(Some("data.json"), base, ours, theirs, &TakeOurs).unwrap();
         assert_eq!(result.status, MergeStatus::Clean);
         assert!(result.merged.contains(r#""age": 31"#));
         assert!(result.merged.contains(r#""city": "NYC""#));
