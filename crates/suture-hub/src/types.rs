@@ -23,6 +23,7 @@ pub struct RegisterRequest {
 pub struct RegisterResponse {
     pub success: bool,
     pub error: Option<String>,
+    pub error_code: Option<HubErrorCode>,
     pub user: Option<UserInfo>,
 }
 
@@ -30,6 +31,7 @@ pub struct RegisterResponse {
 pub struct ListUsersResponse {
     pub success: bool,
     pub error: Option<String>,
+    pub error_code: Option<HubErrorCode>,
     pub users: Vec<UserInfo>,
 }
 
@@ -37,6 +39,7 @@ pub struct ListUsersResponse {
 pub struct GetUserResponse {
     pub success: bool,
     pub error: Option<String>,
+    pub error_code: Option<HubErrorCode>,
     pub user: Option<UserInfo>,
 }
 
@@ -49,12 +52,14 @@ pub struct UpdateRoleRequest {
 pub struct UpdateRoleResponse {
     pub success: bool,
     pub error: Option<String>,
+    pub error_code: Option<HubErrorCode>,
 }
 
 #[derive(Debug, serde::Serialize)]
 pub struct DeleteUserResponse {
     pub success: bool,
     pub error: Option<String>,
+    pub error_code: Option<HubErrorCode>,
 }
 
 /// Mirror-specific types (not part of the wire protocol).
@@ -70,6 +75,7 @@ pub struct MirrorSetupRequest {
 pub struct MirrorSetupResponse {
     pub success: bool,
     pub error: Option<String>,
+    pub error_code: Option<HubErrorCode>,
     pub mirror_id: Option<i64>,
 }
 
@@ -85,6 +91,7 @@ pub struct MirrorSyncRequest {
 pub struct MirrorSyncResponse {
     pub success: bool,
     pub error: Option<String>,
+    pub error_code: Option<HubErrorCode>,
     pub patches_synced: u64,
     pub branches_synced: u64,
 }
@@ -109,6 +116,7 @@ pub struct MirrorStatusEntry {
 pub struct MirrorStatusResponse {
     pub success: bool,
     pub error: Option<String>,
+    pub error_code: Option<HubErrorCode>,
     pub mirrors: Vec<MirrorStatusEntry>,
 }
 
@@ -123,12 +131,14 @@ pub struct AddPeerResponse {
     pub success: bool,
     pub peer_id: Option<i64>,
     pub error: Option<String>,
+    pub error_code: Option<HubErrorCode>,
 }
 
 #[derive(Debug, serde::Serialize)]
 pub struct RemovePeerResponse {
     pub success: bool,
     pub error: Option<String>,
+    pub error_code: Option<HubErrorCode>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -146,6 +156,7 @@ pub struct SyncResponse {
     pub success: bool,
     pub applied: usize,
     pub error: Option<String>,
+    pub error_code: Option<HubErrorCode>,
 }
 
 #[derive(Debug, serde::Deserialize)]

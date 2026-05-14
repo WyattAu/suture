@@ -23,7 +23,19 @@ pub async fn cmd_gc(dry_run: bool, aggressive: bool) -> Result<(), Box<dyn std::
             for addr in patch.touch_set.addresses() {
                 let _ = addr;
             }
-            if !patch.payload.is_empty()
+            if patch.is_batch() {
+                if let Some(changes) = patch.file_changes() {
+                    for change in &changes {
+                        if !change.payload.is_empty()
+                            && let Ok(hash) = suture_common::Hash::from_hex(
+                                &String::from_utf8_lossy(&change.payload),
+                            )
+                        {
+                            referenced_blobs.insert(hash);
+                        }
+                    }
+                }
+            } else if !patch.payload.is_empty()
                 && let Ok(hex_str) = std::str::from_utf8(&patch.payload)
                 && let Ok(hash) = suture_common::Hash::from_hex(hex_str)
             {

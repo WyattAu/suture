@@ -168,7 +168,7 @@ pub async fn cmd_doctor(fix: bool) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Check 9: fsck (lightweight integrity)
-    match repo.fsck() {
+    match repo.fsck(false) {
         Ok(result) => {
             if result.errors.is_empty() {
                 println!(

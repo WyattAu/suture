@@ -395,11 +395,13 @@ impl SutureHubServer {
                 success: true,
                 peer_id: Some(peer_id),
                 error: None,
+                error_code: None,
             },
             Err(e) => AddPeerResponse {
                 success: false,
                 peer_id: None,
                 error: Some(format!("{e}")),
+                error_code: Some(HubErrorCode::InternalError),
             },
         }
     }
@@ -410,10 +412,12 @@ impl SutureHubServer {
             Ok(()) => RemovePeerResponse {
                 success: true,
                 error: None,
+                error_code: None,
             },
             Err(e) => RemovePeerResponse {
                 success: false,
                 error: Some(format!("{e}")),
+                error_code: Some(HubErrorCode::InternalError),
             },
         }
     }
@@ -453,11 +457,13 @@ impl SutureHubServer {
                 success: true,
                 applied: entries.len(),
                 error: None,
+                error_code: None,
             },
             Err(e) => SyncResponse {
                 success: false,
                 applied: 0,
                 error: Some(format!("{e}")),
+                error_code: Some(HubErrorCode::ReplicationFailed),
             },
         }
     }
@@ -549,6 +555,7 @@ impl SutureHubServer {
                             success: false,
                             error: Some("database error".to_owned()),
                             existing_patches: vec![],
+                            error_code: Some(HubErrorCode::InternalError),
                         },
                     ));
                 }
@@ -560,6 +567,7 @@ impl SutureHubServer {
                         success: false,
                         error: Some(format!("authentication failed: {e}")),
                         existing_patches: vec![],
+                        error_code: Some(HubErrorCode::AuthFailed),
                     },
                 ));
             }
@@ -580,6 +588,7 @@ impl SutureHubServer {
                         success: false,
                         error: Some("authentication required: no signature provided".to_owned()),
                         existing_patches: vec![],
+                        error_code: Some(HubErrorCode::AuthFailed),
                     },
                 ));
             }
@@ -597,6 +606,7 @@ impl SutureHubServer {
                         success: false,
                         error: Some(format!("storage error: {e}")),
                         existing_patches: vec![],
+                        error_code: Some(HubErrorCode::InternalError),
                     },
                 ));
             }
@@ -612,6 +622,7 @@ impl SutureHubServer {
                                 success: false,
                                 error: Some(format!("invalid base64 in blob: {e}")),
                                 existing_patches: vec![],
+                                error_code: Some(HubErrorCode::InternalError),
                             },
                         ));
                     }
@@ -623,6 +634,7 @@ impl SutureHubServer {
                             success: false,
                             error: Some(format!("storage error: {e}")),
                             existing_patches: vec![],
+                            error_code: Some(HubErrorCode::InternalError),
                         },
                     ));
                 }
@@ -638,6 +650,7 @@ impl SutureHubServer {
                                 success: false,
                                 error: Some(format!("storage error: {e}")),
                                 existing_patches: vec![],
+                                error_code: Some(HubErrorCode::InternalError),
                             },
                         ));
                     }
@@ -681,6 +694,7 @@ impl SutureHubServer {
                                     branch.name
                                 )),
                                 existing_patches: vec![],
+                                error_code: Some(HubErrorCode::Conflict),
                             },
                         ));
                     }
@@ -707,6 +721,7 @@ impl SutureHubServer {
                                     branch.name
                                 )),
                                 existing_patches: vec![],
+                                error_code: Some(HubErrorCode::InsufficientPermissions),
                             },
                         ));
                     }
@@ -719,6 +734,7 @@ impl SutureHubServer {
                             success: false,
                             error: Some(format!("storage error: {e}")),
                             existing_patches: vec![],
+                            error_code: Some(HubErrorCode::InternalError),
                         },
                     ));
                 }
@@ -768,6 +784,7 @@ impl SutureHubServer {
                 success: true,
                 error: None,
                 existing_patches,
+                error_code: None,
             })
         })
     }
@@ -786,6 +803,7 @@ impl SutureHubServer {
                         patches: vec![],
                         branches: vec![],
                         blobs: vec![],
+                        error_code: Some(HubErrorCode::InternalError),
                     };
                 }
             };
@@ -796,6 +814,7 @@ impl SutureHubServer {
                     patches: vec![],
                     branches: vec![],
                     blobs: vec![],
+                    error_code: Some(HubErrorCode::RepoNotFound),
                 };
             }
 
@@ -867,6 +886,7 @@ impl SutureHubServer {
                 patches: new_patches,
                 branches,
                 blobs,
+                error_code: None,
             }
         })
     }
@@ -896,6 +916,7 @@ impl SutureHubServer {
                     branches: vec![],
                     success: false,
                     error: Some(format!("database error: {e}")),
+                    error_code: Some(HubErrorCode::InternalError),
                 };
             }
         };
@@ -906,6 +927,7 @@ impl SutureHubServer {
                 branches: vec![],
                 success: false,
                 error: Some(format!("repo not found: {repo_id}")),
+                error_code: Some(HubErrorCode::RepoNotFound),
             };
         }
 
@@ -924,6 +946,7 @@ impl SutureHubServer {
             branches,
             success: true,
             error: None,
+            error_code: None,
         }
     }
 
@@ -936,6 +959,7 @@ impl SutureHubServer {
                 success: false,
                 error: Some(format!("invalid upstream URL: {e}")),
                 mirror_id: None,
+                error_code: Some(HubErrorCode::InvalidRequest),
             };
         }
 
@@ -948,18 +972,21 @@ impl SutureHubServer {
                         success: false,
                         error: Some(format!("failed to create repo: {e}")),
                         mirror_id: None,
+                        error_code: Some(HubErrorCode::InternalError),
                     };
                 }
                 crate::types::MirrorSetupResponse {
                     success: true,
                     error: None,
                     mirror_id: Some(mirror_id),
+                    error_code: None,
                 }
             }
             Err(e) => crate::types::MirrorSetupResponse {
                 success: false,
                 error: Some(format!("failed to register mirror: {e}")),
                 mirror_id: None,
+                error_code: Some(HubErrorCode::InternalError),
             },
         }
     }
@@ -978,6 +1005,7 @@ impl SutureHubServer {
                     error: Some(format!("mirror {} not found", req.mirror_id)),
                     patches_synced: 0,
                     branches_synced: 0,
+                    error_code: Some(HubErrorCode::MirrorNotFound),
                 };
             }
             Err(e) => {
@@ -986,6 +1014,7 @@ impl SutureHubServer {
                     error: Some(format!("database error: {e}")),
                     patches_synced: 0,
                     branches_synced: 0,
+                    error_code: Some(HubErrorCode::InternalError),
                 };
             }
         };
@@ -998,6 +1027,7 @@ impl SutureHubServer {
                 error: Some(format!("invalid upstream URL: {e}")),
                 patches_synced: 0,
                 branches_synced: 0,
+                error_code: Some(HubErrorCode::InvalidRequest),
             };
         }
 
@@ -1007,6 +1037,7 @@ impl SutureHubServer {
                 error: Some(format!("failed to update status: {e}")),
                 patches_synced: 0,
                 branches_synced: 0,
+                error_code: Some(HubErrorCode::InternalError),
             };
         }
 
@@ -1036,6 +1067,7 @@ impl SutureHubServer {
                     error: Some(format!("failed to reach upstream: {e}")),
                     patches_synced: 0,
                     branches_synced: 0,
+                    error_code: Some(HubErrorCode::MirrorSyncFailed),
                 };
             }
         };
@@ -1052,6 +1084,7 @@ impl SutureHubServer {
                     error: Some(format!("failed to parse upstream response: {e}")),
                     patches_synced: 0,
                     branches_synced: 0,
+                    error_code: Some(HubErrorCode::MirrorSyncFailed),
                 };
             }
         };
@@ -1066,6 +1099,7 @@ impl SutureHubServer {
                 error: pull_result.error,
                 patches_synced: 0,
                 branches_synced: 0,
+                error_code: Some(HubErrorCode::MirrorSyncFailed),
             };
         }
 
@@ -1109,6 +1143,7 @@ impl SutureHubServer {
             error: None,
             patches_synced,
             branches_synced,
+            error_code: None,
         }
     }
 
@@ -1152,6 +1187,7 @@ impl SutureHubServer {
             success: true,
             error: None,
             mirrors: entries,
+            error_code: None,
         }
     }
 
@@ -1173,6 +1209,7 @@ impl SutureHubServer {
                     blobs: vec![],
                     deltas: vec![],
                     protocol_version: crate::types::PROTOCOL_VERSION_V2,
+                    error_code: Some(HubErrorCode::InternalError),
                 };
             }
         };
@@ -1185,6 +1222,7 @@ impl SutureHubServer {
                 blobs: vec![],
                 deltas: vec![],
                 protocol_version: crate::types::PROTOCOL_VERSION_V2,
+                error_code: Some(HubErrorCode::RepoNotFound),
             };
         }
 
@@ -1328,6 +1366,7 @@ impl SutureHubServer {
             blobs,
             deltas,
             protocol_version: crate::types::PROTOCOL_VERSION_V2,
+            error_code: None,
         }
     }
 
@@ -1347,6 +1386,7 @@ impl SutureHubServer {
                             success: false,
                             error: Some("database error".to_owned()),
                             existing_patches: vec![],
+                            error_code: Some(HubErrorCode::InternalError),
                         },
                     ));
                 }
@@ -1368,6 +1408,7 @@ impl SutureHubServer {
                             success: false,
                             error: Some(format!("authentication failed: {e}")),
                             existing_patches: vec![],
+                            error_code: Some(HubErrorCode::AuthFailed),
                         },
                     ));
                 }
@@ -1389,6 +1430,7 @@ impl SutureHubServer {
                         success: false,
                         error: Some("authentication required: no signature provided".to_owned()),
                         existing_patches: vec![],
+                        error_code: Some(HubErrorCode::AuthFailed),
                     },
                 ));
             }
@@ -1402,6 +1444,7 @@ impl SutureHubServer {
                     success: false,
                     error: Some(format!("storage error: {e}")),
                     existing_patches: vec![],
+                    error_code: Some(HubErrorCode::InternalError),
                 },
             ));
         }
@@ -1426,6 +1469,7 @@ impl SutureHubServer {
                             success: false,
                             error: Some(format!("storage error reconstructing delta blob: {e}")),
                             existing_patches: vec![],
+                            error_code: Some(HubErrorCode::InternalError),
                         },
                     ));
                 }
@@ -1440,6 +1484,7 @@ impl SutureHubServer {
                                 success: false,
                                 error: Some(format!("invalid base64 in delta blob: {e}")),
                                 existing_patches: vec![],
+                                error_code: Some(HubErrorCode::InternalError),
                             },
                         ));
                     }
@@ -1451,6 +1496,7 @@ impl SutureHubServer {
                             success: false,
                             error: Some(format!("storage error: {e}")),
                             existing_patches: vec![],
+                            error_code: Some(HubErrorCode::InternalError),
                         },
                     ));
                 }
@@ -1468,6 +1514,7 @@ impl SutureHubServer {
                             success: false,
                             error: Some(format!("invalid base64 in blob: {e}")),
                             existing_patches: vec![],
+                            error_code: Some(HubErrorCode::InternalError),
                         },
                     ));
                 }
@@ -1479,6 +1526,7 @@ impl SutureHubServer {
                         success: false,
                         error: Some(format!("storage error: {e}")),
                         existing_patches: vec![],
+                        error_code: Some(HubErrorCode::InternalError),
                     },
                 ));
             }
@@ -1494,6 +1542,7 @@ impl SutureHubServer {
                             success: false,
                             error: Some(format!("storage error: {e}")),
                             existing_patches: vec![],
+                            error_code: Some(HubErrorCode::InternalError),
                         },
                     ));
                 }
@@ -1536,6 +1585,7 @@ impl SutureHubServer {
                                 branch.name
                             )),
                             existing_patches: vec![],
+                            error_code: Some(HubErrorCode::Conflict),
                         },
                     ));
                 }
@@ -1562,6 +1612,7 @@ impl SutureHubServer {
                                 branch.name
                             )),
                             existing_patches: vec![],
+                            error_code: Some(HubErrorCode::InsufficientPermissions),
                         },
                     ));
                 }
@@ -1574,6 +1625,7 @@ impl SutureHubServer {
                         success: false,
                         error: Some(format!("storage error: {e}")),
                         existing_patches: vec![],
+                        error_code: Some(HubErrorCode::InternalError),
                     },
                 ));
             }
@@ -1623,6 +1675,7 @@ impl SutureHubServer {
             success: true,
             error: None,
             existing_patches,
+            error_code: None,
         })
     }
 
@@ -1641,6 +1694,7 @@ impl SutureHubServer {
                     success: false,
                     error: Some(msg),
                     existing_patches: vec![],
+                    error_code: Some(HubErrorCode::InternalError),
                 },
             ));
         }
@@ -1657,6 +1711,7 @@ impl SutureHubServer {
                             success: false,
                             error: Some(msg),
                             existing_patches: vec![],
+                            error_code: Some(HubErrorCode::InternalError),
                         },
                     ));
                 }
@@ -1669,6 +1724,7 @@ impl SutureHubServer {
                         success: false,
                         error: Some(msg),
                         existing_patches: vec![],
+                        error_code: Some(HubErrorCode::InternalError),
                     },
                 ));
             }
@@ -1685,6 +1741,7 @@ impl SutureHubServer {
                             success: false,
                             error: Some(msg),
                             existing_patches: vec![],
+                            error_code: Some(HubErrorCode::InternalError),
                         },
                     ));
                 }
@@ -1725,6 +1782,7 @@ impl SutureHubServer {
                             success: false,
                             error: Some(msg),
                             existing_patches: vec![],
+                            error_code: Some(HubErrorCode::InsufficientPermissions),
                         },
                     ));
                 }
@@ -1738,6 +1796,7 @@ impl SutureHubServer {
                         success: false,
                         error: Some(msg),
                         existing_patches: vec![],
+                        error_code: Some(HubErrorCode::InternalError),
                     },
                 ));
             }
@@ -1787,6 +1846,7 @@ impl SutureHubServer {
             success: true,
             error: None,
             existing_patches,
+            error_code: None,
         })
     }
 
@@ -2196,6 +2256,7 @@ pub async fn push_compressed_handler(
                 success: false,
                 error: Some("authentication failed".to_owned()),
                 existing_patches: vec![],
+                error_code: Some(HubErrorCode::AuthFailed),
             }),
         );
     }
@@ -2210,6 +2271,7 @@ pub async fn push_compressed_handler(
                         success: false,
                         error: Some(format!("invalid base64 in compressed blob: {e}")),
                         existing_patches: vec![],
+                        error_code: Some(HubErrorCode::InternalError),
                     }),
                 );
             }
@@ -2223,6 +2285,7 @@ pub async fn push_compressed_handler(
                         success: false,
                         error: Some(e),
                         existing_patches: vec![],
+                        error_code: Some(HubErrorCode::InternalError),
                     }),
                 );
             }
@@ -2249,6 +2312,7 @@ pub async fn pull_compressed_handler(
                 patches: vec![],
                 branches: vec![],
                 blobs: vec![],
+                error_code: Some(HubErrorCode::AuthFailed),
             }),
         );
     }
@@ -2291,6 +2355,7 @@ pub async fn push_handler(
                 success: false,
                 error: Some("rate limit exceeded".to_owned()),
                 existing_patches: vec![],
+                error_code: Some(HubErrorCode::RateLimited),
             }),
         );
     }
@@ -2303,6 +2368,7 @@ pub async fn push_handler(
                 success: false,
                 error: Some("authentication failed".to_owned()),
                 existing_patches: vec![],
+                error_code: Some(HubErrorCode::AuthFailed),
             }),
         );
     }
@@ -2318,6 +2384,7 @@ pub async fn push_handler(
                 success: false,
                 error: Some("insufficient permissions: readers cannot push".to_owned()),
                 existing_patches: vec![],
+                error_code: Some(HubErrorCode::InsufficientPermissions),
             }),
         );
     }
@@ -2349,6 +2416,7 @@ pub async fn pull_handler(
                 patches: vec![],
                 branches: vec![],
                 blobs: vec![],
+                error_code: Some(HubErrorCode::RateLimited),
             }),
         );
     }
@@ -2363,6 +2431,7 @@ pub async fn pull_handler(
                 patches: vec![],
                 branches: vec![],
                 blobs: vec![],
+                error_code: Some(HubErrorCode::AuthFailed),
             }),
         );
     }
@@ -2667,6 +2736,7 @@ pub async fn mirror_setup_handler(
             success: false,
             mirror_id: None,
             error: Some("unauthorized".to_owned()),
+            error_code: Some(HubErrorCode::AuthFailed),
         };
         return (status, Json(resp));
     }
@@ -2690,6 +2760,7 @@ pub async fn mirror_sync_handler(
             error: Some("unauthorized".to_owned()),
             patches_synced: 0,
             branches_synced: 0,
+            error_code: Some(HubErrorCode::AuthFailed),
         };
         return (status, Json(resp));
     }
@@ -2706,6 +2777,7 @@ pub async fn mirror_sync_handler(
                         error: Some("mirror not found by local_repo".to_owned()),
                         patches_synced: 0,
                         branches_synced: 0,
+                        error_code: Some(HubErrorCode::MirrorNotFound),
                     }),
                 );
             }
@@ -3490,6 +3562,7 @@ pub async fn register_handler(
                     success: false,
                     error: Some("admin access required".to_owned()),
                     user: None,
+                    error_code: Some(HubErrorCode::InsufficientPermissions),
                 }),
             );
         }
@@ -3503,6 +3576,7 @@ pub async fn register_handler(
                 success: false,
                 error: Some("role must be admin, member, or reader".to_owned()),
                 user: None,
+                error_code: Some(HubErrorCode::InvalidRequest),
             }),
         );
     }
@@ -3529,6 +3603,7 @@ pub async fn register_handler(
                     success: true,
                     error: None,
                     user,
+                    error_code: None,
                 }),
             )
         }
@@ -3538,6 +3613,7 @@ pub async fn register_handler(
                 success: false,
                 error: Some(format!("failed to create user: {e}")),
                 user: None,
+                error_code: Some(HubErrorCode::UserAlreadyExists),
             }),
         ),
     }
@@ -3556,6 +3632,7 @@ pub async fn list_users_handler(
                     success: false,
                     error: Some("admin access required".to_owned()),
                     users: vec![],
+                    error_code: Some(HubErrorCode::InsufficientPermissions),
                 }),
             );
         }
@@ -3579,6 +3656,7 @@ pub async fn list_users_handler(
                     success: true,
                     error: None,
                     users,
+                    error_code: None,
                 }),
             )
         }
@@ -3588,6 +3666,7 @@ pub async fn list_users_handler(
                 success: false,
                 error: Some(format!("database error: {e}")),
                 users: vec![],
+                error_code: Some(HubErrorCode::InternalError),
             }),
         ),
     }
@@ -3611,6 +3690,7 @@ pub async fn get_user_handler(
                 success: false,
                 error: Some("access denied".to_owned()),
                 user: None,
+                error_code: Some(HubErrorCode::InsufficientPermissions),
             }),
         );
     }
@@ -3628,6 +3708,7 @@ pub async fn get_user_handler(
                     success: true,
                     error: None,
                     user: Some(resp_user),
+                    error_code: None,
                 }),
             )
         }
@@ -3637,6 +3718,7 @@ pub async fn get_user_handler(
                 success: false,
                 error: Some("user not found".to_owned()),
                 user: None,
+                error_code: Some(HubErrorCode::UserNotFound),
             }),
         ),
         Err(e) => (
@@ -3645,6 +3727,7 @@ pub async fn get_user_handler(
                 success: false,
                 error: Some(format!("database error: {e}")),
                 user: None,
+                error_code: Some(HubErrorCode::InternalError),
             }),
         ),
     }
@@ -3664,6 +3747,7 @@ pub async fn update_role_handler(
                 Json(crate::types::UpdateRoleResponse {
                     success: false,
                     error: Some("admin access required".to_owned()),
+                    error_code: Some(HubErrorCode::InsufficientPermissions),
                 }),
             );
         }
@@ -3675,6 +3759,7 @@ pub async fn update_role_handler(
             Json(crate::types::UpdateRoleResponse {
                 success: false,
                 error: Some("role must be admin, member, or reader".to_owned()),
+                error_code: Some(HubErrorCode::InvalidRequest),
             }),
         );
     }
@@ -3686,6 +3771,7 @@ pub async fn update_role_handler(
             Json(crate::types::UpdateRoleResponse {
                 success: true,
                 error: None,
+                error_code: None,
             }),
         ),
         Err(e) => (
@@ -3693,6 +3779,7 @@ pub async fn update_role_handler(
             Json(crate::types::UpdateRoleResponse {
                 success: false,
                 error: Some(format!("database error: {e}")),
+                error_code: Some(HubErrorCode::InternalError),
             }),
         ),
     }
@@ -3711,6 +3798,7 @@ pub async fn delete_user_handler(
                 Json(crate::types::DeleteUserResponse {
                     success: false,
                     error: Some("admin access required".to_owned()),
+                    error_code: Some(HubErrorCode::InsufficientPermissions),
                 }),
             );
         }
@@ -3723,6 +3811,7 @@ pub async fn delete_user_handler(
             Json(crate::types::DeleteUserResponse {
                 success: true,
                 error: None,
+                error_code: None,
             }),
         ),
         Err(e) => (
@@ -3730,6 +3819,7 @@ pub async fn delete_user_handler(
             Json(crate::types::DeleteUserResponse {
                 success: false,
                 error: Some(format!("database error: {e}")),
+                error_code: Some(HubErrorCode::InternalError),
             }),
         ),
     }
@@ -3778,6 +3868,7 @@ pub async fn v2_pull_handler(
                 blobs: vec![],
                 deltas: vec![],
                 protocol_version: crate::types::PROTOCOL_VERSION_V2,
+                error_code: Some(HubErrorCode::RateLimited),
             }),
         );
     }
@@ -3794,6 +3885,7 @@ pub async fn v2_pull_handler(
                 blobs: vec![],
                 deltas: vec![],
                 protocol_version: crate::types::PROTOCOL_VERSION_V2,
+                error_code: Some(HubErrorCode::AuthFailed),
             }),
         );
     }
@@ -3826,6 +3918,7 @@ pub async fn v2_push_handler(
                 success: false,
                 error: Some("rate limit exceeded".to_owned()),
                 existing_patches: vec![],
+                error_code: Some(HubErrorCode::RateLimited),
             }),
         );
     }
@@ -3838,6 +3931,7 @@ pub async fn v2_push_handler(
                 success: false,
                 error: Some("authentication failed".to_owned()),
                 existing_patches: vec![],
+                error_code: Some(HubErrorCode::AuthFailed),
             }),
         );
     }
@@ -3853,6 +3947,7 @@ pub async fn v2_push_handler(
                 success: false,
                 error: Some("insufficient permissions: readers cannot push".to_owned()),
                 existing_patches: vec![],
+                error_code: Some(HubErrorCode::InsufficientPermissions),
             }),
         );
     }
@@ -3875,6 +3970,7 @@ pub async fn add_peer_handler(
                 success: false,
                 peer_id: None,
                 error: Some("unauthorized".to_owned()),
+                error_code: Some(HubErrorCode::AuthFailed),
             }),
         );
     }
@@ -3886,6 +3982,7 @@ pub async fn add_peer_handler(
                 success: false,
                 peer_id: None,
                 error: Some("only the leader can manage peers".to_owned()),
+                error_code: Some(HubErrorCode::InsufficientPermissions),
             }),
         );
     }
@@ -3909,6 +4006,7 @@ pub async fn remove_peer_handler(
             Json(RemovePeerResponse {
                 success: false,
                 error: Some("unauthorized".to_owned()),
+                error_code: Some(HubErrorCode::AuthFailed),
             }),
         );
     }
@@ -3919,6 +4017,7 @@ pub async fn remove_peer_handler(
             Json(RemovePeerResponse {
                 success: false,
                 error: Some("only the leader can manage peers".to_owned()),
+                error_code: Some(HubErrorCode::InsufficientPermissions),
             }),
         );
     }
@@ -3957,6 +4056,7 @@ pub async fn replication_sync_handler(
                 success: false,
                 applied: 0,
                 error: Some("sync endpoint is for followers only".to_owned()),
+                error_code: Some(HubErrorCode::InsufficientPermissions),
             }),
         );
     }
@@ -3988,6 +4088,7 @@ pub async fn batch_push_handler(
                 success: false,
                 error: Some("rate limit exceeded".to_owned()),
                 existing_patches: vec![],
+                error_code: Some(HubErrorCode::RateLimited),
             }),
         );
     }
@@ -4000,6 +4101,7 @@ pub async fn batch_push_handler(
                 success: false,
                 error: Some("authentication failed".to_owned()),
                 existing_patches: vec![],
+                error_code: Some(HubErrorCode::AuthFailed),
             }),
         );
     }
@@ -4195,9 +4297,7 @@ pub async fn delete_webhook_handler(
     }
 }
 
-pub async fn health_check(
-    State(hub): State<Arc<SutureHubServer>>,
-) -> Json<serde_json::Value> {
+pub async fn health_check(State(hub): State<Arc<SutureHubServer>>) -> Json<serde_json::Value> {
     let version = env!("CARGO_PKG_VERSION");
 
     let db_status = {
@@ -4226,9 +4326,14 @@ pub async fn health_check(
             }
             Some(b) => {
                 let name = b.backend_name();
-                match b.has_blob("__health_check__", "0000000000000000000000000000000000000000000000000000000000000000") {
+                match b.has_blob(
+                    "__health_check__",
+                    "0000000000000000000000000000000000000000000000000000000000000000",
+                ) {
                     Ok(_) => serde_json::json!({"status": "ok", "backend": name}),
-                    Err(e) => serde_json::json!({"status": "unavailable", "backend": name, "error": e}),
+                    Err(e) => {
+                        serde_json::json!({"status": "unavailable", "backend": name, "error": e})
+                    }
                 }
             }
         }
@@ -4248,9 +4353,7 @@ pub async fn health_check(
 
     let db_ok = db_status["status"] == "ok";
     let blob_ok = blob_status["status"] == "ok";
-    let raft_ok = raft_status
-        .as_ref()
-        .map_or(true, |r| r["status"] == "ok");
+    let raft_ok = raft_status.as_ref().is_none_or(|r| r["status"] == "ok");
 
     let overall = if db_ok && blob_ok && raft_ok {
         "ok"
@@ -5024,9 +5127,12 @@ pub async fn run_server(
         let ctrl_c = tokio::signal::ctrl_c();
         #[cfg(unix)]
         let sigterm = {
-            use tokio::signal::unix::{signal, SignalKind};
-            let mut sig = signal(SignalKind::terminate()).expect("failed to install SIGTERM handler");
-            async move { sig.recv().await; }
+            use tokio::signal::unix::{SignalKind, signal};
+            let mut sig =
+                signal(SignalKind::terminate()).expect("failed to install SIGTERM handler");
+            async move {
+                sig.recv().await;
+            }
         };
         #[cfg(unix)]
         tokio::select! {

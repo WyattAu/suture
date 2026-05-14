@@ -4208,6 +4208,22 @@ impl Repository {
             }
         }
 
+        // Include tag targets as anchors (must not silently skip on error —
+        // tags are the sole reference to otherwise-unreachable patches)
+        let tags = self.list_tags().map_err(|e| {
+            RepoError::Patch(format!(
+                "gc: failed to list tags, aborting to prevent data loss: {e}"
+            ))
+        })?;
+        for (_name, target_id) in &tags {
+            if !reachable.contains(target_id) {
+                reachable.insert(*target_id);
+                for anc in self.dag.ancestors(target_id).iter() {
+                    reachable.insert(*anc);
+                }
+            }
+        }
+
         let unreachable: Vec<PatchId> = all_ids
             .iter()
             .filter(|id| !reachable.contains(id))
@@ -4291,8 +4307,11 @@ impl Repository {
     ///
     /// Checks DAG consistency (parent references), branch integrity
     /// (branch targets exist), blob references (CAS has blobs referenced
-    /// by patches), and HEAD consistency.
-    pub fn fsck(&self) -> Result<FsckResult, RepoError> {
+    /// by patches), HEAD consistency, and tag integrity (tag targets exist).
+    ///
+    /// When `fix` is true, repairs broken branch refs by pointing them at
+    /// their nearest valid ancestor, and removes tags pointing to missing patches.
+    pub fn fsck(&self, fix: bool) -> Result<FsckResult, RepoError> {
         let mut checks_passed = 0usize;
         let mut errors = Vec::new();
 
@@ -4402,6 +4421,70 @@ impl Repository {
         }
         if head_ok {
             checks_passed += 1;
+        }
+
+        // 5. Tag integrity: every tag target must exist in the DAG
+        let mut tag_ok = true;
+        let tags = self.list_tags().unwrap_or_default();
+        let mut dangling_tags = Vec::new();
+        for (name, target_id) in &tags {
+            if !all_ids.contains(target_id) {
+                errors.push(format!(
+                    "tag '{}' targets non-existent patch {}",
+                    name,
+                    target_id.to_hex()
+                ));
+                dangling_tags.push(name.clone());
+                tag_ok = false;
+            }
+        }
+        if tag_ok {
+            checks_passed += 1;
+        }
+
+        // Repair mode: fix broken branches and dangling tags
+        if fix && !errors.is_empty() {
+            let mut repairs = Vec::new();
+
+            // Fix branches pointing to missing patches: walk parents to find nearest valid ancestor
+            for (name, target_id) in &branches {
+                if !all_ids.contains(target_id)
+                    && let Some(node) = self.dag.get_node(target_id)
+                {
+                    for parent_id in &node.parent_ids {
+                        if all_ids.contains(parent_id) {
+                            if let Ok(branch) = BranchName::new(name.clone())
+                                && self.meta().set_branch(&branch, parent_id).is_ok()
+                            {
+                                repairs.push(format!(
+                                    "repointed branch '{name}' to parent {}",
+                                    parent_id.to_hex()
+                                ));
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Remove dangling tags (direct config delete since fsck is &self)
+            for tag_name in &dangling_tags {
+                let key = format!("tag.{tag_name}");
+                if self
+                    .meta()
+                    .conn()
+                    .execute("DELETE FROM config WHERE key = ?1", rusqlite::params![key])
+                    .is_ok()
+                {
+                    repairs.push(format!("removed dangling tag '{tag_name}'"));
+                }
+            }
+
+            if !repairs.is_empty() {
+                for r in &repairs {
+                    errors.push(format!("REPAIRED: {r}"));
+                }
+            }
         }
 
         Ok(FsckResult {
@@ -4795,7 +4878,7 @@ pub struct FsckResult {
     pub checks_passed: usize,
     /// Non-fatal warnings encountered.
     pub warnings: Vec<String>,
-    /// Fatal errors encountered.
+    /// Fatal errors encountered (includes REPAIRED: entries when --fix is used).
     pub errors: Vec<String>,
 }
 

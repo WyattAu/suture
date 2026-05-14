@@ -1,9 +1,23 @@
-pub async fn cmd_fsck(full: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_fsck(full: bool, fix: bool) -> Result<(), Box<dyn std::error::Error>> {
     let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
-    let result = repo.fsck()?;
+    let result = repo.fsck(fix)?;
 
     println!("Repository integrity check complete.");
     println!("  {} check(s) passed", result.checks_passed);
+
+    if fix && !result.errors.is_empty() {
+        let repaired: Vec<_> = result
+            .errors
+            .iter()
+            .filter(|e| e.starts_with("REPAIRED:"))
+            .collect();
+        if !repaired.is_empty() {
+            println!("\nRepairs applied:");
+            for r in &repaired {
+                println!("  {}", r.strip_prefix("REPAIRED: ").unwrap_or(r));
+            }
+        }
+    }
 
     if full {
         let mut full_checks = 0usize;

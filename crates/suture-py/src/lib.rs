@@ -417,7 +417,7 @@ impl SutureRepo {
     fn fsck(&self) -> PyResult<PyFsckResult> {
         let result = self
             .repo
-            .fsck()
+            .fsck(false)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         Ok(PyFsckResult {
             checks_passed: result.checks_passed,

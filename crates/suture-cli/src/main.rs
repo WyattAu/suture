@@ -701,6 +701,9 @@ EXAMPLES:
         /// Also verify blob integrity, parent chains, and branch refs
         #[arg(long)]
         full: bool,
+        /// Attempt to repair broken references (branch pointers, dangling tags)
+        #[arg(long)]
+        fix: bool,
     },
     /// Check repository health and configuration
     Doctor {
@@ -893,6 +896,8 @@ EXAMPLES:
         #[arg(default_value = "origin")]
         remote: String,
     },
+    /// Show repository size statistics
+    RepoSize,
     /// Launch terminal UI
     Tui,
     /// Export a clean snapshot without repository metadata
@@ -1735,7 +1740,7 @@ async fn main() {
             )
             .await
         }
-        Commands::Fsck { full } => cmd::fsck::cmd_fsck(full).await,
+        Commands::Fsck { full, fix } => cmd::fsck::cmd_fsck(full, fix).await,
         Commands::Doctor { fix } => cmd::doctor::cmd_doctor(fix).await,
         Commands::Audit {
             verify,
@@ -1910,6 +1915,7 @@ async fn main() {
             cmd::batch::cmd_batch(&ba).await
         }
         Commands::Timeline { action } => cmd::timeline::cmd_timeline(&action).await,
+        Commands::RepoSize => cmd::repo_size::cmd_repo_size().await,
     };
 
     if let Err(e) = result {
@@ -3269,7 +3275,7 @@ mod tests {
         assert!(result.is_ok());
         let _ = cmd::reflog::cmd_reflog(false).await;
         let _ = cmd::doctor::cmd_doctor(false).await;
-        let _ = cmd::fsck::cmd_fsck(false).await;
+        let _ = cmd::fsck::cmd_fsck(false, false).await;
 
         drop(dir);
     }

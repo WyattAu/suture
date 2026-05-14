@@ -10,6 +10,28 @@ use serde::{Deserialize, Serialize};
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const PROTOCOL_VERSION_V2: u32 = 2;
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum HubErrorCode {
+    AuthFailed,
+    RateLimited,
+    BlobTooLarge,
+    RepoNotFound,
+    Conflict,
+    PatchNotFound,
+    BranchNotFound,
+    InsufficientPermissions,
+    InternalError,
+    UserNotFound,
+    UserAlreadyExists,
+    InvalidRequest,
+    MirrorNotFound,
+    MirrorSyncFailed,
+    PeerNotFound,
+    ReplicationFailed,
+    TagNotFound,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct HandshakeRequest {
     pub client_version: u32,
@@ -95,6 +117,8 @@ pub struct PushRequest {
 pub struct PushResponse {
     pub success: bool,
     pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_code: Option<HubErrorCode>,
     pub existing_patches: Vec<HashProto>,
 }
 
@@ -112,6 +136,8 @@ pub struct PullRequest {
 pub struct PullResponse {
     pub success: bool,
     pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_code: Option<HubErrorCode>,
     pub patches: Vec<PatchProto>,
     pub branches: Vec<BranchProto>,
     pub blobs: Vec<BlobRef>,
@@ -129,6 +155,8 @@ pub struct RepoInfoResponse {
     pub branches: Vec<BranchProto>,
     pub success: bool,
     pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_code: Option<HubErrorCode>,
 }
 
 #[must_use]
@@ -227,6 +255,8 @@ pub struct PullRequestV2 {
 pub struct PullResponseV2 {
     pub success: bool,
     pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_code: Option<HubErrorCode>,
     pub patches: Vec<PatchProto>,
     pub branches: Vec<BranchProto>,
     pub blobs: Vec<BlobRef>,
@@ -549,6 +579,7 @@ mod tests {
         let resp = PullResponse {
             success: true,
             error: None,
+            error_code: None,
             patches: vec![make_patch("a".repeat(64).as_str(), "Create", &[])],
             branches: vec![make_branch("main", "a".repeat(64).as_str())],
             blobs: vec![BlobRef {
@@ -569,6 +600,7 @@ mod tests {
         let resp = PullResponse {
             success: false,
             error: Some("not found".to_string()),
+            error_code: None,
             patches: vec![],
             branches: vec![],
             blobs: vec![],
@@ -635,6 +667,7 @@ mod tests {
             branches: vec![make_branch("main", "a".repeat(32).as_str())],
             success: true,
             error: None,
+            error_code: None,
         };
         let rt: RepoInfoResponse = roundtrip(&resp);
         assert_eq!(rt.patch_count, 42);
@@ -646,6 +679,7 @@ mod tests {
             branches: vec![],
             success: false,
             error: Some("not found".to_string()),
+            error_code: None,
         };
         let rt2: RepoInfoResponse = roundtrip(&err);
         assert!(!rt2.success);
@@ -666,6 +700,7 @@ mod tests {
         let resp = PushResponse {
             success: true,
             error: None,
+            error_code: None,
             existing_patches: vec![make_hash("abc"), make_hash("def")],
         };
         let rt: PushResponse = roundtrip(&resp);
@@ -1098,6 +1133,7 @@ mod tests {
         let resp = PullResponseV2 {
             success: true,
             error: None,
+            error_code: None,
             patches: vec![make_patch("a".repeat(64).as_str(), "Create", &[])],
             branches: vec![make_branch("main", "a".repeat(64).as_str())],
             blobs: vec![BlobRef {
