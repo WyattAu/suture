@@ -6,7 +6,7 @@
 - **Status:** Phases 1-12 complete
 - **Last Updated:** 2026-05-14
 - **Rust Edition:** 2024
-- **Tests:** 1,747 passed, 0 failed, 20 ignored
+- **Tests:** 1,759 passed, 0 failed, 20 ignored
 - **Security:** 0 unsound, 33 unsafe blocks (all with SAFETY comments), 1 unmaintained dep (paste via rav1e, transitive)
 - **Lean 4 Proofs:** 16 theorems (8 original + 8 new in Phase 8)
 
@@ -575,7 +575,7 @@ None — all previously deferred items resolved.
 
 | Gate | Status | Details |
 |------|--------|---------|
-| Tests | [x] 1,747 passing | 0 failures across 37 crates (20 ignored: perf 10K, merge-driver scripts, platform external) |
+| Tests | [x] 1,759 passing | 0 failures across 37 crates (20 ignored: perf 10K, merge-driver scripts, platform external) |
 | Property-based tests | [x] 21 proptest suites | 10K+ cases via proptest |
 | Benchmarks | [x] 28 Criterion functions | repo ops, semantic merge, protocol, compression |
 | Clippy | [x] Zero warnings | `cargo clippy --workspace -- -D warnings` clean |
@@ -618,7 +618,7 @@ None — all previously deferred items resolved.
 | suture-vfs | 28 | FUSE3 read/write mount, WebDAV server, inode allocation, path translation (2 ignored integration) |
 | suture-node | 0 | Node.js native addon (napi-rs) |
 | suture-lsp | 11 | Language Server Protocol (hover, diagnostics) |
-| suture-e2e | 226 | End-to-end workflow tests + 130 driver correctness tests + 8 integrity E2E tests |
+| suture-e2e | 200 | End-to-end workflow tests + driver correctness tests + integrity E2E tests |
 | suture-fuzz | 6 | Fuzz testing (CAS hash, patch serialization, merge, touch-set) |
 | suture-bench | — | Criterion benchmarks (44 functions: 28 core + 16 perf baselines) |
 | suture-raft | 30 | Raft consensus protocol (election, replication, commit, 3-node cluster simulation, persisted log) |

@@ -1417,9 +1417,9 @@ pub(crate) enum LfsAction {
     },
     /// List all tracked patterns
     List,
-    /// Upload local LFS objects to the remote (not yet implemented)
+    /// Upload local LFS objects to the remote
     Push,
-    /// Download missing LFS objects from the remote (not yet implemented)
+    /// Download missing LFS objects from the remote
     Pull,
     /// Show LFS object summary
     Status,
