@@ -962,6 +962,7 @@ impl SutureDriver for SqlDriver {
 mod tests {
     use super::*;
     use proptest::prop_assert;
+    use proptest::prop_assume;
     use proptest::proptest;
 
     #[test]
@@ -1243,6 +1244,8 @@ mod tests {
             col3 in "[a-z][a-z0-9]*",
             default_val in "[a-z0-9]+",
         ) {
+            // Skip degenerate case where col1 == col3 (same column added twice)
+            prop_assume!(col1 != col3);
             let base = format!("CREATE TABLE {} ({} INTEGER, {} TEXT);", table_name, col1, col2);
             let ours = format!("CREATE TABLE {} ({} INTEGER, {} TEXT, {} REAL);", table_name, col1, col2, col3);
             let theirs = format!("CREATE TABLE {} ({} INTEGER DEFAULT {}, {} TEXT);", table_name, col1, default_val, col2);
