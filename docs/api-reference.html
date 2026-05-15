@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Suture Platform API Reference — Suture</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a2e;
+  --fg:#e2e2f0;--fg2:#8888a8;
+  --accent:#7c3aed;--accent2:#3b82f6;--accent-grad:linear-gradient(135deg,#7c3aed,#3b82f6);
+  --border:#2a2a3e;
+  --mono:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+  --radius:12px;
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);line-height:1.7;overflow-x:hidden}
+a{color:var(--accent);text-decoration:none;transition:color .15s}
+a:hover{color:#a78bfa}
+
+.topnav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(10,10,15,.85);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);height:52px;display:flex;align-items:center;padding:0 20px}
+.topnav-inner{max-width:1400px;width:100%;margin:0 auto;display:flex;align-items:center;justify-content:space-between}
+.topnav-logo{font-family:var(--mono);font-weight:800;font-size:1.1rem;color:#fff;display:flex;align-items:center;gap:8px}
+.topnav-logo span{color:var(--accent)}
+.topnav-links{display:flex;gap:20px;align-items:center}
+.topnav-links a{color:var(--fg2);font-size:.85rem}
+.topnav-links a:hover{color:#fff}
+.menu-btn{display:none;background:none;border:1px solid var(--border);color:var(--fg);padding:6px 10px;border-radius:6px;cursor:pointer;font-size:1.1rem;line-height:1}
+
+.layout{display:flex;margin-top:52px;min-height:calc(100vh - 52px)}
+
+.sidebar{width:260px;min-width:260px;background:var(--bg2);border-right:1px solid var(--border);height:calc(100vh - 52px);position:sticky;top:52px;overflow-y:auto;padding:20px 0}
+.sidebar::-webkit-scrollbar{width:4px}
+.sidebar::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.sidebar-home{display:block;padding:8px 20px;color:var(--fg2);font-size:.8rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
+.sidebar-home:hover{color:var(--fg)}
+.nav-group{margin-bottom:4px}
+.nav-group-title{padding:8px 20px 4px;font-size:.7rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--fg2);opacity:.7}
+.nav-item{display:block;padding:6px 20px 6px 28px;color:var(--fg2);font-size:.85rem;border-left:2px solid transparent;transition:all .15s}
+.nav-item:hover{color:var(--fg);background:rgba(124,58,237,.05)}
+.nav-item.active{color:#fff;border-left-color:var(--accent);background:rgba(124,58,237,.08)}
+
+.content{flex:1;max-width:860px;padding:32px 40px 80px}
+.breadcrumb{font-size:.8rem;color:var(--fg2);margin-bottom:24px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.breadcrumb a{color:var(--fg2)}
+.breadcrumb a:hover{color:var(--accent)}
+.breadcrumb .sep{opacity:.4}
+
+.doc h1{font-size:2rem;color:#fff;font-weight:700;letter-spacing:-.02em;margin-bottom:8px;line-height:1.3}
+.doc h1:first-child{margin-top:0}
+.doc h2{font-size:1.4rem;color:#fff;font-weight:600;margin:40px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.doc h3{font-size:1.1rem;color:#fff;font-weight:600;margin:28px 0 8px}
+.doc h4{font-size:.95rem;color:var(--fg);font-weight:600;margin:24px 0 6px}
+.doc p{margin:0 0 16px;color:var(--fg)}
+.doc ul,.doc ol{margin:0 0 16px 24px;color:var(--fg)}
+.doc li{margin-bottom:4px}
+.doc li>p{margin-bottom:8px}
+.doc strong{color:#fff;font-weight:600}
+.doc em{color:var(--fg2);font-style:italic}
+.doc code{font-family:var(--mono);background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-size:.85em;color:#a78bfa}
+.doc pre{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:20px 24px;overflow-x:auto;font-size:.85rem;line-height:1.7;margin:0 0 20px}
+.doc pre code{background:none;border:none;padding:0;color:var(--fg);font-size:inherit}
+.doc blockquote{border-left:3px solid var(--accent);padding:12px 20px;margin:0 0 20px;background:rgba(124,58,237,.05);border-radius:0 var(--radius) var(--radius) 0}
+.doc blockquote p{color:var(--fg2);margin-bottom:0}
+.doc blockquote p:last-child{margin-bottom:0}
+.doc hr{border:none;border-top:1px solid var(--border);margin:32px 0}
+.doc img{max-width:100%;border-radius:var(--radius);margin:8px 0 20px}
+.doc table{width:100%;border-collapse:collapse;margin:0 0 20px;font-size:.9rem}
+.doc thead th{text-align:left;padding:10px 14px;border-bottom:2px solid var(--border);color:var(--fg);font-weight:600;font-size:.8rem;text-transform:uppercase;letter-spacing:.04em}
+.doc tbody td{padding:10px 14px;border-bottom:1px solid var(--border);color:var(--fg)}
+.doc tbody tr:hover{background:rgba(124,58,237,.03)}
+.doc del{opacity:.5}
+
+.doc-footer{margin-top:48px;padding-top:24px;border-top:1px solid var(--border);font-size:.8rem;color:var(--fg2)}
+.doc-footer a{color:var(--fg2)}
+.doc-footer a:hover{color:var(--accent)}
+
+@media(max-width:900px){
+  .menu-btn{display:block}
+  .sidebar{position:fixed;top:52px;left:-280px;height:calc(100vh - 52px);z-index:90;transition:left .25s ease;box-shadow:none}
+  .sidebar.open{left:0;box-shadow:4px 0 24px rgba(0,0,0,.4)}
+  .sidebar-overlay{display:none;position:fixed;top:52px;left:0;right:0;bottom:0;z-index:89;background:rgba(0,0,0,.4)}
+  .sidebar-overlay.open{display:block}
+  .content{padding:24px 20px 60px}
+}
+@media(max-width:600px){
+  .topnav-links{display:none}
+  .doc h1{font-size:1.5rem}
+  .doc h2{font-size:1.2rem}
+}
+</style>
+</head>
+<body>
+
+<nav class="topnav">
+  <div class="topnav-inner">
+    <a href="index.html" class="topnav-logo">/suture<span>/</span></a>
+    <div class="topnav-links">
+      <a href="index.html">Home</a>
+      <a href="quickstart.html">Docs</a>
+      <a href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">GitHub</a>
+    </div>
+    <button class="menu-btn" onclick="toggleSidebar()" aria-label="Menu">&#9776;</button>
+  </div>
+</nav>
+
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <a href="index.html" class="sidebar-home">&larr; Back to Home</a>
+<div class="nav-group">
+<div class="nav-group-title">Getting Started</div>
+<a href="getting_started.html" class="nav-item">Getting Started with Suture</a>
+<a href="quickstart.html" class="nav-item">Quickstart: Stop Losing Work to Google Drive</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Core Concepts</div>
+<a href="comparing-with-git.html" class="nav-item">Suture vs. Git: When to Use What</a>
+<a href="comparison.html" class="nav-item">Suture vs Other Version Control Systems</a>
+<a href="semantic-merge.html" class="nav-item">Semantic Merge</a>
+<a href="why-suture.html" class="nav-item">Why Suture?</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Reference</div>
+<a href="api_reference.html" class="nav-item">API Reference</a>
+<a href="cli-reference.html" class="nav-item">CLI Reference</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Merge Drivers</div>
+<a href="driver_sdk.html" class="nav-item">Driver SDK</a>
+<a href="git_merge_driver.html" class="nav-item">Git Merge Driver</a>
+<a href="merge-driver-guide.html" class="nav-item">Suture Merge Driver Guide</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Integration</div>
+<a href="github-action.html" class="nav-item">Suture Semantic Merge GitHub Action</a>
+<a href="ide-integration.html" class="nav-item">IDE Integration</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Guides</div>
+<a href="data-science.html" class="nav-item">Suture for Data Science</a>
+<a href="document-authors.html" class="nav-item">Suture for Document Authors</a>
+<a href="video-editors.html" class="nav-item">Suture for Video Editors</a>
+<a href="video-merge-guide.html" class="nav-item">Video Merge Guide: Version Control for OTIO Timelines</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Onboarding</div>
+<a href="onboarding-defence.html" class="nav-item">Suture VCS — Defence Contractor Onboarding Guide</a>
+<a href="onboarding-film.html" class="nav-item">Suture VCS — Onboarding Guide for Film & TV Post-Production</a>
+<a href="onboarding-youtube.html" class="nav-item">Suture VCS — Onboarding Guide for YouTube Channel Managers & PE Firms</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Platform</div>
+<a href="desktop-build.html" class="nav-item">Building the Suture Desktop App</a>
+<a href="hub.html" class="nav-item">Suture Hub</a>
+<a href="wasm-feasibility.html" class="nav-item">WASM Feasibility Report: Suture Semantic Merge Engine</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Development</div>
+<a href="performance.html" class="nav-item">Suture Performance Baseline</a>
+<a href="release-notes.html" class="nav-item">Suture v2.9.0 — First Public Release</a>
+<a href="shipping-checklist.html" class="nav-item">Suture v2.9.0 Shipping Checklist</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Other</div>
+<a href="api-reference.html" class="nav-item active">Suture Platform API Reference</a>
+<a href="architecture.html" class="nav-item">Suture Architecture v5.3.1</a>
+<a href="ci-integration.html" class="nav-item">CI Integration Guide</a>
+<a href="demo.html" class="nav-item">Suture Demo: Semantic Merge in 60 Seconds</a>
+<a href="deploy-runbook.html" class="nav-item">Suture 5.3.1 Deployment Runbook</a>
+<a href="gitlab-ci-integration.html" class="nav-item">GitLab CI Integration</a>
+<a href="git-merge-driver.html" class="nav-item">Git Merge Driver — Comprehensive Guide</a>
+<a href="merge-driver-quickstart.html" class="nav-item">5-Minute Git Merge Driver Quickstart</a>
+<a href="PRODUCTION_ROADMAP.html" class="nav-item">Suture Production Roadmap</a>
+<a href="self-hosting.html" class="nav-item">Self-Hosting Suture Hub</a>
+<a href="stripe-onboarding.html" class="nav-item">Stripe Onboarding Guide</a>
+<a href="user-guide.html" class="nav-item">Suture User Guide</a>
+</div>
+  </aside>
+  <main class="content">
+    <div class="breadcrumb">
+      <a href="index.html">Home</a>
+      <span class="sep">/</span>
+      <span>Docs</span>
+    </div>
+    <article class="doc">
+      <h1>Suture Platform API Reference</h1>
+<h2 id="base-url">Base URL</h2>
+<pre><code>
+Platform:  https://api.suture.dev
+Hub:       https://hub.suture.dev
+Self-hosted: configured via --addr flag
+</code></pre>
+<h2 id="authentication">Authentication</h2>
+<p>All protected endpoints accept a JWT Bearer token in the <code>Authorization</code> header:</p>
+<pre><code>
+Authorization: Bearer &lt;jwt_token&gt;
+</code></pre>
+<p>Tokens are obtained via <code>/auth/login</code> or OAuth callbacks. Token expiry: 7 days.</p>
+<p>All protected endpoints are rate-limited.</p>
+<hr>
+<h2 id="endpoints">Endpoints</h2>
+<h3 id="health">Health</h3>
+<h4 id="get-healthz"><code>GET /healthz</code></h4>
+<p>Health check endpoint.</p>
+<p><strong>Auth:</strong> None</p>
+<p><strong>Response:</strong> <code>200 OK</code></p>
+<pre><code class="language-json">"ok"
+</code></pre>
+<hr>
+<h3 id="auth">Auth</h3>
+<h4 id="post-authregister"><code>POST /auth/register</code></h4>
+<p>Register a new account.</p>
+<p><strong>Auth:</strong> None</p>
+<p><strong>Request:</strong></p>
+<pre><code class="language-json">{
+  "email": "user@example.com",
+  "password": "at-least-8-chars",
+  "display_name": "Alice"
+}
+</code></pre>
+<thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>email</code></td><td>string</td><td>yes</td><td>Valid email (max 254 chars)</td></tr>
+<tr><td><code>password</code></td><td>string</td><td>yes</td><td>Min 8 characters</td></tr>
+<tr><td><code>display_name</code></td><td>string</td><td>no</td><td>Display name</td></tr>
+</tbody>
+</table>
+<p><strong>Response:</strong> <code>201 Created</code></p>
+<pre><code class="language-json">{
+  "token": "eyJ...",
+  "user": {
+    "user_id": "uuid",
+    "email": "user@example.com",
+    "display_name": "Alice",
+    "tier": "free",
+    "created_at": "2026-01-01T00:00:00+00:00"
+  }
+}
+</code></pre>
+<p><strong>Error Codes:</strong></p>
+<thead><tr><th>Status</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>400</td><td>Invalid email or password too short</td></tr>
+<tr><td>409</td><td>Email already registered</td></tr>
+</tbody>
+</table>
+<h4 id="post-authlogin"><code>POST /auth/login</code></h4>
+<p>Authenticate and receive a JWT.</p>
+<p><strong>Auth:</strong> None</p>
+<p><strong>Request:</strong></p>
+<pre><code class="language-json">{
+  "email": "user@example.com",
+  "password": "secret"
+}
+</code></pre>
+<p><strong>Response:</strong> <code>200 OK</code></p>
+<pre><code class="language-json">{
+  "token": "eyJ...",
+  "user": {
+    "user_id": "uuid",
+    "email": "user@example.com",
+    "display_name": "Alice",
+    "tier": "free",
+    "created_at": "2026-01-01T00:00:00+00:00"
+  }
+}
+</code></pre>
+<p><strong>Error Codes:</strong></p>
+<thead><tr><th>Status</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>401</td><td>Invalid email or password</td></tr>
+</tbody>
+</table>
+<h4 id="get-authoauthstartproviderltprovidergt"><code>GET /auth/oauth/start?provider=&lt;provider&gt;</code></h4>
+<p>Start an OAuth flow.</p>
+<p><strong>Auth:</strong> None</p>
+<p><strong>Query Parameters:</strong></p>
+<thead><tr><th>Parameter</th><th>Type</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>provider</code></td><td>string</td><td><code>google</code> or <code>github</code></td></tr>
+</tbody>
+</table>
+<p><strong>Response:</strong> <code>200 OK</code></p>
+<pre><code class="language-json">{
+  "url": "https://accounts.google.com/o/oauth2/v2/auth?..."
+}
+</code></pre>
+<h4 id="get-authgooglecallback"><code>GET /auth/google/callback</code></h4>
+<p>Google OAuth callback. Redirects with JWT on success.</p>
+<p><strong>Auth:</strong> None</p>
+<h4 id="get-authgithubcallback"><code>GET /auth/github/callback</code></h4>
+<p>GitHub OAuth callback. Redirects with JWT on success.</p>
+<p><strong>Auth:</strong> None</p>
+<h4 id="get-authme"><code>GET /auth/me</code></h4>
+<p>Get the current authenticated user.</p>
+<p><strong>Auth:</strong> Bearer token required</p>
+<p><strong>Response:</strong> <code>200 OK</code></p>
+<pre><code class="language-json">{
+  "user_id": "uuid",
+  "email": "user@example.com",
+  "display_name": "Alice",
+  "tier": "free",
+  "created_at": "2026-01-01T00:00:00+00:00"
+}
+</code></pre>
+<p><strong>Error Codes:</strong></p>
+<thead><tr><th>Status</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>401</td><td>Missing or invalid token</td></tr>
+<tr><td>404</td><td>User not found</td></tr>
+</tbody>
+</table>
+<h4 id="post-authlogout"><code>POST /auth/logout</code></h4>
+<p>Revoke the current JWT.</p>
+<p><strong>Auth:</strong> Bearer token required</p>
+<p><strong>Response:</strong> <code>200 OK</code></p>
+<pre><code class="language-json">{
+  "logged_out": true
+}
+</code></pre>
+<hr>
+<h3 id="merge">Merge</h3>
+<h4 id="get-apidrivers"><code>GET /api/drivers</code></h4>
+<p>List all available merge drivers.</p>
+<p><strong>Auth:</strong> None</p>
+<p><strong>Response:</strong> <code>200 OK</code></p>
+<pre><code class="language-json">{
+  "drivers": [
+    {
+      "name": "JSON",
+      "extensions": [".json"]
+    },
+    {
+      "name": "YAML",
+      "extensions": [".yaml", ".yml"]
+    }
+  ]
+}
+</code></pre>
+<h4 id="post-apimerge"><code>POST /api/merge</code></h4>
+<p>Perform a semantic three-way merge.</p>
+<p><strong>Auth:</strong> Bearer token required. Subject to billing limits.</p>
+<p><strong>Request:</strong></p>
+<pre><code class="language-json">{
+  "driver": "json",
+  "base": "{\"name\": \"base\", \"version\": 1}",
+  "ours": "{\"name\": \"ours\", \"version\": 2}",
+  "theirs": "{\"name\": \"theirs\", \"version\": 1}"
+}
+</code></pre>
+<thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>driver</code></td><td>string</td><td>yes</td><td>Driver name (<code>json</code>, <code>yaml</code>, <code>toml</code>, <code>xml</code>, <code>csv</code>, <code>sql</code>, <code>html</code>, <code>markdown</code>, <code>svg</code>, <code>docx</code>, <code>xlsx</code>, <code>pptx</code>, <code>pdf</code>, <code>feed</code>, <code>ical</code>, <code>image</code>, <code>otio</code>, <code>properties</code>)</td></tr>
+<tr><td><code>base</code></td><td>string</td><td>yes</td><td>Ancestor (common base) content</td></tr>
+<tr><td><code>ours</code></td><td>string</td><td>yes</td><td>Current branch content</td></tr>
+<tr><td><code>theirs</code></td><td>string</td><td>yes</td><td>Incoming branch content</td></tr>
+</tbody>
+</table>
+<p><strong>Response:</strong> <code>200 OK</code></p>
+<pre><code class="language-json">{
+  "result": "{\"name\":\"ours\",\"version\":2}",
+  "driver": "json",
+  "conflicts": false
+}
+</code></pre>
+<p>When conflicts cannot be automatically resolved, <code>conflicts</code> is <code>true</code> and <code>result</code> is <code>null</code>.</p>
+<p><strong>Error Codes:</strong></p>
+<thead><tr><th>Status</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>400</td><td>Invalid driver name or malformed input</td></tr>
+<tr><td>403</td><td>Merge limit reached for billing period</td></tr>
+</tbody>
+</table>
+<hr>
+<h3 id="usage">Usage</h3>
+<h4 id="get-apiusage"><code>GET /api/usage</code></h4>
+<p>Get current usage and billing limits.</p>
+<p><strong>Auth:</strong> Bearer token required</p>
+<p><strong>Response:</strong> <code>200 OK</code></p>
+<pre><code class="language-json">{
+  "tier": "free",
+  "merges_used": 42,
+  "merges_limit": 100,
+  "storage_bytes": 5242880,
+  "storage_limit": 104857600,
+  "repos_count": 2,
+  "repos_limit": 5,
+  "api_calls": 150,
+  "period": "2026-01",
+  "utilization_percent": 42.0
+}
+</code></pre>
+<p>Tier limits (<code>merges_limit</code>, <code>repos_limit</code>) are <code>-1</code> for unlimited (Pro/Enterprise).</p>
+<hr>
+<h3 id="analytics">Analytics</h3>
+<h4 id="get-apianalytics"><code>GET /api/analytics</code></h4>
+<p>Get merge analytics. <strong>Pro tier or higher required.</strong></p>
+<p><strong>Auth:</strong> Bearer token required (Pro+)</p>
+<p><strong>Response:</strong> <code>200 OK</code></p>
+<pre><code class="language-json">{
+  "total_merges": 1234,
+  "merges_today": 15,
+  "merges_this_week": 87,
+  "merges_by_driver": {
+    "json": 500,
+    "yaml": 300,
+    "toml": 200
+  },
+  "merges_by_day": [
+    {"date": "2026-01-28", "count": 12},
+    {"date": "2026-01-29", "count": 15}
+  ],
+  "conflicts_resolved": 1100,
+  "conflicts_detected": 134,
+  "avg_merge_time_ms": 2.5,
+  "active_users_today": 3
+}
+</code></pre>
+<p><strong>Error Codes:</strong></p>
+<thead><tr><th>Status</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>403</td><td>Analytics available on Pro plan</td></tr>
+</tbody>
+</table>
+<hr>
+<h3 id="organizations">Organizations</h3>
+<h4 id="post-apiorgs"><code>POST /api/orgs</code></h4>
+<p>Create an organization.</p>
+<p><strong>Auth:</strong> Bearer token required</p>
+<p><strong>Request:</strong></p>
+<pre><code class="language-json">{
+  "name": "my-org",
+  "display_name": "My Organization"
+}
+</code></pre>
+<thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>name</code></td><td>string</td><td>yes</td><td>2-39 alphanumeric chars, hyphens/underscores</td></tr>
+<tr><td><code>display_name</code></td><td>string</td><td>no</td><td>Human-readable name</td></tr>
+</tbody>
+</table>
+<p><strong>Response:</strong> <code>201 Created</code></p>
+<pre><code class="language-json">{
+  "org_id": "uuid",
+  "name": "my-org",
+  "display_name": "My Organization",
+  "tier": "free",
+  "member_count": 1,
+  "is_owner": true
+}
+</code></pre>
+<p><strong>Error Codes:</strong></p>
+<thead><tr><th>Status</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>400</td><td>Invalid org name</td></tr>
+<tr><td>409</td><td>Organization name already taken</td></tr>
+</tbody>
+</table>
+<h4 id="get-apiorgs"><code>GET /api/orgs</code></h4>
+<p>List organizations the current user belongs to.</p>
+<p><strong>Auth:</strong> Bearer token required</p>
+<p><strong>Response:</strong> <code>200 OK</code> — array of <code>OrgInfo</code> objects.</p>
+<h4 id="post-apiorgsorg_idinvite"><code>POST /api/orgs/{org_id}/invite</code></h4>
+<p>Invite a member or directly add an existing user.</p>
+<p><strong>Auth:</strong> Bearer token required (org admin/owner)</p>
+<p><strong>Request:</strong></p>
+<pre><code class="language-json">{
+  "email": "newuser@example.com",
+  "role": "member"
+}
+</code></pre>
+<p>Valid roles: <code>owner</code>, <code>admin</code>, <code>member</code>, <code>viewer</code>.</p>
+<p><strong>Response:</strong> <code>200 OK</code></p>
+<pre><code class="language-json">{
+  "status": "added",
+  "user_id": "uuid",
+  "email": "newuser@example.com"
+}
+</code></pre>
+<p>If the email is not registered, <code>status</code> is <code>"invited"</code> and <code>user_id</code> is <code>null</code>.</p>
+<p><strong>Error Codes:</strong></p>
+<thead><tr><th>Status</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>403</td><td>Not an org admin</td></tr>
+<tr><td>409</td><td>User is already a member</td></tr>
+</tbody>
+</table>
+<h4 id="get-apiorgsorg_idmembers"><code>GET /api/orgs/{org_id}/members</code></h4>
+<p>List organization members.</p>
+<p><strong>Auth:</strong> Bearer token required (org member)</p>
+<p><strong>Response:</strong> <code>200 OK</code> — array of <code>MemberInfo</code> objects:</p>
+<pre><code class="language-json">[
+  {
+    "user_id": "uuid",
+    "role": "owner",
+    "joined_at": "2026-01-01T00:00:00+00:00",
+    "email": "owner@example.com",
+    "display_name": "Owner"
+  }
+]
+</code></pre>
+<h4 id="delete-apiorgsorg_idmembersuser_id"><code>DELETE /api/orgs/{org_id}/members/{user_id}</code></h4>
+<p>Remove a member from an organization.</p>
+<p><strong>Auth:</strong> Bearer token required (org admin/owner)</p>
+<p><strong>Response:</strong> <code>204 No Content</code></p>
+<p><strong>Error Codes:</strong></p>
+<thead><tr><th>Status</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>403</td><td>Not an org admin, or attempting to remove the last admin</td></tr>
+<tr><td>404</td><td>Member not found</td></tr>
+</tbody>
+</table>
+<h4 id="put-apiorgsorg_idmembersuser_idrole"><code>PUT /api/orgs/{org_id}/members/{user_id}/role</code></h4>
+<p>Update a member's role.</p>
+<p><strong>Auth:</strong> Bearer token required (org admin/owner)</p>
+<p><strong>Request:</strong></p>
+<pre><code class="language-json">{
+  "role": "admin"
+}
+</code></pre>
+<p><strong>Response:</strong> <code>204 No Content</code></p>
+<h4 id="get-apiinvitations"><code>GET /api/invitations</code></h4>
+<p>List pending invitations (sent by user or received by user).</p>
+<p><strong>Auth:</strong> Bearer token required</p>
+<p><strong>Response:</strong> <code>200 OK</code> — array of <code>InvitationInfo</code> objects.</p>
+<h4 id="post-apiinvitationsinvite_idaccept"><code>POST /api/invitations/{invite_id}/accept</code></h4>
+<p>Accept an invitation.</p>
+<p><strong>Auth:</strong> Bearer token required (email must match invitation)</p>
+<p><strong>Response:</strong> <code>204 No Content</code></p>
+<p><strong>Error Codes:</strong></p>
+<thead><tr><th>Status</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>400</td><td>Email does not match invitation</td></tr>
+<tr><td>404</td><td>Invitation not found or expired</td></tr>
+</tbody>
+</table>
+<hr>
+<h3 id="plugins">Plugins</h3>
+<h4 id="get-apiplugins"><code>GET /api/plugins</code></h4>
+<p>List loaded WASM plugins.</p>
+<p><strong>Auth:</strong> None</p>
+<p><strong>Response:</strong> <code>200 OK</code></p>
+<pre><code class="language-json">{
+  "plugins": [
+    {
+      "name": "custom-driver",
+      "version": "1.0.0"
+    }
+  ],
+  "count": 1
+}
+</code></pre>
+<h4 id="post-apipluginsupload"><code>POST /api/plugins/upload</code></h4>
+<p>Upload a WASM plugin. <strong>Enterprise tier required.</strong></p>
+<p><strong>Auth:</strong> Bearer token required (Enterprise)</p>
+<p><strong>Request:</strong> <code>multipart/form-data</code> with a <code>.wasm</code> file field.</p>
+<p><strong>Response:</strong> <code>201 Created</code></p>
+<pre><code class="language-json">{
+  "name": "custom-driver.wasm",
+  "status": "loaded",
+  "driver": "plugin-custom-driver"
+}
+</code></pre>
+<p><strong>Error Codes:</strong></p>
+<thead><tr><th>Status</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>400</td><td>Invalid Wasm module or malformed filename</td></tr>
+<tr><td>403</td><td>Plugin uploads require enterprise tier</td></tr>
+</tbody>
+</table>
+<h4 id="post-apipluginsmerge"><code>POST /api/plugins/merge</code></h4>
+<p>Merge using a custom plugin driver.</p>
+<p><strong>Auth:</strong> Bearer token required</p>
+<p><strong>Request:</strong></p>
+<pre><code class="language-json">{
+  "driver": "plugin-custom-driver",
+  "base": "...",
+  "ours": "...",
+  "theirs": "..."
+}
+</code></pre>
+<p><strong>Response:</strong> Same shape as <code>POST /api/merge</code>.</p>
+<p><strong>Error Codes:</strong></p>
+<thead><tr><th>Status</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>404</td><td>Plugin not loaded</td></tr>
+</tbody>
+</table>
+<hr>
+<h3 id="billing">Billing</h3>
+<h4 id="post-billingcheckout"><code>POST /billing/checkout</code></h4>
+<p>Create a Stripe Checkout session for upgrading.</p>
+<p><strong>Auth:</strong> Bearer token required</p>
+<p><strong>Request:</strong></p>
+<pre><code class="language-json">{
+  "tier": "pro",
+  "success_url": "https://example.com/success",
+  "cancel_url": "https://example.com/cancel"
+}
+</code></pre>
+<thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>tier</code></td><td>string</td><td>yes</td><td><code>pro</code> or <code>enterprise</code></td></tr>
+<tr><td><code>success_url</code></td><td>string</td><td>no</td><td>Redirect after payment</td></tr>
+<tr><td><code>cancel_url</code></td><td>string</td><td>no</td><td>Redirect on cancel</td></tr>
+</tbody>
+</table>
+<p><strong>Response:</strong> <code>200 OK</code></p>
+<pre><code class="language-json">{
+  "url": "https://checkout.stripe.com/c/pay/cs_test_..."
+}
+</code></pre>
+<p><strong>Error Codes:</strong></p>
+<thead><tr><th>Status</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>400</td><td>Invalid tier</td></tr>
+<tr><td>503</td><td>Billing not configured</td></tr>
+</tbody>
+</table>
+<h4 id="get-billingsubscription"><code>GET /billing/subscription</code></h4>
+<p>Get current subscription status.</p>
+<p><strong>Auth:</strong> Bearer token required</p>
+<p><strong>Response:</strong> <code>200 OK</code></p>
+<pre><code class="language-json">{
+  "tier": "pro",
+  "status": "active",
+  "current_period_end": null,
+  "cancel_at_period_end": false
+}
+</code></pre>
+<h4 id="post-billingportal"><code>POST /billing/portal</code></h4>
+<p>Create a Stripe Customer Portal session for managing subscriptions.</p>
+<p><strong>Auth:</strong> Bearer token required</p>
+<p><strong>Response:</strong> <code>200 OK</code></p>
+<pre><code class="language-json">{
+  "url": "https://billing.stripe.com/p/session_..."
+}
+</code></pre>
+<p><strong>Error Codes:</strong></p>
+<thead><tr><th>Status</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>400</td><td>No Stripe customer on file</td></tr>
+<tr><td>503</td><td>Billing not configured</td></tr>
+</tbody>
+</table>
+<h4 id="post-billingwebhook"><code>POST /billing/webhook</code></h4>
+<p>Receive Stripe webhook events. Called by Stripe, not by clients.</p>
+<p><strong>Auth:</strong> Stripe-Signature header verification (HMAC-SHA256)</p>
+<p>Handles: <code>checkout.session.completed</code>, <code>customer.subscription.updated</code>, <code>customer.subscription.deleted</code>, <code>invoice.payment_failed</code>.</p>
+<p><strong>Response:</strong> <code>200 OK</code></p>
+<pre><code class="language-json">{
+  "received": true
+}
+</code></pre>
+<hr>
+<h3 id="admin">Admin</h3>
+<h4 id="get-adminusers"><code>GET /admin/users</code></h4>
+<p>List all users. <strong>Admin role required.</strong></p>
+<p><strong>Auth:</strong> Bearer token required (admin)</p>
+<p><strong>Response:</strong> <code>200 OK</code> — array of <code>UserInfo</code> objects.</p>
+<p><strong>Error Codes:</strong></p>
+<thead><tr><th>Status</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>403</td><td>Admin only</td></tr>
+</tbody>
+</table>
+<hr>
+<h2 id="error-response-format">Error Response Format</h2>
+<p>All errors return a consistent JSON body:</p>
+<pre><code class="language-json">{
+  "error": "Human-readable error message"
+}
+</code></pre>
+<h2 id="rate-limiting">Rate Limiting</h2>
+<p>All protected endpoints are rate-limited. Responses include standard <code>RateLimit-*</code> headers when limits are approached or exceeded.</p>
+<h2 id="tier-limits">Tier Limits</h2>
+<thead><tr><th>Feature</th><th>Free</th><th>Pro</th><th>Enterprise</th></tr></thead>
+<tbody>
+<tr><td>Merges/month</td><td>100</td><td>10,000</td><td>Unlimited</td></tr>
+<tr><td>Storage</td><td>100 MB</td><td>10 GB</td><td>100 GB</td></tr>
+<tr><td>Repos</td><td>5</td><td>Unlimited</td><td>Unlimited</td></tr>
+<tr><td>Core drivers</td><td>5</td><td>All</td><td>All</td></tr>
+<tr><td>Analytics</td><td>—</td><td>Yes</td><td>Yes</td></tr>
+<tr><td>WASM plugins</td><td>—</td><td>—</td><td>Yes</td></tr>
+<tr><td>SSO/Audit/SLA</td><td>—</td><td>—</td><td>Yes</td></tr>
+<tr><td>Price</td><td>$0</td><td>$9/user/mo</td><td>$29/user/mo</td></tr>
+</tbody>
+</table>
+    </article>
+    <div class="doc-footer">
+      <a href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">GitHub</a> &middot;
+      <a href="https://github.com/WyattAu/suture/blob/main/LICENSE" target="_blank" rel="noopener">Apache-2.0</a>
+    </div>
+  </main>
+</div>
+
+<script>
+function toggleSidebar(){
+  document.getElementById("sidebar").classList.toggle("open");
+  document.getElementById("sidebarOverlay").classList.toggle("open");
+}
+</script>
+</body>
+</html>

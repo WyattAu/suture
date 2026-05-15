@@ -166,8 +166,18 @@ a:hover{color:#a78bfa}
 </div>
 <div class="nav-group">
 <div class="nav-group-title">Other</div>
+<a href="api-reference.html" class="nav-item">Suture Platform API Reference</a>
+<a href="architecture.html" class="nav-item">Suture Architecture v5.3.1</a>
+<a href="ci-integration.html" class="nav-item">CI Integration Guide</a>
 <a href="demo.html" class="nav-item">Suture Demo: Semantic Merge in 60 Seconds</a>
+<a href="deploy-runbook.html" class="nav-item">Suture 5.3.1 Deployment Runbook</a>
+<a href="gitlab-ci-integration.html" class="nav-item">GitLab CI Integration</a>
+<a href="git-merge-driver.html" class="nav-item">Git Merge Driver — Comprehensive Guide</a>
 <a href="merge-driver-quickstart.html" class="nav-item">5-Minute Git Merge Driver Quickstart</a>
+<a href="PRODUCTION_ROADMAP.html" class="nav-item">Suture Production Roadmap</a>
+<a href="self-hosting.html" class="nav-item">Self-Hosting Suture Hub</a>
+<a href="stripe-onboarding.html" class="nav-item">Stripe Onboarding Guide</a>
+<a href="user-guide.html" class="nav-item">Suture User Guide</a>
 </div>
   </aside>
   <main class="content">
@@ -178,7 +188,7 @@ a:hover{color:#a78bfa}
     </div>
     <article class="doc">
       <h1>Suture Performance Baseline</h1>
-<p><strong>Date:</strong> 2026-04-18 <strong>Platform:</strong> Linux x86_64, release profile (optimized) <strong>Toolchain:</strong> Rust stable, Criterion.rs 0.5</p>
+<p><strong>Date:</strong> 2026-05-12 <strong>Platform:</strong> Linux x86_64, release profile (optimized) <strong>Toolchain:</strong> Rust stable, Criterion.rs 0.5</p>
 <hr>
 <h2 id="1-dag-operations">1. DAG Operations</h2>
 <thead><tr><th>Benchmark</th><th>Median Time</th><th>Notes</th></tr></thead>
@@ -311,6 +321,32 @@ a:hover{color:#a78bfa}
 </ol>
 <p>   <code>len</code>, <code>iter</code>, <code>insert</code> on <code>TouchSet</code> and <code>has_patch</code> on <code>PatchDag</code> that    were causing code bloat.</p>
 <hr>
+<h2 id="binary-size">Binary Size</h2>
+<thead><tr><th>Build</th><th>Size</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>Debug</td><td>243 MB</td><td>Default (<code>dev</code> profile)</td></tr>
+<tr><td>Release (pre-optimization)</td><td>15 MB</td><td><code>opt-level = 3</code> only</td></tr>
+<tr><td>Release (stripped)</td><td>14 MB</td><td>Manual <code>strip</code> after pre-optimization build</td></tr>
+<tr><td>Release + LTO + strip</td><td>14 MB</td><td>Our default (<code>opt-level = 3, lto = true, codegen-units = 1, panic = "abort", strip = true</code>)</td></tr>
+<tr><td>Compressed (UPX)</td><td>—</td><td>UPX not available; skipped</td></tr>
+</tbody>
+</table>
+<h3 id="optimizations-applied">Optimizations Applied</h3>
+<ul>
+<li><strong>LTO (Link-Time Optimization):</strong> <code>lto = true</code> — enables cross-crate inlining and dead code elimination</li>
+<li><strong>Single codegen unit:</strong> <code>codegen-units = 1</code> — better optimization at the cost of slower compilation</li>
+<li><strong>Panic = abort:</strong> <code>panic = "abort"</code> — removes unwinding machinery, saves ~50-100 KB</li>
+<li><strong>Strip:</strong> <code>strip = true</code> — removes debug info and symbol tables</li>
+</ul>
+<h2 id="build-times">Build Times</h2>
+<thead><tr><th>Target</th><th>Time</th></tr></thead>
+<tbody>
+<tr><td>suture-cli (debug)</td><td>~25 s</td></tr>
+<tr><td>suture-cli (release, pre-optimization)</td><td>~3 m 26 s</td></tr>
+<tr><td>suture-cli (release, LTO + codegen-units = 1)</td><td>~6 m 57 s</td></tr>
+</tbody>
+</table>
+<hr>
 <h2 id="benchmark-files">Benchmark Files</h2>
 <thead><tr><th>File</th><th>Contents</th></tr></thead>
 <tbody>
@@ -319,6 +355,72 @@ a:hover{color:#a78bfa}
 <tr><td><code>benches/semantic_merge_perf.rs</code></td><td>JSON small/large/conflict merge benchmarks</td></tr>
 <tr><td><code>benches/cas_perf.rs</code></td><td>CAS store (varying sizes), lookup, patch serialize/deserialize</td></tr>
 <tr><td><code>benches/hub_perf.rs</code></td><td>Hub repo creation, push/pull/roundtrip benchmarks</td></tr>
+</tbody>
+</table>
+<hr>
+<h2 id="7-comprehensive-merge-benchmarks-v510">7. Comprehensive Merge Benchmarks (v5.1.0)</h2>
+<p><strong>Date:</strong> 2026-05-01 <strong>Platform:</strong> Linux x86_64, release profile, Criterion.rs 0.5 <strong>Method:</strong> Median of 50 iterations</p>
+<h3 id="json">JSON</h3>
+<thead><tr><th>Size</th><th>Same (µs)</th><th>One-sided (µs)</th><th>Different Keys (µs)</th><th>Conflict (µs)</th></tr></thead>
+<tbody>
+<tr><td>10 keys</td><td>9.1</td><td>27.5</td><td>9.6</td><td>7.2</td></tr>
+<tr><td>100 keys</td><td>148</td><td>137</td><td>133</td><td>113</td></tr>
+<tr><td>1,000 keys</td><td>1,394</td><td>2,049</td><td>1,890</td><td>1,143</td></tr>
+<tr><td>10,000 keys</td><td>2,453</td><td>1,927</td><td>922</td><td>318 ms</td></tr>
+</tbody>
+</table>
+<h3 id="yaml">YAML</h3>
+<thead><tr><th>Size</th><th>Same (µs)</th><th>One-sided (µs)</th><th>Different Keys (µs)</th><th>Conflict (µs)</th></tr></thead>
+<tbody>
+<tr><td>10 keys</td><td>53.2</td><td>49.9</td><td>54.4</td><td>38.9</td></tr>
+<tr><td>50 keys</td><td>63.6</td><td>51.8</td><td>46.3</td><td>57.4</td></tr>
+<tr><td>200 keys</td><td>94.9</td><td>96.4</td><td>101.6</td><td>64.1</td></tr>
+</tbody>
+</table>
+<h3 id="toml">TOML</h3>
+<thead><tr><th>Size</th><th>Same (µs)</th><th>One-sided (µs)</th><th>Different Keys (µs)</th><th>Conflict (µs)</th></tr></thead>
+<tbody>
+<tr><td>10 keys</td><td>121</td><td>169</td><td>178</td><td>26.3</td></tr>
+<tr><td>50 keys</td><td>122</td><td>177</td><td>182</td><td>35.3</td></tr>
+</tbody>
+</table>
+<h3 id="csv">CSV</h3>
+<thead><tr><th>Size</th><th>Same (µs)</th><th>One-sided (µs)</th><th>Different Keys (µs)</th><th>Conflict (µs)</th></tr></thead>
+<tbody>
+<tr><td>10r × 5c</td><td>102</td><td>116</td><td>100</td><td>100</td></tr>
+<tr><td>100r × 10c</td><td>1,394</td><td>1,441</td><td>1,351</td><td>1,128</td></tr>
+<tr><td>1000r × 20c</td><td>23,543</td><td>35,298</td><td>23,660</td><td>2,186</td></tr>
+</tbody>
+</table>
+<h3 id="xml">XML</h3>
+<thead><tr><th>Size</th><th>Same (µs)</th><th>One-sided (µs)</th><th>Different Keys (µs)</th><th>Conflict (µs)</th></tr></thead>
+<tbody>
+<tr><td>10 elements</td><td>112</td><td>56.5</td><td>64.1</td><td>8.6</td></tr>
+<tr><td>100 elements</td><td>333</td><td>221</td><td>219</td><td>378</td></tr>
+</tbody>
+</table>
+<h3 id="key-takeaways">Key Takeaways</h3>
+<ul>
+<li><strong>JSON is the fastest format</strong> — <1ms for typical files (up to 1,000 keys)</li>
+<li><strong>All formats merge in <5ms for typical config files</strong> (<100 keys)</li>
+<li><strong>CSV is slowest</strong> at scale due to row-based parsing — O(rows × cols)</li>
+<li><strong>Conflict detection</strong> is fast (<100µs for most formats) because it only needs to find the first mismatch</li>
+<li><strong>JSON scales sub-linearly</strong> past 1K keys (likely due to serde_json's optimized parser)</li>
+</ul>
+<hr>
+<h2 id="7-recent-optimizations-v540">7. Recent Optimizations (v5.4.0)</h2>
+<h3 id="71-merge-engine-2026-05-12">7.1 Merge Engine (2026-05-12)</h3>
+<thead><tr><th>Optimization</th><th>File</th><th>Impact</th></tr></thead>
+<tbody>
+<tr><td><code>output_lines()</code> returns <code>&amp;[String]</code> instead of <code>Vec&lt;String&gt;</code></td><td><code>engine/merge.rs</code></td><td>Eliminates Vec allocation per merge line group. Three-way merge hot loop calls this 2-4x per conflict region.</td></tr>
+<tr><td>Pre-compute conflict markers once per merge</td><td><code>engine/merge.rs</code></td><td>Avoids <code>format!()</code> allocation for <code>&lt;&lt;&lt;&lt;&lt;&lt;&lt;</code>, <code>=======</code>, <code>&gt;&gt;&gt;&gt;&gt;&gt;&gt;</code> markers on every conflict region.</td></tr>
+<tr><td><code>diff_trees()</code> uses <code>sort_by</code> instead of <code>sort_by_key</code></td><td><code>engine/diff.rs</code></td><td>Avoids cloning every path string during diff entry sorting. For diffs with thousands of files, saves thousands of allocations.</td></tr>
+</tbody>
+</table>
+<h3 id="72-stash-operations-2026-05-12">7.2 Stash Operations (2026-05-12)</h3>
+<thead><tr><th>Optimization</th><th>File</th><th>Impact</th></tr></thead>
+<tbody>
+<tr><td>O(n*m) → O(n+m) stash push lookup</td><td><code>repository/repo_impl.rs</code></td><td>Builds a <code>HashSet&lt;String&gt;</code> of staged paths before the head-tree loop. Replaces `files.iter().any(</td><td>(p, _)</td><td>p == path)<code> (linear scan per file) with </code>hashset.contains(path)<code> (O(1)). For repos with many tracked files, this eliminates quadratic behavior during </code>suture stash push`.</td></tr>
 </tbody>
 </table>
     </article>

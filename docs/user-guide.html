@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Suture User Guide — Suture</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a2e;
+  --fg:#e2e2f0;--fg2:#8888a8;
+  --accent:#7c3aed;--accent2:#3b82f6;--accent-grad:linear-gradient(135deg,#7c3aed,#3b82f6);
+  --border:#2a2a3e;
+  --mono:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+  --radius:12px;
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);line-height:1.7;overflow-x:hidden}
+a{color:var(--accent);text-decoration:none;transition:color .15s}
+a:hover{color:#a78bfa}
+
+.topnav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(10,10,15,.85);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);height:52px;display:flex;align-items:center;padding:0 20px}
+.topnav-inner{max-width:1400px;width:100%;margin:0 auto;display:flex;align-items:center;justify-content:space-between}
+.topnav-logo{font-family:var(--mono);font-weight:800;font-size:1.1rem;color:#fff;display:flex;align-items:center;gap:8px}
+.topnav-logo span{color:var(--accent)}
+.topnav-links{display:flex;gap:20px;align-items:center}
+.topnav-links a{color:var(--fg2);font-size:.85rem}
+.topnav-links a:hover{color:#fff}
+.menu-btn{display:none;background:none;border:1px solid var(--border);color:var(--fg);padding:6px 10px;border-radius:6px;cursor:pointer;font-size:1.1rem;line-height:1}
+
+.layout{display:flex;margin-top:52px;min-height:calc(100vh - 52px)}
+
+.sidebar{width:260px;min-width:260px;background:var(--bg2);border-right:1px solid var(--border);height:calc(100vh - 52px);position:sticky;top:52px;overflow-y:auto;padding:20px 0}
+.sidebar::-webkit-scrollbar{width:4px}
+.sidebar::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.sidebar-home{display:block;padding:8px 20px;color:var(--fg2);font-size:.8rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
+.sidebar-home:hover{color:var(--fg)}
+.nav-group{margin-bottom:4px}
+.nav-group-title{padding:8px 20px 4px;font-size:.7rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--fg2);opacity:.7}
+.nav-item{display:block;padding:6px 20px 6px 28px;color:var(--fg2);font-size:.85rem;border-left:2px solid transparent;transition:all .15s}
+.nav-item:hover{color:var(--fg);background:rgba(124,58,237,.05)}
+.nav-item.active{color:#fff;border-left-color:var(--accent);background:rgba(124,58,237,.08)}
+
+.content{flex:1;max-width:860px;padding:32px 40px 80px}
+.breadcrumb{font-size:.8rem;color:var(--fg2);margin-bottom:24px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.breadcrumb a{color:var(--fg2)}
+.breadcrumb a:hover{color:var(--accent)}
+.breadcrumb .sep{opacity:.4}
+
+.doc h1{font-size:2rem;color:#fff;font-weight:700;letter-spacing:-.02em;margin-bottom:8px;line-height:1.3}
+.doc h1:first-child{margin-top:0}
+.doc h2{font-size:1.4rem;color:#fff;font-weight:600;margin:40px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.doc h3{font-size:1.1rem;color:#fff;font-weight:600;margin:28px 0 8px}
+.doc h4{font-size:.95rem;color:var(--fg);font-weight:600;margin:24px 0 6px}
+.doc p{margin:0 0 16px;color:var(--fg)}
+.doc ul,.doc ol{margin:0 0 16px 24px;color:var(--fg)}
+.doc li{margin-bottom:4px}
+.doc li>p{margin-bottom:8px}
+.doc strong{color:#fff;font-weight:600}
+.doc em{color:var(--fg2);font-style:italic}
+.doc code{font-family:var(--mono);background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-size:.85em;color:#a78bfa}
+.doc pre{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:20px 24px;overflow-x:auto;font-size:.85rem;line-height:1.7;margin:0 0 20px}
+.doc pre code{background:none;border:none;padding:0;color:var(--fg);font-size:inherit}
+.doc blockquote{border-left:3px solid var(--accent);padding:12px 20px;margin:0 0 20px;background:rgba(124,58,237,.05);border-radius:0 var(--radius) var(--radius) 0}
+.doc blockquote p{color:var(--fg2);margin-bottom:0}
+.doc blockquote p:last-child{margin-bottom:0}
+.doc hr{border:none;border-top:1px solid var(--border);margin:32px 0}
+.doc img{max-width:100%;border-radius:var(--radius);margin:8px 0 20px}
+.doc table{width:100%;border-collapse:collapse;margin:0 0 20px;font-size:.9rem}
+.doc thead th{text-align:left;padding:10px 14px;border-bottom:2px solid var(--border);color:var(--fg);font-weight:600;font-size:.8rem;text-transform:uppercase;letter-spacing:.04em}
+.doc tbody td{padding:10px 14px;border-bottom:1px solid var(--border);color:var(--fg)}
+.doc tbody tr:hover{background:rgba(124,58,237,.03)}
+.doc del{opacity:.5}
+
+.doc-footer{margin-top:48px;padding-top:24px;border-top:1px solid var(--border);font-size:.8rem;color:var(--fg2)}
+.doc-footer a{color:var(--fg2)}
+.doc-footer a:hover{color:var(--accent)}
+
+@media(max-width:900px){
+  .menu-btn{display:block}
+  .sidebar{position:fixed;top:52px;left:-280px;height:calc(100vh - 52px);z-index:90;transition:left .25s ease;box-shadow:none}
+  .sidebar.open{left:0;box-shadow:4px 0 24px rgba(0,0,0,.4)}
+  .sidebar-overlay{display:none;position:fixed;top:52px;left:0;right:0;bottom:0;z-index:89;background:rgba(0,0,0,.4)}
+  .sidebar-overlay.open{display:block}
+  .content{padding:24px 20px 60px}
+}
+@media(max-width:600px){
+  .topnav-links{display:none}
+  .doc h1{font-size:1.5rem}
+  .doc h2{font-size:1.2rem}
+}
+</style>
+</head>
+<body>
+
+<nav class="topnav">
+  <div class="topnav-inner">
+    <a href="index.html" class="topnav-logo">/suture<span>/</span></a>
+    <div class="topnav-links">
+      <a href="index.html">Home</a>
+      <a href="quickstart.html">Docs</a>
+      <a href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">GitHub</a>
+    </div>
+    <button class="menu-btn" onclick="toggleSidebar()" aria-label="Menu">&#9776;</button>
+  </div>
+</nav>
+
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <a href="index.html" class="sidebar-home">&larr; Back to Home</a>
+<div class="nav-group">
+<div class="nav-group-title">Getting Started</div>
+<a href="getting_started.html" class="nav-item">Getting Started with Suture</a>
+<a href="quickstart.html" class="nav-item">Quickstart: Stop Losing Work to Google Drive</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Core Concepts</div>
+<a href="comparing-with-git.html" class="nav-item">Suture vs. Git: When to Use What</a>
+<a href="comparison.html" class="nav-item">Suture vs Other Version Control Systems</a>
+<a href="semantic-merge.html" class="nav-item">Semantic Merge</a>
+<a href="why-suture.html" class="nav-item">Why Suture?</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Reference</div>
+<a href="api_reference.html" class="nav-item">API Reference</a>
+<a href="cli-reference.html" class="nav-item">CLI Reference</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Merge Drivers</div>
+<a href="driver_sdk.html" class="nav-item">Driver SDK</a>
+<a href="git_merge_driver.html" class="nav-item">Git Merge Driver</a>
+<a href="merge-driver-guide.html" class="nav-item">Suture Merge Driver Guide</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Integration</div>
+<a href="github-action.html" class="nav-item">Suture Semantic Merge GitHub Action</a>
+<a href="ide-integration.html" class="nav-item">IDE Integration</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Guides</div>
+<a href="data-science.html" class="nav-item">Suture for Data Science</a>
+<a href="document-authors.html" class="nav-item">Suture for Document Authors</a>
+<a href="video-editors.html" class="nav-item">Suture for Video Editors</a>
+<a href="video-merge-guide.html" class="nav-item">Video Merge Guide: Version Control for OTIO Timelines</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Onboarding</div>
+<a href="onboarding-defence.html" class="nav-item">Suture VCS — Defence Contractor Onboarding Guide</a>
+<a href="onboarding-film.html" class="nav-item">Suture VCS — Onboarding Guide for Film & TV Post-Production</a>
+<a href="onboarding-youtube.html" class="nav-item">Suture VCS — Onboarding Guide for YouTube Channel Managers & PE Firms</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Platform</div>
+<a href="desktop-build.html" class="nav-item">Building the Suture Desktop App</a>
+<a href="hub.html" class="nav-item">Suture Hub</a>
+<a href="wasm-feasibility.html" class="nav-item">WASM Feasibility Report: Suture Semantic Merge Engine</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Development</div>
+<a href="performance.html" class="nav-item">Suture Performance Baseline</a>
+<a href="release-notes.html" class="nav-item">Suture v2.9.0 — First Public Release</a>
+<a href="shipping-checklist.html" class="nav-item">Suture v2.9.0 Shipping Checklist</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Other</div>
+<a href="api-reference.html" class="nav-item">Suture Platform API Reference</a>
+<a href="architecture.html" class="nav-item">Suture Architecture v5.3.1</a>
+<a href="ci-integration.html" class="nav-item">CI Integration Guide</a>
+<a href="demo.html" class="nav-item">Suture Demo: Semantic Merge in 60 Seconds</a>
+<a href="deploy-runbook.html" class="nav-item">Suture 5.3.1 Deployment Runbook</a>
+<a href="gitlab-ci-integration.html" class="nav-item">GitLab CI Integration</a>
+<a href="git-merge-driver.html" class="nav-item">Git Merge Driver — Comprehensive Guide</a>
+<a href="merge-driver-quickstart.html" class="nav-item">5-Minute Git Merge Driver Quickstart</a>
+<a href="PRODUCTION_ROADMAP.html" class="nav-item">Suture Production Roadmap</a>
+<a href="self-hosting.html" class="nav-item">Self-Hosting Suture Hub</a>
+<a href="stripe-onboarding.html" class="nav-item">Stripe Onboarding Guide</a>
+<a href="user-guide.html" class="nav-item active">Suture User Guide</a>
+</div>
+  </aside>
+  <main class="content">
+    <div class="breadcrumb">
+      <a href="index.html">Home</a>
+      <span class="sep">/</span>
+      <span>Docs</span>
+    </div>
+    <article class="doc">
+      <h1>Suture User Guide</h1>
+<h2 id="what-is-suture">What is Suture?</h2>
+<p>Suture is a version control system with semantic merge for structured files. Unlike Git, which treats files as opaque blobs, Suture understands the internal structure of JSON, YAML, TOML, CSV, XML, and 13 other formats, enabling automatic conflict resolution.</p>
+<p>Suture can also be used purely as a Git merge driver — no migration required. Existing Git repos gain semantic merge in a single command.</p>
+<h2 id="quick-start">Quick Start</h2>
+<h3 id="installation">Installation</h3>
+<pre><code class="language-bash"># One-line install (Linux / macOS)
+curl -fsSL https://raw.githubusercontent.com/WyattAu/suture/main/install.sh | sh
+
+# Cargo
+cargo install suture-cli
+
+# Homebrew
+brew install WyattAu/suture-merge-driver/suture-merge-driver
+
+# npm (merge driver only)
+npm install -g suture-merge-driver
+
+# PyPI (merge driver only)
+pip install suture-merge-driver
+
+# Binary download
+# https://github.com/WyattAu/suture/releases
+</code></pre>
+<h3 id="basic-workflow">Basic Workflow</h3>
+<pre><code class="language-bash"># Initialize a repository
+suture init my-project
+cd my-project
+
+# Create and switch branches
+suture branch feature/json-config
+suture checkout feature/json-config
+
+# Make changes, then commit
+suture add config.json
+suture commit "update config"
+
+# View history
+suture log --oneline --graph
+
+# Merge — conflicts in structured files are resolved automatically
+suture merge main
+
+# Compare two branches
+suture diff --from main --to feature
+
+# Push/pull to a hub
+suture remote add origin http://localhost:50051/my-project
+suture push origin
+suture pull origin
+</code></pre>
+<h3 id="structured-merge">Structured Merge</h3>
+<p>When two branches edit different keys in a JSON file, Git reports a conflict. Suture resolves it automatically because it understands JSON structure.</p>
+<p><strong>Git output:</strong></p>
+<pre><code>
+&lt;&lt;&lt;&lt;&lt;&lt;&lt; HEAD
+  "version": "5.1.0",
+  "features": ["merge", "diff"]
+=======
+  "license": "AGPL-3.0"
+&gt;&gt;&gt;&gt;&gt;&gt;&gt; feature
+</code></pre>
+<p><strong>Suture output (automatic):</strong></p>
+<pre><code class="language-json">{
+  "version": "5.1.0",
+  "features": ["merge", "diff"],
+  "license": "AGPL-3.0"
+}
+</code></pre>
+<p>This works for all 18 supported formats. Suture detects the format from the file extension and applies the appropriate merge strategy.</p>
+<p>Merge strategies:</p>
+<ul>
+<li><code>semantic</code> (default) — try semantic drivers, fall back to conflict markers</li>
+<li><code>ours</code> — keep our version for all conflicts</li>
+<li><code>theirs</code> — keep their version for all conflicts</li>
+<li><code>manual</code> — skip semantic drivers, leave all conflicts as markers</li>
+</ul>
+<pre><code class="language-bash">suture merge -s ours feature
+suture merge -s theirs feature
+suture merge --dry-run feature   # preview without modifying working tree
+</code></pre>
+<h3 id="remote-collaboration">Remote Collaboration</h3>
+<pre><code class="language-bash"># Add a remote hub
+suture remote add origin http://hub.example.com/my-repo
+
+# Authenticate
+suture remote login origin
+
+# Push and pull
+suture push origin
+suture push origin feature      # push a specific branch
+suture pull origin
+suture pull --rebase origin
+
+# Fetch without merging
+suture fetch origin
+suture fetch --depth 10 origin  # shallow fetch
+
+# Clone
+suture clone http://hub.example.com/my-repo
+suture clone http://hub.example.com/my-repo --depth 10
+
+# List remote branches
+suture ls-remote origin
+
+# Mirror a remote
+suture remote mirror http://upstream/repo upstream-name
+</code></pre>
+<h3 id="lfs-large-file-storage">LFS (Large File Storage)</h3>
+<pre><code class="language-bash"># Track large files by pattern
+suture lfs track "*.mp4"
+suture lfs track "*.png" --size-limit 5MB
+suture lfs track "assets/*"
+
+# Stop tracking
+suture lfs untrack "*.mp4"
+
+# List tracked patterns
+suture lfs list
+
+# Show LFS object summary
+suture lfs status
+</code></pre>
+<h3 id="merge-driver-git-integration">Merge Driver (Git Integration)</h3>
+<p>Add semantic merge to an existing Git repo in one line:</p>
+<pre><code class="language-bash">curl -fsSL https://raw.githubusercontent.com/WyattAu/suture/main/scripts/install-merge-driver.sh | bash
+</code></pre>
+<p>Or manually:</p>
+<pre><code class="language-bash">suture git driver install    # install
+suture git driver uninstall  # remove
+suture git driver list       # check status
+</code></pre>
+<p>This configures <code>.gitattributes</code> so Git delegates merges of <code><em>.json</code>, <code></em>.yaml</code>, <code><em>.yml</code>, <code></em>.toml</code>, <code><em>.xml</code>, and <code></em>.csv</code> files to Suture.</p>
+<h2 id="supported-formats">Supported Formats</h2>
+<thead><tr><th>Format</th><th>Extensions</th><th>Merge Strategy</th></tr></thead>
+<tbody>
+<tr><td>JSON</td><td><code>.json</code></td><td>Key-value merge</td></tr>
+<tr><td>YAML</td><td><code>.yml</code>, <code>.yaml</code></td><td>Mapping merge</td></tr>
+<tr><td>TOML</td><td><code>.toml</code></td><td>Table merge</td></tr>
+<tr><td>CSV</td><td><code>.csv</code></td><td>Row-column merge</td></tr>
+<tr><td>XML</td><td><code>.xml</code></td><td>Element merge</td></tr>
+<tr><td>HTML</td><td><code>.html</code>, <code>.htm</code></td><td>DOM merge</td></tr>
+<tr><td>Markdown</td><td><code>.md</code>, <code>.markdown</code>, <code>.mdown</code>, <code>.mkd</code></td><td>Section merge</td></tr>
+<tr><td>SQL</td><td><code>.sql</code></td><td>Statement merge</td></tr>
+<tr><td>SVG</td><td><code>.svg</code></td><td>Element merge</td></tr>
+<tr><td>DOCX</td><td><code>.docx</code></td><td>OOXML merge</td></tr>
+<tr><td>XLSX</td><td><code>.xlsx</code></td><td>Sheet merge</td></tr>
+<tr><td>PPTX</td><td><code>.pptx</code></td><td>Slide merge</td></tr>
+<tr><td>PDF</td><td><code>.pdf</code></td><td>Page merge</td></tr>
+<tr><td>Image</td><td><code>.png</code>, <code>.jpg</code>, <code>.jpeg</code>, <code>.gif</code>, <code>.bmp</code>, <code>.webp</code>, <code>.tiff</code>, <code>.ico</code>, <code>.avif</code></td><td>Metadata merge</td></tr>
+<tr><td>RSS/Atom</td><td><code>.rss</code>, <code>.atom</code></td><td>Feed merge</td></tr>
+<tr><td>iCalendar</td><td><code>.ics</code>, <code>.ifb</code></td><td>Event merge</td></tr>
+<tr><td>OTIO</td><td><code>.otio</code></td><td>Timeline merge</td></tr>
+<tr><td>Properties</td><td><code>.properties</code>, <code>.ini</code></td><td>Key-value merge</td></tr>
+</tbody>
+</table>
+<p>List available drivers:</p>
+<pre><code class="language-bash">suture drivers
+</code></pre>
+<h2 id="command-reference">Command Reference</h2>
+<h3 id="repository-commands">Repository Commands</h3>
+<thead><tr><th>Command</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>suture init [path]</code></td><td>Initialize a new repository</td></tr>
+<tr><td><code>suture clone &lt;url&gt; [dir]</code></td><td>Clone a remote repository</td></tr>
+<tr><td><code>suture status</code></td><td>Show working tree status</td></tr>
+<tr><td><code>suture log [branch]</code></td><td>Show commit history</td></tr>
+<tr><td><code>suture diff</code></td><td>Show differences between commits</td></tr>
+<tr><td><code>suture show &lt;commit&gt;</code></td><td>Show detailed commit information</td></tr>
+<tr><td><code>suture fsck</code></td><td>Verify repository integrity</td></tr>
+</tbody>
+</table>
+<h3 id="file-operations">File Operations</h3>
+<thead><tr><th>Command</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>suture add &lt;paths&gt;</code></td><td>Stage files</td></tr>
+<tr><td><code>suture rm &lt;paths&gt;</code></td><td>Remove files</td></tr>
+<tr><td><code>suture mv &lt;src&gt; &lt;dst&gt;</code></td><td>Move or rename files</td></tr>
+<tr><td><code>suture restore &lt;paths&gt;</code></td><td>Restore files from HEAD</td></tr>
+<tr><td><code>suture clean</code></td><td>Remove untracked files</td></tr>
+<tr><td><code>suture grep &lt;pattern&gt;</code></td><td>Search tracked files</td></tr>
+<tr><td><code>suture blame &lt;path&gt;</code></td><td>Per-line commit attribution</td></tr>
+</tbody>
+</table>
+<h3 id="branching">Branching</h3>
+<thead><tr><th>Command</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>suture branch</code></td><td>List branches</td></tr>
+<tr><td><code>suture branch &lt;name&gt;</code></td><td>Create a branch</td></tr>
+<tr><td><code>suture branch -d &lt;name&gt;</code></td><td>Delete a branch</td></tr>
+<tr><td><code>suture checkout &lt;branch&gt;</code></td><td>Switch branches</td></tr>
+<tr><td><code>suture switch &lt;branch&gt;</code></td><td>Switch branches (modern)</td></tr>
+<tr><td><code>suture merge &lt;branch&gt;</code></td><td>Merge a branch</td></tr>
+<tr><td><code>suture rebase &lt;branch&gt;</code></td><td>Rebase onto a branch</td></tr>
+<tr><td><code>suture tag &lt;name&gt;</code></td><td>Create a tag</td></tr>
+<tr><td><code>suture tag -d &lt;name&gt;</code></td><td>Delete a tag</td></tr>
+<tr><td><code>suture cherry-pick &lt;commit&gt;</code></td><td>Apply a specific commit</td></tr>
+<tr><td><code>suture revert &lt;commit&gt;</code></td><td>Revert a commit</td></tr>
+<tr><td><code>suture squash &lt;n&gt;</code></td><td>Squash N commits</td></tr>
+<tr><td><code>suture undo [n]</code></td><td>Undo last N commits</td></tr>
+<tr><td><code>suture rollback &lt;commit&gt;</code></td><td>Create a reversing commit</td></tr>
+</tbody>
+</table>
+<h3 id="remote">Remote</h3>
+<thead><tr><th>Command</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>suture remote add &lt;name&gt; &lt;url&gt;</code></td><td>Add a remote</td></tr>
+<tr><td><code>suture remote list</code></td><td>List remotes</td></tr>
+<tr><td><code>suture remote remove &lt;name&gt;</code></td><td>Remove a remote</td></tr>
+<tr><td><code>suture remote login &lt;name&gt;</code></td><td>Authenticate</td></tr>
+<tr><td><code>suture push [remote] [branch]</code></td><td>Push to remote</td></tr>
+<tr><td><code>suture pull [remote]</code></td><td>Pull from remote</td></tr>
+<tr><td><code>suture fetch [remote]</code></td><td>Fetch from remote</td></tr>
+<tr><td><code>suture ls-remote &lt;url&gt;</code></td><td>List remote branches</td></tr>
+</tbody>
+</table>
+<h3 id="stash">Stash</h3>
+<thead><tr><th>Command</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>suture stash push [-m msg]</code></td><td>Stash current changes</td></tr>
+<tr><td><code>suture stash pop</code></td><td>Pop the most recent stash</td></tr>
+<tr><td><code>suture stash apply &lt;n&gt;</code></td><td>Apply a specific stash</td></tr>
+<tr><td><code>suture stash list</code></td><td>List stashes</td></tr>
+<tr><td><code>suture stash drop &lt;n&gt;</code></td><td>Drop a stash</td></tr>
+<tr><td><code>suture stash clear</code></td><td>Drop all stashes</td></tr>
+</tbody>
+</table>
+<h3 id="lfs">LFS</h3>
+<thead><tr><th>Command</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>suture lfs track &lt;pattern&gt;</code></td><td>Track files with LFS</td></tr>
+<tr><td><code>suture lfs untrack &lt;pattern&gt;</code></td><td>Remove a tracking pattern</td></tr>
+<tr><td><code>suture lfs list</code></td><td>List tracked patterns</td></tr>
+<tr><td><code>suture lfs status</code></td><td>Show LFS object summary</td></tr>
+</tbody>
+</table>
+<h3 id="platform-advanced">Platform & Advanced</h3>
+<thead><tr><th>Command</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>suture config [key[=val]]</code></td><td>Get/set configuration</td></tr>
+<tr><td><code>suture doctor [--fix]</code></td><td>Check repository health</td></tr>
+<tr><td><code>suture key generate</code></td><td>Generate a signing key</td></tr>
+<tr><td><code>suture verify &lt;ref&gt;</code></td><td>Verify commit signatures</td></tr>
+<tr><td><code>suture bisect start &lt;good&gt; &lt;bad&gt;</code></td><td>Binary search for bug-introducing commit</td></tr>
+<tr><td><code>suture worktree add &lt;path&gt;</code></td><td>Create a worktree</td></tr>
+<tr><td><code>suture tui</code></td><td>Launch terminal UI</td></tr>
+<tr><td><code>suture export &lt;output&gt;</code></td><td>Export a clean snapshot</td></tr>
+<tr><td><code>suture archive -o &lt;file&gt;</code></td><td>Create a repository archive</td></tr>
+<tr><td><code>suture sync</code></td><td>Auto-commit and push/pull</td></tr>
+<tr><td><code>suture git import &lt;path&gt;</code></td><td>Import Git history</td></tr>
+<tr><td><code>suture completions &lt;shell&gt;</code></td><td>Generate shell completions</td></tr>
+</tbody>
+</table>
+<h2 id="integration-guides">Integration Guides</h2>
+<h3 id="github-actions">GitHub Actions</h3>
+<pre><code class="language-yaml">- uses: WyattAu/suture/.github/actions/merge@main
+  with:
+    files: |
+      package.json
+      tsconfig.json
+    base-ref: ${{ github.event.pull_request.base.sha }}
+</code></pre>
+<h3 id="gitlab-ci">GitLab CI</h3>
+<pre><code class="language-yaml">semantic-merge:
+  stage: merge
+  image: ghcr.io/wyattau/suture:latest
+  script:
+    - suture merge-file --driver json base.json ours.json theirs.json -o merged.json
+</code></pre>
+<h3 id="vs-code-extension">VS Code Extension</h3>
+<p>Install from the <a href="https://marketplace.visualstudio.com/items?itemName=WyattAu.suture">VS Code Marketplace</a>:</p>
+<ul>
+<li>Conflict highlighting for structured files</li>
+<li>One-click auto-merge</li>
+<li>Status bar integration</li>
+</ul>
+<h3 id="lsp-protocol">LSP Protocol</h3>
+<p>The <code>suture-lsp</code> crate implements the Language Server Protocol for editor integration. It provides semantic merge diagnostics and conflict resolution capabilities directly in supported editors.</p>
+<h3 id="self-hosted-hub">Self-Hosted Hub</h3>
+<pre><code class="language-bash">docker compose up -d
+# Hub available at http://localhost:8080
+</code></pre>
+<p>See <a href="self-hosting.html">Self-Hosting Guide</a> for Docker, binary, Kubernetes, and systemd deployment options.</p>
+    </article>
+    <div class="doc-footer">
+      <a href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">GitHub</a> &middot;
+      <a href="https://github.com/WyattAu/suture/blob/main/LICENSE" target="_blank" rel="noopener">Apache-2.0</a>
+    </div>
+  </main>
+</div>
+
+<script>
+function toggleSidebar(){
+  document.getElementById("sidebar").classList.toggle("open");
+  document.getElementById("sidebarOverlay").classList.toggle("open");
+}
+</script>
+</body>
+</html>

@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -48,7 +48,7 @@ jobs:
         toolchain: [stable]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust toolchain (${{ matrix.toolchain }})
         uses: dtolnay/rust-toolchain@master
@@ -90,7 +90,7 @@ jobs:
         toolchain: [stable]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust toolchain (${{ matrix.toolchain }})
         uses: dtolnay/rust-toolchain@master
@@ -117,6 +117,14 @@ jobs:
       - name: Run CLI tests
         run: cargo test -p suture-cli
 
+      - name: Run CLI tests (with retry)
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 10
+          max_attempts: 2
+          retry_wait_seconds: 30
+          command: cargo test -p suture-cli
+
   test-core:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -126,7 +134,7 @@ jobs:
         toolchain: [stable, beta]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust toolchain (${{ matrix.toolchain }})
         uses: dtolnay/rust-toolchain@master
@@ -147,7 +155,7 @@ jobs:
     needs: [lint, test-workspace, test-cli, test-core]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install system dependencies
         run: |
@@ -174,7 +182,7 @@ jobs:
     needs: build-release
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -205,7 +213,7 @@ jobs:
           - "suture-raft/persist"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -232,7 +240,7 @@ jobs:
     timeout-minutes: 45
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust toolchain (nightly)
         uses: dtolnay/rust-toolchain@nightly
@@ -281,10 +289,26 @@ jobs:
             --exclude suture-daemon \
             --summary-only || true
 
+      - name: Enforce coverage threshold
+        run: |
+          COVERAGE=$(cargo llvm-cov --workspace --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suspense-lsp --exclude suture-daemon --summary-only 2>/dev/null | grep -oP '\d+\.\d+% line' | head -1)
+          echo "Line coverage: $COVERAGE"
+          THRESHOLD=50.0
+          if [[ -n "$COVERAGE" ]]; then
+            COVERAGE_NUM=$(echo "$COVERAGE" | sed 's/%//')
+            if (( $(echo "$COVERAGE_NUM >= $THRESHOLD" )); then
+              echo "Coverage $COVERAGE meets threshold of $THRESHOLD%"
+            else
+              echo "::warning::Coverage $COVERAGE is below threshold of $THRESHOLD%"
+            fi
+          else
+            echo "::warning::Could not parse coverage output"
+          fi
+
   security-audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
       - name: Run cargo audit

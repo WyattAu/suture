@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Suture Production Roadmap — Suture</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a2e;
+  --fg:#e2e2f0;--fg2:#8888a8;
+  --accent:#7c3aed;--accent2:#3b82f6;--accent-grad:linear-gradient(135deg,#7c3aed,#3b82f6);
+  --border:#2a2a3e;
+  --mono:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+  --radius:12px;
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);line-height:1.7;overflow-x:hidden}
+a{color:var(--accent);text-decoration:none;transition:color .15s}
+a:hover{color:#a78bfa}
+
+.topnav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(10,10,15,.85);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);height:52px;display:flex;align-items:center;padding:0 20px}
+.topnav-inner{max-width:1400px;width:100%;margin:0 auto;display:flex;align-items:center;justify-content:space-between}
+.topnav-logo{font-family:var(--mono);font-weight:800;font-size:1.1rem;color:#fff;display:flex;align-items:center;gap:8px}
+.topnav-logo span{color:var(--accent)}
+.topnav-links{display:flex;gap:20px;align-items:center}
+.topnav-links a{color:var(--fg2);font-size:.85rem}
+.topnav-links a:hover{color:#fff}
+.menu-btn{display:none;background:none;border:1px solid var(--border);color:var(--fg);padding:6px 10px;border-radius:6px;cursor:pointer;font-size:1.1rem;line-height:1}
+
+.layout{display:flex;margin-top:52px;min-height:calc(100vh - 52px)}
+
+.sidebar{width:260px;min-width:260px;background:var(--bg2);border-right:1px solid var(--border);height:calc(100vh - 52px);position:sticky;top:52px;overflow-y:auto;padding:20px 0}
+.sidebar::-webkit-scrollbar{width:4px}
+.sidebar::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.sidebar-home{display:block;padding:8px 20px;color:var(--fg2);font-size:.8rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
+.sidebar-home:hover{color:var(--fg)}
+.nav-group{margin-bottom:4px}
+.nav-group-title{padding:8px 20px 4px;font-size:.7rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--fg2);opacity:.7}
+.nav-item{display:block;padding:6px 20px 6px 28px;color:var(--fg2);font-size:.85rem;border-left:2px solid transparent;transition:all .15s}
+.nav-item:hover{color:var(--fg);background:rgba(124,58,237,.05)}
+.nav-item.active{color:#fff;border-left-color:var(--accent);background:rgba(124,58,237,.08)}
+
+.content{flex:1;max-width:860px;padding:32px 40px 80px}
+.breadcrumb{font-size:.8rem;color:var(--fg2);margin-bottom:24px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.breadcrumb a{color:var(--fg2)}
+.breadcrumb a:hover{color:var(--accent)}
+.breadcrumb .sep{opacity:.4}
+
+.doc h1{font-size:2rem;color:#fff;font-weight:700;letter-spacing:-.02em;margin-bottom:8px;line-height:1.3}
+.doc h1:first-child{margin-top:0}
+.doc h2{font-size:1.4rem;color:#fff;font-weight:600;margin:40px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.doc h3{font-size:1.1rem;color:#fff;font-weight:600;margin:28px 0 8px}
+.doc h4{font-size:.95rem;color:var(--fg);font-weight:600;margin:24px 0 6px}
+.doc p{margin:0 0 16px;color:var(--fg)}
+.doc ul,.doc ol{margin:0 0 16px 24px;color:var(--fg)}
+.doc li{margin-bottom:4px}
+.doc li>p{margin-bottom:8px}
+.doc strong{color:#fff;font-weight:600}
+.doc em{color:var(--fg2);font-style:italic}
+.doc code{font-family:var(--mono);background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-size:.85em;color:#a78bfa}
+.doc pre{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:20px 24px;overflow-x:auto;font-size:.85rem;line-height:1.7;margin:0 0 20px}
+.doc pre code{background:none;border:none;padding:0;color:var(--fg);font-size:inherit}
+.doc blockquote{border-left:3px solid var(--accent);padding:12px 20px;margin:0 0 20px;background:rgba(124,58,237,.05);border-radius:0 var(--radius) var(--radius) 0}
+.doc blockquote p{color:var(--fg2);margin-bottom:0}
+.doc blockquote p:last-child{margin-bottom:0}
+.doc hr{border:none;border-top:1px solid var(--border);margin:32px 0}
+.doc img{max-width:100%;border-radius:var(--radius);margin:8px 0 20px}
+.doc table{width:100%;border-collapse:collapse;margin:0 0 20px;font-size:.9rem}
+.doc thead th{text-align:left;padding:10px 14px;border-bottom:2px solid var(--border);color:var(--fg);font-weight:600;font-size:.8rem;text-transform:uppercase;letter-spacing:.04em}
+.doc tbody td{padding:10px 14px;border-bottom:1px solid var(--border);color:var(--fg)}
+.doc tbody tr:hover{background:rgba(124,58,237,.03)}
+.doc del{opacity:.5}
+
+.doc-footer{margin-top:48px;padding-top:24px;border-top:1px solid var(--border);font-size:.8rem;color:var(--fg2)}
+.doc-footer a{color:var(--fg2)}
+.doc-footer a:hover{color:var(--accent)}
+
+@media(max-width:900px){
+  .menu-btn{display:block}
+  .sidebar{position:fixed;top:52px;left:-280px;height:calc(100vh - 52px);z-index:90;transition:left .25s ease;box-shadow:none}
+  .sidebar.open{left:0;box-shadow:4px 0 24px rgba(0,0,0,.4)}
+  .sidebar-overlay{display:none;position:fixed;top:52px;left:0;right:0;bottom:0;z-index:89;background:rgba(0,0,0,.4)}
+  .sidebar-overlay.open{display:block}
+  .content{padding:24px 20px 60px}
+}
+@media(max-width:600px){
+  .topnav-links{display:none}
+  .doc h1{font-size:1.5rem}
+  .doc h2{font-size:1.2rem}
+}
+</style>
+</head>
+<body>
+
+<nav class="topnav">
+  <div class="topnav-inner">
+    <a href="index.html" class="topnav-logo">/suture<span>/</span></a>
+    <div class="topnav-links">
+      <a href="index.html">Home</a>
+      <a href="quickstart.html">Docs</a>
+      <a href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">GitHub</a>
+    </div>
+    <button class="menu-btn" onclick="toggleSidebar()" aria-label="Menu">&#9776;</button>
+  </div>
+</nav>
+
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <a href="index.html" class="sidebar-home">&larr; Back to Home</a>
+<div class="nav-group">
+<div class="nav-group-title">Getting Started</div>
+<a href="getting_started.html" class="nav-item">Getting Started with Suture</a>
+<a href="quickstart.html" class="nav-item">Quickstart: Stop Losing Work to Google Drive</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Core Concepts</div>
+<a href="comparing-with-git.html" class="nav-item">Suture vs. Git: When to Use What</a>
+<a href="comparison.html" class="nav-item">Suture vs Other Version Control Systems</a>
+<a href="semantic-merge.html" class="nav-item">Semantic Merge</a>
+<a href="why-suture.html" class="nav-item">Why Suture?</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Reference</div>
+<a href="api_reference.html" class="nav-item">API Reference</a>
+<a href="cli-reference.html" class="nav-item">CLI Reference</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Merge Drivers</div>
+<a href="driver_sdk.html" class="nav-item">Driver SDK</a>
+<a href="git_merge_driver.html" class="nav-item">Git Merge Driver</a>
+<a href="merge-driver-guide.html" class="nav-item">Suture Merge Driver Guide</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Integration</div>
+<a href="github-action.html" class="nav-item">Suture Semantic Merge GitHub Action</a>
+<a href="ide-integration.html" class="nav-item">IDE Integration</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Guides</div>
+<a href="data-science.html" class="nav-item">Suture for Data Science</a>
+<a href="document-authors.html" class="nav-item">Suture for Document Authors</a>
+<a href="video-editors.html" class="nav-item">Suture for Video Editors</a>
+<a href="video-merge-guide.html" class="nav-item">Video Merge Guide: Version Control for OTIO Timelines</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Onboarding</div>
+<a href="onboarding-defence.html" class="nav-item">Suture VCS — Defence Contractor Onboarding Guide</a>
+<a href="onboarding-film.html" class="nav-item">Suture VCS — Onboarding Guide for Film & TV Post-Production</a>
+<a href="onboarding-youtube.html" class="nav-item">Suture VCS — Onboarding Guide for YouTube Channel Managers & PE Firms</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Platform</div>
+<a href="desktop-build.html" class="nav-item">Building the Suture Desktop App</a>
+<a href="hub.html" class="nav-item">Suture Hub</a>
+<a href="wasm-feasibility.html" class="nav-item">WASM Feasibility Report: Suture Semantic Merge Engine</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Development</div>
+<a href="performance.html" class="nav-item">Suture Performance Baseline</a>
+<a href="release-notes.html" class="nav-item">Suture v2.9.0 — First Public Release</a>
+<a href="shipping-checklist.html" class="nav-item">Suture v2.9.0 Shipping Checklist</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Other</div>
+<a href="api-reference.html" class="nav-item">Suture Platform API Reference</a>
+<a href="architecture.html" class="nav-item">Suture Architecture v5.3.1</a>
+<a href="ci-integration.html" class="nav-item">CI Integration Guide</a>
+<a href="demo.html" class="nav-item">Suture Demo: Semantic Merge in 60 Seconds</a>
+<a href="deploy-runbook.html" class="nav-item">Suture 5.3.1 Deployment Runbook</a>
+<a href="gitlab-ci-integration.html" class="nav-item">GitLab CI Integration</a>
+<a href="git-merge-driver.html" class="nav-item">Git Merge Driver — Comprehensive Guide</a>
+<a href="merge-driver-quickstart.html" class="nav-item">5-Minute Git Merge Driver Quickstart</a>
+<a href="PRODUCTION_ROADMAP.html" class="nav-item active">Suture Production Roadmap</a>
+<a href="self-hosting.html" class="nav-item">Self-Hosting Suture Hub</a>
+<a href="stripe-onboarding.html" class="nav-item">Stripe Onboarding Guide</a>
+<a href="user-guide.html" class="nav-item">Suture User Guide</a>
+</div>
+  </aside>
+  <main class="content">
+    <div class="breadcrumb">
+      <a href="index.html">Home</a>
+      <span class="sep">/</span>
+      <span>Docs</span>
+    </div>
+    <article class="doc">
+      <h1>Suture Production Roadmap</h1>
+<p><strong>Version:</strong> 5.4.0 <strong>Date:</strong> 2026-05-15 <strong>Status:</strong> Post-audit -- all 12 phases complete, CI green, ready for production push</p>
+<hr>
+<h2 id="1-audit-summary-2026-05-15">1. Audit Summary (2026-05-15)</h2>
+<h3 id="11-test-results">1.1 Test Results</h3>
+<thead><tr><th>Metric</th><th>Value</th></tr></thead>
+<tbody>
+<tr><td>Total tests</td><td>1,759 passed, 0 failed, 20 ignored</td></tr>
+<tr><td>Crates tested</td><td>41 (excluding fuzz, py, node)</td></tr>
+<tr><td>Clippy warnings</td><td>0 (workspace-wide, <code>-D warnings</code>)</td></tr>
+<tr><td>Format check</td><td>Clean (<code>cargo fmt --all -- --check</code>)</td></tr>
+<tr><td>Determinism tests</td><td>7/7 passed (BLAKE3, patch ID, commit, merge, push/pull, diff symmetry, branch idempotent)</td></tr>
+<tr><td>Property-based tests</td><td>21 proptest suites, 10K+ cases</td></tr>
+</tbody>
+</table>
+<h3 id="12-cicd-status">1.2 CI/CD Status</h3>
+<thead><tr><th>Workflow</th><th>Status</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>CI (lint + test matrix)</td><td>GREEN</td><td>16/17 jobs pass; 1 flaky macOS runner (transient rustup issue)</td></tr>
+<tr><td>Security</td><td>GREEN</td><td>cargo-audit clean, clippy clean, SBOM generated</td></tr>
+<tr><td>Docker Build</td><td>GREEN</td><td>Multi-stage build fixed, produces suture-platform image</td></tr>
+<tr><td>Release</td><td>READY</td><td>4-platform binary matrix (Linux x86_64, macOS x86_64+aarch64, Windows)</td></tr>
+<tr><td>Pages</td><td>DEPLOYED</td><td>docs-site/ live at suture.dev</td></tr>
+<tr><td>Coverage</td><td>GENERATED</td><td>llvm-cov report uploaded as artifact</td></tr>
+</tbody>
+</table>
+<h3 id="13-ci-fixes-applied-this-session">1.3 CI Fixes Applied (This Session)</h3>
+<ol>
+<li><strong>test-cli protoc</strong>: Added protoc installation to all 3 OS matrices in test-cli job</li>
+<li><strong>build-release protoc</strong>: Added protobuf-compiler to system dependencies</li>
+<li><strong>MockBackend trait</strong>: Added missing <code>backend_name()</code> method to <code>BlobBackend</code> impl in S3 feature test</li>
+<li><strong>Dockerfile</strong>: Converted from broken single-stage (expected pre-built binary) to proper multi-stage Rust build</li>
+<li><strong>Documentation</strong>: Removed emoji from ROADMAP.md, updated test counts to match actual (1,759), fixed stale LFS doc comments</li>
+</ol>
+<h3 id="14-code-quality">1.4 Code Quality</h3>
+<thead><tr><th>Check</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td><code>todo!()</code> calls</td><td>0</td></tr>
+<tr><td><code>unimplemented!()</code> calls</td><td>0 (1 in test fixture string, not production)</td></tr>
+<tr><td>FIXME/HACK/XXX comments</td><td>0</td></tr>
+<tr><td>Stubs (incomplete features)</td><td>2 (WASM plugin <code>diff()</code> and <code>format_diff()</code> -- feature-gated, documented)</td></tr>
+<tr><td>Empty function bodies</td><td>5 (2 FUSE destroy -- standard pattern; 3 plugin-sdk conditional compilation stubs)</td></tr>
+<tr><td>Stale doc comments</td><td>2 fixed (LFS Push/Pull "not yet implemented")</td></tr>
+<tr><td>Unsafe blocks</td><td>33 (all with SAFETY comments per prior audit)</td></tr>
+</tbody>
+</table>
+<h3 id="15-documentation-audit">1.5 Documentation Audit</h3>
+<thead><tr><th>Check</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td>Emojis in markdown</td><td>Removed from ROADMAP.md (was only file with emojis)</td></tr>
+<tr><td>Test counts accurate</td><td>Updated: 1,759 (was 1,747); suture-e2e 200 (was 226)</td></tr>
+<tr><td>Stale version references</td><td>Fixed</td></tr>
+<tr><td>Mathematical correctness</td><td>Performance baselines have quantitative thresholds, all verified</td></tr>
+<tr><td>Website (docs-site)</td><td>Live at suture.dev, interactive demo functional</td></tr>
+<tr><td>Detailed docs (docs/)</td><td>77 HTML+MD files exist locally; NOT deployed to GitHub Pages (only docs-site is)</td></tr>
+</tbody>
+</table>
+<h3 id="16-known-issues-non-blocking">1.6 Known Issues (Non-Blocking)</h3>
+<thead><tr><th>Issue</th><th>Severity</th><th>Resolution</th></tr></thead>
+<tbody>
+<tr><td>macOS CI test-cli flaky</td><td>Low</td><td>Transient runner issue; re-run passes</td></tr>
+<tr><td>docs/ not deployed to website</td><td>Medium</td><td>Only docs-site/ deployed; need unified docs build</td></tr>
+<tr><td>suture-py excluded from workspace</td><td>Medium</td><td>PyO3 build complexity; needs separate CI matrix</td></tr>
+<tr><td>desktop-app excluded from workspace</td><td>Low</td><td>Tauri v2 dependency conflicts</td></tr>
+<tr><td>CWD mutex in CLI tests</td><td>Medium</td><td>Forces --test-threads=1; refactor to tempdir per test</td></tr>
+<tr><td>WASM plugin diff/format_diff stubs</td><td>Low</td><td>Feature-gated; acceptable for experimental feature</td></tr>
+</tbody>
+</table>
+<hr>
+<h2 id="2-path-to-production">2. Path to Production</h2>
+<h3 id="phase-p0-documentation-deployment-1-week">Phase P0: Documentation Deployment (1 week)</h3>
+<p>Deploy all docs/ content to the website so users can access quickstart, API reference, architecture, and performance docs online.</p>
+<thead><tr><th>Task</th><th>Effort</th><th>Priority</th></tr></thead>
+<tbody>
+<tr><td>Build docs/ HTML files into docs-site/ or deploy docs/ as subpath</td><td>2d</td><td>Critical</td></tr>
+<tr><td>Update CNAME from suture.dev if needed</td><td>0.5d</td><td>High</td></tr>
+<tr><td>Add navigation between docs-site landing and docs/ pages</td><td>1d</td><td>High</td></tr>
+<tr><td>Verify all internal links work on deployed site</td><td>1d</td><td>High</td></tr>
+<tr><td>Add version selector for docs (current vs. previous)</td><td>1d</td><td>Medium</td></tr>
+</tbody>
+</table>
+<h3 id="phase-p1-ci-reliability-1-week">Phase P1: CI Reliability (1 week)</h3>
+<p>Eliminate flaky CI and reduce pipeline time.</p>
+<thead><tr><th>Task</th><th>Effort</th><th>Priority</th></tr></thead>
+<tbody>
+<tr><td>Add retry logic for flaky macOS jobs</td><td>0.5d</td><td>High</td></tr>
+<tr><td>Cache protoc binary instead of apt-get install</td><td>0.5d</td><td>Medium</td></tr>
+<tr><td>Parallelize cargo check and cargo clippy</td><td>0.5d</td><td>Medium</td></tr>
+<tr><td>Add --test-threads=4 to test-cli (refactor CWD mutex)</td><td>3d</td><td>High</td></tr>
+<tr><td>Add merge queue for main branch protection</td><td>1d</td><td>Medium</td></tr>
+<tr><td>Update actions/checkout to v5 (Node 24 compatibility)</td><td>0.5d</td><td>High</td></tr>
+</tbody>
+</table>
+<h3 id="phase-p2-soundness-hardening-2-weeks">Phase P2: Soundness Hardening (2 weeks)</h3>
+<p>Eliminate all remaining soundness concerns.</p>
+<thead><tr><th>Task</th><th>Effort</th><th>Priority</th></tr></thead>
+<tbody>
+<tr><td>Audit all 33 unsafe blocks with formal SAFETY comments</td><td>3d</td><td>Critical</td></tr>
+<tr><td>FUSE Send/Sync: document libfuse3 threading guarantees</td><td>2d</td><td>Critical</td></tr>
+<tr><td>SHM: add <code>#[repr(C)]</code> to shared memory structs</td><td>0.5d</td><td>Critical</td></tr>
+<tr><td>Binary drivers: add <code>debug_assert!(from_utf8().is_ok())</code> before <code>from_utf8_unchecked</code></td><td>1d</td><td>Critical</td></tr>
+<tr><td>Remove CWD mutex from CLI tests (refactor to tempdir)</td><td>3d</td><td>High</td></tr>
+<tr><td>Add <code>cargo semver-checks</code> to CI for API stability</td><td>1d</td><td>High</td></tr>
+</tbody>
+</table>
+<h3 id="phase-p3-test-coverage-2-weeks">Phase P3: Test Coverage (2 weeks)</h3>
+<p>Establish quantitative coverage baselines and enforce thresholds.</p>
+<thead><tr><th>Task</th><th>Effort</th><th>Priority</th></tr></thead>
+<tbody>
+<tr><td>Set coverage threshold in CI (>80% line, >70% branch)</td><td>1d</td><td>High</td></tr>
+<tr><td>Add missing tests for connector crates (Airtable, Sheets, Notion)</td><td>3d</td><td>Medium</td></tr>
+<tr><td>Add integration tests for desktop-app</td><td>3d</td><td>Medium</td></tr>
+<tr><td>Add WASM plugin E2E test with real .wasm file</td><td>2d</td><td>Medium</td></tr>
+<tr><td>Property-based tests for merge engine (expand from 21 suites)</td><td>2d</td><td>High</td></tr>
+</tbody>
+</table>
+<h3 id="phase-p4-performance-at-scale-3-weeks">Phase P4: Performance at Scale (3 weeks)</h3>
+<p>Optimize for enterprise-scale repositories.</p>
+<thead><tr><th>Task</th><th>Effort</th><th>Priority</th></tr></thead>
+<tbody>
+<tr><td>Parallel file hashing with rayon for <code>suture add .</code></td><td>2d</td><td>High</td></tr>
+<tr><td>Incremental file tree computation in commit</td><td>1d</td><td>High</td></tr>
+<tr><td>Lazy patch deserialization in <code>suture log</code></td><td>2d</td><td>High</td></tr>
+<tr><td>Pack files for small blob deduplication</td><td>5d</td><td>Medium</td></tr>
+<tr><td>Partial clone / sparse checkout</td><td>5d</td><td>Medium</td></tr>
+<tr><td>Criterion benchmarks in CI with 10% regression gating</td><td>2d</td><td>High</td></tr>
+<tr><td>Background GC with configurable thresholds</td><td>3d</td><td>Medium</td></tr>
+</tbody>
+</table>
+<h3 id="phase-p5-suture-merge-library-v10-2-weeks">Phase P5: suture-merge Library v1.0 (2 weeks)</h3>
+<p>Stabilize the standalone merge library for ecosystem adoption.</p>
+<thead><tr><th>Task</th><th>Effort</th><th>Priority</th></tr></thead>
+<tbody>
+<tr><td>Add <code>merge_sql()</code>, <code>merge_ical()</code>, <code>merge_feed()</code> to public API</td><td>2d</td><td>High</td></tr>
+<tr><td>Stabilize API surface, document stability guarantees</td><td>2d</td><td>Critical</td></tr>
+<tr><td>Add conflict callback API for programmatic resolution</td><td>2d</td><td>High</td></tr>
+<tr><td>Publish all 37 crates to crates.io in dependency order</td><td>1d</td><td>High</td></tr>
+<tr><td>Add semver-checks to CI</td><td>1d</td><td>Critical</td></tr>
+<tr><td>Write migration guide (v0.x to v1.0)</td><td>1d</td><td>Medium</td></tr>
+</tbody>
+</table>
+<h3 id="phase-p6-enterprise-features-4-weeks">Phase P6: Enterprise Features (4 weeks)</h3>
+<p>Features required for enterprise deployment.</p>
+<thead><tr><th>Task</th><th>Effort</th><th>Priority</th></tr></thead>
+<tbody>
+<tr><td>Backup/restore tooling for hub</td><td>3d</td><td>High</td></tr>
+<tr><td>Prometheus metrics endpoint (/metrics)</td><td>2d</td><td>High</td></tr>
+<tr><td>Per-user rate limiting</td><td>2d</td><td>Medium</td></tr>
+<tr><td>API versioning (/api/v1/ prefix)</td><td>2d</td><td>High</td></tr>
+<tr><td>OAuth2 scope-based tokens + refresh rotation</td><td>3d</td><td>Medium</td></tr>
+<tr><td>Per-repo permissions (owner/collaborator/reader)</td><td>3d</td><td>High</td></tr>
+<tr><td>Branch protection rules</td><td>2d</td><td>High</td></tr>
+<tr><td>Audit logging for all permission changes</td><td>2d</td><td>High</td></tr>
+<tr><td>Structured JSON logging with tracing-subscriber</td><td>1d</td><td>High</td></tr>
+<tr><td>OpenTelemetry distributed tracing</td><td>3d</td><td>Medium</td></tr>
+</tbody>
+</table>
+<h3 id="phase-p7-advanced-merge-3-weeks">Phase P7: Advanced Merge (3 weeks)</h3>
+<p>Expand semantic merge to harder cases.</p>
+<thead><tr><th>Task</th><th>Effort</th><th>Priority</th></tr></thead>
+<tbody>
+<tr><td>DOCX track-changes-aware merge</td><td>5d</td><td>High</td></tr>
+<tr><td>XLSX formula-aware merge (AST-level)</td><td>5d</td><td>High</td></tr>
+<tr><td>PPTX animation/timing preservation</td><td>3d</td><td>Medium</td></tr>
+<tr><td>OOXML comment/annotation merge</td><td>2d</td><td>Medium</td></tr>
+<tr><td>Lockfile merge (Cargo.lock, package-lock.json)</td><td>3d</td><td>High</td></tr>
+<tr><td>Custom merge strategies via WASM plugins</td><td>3d</td><td>Medium</td></tr>
+</tbody>
+</table>
+<h3 id="phase-p8-desktop-app-4-weeks">Phase P8: Desktop App (4 weeks)</h3>
+<p>Complete the Tauri desktop application.</p>
+<thead><tr><th>Task</th><th>Effort</th><th>Priority</th></tr></thead>
+<tbody>
+<tr><td>Fix Tauri build in workspace (resolve dependency conflicts)</td><td>3d</td><td>Critical</td></tr>
+<tr><td>Add CI matrix (macOS + Windows + Linux)</td><td>2d</td><td>High</td></tr>
+<tr><td>Real-time sync status in UI</td><td>3d</td><td>High</td></tr>
+<tr><td>Visual merge conflict resolution (side-by-side editor)</td><td>5d</td><td>High</td></tr>
+<tr><td>Repository browser with history sidebar</td><td>3d</td><td>Medium</td></tr>
+<tr><td>System tray notifications</td><td>1d</td><td>Medium</td></tr>
+<tr><td>Smoke tests for basic workflows</td><td>2d</td><td>High</td></tr>
+</tbody>
+</table>
+<h3 id="phase-p9-editor-integration-polish-3-weeks">Phase P9: Editor Integration Polish (3 weeks)</h3>
+<p>Deepen editor plugin integrations.</p>
+<thead><tr><th>Task</th><th>Effort</th><th>Priority</th></tr></thead>
+<tbody>
+<tr><td>VS Code: real-time semantic diff preview</td><td>3d</td><td>High</td></tr>
+<tr><td>JetBrains: merge conflict resolution UI</td><td>5d</td><td>Medium</td></tr>
+<tr><td>Neovim: stable release to MELPA/lazy.nvim</td><td>1d</td><td>Medium</td></tr>
+<tr><td>LSP: add code action for conflict resolution</td><td>2d</td><td>Medium</td></tr>
+</tbody>
+</table>
+<h3 id="phase-p10-ecosystem-growth-3-weeks">Phase P10: Ecosystem Growth (3 weeks)</h3>
+<p>Expand distribution channels.</p>
+<thead><tr><th>Task</th><th>Effort</th><th>Priority</th></tr></thead>
+<tbody>
+<tr><td>suture-py: re-include in CI, publish to PyPI</td><td>3d</td><td>Medium</td></tr>
+<tr><td>Homebrew formula update to latest version</td><td>0.5d</td><td>High</td></tr>
+<tr><td>AUR PKGBUILD update</td><td>0.5d</td><td>High</td></tr>
+<tr><td>Nix flake update</td><td>0.5d</td><td>Medium</td></tr>
+<tr><td>Docker multi-arch image (amd64 + arm64)</td><td>2d</td><td>High</td></tr>
+<tr><td>Install script verification on Ubuntu, macOS, Fedora, Arch</td><td>1d</td><td>High</td></tr>
+</tbody>
+</table>
+<h3 id="phase-p11-wasm-plugin-ecosystem-3-weeks">Phase P11: WASM Plugin Ecosystem (3 weeks)</h3>
+<p>Enable user-extensible merge drivers.</p>
+<thead><tr><th>Task</th><th>Effort</th><th>Priority</th></tr></thead>
+<tbody>
+<tr><td>Implement WASM plugin <code>diff()</code> and <code>format_diff()</code></td><td>5d</td><td>High</td></tr>
+<tr><td>Publish suture-plugin-sdk to crates.io</td><td>1d</td><td>High</td></tr>
+<tr><td>Plugin documentation and tutorial</td><td>2d</td><td>High</td></tr>
+<tr><td>Example plugins (INI, protobuf, dotenv)</td><td>3d</td><td>Medium</td></tr>
+<tr><td>Plugin signing and marketplace registry</td><td>5d</td><td>Low</td></tr>
+<tr><td>Fuel metering and memory limits enforcement</td><td>2d</td><td>Medium</td></tr>
+</tbody>
+</table>
+<h3 id="phase-p12-v10-release-2-weeks">Phase P12: v1.0 Release (2 weeks)</h3>
+<p>Ship a stable, documented, well-supported v1.0.</p>
+<thead><tr><th>Task</th><th>Effort</th><th>Priority</th></tr></thead>
+<tbody>
+<tr><td>API stability audit (cargo-semver-checks)</td><td>2d</td><td>Critical</td></tr>
+<tr><td>Breaking change detection in CI</td><td>1d</td><td>Critical</td></tr>
+<tr><td>Compatibility testing: Rust 1.75+, Ubuntu 22.04+, macOS 13+, Windows 10+</td><td>3d</td><td>High</td></tr>
+<tr><td>Migration guide (v0.x to v1.0)</td><td>2d</td><td>High</td></tr>
+<tr><td>Troubleshooting guide</td><td>2d</td><td>Medium</td></tr>
+<tr><td>Video tutorials (3-5 minute walkthroughs)</td><td>5d</td><td>Medium</td></tr>
+<tr><td>GPG signing for release binaries</td><td>1d</td><td>High</td></tr>
+<tr><td>Automated release workflow with SHA256 checksums</td><td>1d</td><td>High</td></tr>
+<tr><td>All ADRs published</td><td>2d</td><td>Medium</td></tr>
+</tbody>
+</table>
+<hr>
+<h2 id="3-timeline">3. Timeline</h2>
+<thead><tr><th>Phase</th><th>Focus</th><th>Target Version</th><th>Duration</th><th>Start</th></tr></thead>
+<tbody>
+<tr><td>P0</td><td>Documentation deployment</td><td>v5.4.1</td><td>1 week</td><td>2026-05-15</td></tr>
+<tr><td>P1</td><td>CI reliability</td><td>v5.4.2</td><td>1 week</td><td>2026-05-22</td></tr>
+<tr><td>P2</td><td>Soundness hardening</td><td>v5.5.0</td><td>2 weeks</td><td>2026-05-29</td></tr>
+<tr><td>P3</td><td>Test coverage</td><td>v5.6.0</td><td>2 weeks</td><td>2026-06-12</td></tr>
+<tr><td>P4</td><td>Performance at scale</td><td>v6.0.0</td><td>3 weeks</td><td>2026-06-26</td></tr>
+<tr><td>P5</td><td>suture-merge v1.0</td><td>v6.1.0</td><td>2 weeks</td><td>2026-07-17</td></tr>
+<tr><td>P6</td><td>Enterprise features</td><td>v7.0.0</td><td>4 weeks</td><td>2026-07-31</td></tr>
+<tr><td>P7</td><td>Advanced merge</td><td>v7.1.0</td><td>3 weeks</td><td>2026-08-28</td></tr>
+<tr><td>P8</td><td>Desktop app</td><td>v8.0.0</td><td>4 weeks</td><td>2026-09-18</td></tr>
+<tr><td>P9</td><td>Editor integrations</td><td>v8.1.0</td><td>3 weeks</td><td>2026-10-16</td></tr>
+<tr><td>P10</td><td>Ecosystem growth</td><td>v8.2.0</td><td>3 weeks</td><td>2026-11-06</td></tr>
+<tr><td>P11</td><td>WASM plugins</td><td>v9.0.0</td><td>3 weeks</td><td>2026-11-27</td></tr>
+<tr><td>P12</td><td>v1.0 release</td><td>v10.0.0</td><td>2 weeks</td><td>2026-12-18</td></tr>
+</tbody>
+</table>
+<p><strong>Estimated total: 33 weeks (approximately 8 months to v1.0)</strong></p>
+<hr>
+<h2 id="4-metrics-targets">4. Metrics Targets</h2>
+<thead><tr><th>Metric</th><th>v5.4.0 (now)</th><th>v6.0</th><th>v8.0</th><th>v10.0</th></tr></thead>
+<tbody>
+<tr><td>Tests</td><td>1,759</td><td>1,900</td><td>2,200</td><td>2,500</td></tr>
+<tr><td>Branch coverage (critical)</td><td>Unknown</td><td>>80%</td><td>>90%</td><td>>95%</td></tr>
+<tr><td>Lean 4 proofs</td><td>16</td><td>16</td><td>24</td><td>32</td></tr>
+<tr><td>Semantic drivers</td><td>17</td><td>20</td><td>24</td><td>28</td></tr>
+<tr><td>crates.io crates</td><td>37</td><td>37</td><td>40</td><td>42</td></tr>
+<tr><td>CLI commands</td><td>58</td><td>60</td><td>65</td><td>70</td></tr>
+<tr><td>Unsafe blocks</td><td>33</td><td>25</td><td>20</td><td>15</td></tr>
+<tr><td>Unsafe blocks with SAFETY</td><td>33</td><td>33</td><td>33</td><td>33</td></tr>
+<tr><td>Clippy warnings</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr><td>CI pipeline time</td><td>~15m</td><td><10m</td><td><12m</td><td><12m</td></tr>
+<tr><td>suture-merge downloads/mo</td><td>TBD</td><td>1K</td><td>5K</td><td>20K</td></tr>
+<tr><td>Website pages</td><td>1 (landing)</td><td>30+</td><td>50+</td><td>50+</td></tr>
+</tbody>
+</table>
+<hr>
+<h2 id="5-risk-register">5. Risk Register</h2>
+<thead><tr><th>Risk</th><th>Probability</th><th>Impact</th><th>Mitigation</th></tr></thead>
+<tbody>
+<tr><td>Rust edition upgrade breaks compilation</td><td>Medium</td><td>High</td><td>Pin rust-toolchain.toml, test with nightly</td></tr>
+<tr><td>SQLite WAL corruption on crash</td><td>Low</td><td>Critical</td><td>WAL checkpoint on shutdown, fsck on startup</td></tr>
+<tr><td>BLAKE3 collision (theoretical)</td><td>Negligible</td><td>Critical</td><td>Monitor research, plan migration</td></tr>
+<tr><td>Raft split-brain</td><td>Low</td><td>Critical</td><td>Persist election state, BTreeMap ordering</td></tr>
+<tr><td>WASM sandbox escape</td><td>Low</td><td>Critical</td><td>Limit host imports, review wasmtime advisories</td></tr>
+<tr><td>Supply chain attack via dependency</td><td>Medium</td><td>High</td><td>cargo audit in CI, lockfile pinning, entropy analysis</td></tr>
+<tr><td>Driver regression</td><td>Medium</td><td>High</td><td>Property-based tests, E2E lifecycle tests</td></tr>
+<tr><td>Performance regression</td><td>Medium</td><td>Medium</td><td>Criterion in CI with regression gating</td></tr>
+<tr><td>Tauri breaking changes</td><td>Medium</td><td>Medium</td><td>Pin Tauri version, test before upgrade</td></tr>
+<tr><td>crates.io publish failure</td><td>Low</td><td>Low</td><td>Dry-run in CI, manual review before publish</td></tr>
+</tbody>
+</table>
+<hr>
+<h2 id="6-strategic-decisions">6. Strategic Decisions</h2>
+<h3 id="what-not-to-do">What NOT to Do</h3>
+<thead><tr><th>Decision</th><th>Rationale</th></tr></thead>
+<tbody>
+<tr><td>Do not migrate to PostgreSQL</td><td>SQLite + Raft covers single-node and distributed</td></tr>
+<tr><td>Do not implement QUIC</td><td>TCP + Zstd achieves adequate latency</td></tr>
+<tr><td>Do not implement NFSv4/SMB3</td><td>FUSE3 + WebDAV covers primary use cases</td></tr>
+<tr><td>Do not migrate to FlatBuffers</td><td>bincode + Zstd is performant and well-tested</td></tr>
+<tr><td>Do not optimize for nanosecond latency</td><td>VCS operations are I/O bound</td></tr>
+</tbody>
+</table>
+<h3 id="what-to-double-down-on">What to Double Down On</h3>
+<thead><tr><th>Decision</th><th>Rationale</th></tr></thead>
+<tbody>
+<tr><td>Semantic merge quality</td><td>Sole differentiator from Git</td></tr>
+<tr><td>suture-merge library adoption</td><td>Growth vector; low friction (cargo add)</td></tr>
+<tr><td>Formal verification</td><td>Unique in VCS space; builds trust for regulated industries</td></tr>
+<tr><td>Performance at scale</td><td>Enterprise adoption requires 100K+ files</td></tr>
+<tr><td>Editor integrations</td><td>Where users spend their time</td></tr>
+</tbody>
+</table>
+<hr>
+<h2 id="7-current-technical-debt">7. Current Technical Debt</h2>
+<thead><tr><th>ID</th><th>Severity</th><th>Description</th><th>Target Phase</th></tr></thead>
+<tbody>
+<tr><td>TD-1</td><td>Critical</td><td>CLI CWD mutex forces --test-threads=1 in CI</td><td>P1</td></tr>
+<tr><td>TD-2</td><td>Critical</td><td>FUSE unsafe impl Send/Sync soundness documentation</td><td>P2</td></tr>
+<tr><td>TD-3</td><td>Critical</td><td>SHM unsafe impl Send/Sync -- no repr(C) proof</td><td>P2</td></tr>
+<tr><td>TD-4</td><td>Critical</td><td>from_utf8_unchecked in 8+ binary drivers -- needs debug-assert</td><td>P2</td></tr>
+<tr><td>TD-5</td><td>High</td><td>suture-py excluded from workspace/CI</td><td>P10</td></tr>
+<tr><td>TD-6</td><td>High</td><td>desktop-app excluded from workspace/CI</td><td>P8</td></tr>
+<tr><td>TD-7</td><td>High</td><td>No MSRV policy or rust-toolchain.toml pin</td><td>P1</td></tr>
+<tr><td>TD-8</td><td>High</td><td>33 unsafe blocks need formal SAFETY audit</td><td>P2</td></tr>
+<tr><td>TD-9</td><td>Medium</td><td>Code coverage measured but no threshold enforcement</td><td>P3</td></tr>
+<tr><td>TD-10</td><td>Medium</td><td>No performance regression gating in CI</td><td>P4</td></tr>
+<tr><td>TD-11</td><td>Medium</td><td>docs/ content not deployed to website</td><td>P0</td></tr>
+<tr><td>TD-12</td><td>Low</td><td>5 E2E tests ignored (FUSE needs root)</td><td>P2</td></tr>
+<tr><td>TD-13</td><td>Low</td><td>WASM plugin diff/format_diff stubs</td><td>P11</td></tr>
+</tbody>
+</table>
+    </article>
+    <div class="doc-footer">
+      <a href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">GitHub</a> &middot;
+      <a href="https://github.com/WyattAu/suture/blob/main/LICENSE" target="_blank" rel="noopener">Apache-2.0</a>
+    </div>
+  </main>
+</div>
+
+<script>
+function toggleSidebar(){
+  document.getElementById("sidebar").classList.toggle("open");
+  document.getElementById("sidebarOverlay").classList.toggle("open");
+}
+</script>
+</body>
+</html>

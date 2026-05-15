@@ -1,0 +1,969 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Suture Architecture v5.3.1 — Suture</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a2e;
+  --fg:#e2e2f0;--fg2:#8888a8;
+  --accent:#7c3aed;--accent2:#3b82f6;--accent-grad:linear-gradient(135deg,#7c3aed,#3b82f6);
+  --border:#2a2a3e;
+  --mono:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+  --radius:12px;
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);line-height:1.7;overflow-x:hidden}
+a{color:var(--accent);text-decoration:none;transition:color .15s}
+a:hover{color:#a78bfa}
+
+.topnav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(10,10,15,.85);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);height:52px;display:flex;align-items:center;padding:0 20px}
+.topnav-inner{max-width:1400px;width:100%;margin:0 auto;display:flex;align-items:center;justify-content:space-between}
+.topnav-logo{font-family:var(--mono);font-weight:800;font-size:1.1rem;color:#fff;display:flex;align-items:center;gap:8px}
+.topnav-logo span{color:var(--accent)}
+.topnav-links{display:flex;gap:20px;align-items:center}
+.topnav-links a{color:var(--fg2);font-size:.85rem}
+.topnav-links a:hover{color:#fff}
+.menu-btn{display:none;background:none;border:1px solid var(--border);color:var(--fg);padding:6px 10px;border-radius:6px;cursor:pointer;font-size:1.1rem;line-height:1}
+
+.layout{display:flex;margin-top:52px;min-height:calc(100vh - 52px)}
+
+.sidebar{width:260px;min-width:260px;background:var(--bg2);border-right:1px solid var(--border);height:calc(100vh - 52px);position:sticky;top:52px;overflow-y:auto;padding:20px 0}
+.sidebar::-webkit-scrollbar{width:4px}
+.sidebar::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.sidebar-home{display:block;padding:8px 20px;color:var(--fg2);font-size:.8rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
+.sidebar-home:hover{color:var(--fg)}
+.nav-group{margin-bottom:4px}
+.nav-group-title{padding:8px 20px 4px;font-size:.7rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--fg2);opacity:.7}
+.nav-item{display:block;padding:6px 20px 6px 28px;color:var(--fg2);font-size:.85rem;border-left:2px solid transparent;transition:all .15s}
+.nav-item:hover{color:var(--fg);background:rgba(124,58,237,.05)}
+.nav-item.active{color:#fff;border-left-color:var(--accent);background:rgba(124,58,237,.08)}
+
+.content{flex:1;max-width:860px;padding:32px 40px 80px}
+.breadcrumb{font-size:.8rem;color:var(--fg2);margin-bottom:24px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.breadcrumb a{color:var(--fg2)}
+.breadcrumb a:hover{color:var(--accent)}
+.breadcrumb .sep{opacity:.4}
+
+.doc h1{font-size:2rem;color:#fff;font-weight:700;letter-spacing:-.02em;margin-bottom:8px;line-height:1.3}
+.doc h1:first-child{margin-top:0}
+.doc h2{font-size:1.4rem;color:#fff;font-weight:600;margin:40px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.doc h3{font-size:1.1rem;color:#fff;font-weight:600;margin:28px 0 8px}
+.doc h4{font-size:.95rem;color:var(--fg);font-weight:600;margin:24px 0 6px}
+.doc p{margin:0 0 16px;color:var(--fg)}
+.doc ul,.doc ol{margin:0 0 16px 24px;color:var(--fg)}
+.doc li{margin-bottom:4px}
+.doc li>p{margin-bottom:8px}
+.doc strong{color:#fff;font-weight:600}
+.doc em{color:var(--fg2);font-style:italic}
+.doc code{font-family:var(--mono);background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-size:.85em;color:#a78bfa}
+.doc pre{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:20px 24px;overflow-x:auto;font-size:.85rem;line-height:1.7;margin:0 0 20px}
+.doc pre code{background:none;border:none;padding:0;color:var(--fg);font-size:inherit}
+.doc blockquote{border-left:3px solid var(--accent);padding:12px 20px;margin:0 0 20px;background:rgba(124,58,237,.05);border-radius:0 var(--radius) var(--radius) 0}
+.doc blockquote p{color:var(--fg2);margin-bottom:0}
+.doc blockquote p:last-child{margin-bottom:0}
+.doc hr{border:none;border-top:1px solid var(--border);margin:32px 0}
+.doc img{max-width:100%;border-radius:var(--radius);margin:8px 0 20px}
+.doc table{width:100%;border-collapse:collapse;margin:0 0 20px;font-size:.9rem}
+.doc thead th{text-align:left;padding:10px 14px;border-bottom:2px solid var(--border);color:var(--fg);font-weight:600;font-size:.8rem;text-transform:uppercase;letter-spacing:.04em}
+.doc tbody td{padding:10px 14px;border-bottom:1px solid var(--border);color:var(--fg)}
+.doc tbody tr:hover{background:rgba(124,58,237,.03)}
+.doc del{opacity:.5}
+
+.doc-footer{margin-top:48px;padding-top:24px;border-top:1px solid var(--border);font-size:.8rem;color:var(--fg2)}
+.doc-footer a{color:var(--fg2)}
+.doc-footer a:hover{color:var(--accent)}
+
+@media(max-width:900px){
+  .menu-btn{display:block}
+  .sidebar{position:fixed;top:52px;left:-280px;height:calc(100vh - 52px);z-index:90;transition:left .25s ease;box-shadow:none}
+  .sidebar.open{left:0;box-shadow:4px 0 24px rgba(0,0,0,.4)}
+  .sidebar-overlay{display:none;position:fixed;top:52px;left:0;right:0;bottom:0;z-index:89;background:rgba(0,0,0,.4)}
+  .sidebar-overlay.open{display:block}
+  .content{padding:24px 20px 60px}
+}
+@media(max-width:600px){
+  .topnav-links{display:none}
+  .doc h1{font-size:1.5rem}
+  .doc h2{font-size:1.2rem}
+}
+</style>
+</head>
+<body>
+
+<nav class="topnav">
+  <div class="topnav-inner">
+    <a href="index.html" class="topnav-logo">/suture<span>/</span></a>
+    <div class="topnav-links">
+      <a href="index.html">Home</a>
+      <a href="quickstart.html">Docs</a>
+      <a href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">GitHub</a>
+    </div>
+    <button class="menu-btn" onclick="toggleSidebar()" aria-label="Menu">&#9776;</button>
+  </div>
+</nav>
+
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <a href="index.html" class="sidebar-home">&larr; Back to Home</a>
+<div class="nav-group">
+<div class="nav-group-title">Getting Started</div>
+<a href="getting_started.html" class="nav-item">Getting Started with Suture</a>
+<a href="quickstart.html" class="nav-item">Quickstart: Stop Losing Work to Google Drive</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Core Concepts</div>
+<a href="comparing-with-git.html" class="nav-item">Suture vs. Git: When to Use What</a>
+<a href="comparison.html" class="nav-item">Suture vs Other Version Control Systems</a>
+<a href="semantic-merge.html" class="nav-item">Semantic Merge</a>
+<a href="why-suture.html" class="nav-item">Why Suture?</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Reference</div>
+<a href="api_reference.html" class="nav-item">API Reference</a>
+<a href="cli-reference.html" class="nav-item">CLI Reference</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Merge Drivers</div>
+<a href="driver_sdk.html" class="nav-item">Driver SDK</a>
+<a href="git_merge_driver.html" class="nav-item">Git Merge Driver</a>
+<a href="merge-driver-guide.html" class="nav-item">Suture Merge Driver Guide</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Integration</div>
+<a href="github-action.html" class="nav-item">Suture Semantic Merge GitHub Action</a>
+<a href="ide-integration.html" class="nav-item">IDE Integration</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Guides</div>
+<a href="data-science.html" class="nav-item">Suture for Data Science</a>
+<a href="document-authors.html" class="nav-item">Suture for Document Authors</a>
+<a href="video-editors.html" class="nav-item">Suture for Video Editors</a>
+<a href="video-merge-guide.html" class="nav-item">Video Merge Guide: Version Control for OTIO Timelines</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Onboarding</div>
+<a href="onboarding-defence.html" class="nav-item">Suture VCS — Defence Contractor Onboarding Guide</a>
+<a href="onboarding-film.html" class="nav-item">Suture VCS — Onboarding Guide for Film & TV Post-Production</a>
+<a href="onboarding-youtube.html" class="nav-item">Suture VCS — Onboarding Guide for YouTube Channel Managers & PE Firms</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Platform</div>
+<a href="desktop-build.html" class="nav-item">Building the Suture Desktop App</a>
+<a href="hub.html" class="nav-item">Suture Hub</a>
+<a href="wasm-feasibility.html" class="nav-item">WASM Feasibility Report: Suture Semantic Merge Engine</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Development</div>
+<a href="performance.html" class="nav-item">Suture Performance Baseline</a>
+<a href="release-notes.html" class="nav-item">Suture v2.9.0 — First Public Release</a>
+<a href="shipping-checklist.html" class="nav-item">Suture v2.9.0 Shipping Checklist</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Other</div>
+<a href="api-reference.html" class="nav-item">Suture Platform API Reference</a>
+<a href="architecture.html" class="nav-item active">Suture Architecture v5.3.1</a>
+<a href="ci-integration.html" class="nav-item">CI Integration Guide</a>
+<a href="demo.html" class="nav-item">Suture Demo: Semantic Merge in 60 Seconds</a>
+<a href="deploy-runbook.html" class="nav-item">Suture 5.3.1 Deployment Runbook</a>
+<a href="gitlab-ci-integration.html" class="nav-item">GitLab CI Integration</a>
+<a href="git-merge-driver.html" class="nav-item">Git Merge Driver — Comprehensive Guide</a>
+<a href="merge-driver-quickstart.html" class="nav-item">5-Minute Git Merge Driver Quickstart</a>
+<a href="PRODUCTION_ROADMAP.html" class="nav-item">Suture Production Roadmap</a>
+<a href="self-hosting.html" class="nav-item">Self-Hosting Suture Hub</a>
+<a href="stripe-onboarding.html" class="nav-item">Stripe Onboarding Guide</a>
+<a href="user-guide.html" class="nav-item">Suture User Guide</a>
+</div>
+  </aside>
+  <main class="content">
+    <div class="breadcrumb">
+      <a href="index.html">Home</a>
+      <span class="sep">/</span>
+      <span>Docs</span>
+    </div>
+    <article class="doc">
+      <h1>Suture Architecture v5.3.1</h1>
+<h2 id="system-overview">System Overview</h2>
+<p>Suture is a patch-based version control system with semantic merge capabilities. It understands the <em>structure</em> of files (JSON, YAML, CSV, XML, DOCX, XLSX, PPTX, OTIO, SQL, PDF, images, and more) and merges them intelligently using format-aware drivers rather than treating them as opaque text.</p>
+<h3 id="high-level-component-diagram">High-Level Component Diagram</h3>
+<pre><code>
+                           User Interface Layer
+    ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐
+    │suture-cli│  │suture-tui│  │suture-lsp│  │ VS Code  │  │ Tauri    │
+    │(clap, 58 │  │(ratatui, │  │(tower-   │  │Extension │  │Desktop   │
+    │ commands)│  │ 7 tabs)  │  │ lsp)     │  │(TS)      │  │(HTML UI) │
+    └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘
+         │              │              │              │              │
+         └──────────────┴──────┬───────┴──────────────┘              │
+                               │                                     │
+              ┌────────────────┼────────────────┐                     │
+              │                │                │                     │
+       ┌──────▼──────┐ ┌──────▼──────┐ ┌───────▼───────┐             │
+       │ suture-core │ │suture-driver │ │suture-protocol│             │
+       │ CAS, DAG,   │ │ trait +      │ │ wire format,  │             │
+       │ patches,    │ │ registry     │ │ compression   │             │
+       │ repo engine │         │ (18 drivers) │ │ delta encoding│             │
+       └──────┬──────┘ └──────┬──────┘ └───────┬───────┘             │
+              │               │                │                     │
+       ┌──────▼──────┐       │                │                     │
+       │suture-common│       │                │                     │
+       │Hash, types  │       │                │                     │
+       └─────────────┘       │                │                     │
+              ┌──────────────┼────────────────┘                     │
+              │              │                                      │
+    ┌─────────▼─────────┐   │         ┌─────────────────────┐      │
+    │  suture-platform  │   │         │    suture-hub       │◄─────┘
+    │  Web UI, auth,    │   │         │ HTTP/gRPC server,  │
+    │  billing, merge   │   │         │ SQLite, auth,       │
+    │  API, orgs        │   │         │ webhooks, mirrors   │
+    └─────────┬─────────┘   │         └──────────┬──────────┘
+              │              │                    │
+    ┌─────────▼─────────┐   │         ┌──────────▼──────────┐
+    │  Stripe           │   │         │  suture-raft        │
+    │  billing          │   │         │  consensus, election│
+    │  webhooks         │   │         │  log replication    │
+    └───────────────────┘   │         └──────────┬──────────┘
+                            │                    │
+         ┌──────────────────┼────────────────────┘
+         │                  │
+  ┌──────▼──────┐   ┌──────▼──────┐
+  │ suture-s3   │   │suture-daemon│
+  │ blob store  │   │ file watch, │
+  │ AWS SigV4   │   │ auto-sync,  │
+  │ MinIO compat│   │ SHM, FUSE   │
+  └─────────────┘   └──────┬──────┘
+                           │
+                    ┌──────▼──────┐
+                    │ suture-vfs  │
+                    │ FUSE3 mount │
+                    │ WebDAV      │
+                    └─────────────┘
+</code></pre>
+<h3 id="data-flow-merge-request-through-the-system">Data Flow: Merge Request Through the System</h3>
+<pre><code>
+ 1. User edits files          2. suture add / commit
+ ┌─────────────┐              ┌──────────────────┐
+ │ Working     │──────────────▶│ Stage changes    │
+ │ Tree        │              │ Create patch     │
+ └─────────────┘              │ (BLAKE3 hash)    │
+                              └────────┬─────────┘
+                                       │
+ 3. Patch stored in CAS               ▼
+ ┌──────────────────┐       ┌──────────────────┐
+ │ BlobStore        │◀──────│ PatchDag         │
+ │ .suture/objects/ │       │ Add node + edges │
+ │ (content-addrs)  │       │ Acyclicity check │
+ └──────────────────┘       └────────┬─────────┘
+                                      │
+ 4. Push to remote (optional)        ▼
+ ┌──────────────────┐       ┌──────────────────┐
+ │ suture-hub       │◀──────│ suture-protocol  │
+ │ HTTP/gRPC        │       │ Zstd compression │
+ │ V2 handshake     │       │ Delta encoding   │
+ └──────────────────┘       └──────────────────┘
+
+ 5. Merge
+ ┌──────────────────┐
+ │ suture merge     │
+ │ feature-branch   │
+ └────────┬─────────┘
+          │
+          ▼
+ ┌──────────────────┐    ┌────────────────────┐
+ │ Compute LCA      │───▶│ PatchDag::lca()    │
+ │ (merge base)     │    │ Lowest Common      │
+ │                  │    │ Ancestor            │
+ └────────┬─────────┘    └────────────────────┘
+          │
+          ▼
+ ┌──────────────────┐    ┌────────────────────┐
+ │ Per-file merge   │───▶│ DriverRegistry     │
+ │                  │    │ lookup by extension │
+ └────────┬─────────┘    └────────────────────┘
+          │
+     ┌────┴────┐
+     │         │
+     ▼         ▼
+ ┌───────┐ ┌───────┐
+ │Driver │ │Text   │
+ │exists?│ │merge  │
+ │       │ │fallback│
+ └───┬───┘ └───┬───┘
+     │         │
+     ▼         ▼
+ ┌──────────────────┐
+ │ Three-way merge  │
+ │ driver.merge()   │
+ │ or line-based    │
+ └────────┬─────────┘
+          │
+     ┌────┴────┐
+     │         │
+     ▼         ▼
+ ┌───────┐ ┌───────┐
+ │Clean  │ │Conflict│
+ │Merge  │ │Markers │
+ └───────┘ └───────┘
+</code></pre>
+<h3 id="deployment-topologies">Deployment Topologies</h3>
+<h4 id="standalone-cli-only">Standalone (CLI Only)</h4>
+<pre><code>
+┌──────────────────────────────┐
+│ User Machine                 │
+│  ┌────────┐  ┌────────────┐  │
+│  │suture  │──│ .suture/   │  │
+│  │cli     │  │ objects/   │  │
+│  │        │  │ metadata.db│  │
+│  └────────┘  └────────────┘  │
+└──────────────────────────────┘
+</code></pre>
+<p>No server required. All operations are local. 17 semantic drivers available.</p>
+<h4 id="hub-clients">Hub + Clients</h4>
+<pre><code>
+┌──────────────┐     HTTP/gRPC      ┌──────────────────┐
+│ Client A     │◀──────────────────▶│ suture-hub       │
+│ (CLI/TUI)    │                    │ SQLite + Ed25519 │
+└──────────────┘                    │ auth, webhooks   │
+                                    └────────┬─────────┘
+┌──────────────┐     HTTP/gRPC               │
+│ Client B     │◀────────────────────────────┘
+│ (CLI/TUI)    │
+└──────────────┘
+
+Optional: suture-s3 for blob storage (replaces SQLite blobs)
+Optional: suture-raft for HA clustering (3+ nodes)
+</code></pre>
+<h4 id="full-platform-saas">Full Platform (SaaS)</h4>
+<pre><code>
+┌──────────────┐     HTTPS          ┌──────────────────┐
+│ Client       │◀──────────────────▶│ suture-platform  │
+│ (Web UI /    │                    │ Axum + SQLite    │
+│  REST API)   │                    │ JWT auth, Stripe │
+└──────────────┘                    │ billing, orgs    │
+                                    └────────┬─────────┘
+┌──────────────┐     HTTPS                  │
+│ VS Code /    │◀───────────────────────────┘
+│ JetBrains /  │
+│ Neovim       │
+└──────────────┘
+
+Billing tiers: Free (100 merges/mo), Pro ($9/mo), Enterprise ($29/mo)
+Analytics available on Pro+
+WASM plugin uploads on Enterprise
+</code></pre>
+<h2 id="core-components">Core Components</h2>
+<h3 id="suture-common">suture-common</h3>
+<p><strong>Path:</strong> <code>crates/suture-common/</code> <strong>Tests:</strong> 8</p>
+<p>Foundation types shared across all crates. Zero dependencies.</p>
+<thead><tr><th>Type</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>Hash</code></td><td>BLAKE3 256-bit content hash (32 bytes, 64 hex chars)</td></tr>
+<tr><td><code>PatchId</code></td><td>Alias for <code>Hash</code> — identifies patches by content</td></tr>
+<tr><td><code>BranchName</code></td><td>Validated branch name (non-empty, no null bytes)</td></tr>
+<tr><td><code>RepoPath</code></td><td>Validated repository path (rejects <code>..</code>, absolute paths, null bytes)</td></tr>
+</tbody>
+</table>
+<p>Key operations:</p>
+<ul>
+<li><code>Hash::from_data(data)</code> — compute BLAKE3 hash</li>
+<li><code>Hash::from_hex(str)</code> / <code>to_hex()</code> — hex encoding/decoding</li>
+<li><code>Hash::ZERO</code> — sentinel value (all zeros)</li>
+</ul>
+<hr>
+<h3 id="suture-core">suture-core</h3>
+<p><strong>Path:</strong> <code>crates/suture-core/</code> <strong>Tests:</strong> 298 <strong>Depends on:</strong> suture-common</p>
+<p>The core engine coordinating four subsystems:</p>
+<thead><tr><th>Subsystem</th><th>File</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><strong>BlobStore</strong></td><td><code>src/cas/</code></td><td>Content-addressable storage on disk. 2-char prefix directory scheme (256 buckets). Optional Zstd compression (level 3). Deduplication by hash.</td></tr>
+<tr><td><strong>PatchDag</strong></td><td><code>src/dag/graph.rs</code></td><td>In-memory DAG of patch history. Ancestor/descendant queries, LCA computation, branch management. Reconstructed from SQLite on <code>Repository::open()</code>.</td></tr>
+<tr><td><strong>MetadataStore</strong></td><td><code>src/metadata/</code></td><td>SQLite-backed persistent metadata. Stores patches, branches, configuration.</td></tr>
+<tr><td><strong>Patch Engine</strong></td><td><code>src/repository/repo_impl.rs</code></td><td>Orchestrates CAS, DAG, metadata. Handles commit, merge, stash, reset, cherry-pick, rebase, blame, reflog, notes, GC, fsck, squash.</td></tr>
+</tbody>
+</table>
+<p>Additional capabilities:</p>
+<ul>
+<li><strong>Audit Log</strong> (<code>src/audit.rs</code>): Append-only JSONL with BLAKE3 hash chaining. Each entry contains hash of previous entry. Optional Ed25519 signatures.</li>
+<li><strong>Signing</strong> (<code>src/signing/</code>): Ed25519 key generation, signing, verification for push operations.</li>
+<li><strong>File-type Detection</strong>: 14 file types with <code>auto_detect_repo_type()</code>.</li>
+<li><strong>Semantic Diff Formatter</strong>: File-type-aware diff output with driver labels.</li>
+<li><strong>Supply Chain Integrity</strong>: Shannon entropy analysis, 13 risk indicators, XZ-style attack detection.</li>
+<li><strong>Conflict Classification</strong>: Categorize merge conflicts by type.</li>
+<li><strong>Stash/RM/MV/Notes/GC/fsck/Squash/Patch composition</strong>: Full VCS lifecycle.</li>
+</ul>
+<hr>
+<h3 id="suture-driver">suture-driver</h3>
+<p><strong>Path:</strong> <code>crates/suture-driver/</code> <strong>Tests:</strong> 8 <strong>Depends on:</strong> suture-core, suture-common</p>
+<p>Defines the <code>SutureDriver</code> trait and driver registry:</p>
+<pre><code class="language-rust">pub trait SutureDriver: Send + Sync {
+    fn name(&amp;self) -&gt; &amp;str;
+    fn supported_extensions(&amp;self) -&gt; &amp;[&amp;str];
+    fn diff(&amp;self, base: Option&lt;&amp;str&gt;, new: &amp;str) -&gt; Result&lt;Vec&lt;SemanticChange&gt;, DriverError&gt;;
+    fn format_diff(&amp;self, base: Option&lt;&amp;str&gt;, new: &amp;str) -&gt; Result&lt;String, DriverError&gt;;
+    fn merge(&amp;self, base: &amp;str, ours: &amp;str, theirs: &amp;str) -&gt; Result&lt;Option&lt;String&gt;, DriverError&gt;;
+    fn diff_raw(&amp;self, base: &amp;[u8], new: &amp;[u8]) -&gt; Result&lt;Vec&lt;SemanticChange&gt;, DriverError&gt; { ... }
+    fn merge_raw(&amp;self, base: &amp;[u8], ours: &amp;[u8], theirs: &amp;[u8]) -&gt; Result&lt;Option&lt;Vec&lt;u8&gt;&gt;, DriverError&gt; { ... }
+}
+</code></pre>
+<ul>
+<li><code>diff()</code> / <code>diff_raw()</code> produce <code>SemanticChange</code> entries (<code>Added</code>, <code>Removed</code>, <code>Modified</code>, <code>Moved</code>)</li>
+<li><code>merge()</code> / <code>merge_raw()</code> return <code>Some(merged)</code> for clean merges, <code>None</code> for conflicts</li>
+<li><code>format_diff()</code> produces human-readable diff output</li>
+</ul>
+<p><strong>DriverRegistry</strong> (<code>src/registry.rs</code>): Dispatches to the correct driver by file extension. The CLI builds a <code>builtin_registry()</code> registering all 17 drivers.</p>
+<p><strong>SemanticChange types:</strong></p>
+<pre><code class="language-rust">pub enum SemanticChange {
+    Added { path: String, value: String },
+    Removed { path: String, old_value: String },
+    Modified { path: String, old_value: String, new_value: String },
+    Moved { old_path: String, new_path: String, value: String },
+}
+</code></pre>
+<h4 id="builtin-drivers-17">Builtin Drivers (17)</h4>
+<thead><tr><th>Driver</th><th>Crate</th><th>Extensions</th><th>Tests</th></tr></thead>
+<tbody>
+<tr><td>JSON</td><td><code>suture-driver-json</code></td><td><code>.json</code></td><td>47</td></tr>
+<tr><td>YAML</td><td><code>suture-driver-yaml</code></td><td><code>.yaml</code>, <code>.yml</code></td><td>30</td></tr>
+<tr><td>TOML</td><td><code>suture-driver-toml</code></td><td><code>.toml</code></td><td>30</td></tr>
+<tr><td>CSV</td><td><code>suture-driver-csv</code></td><td><code>.csv</code></td><td>27</td></tr>
+<tr><td>XML</td><td><code>suture-driver-xml</code></td><td><code>.xml</code></td><td>31</td></tr>
+<tr><td>Markdown</td><td><code>suture-driver-markdown</code></td><td><code>.md</code>, <code>.markdown</code>, <code>.mdown</code>, <code>.mkd</code></td><td>41</td></tr>
+<tr><td>SQL</td><td><code>suture-driver-sql</code></td><td><code>.sql</code></td><td>18</td></tr>
+<tr><td>DOCX</td><td><code>suture-driver-docx</code></td><td><code>.docx</code></td><td>13</td></tr>
+<tr><td>XLSX</td><td><code>suture-driver-xlsx</code></td><td><code>.xlsx</code></td><td>13</td></tr>
+<tr><td>PPTX</td><td><code>suture-driver-pptx</code></td><td><code>.pptx</code></td><td>19</td></tr>
+<tr><td>OTIO</td><td><code>suture-driver-otio</code></td><td><code>.otio</code></td><td>21</td></tr>
+<tr><td>PDF</td><td><code>suture-driver-pdf</code></td><td><code>.pdf</code></td><td>12</td></tr>
+<tr><td>Image</td><td><code>suture-driver-image</code></td><td><code>.png</code>, <code>.jpg</code>, <code>.jpeg</code>, <code>.gif</code>, <code>.bmp</code>, <code>.webp</code>, <code>.tiff</code>, <code>.ico</code>, <code>.avif</code></td><td>12</td></tr>
+<tr><td>HTML</td><td><code>suture-driver-html</code></td><td><code>.html</code>, <code>.htm</code></td><td>—</td></tr>
+<tr><td>SVG</td><td><code>suture-driver-svg</code></td><td><code>.svg</code></td><td>—</td></tr>
+<tr><td>Feed</td><td><code>suture-driver-feed</code></td><td><code>.rss</code>, <code>.atom</code></td><td>—</td></tr>
+<tr><td>iCal</td><td><code>suture-driver-ical</code></td><td><code>.ics</code>, <code>.ifb</code></td><td>—</td></tr>
+</tbody>
+</table>
+<p>Supporting crate: <strong>suture-ooxml</strong> — shared OOXML infrastructure (ZIP parsing, part navigation, per-part relationship resolution).</p>
+<hr>
+<h3 id="suture-hub">suture-hub</h3>
+<p><strong>Path:</strong> <code>crates/suture-hub/</code> <strong>Tests:</strong> 61 (with features) <strong>Depends on:</strong> suture-common, suture-core, suture-protocol</p>
+<p>Central server for hosting Suture repositories.</p>
+<p><strong>Transport layers:</strong></p>
+<thead><tr><th>Layer</th><th>Technology</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>HTTP</td><td>Axum</td><td>REST API, middleware, auth, web UI</td></tr>
+<tr><td>gRPC</td><td>Tonic + Prost</td><td>Bidirectional streaming (14 RPCs)</td></tr>
+<tr><td>Storage</td><td>SQLite</td><td>Repository metadata and blob storage</td></tr>
+</tbody>
+</table>
+<p><strong>HTTP Routes (key endpoints):</strong></p>
+<thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>GET</td><td><code>/healthz</code></td><td>No</td><td>Health check</td></tr>
+<tr><td>GET/POST</td><td><code>/handshake</code></td><td>No</td><td>V1 handshake</td></tr>
+<tr><td>GET/POST</td><td><code>/v2/handshake</code></td><td>No</td><td>V2 with capability negotiation</td></tr>
+<tr><td>POST</td><td><code>/v2/push</code></td><td>No</td><td>Push patches + blobs</td></tr>
+<tr><td>POST</td><td><code>/v2/pull</code></td><td>No</td><td>Pull patches + blobs</td></tr>
+<tr><td>GET</td><td><code>/repos</code></td><td>No</td><td>List repositories</td></tr>
+<tr><td>POST</td><td><code>/repos</code></td><td>Auth</td><td>Create repository</td></tr>
+<tr><td>GET/DELETE</td><td><code>/repo/{repo_id}</code></td><td>Auth</td><td>Get/delete repo</td></tr>
+<tr><td>POST</td><td><code>/auth/register</code></td><td>No</td><td>Register user</td></tr>
+<tr><td>POST</td><td><code>/auth/login</code></td><td>No</td><td>Login, get Ed25519 token</td></tr>
+<tr><td>POST</td><td><code>/auth/token</code></td><td>Auth</td><td>Create auth token</td></tr>
+<tr><td>POST</td><td><code>/auth/verify</code></td><td>No</td><td>Verify auth token</td></tr>
+<tr><td>GET</td><td><code>/search</code></td><td>No</td><td>Cross-repo search</td></tr>
+<tr><td>POST</td><td><code>/lfs/batch</code></td><td>Auth</td><td>LFS batch upload/download</td></tr>
+<tr><td>POST</td><td><code>/webhooks</code></td><td>Auth</td><td>Create webhook</td></tr>
+<tr><td>POST/GET</td><td>`/mirror/setup</td><td>sync</td><td>status`</td><td>Auth</td><td>Mirror management</td></tr>
+<tr><td>POST/GET</td><td><code>/replication/peers</code></td><td>Auth</td><td>Raft peer management</td></tr>
+</tbody>
+</table>
+<p><strong>gRPC Service (<code>SutureHub</code>):</strong></p>
+<p>Defined in <code>crates/suture-hub/proto/suture.proto</code>. 14 RPCs:</p>
+<p><code>Handshake</code>, <code>ListRepos</code>, <code>GetRepoInfo</code>, <code>CreateRepo</code>, <code>DeleteRepo</code>, <code>ListBranches</code>, <code>CreateBranch</code>, <code>DeleteBranch</code>, <code>ListPatches</code>, <code>GetBlob</code>, <code>Push</code>, <code>Pull</code>, <code>GetTree</code>, <code>Search</code></p>
+<p><strong>Features:</strong></p>
+<ul>
+<li><strong>Auth</strong>: Ed25519 key-based authentication</li>
+<li><strong>Webhooks</strong>: Event-driven notifications (push/branch events) with HMAC-SHA256 signing</li>
+<li><strong>S3 Backend</strong> (feature <code>s3-backend</code>): Blob storage via <code>suture-s3</code> (AWS SigV4, MinIO compatible)</li>
+<li><strong>Raft Clustering</strong> (feature <code>raft-cluster</code>): Consensus via <code>suture-raft</code> for HA deployments</li>
+<li><strong>Mirrors</strong>: Repository mirroring support</li>
+<li><strong>Pagination</strong>: Cursor-based pagination for large result sets</li>
+<li><strong>LFS</strong>: Large file storage via batch API</li>
+</ul>
+<hr>
+<h3 id="suture-platform">suture-platform</h3>
+<p><strong>Path:</strong> <code>crates/suture-platform/</code> <strong>Depends on:</strong> suture-driver (all 17), suture-wasm-plugin</p>
+<p>SaaS platform with web UI, authentication, billing, organizations, and merge API.</p>
+<p><strong>Architecture:</strong></p>
+<ul>
+<li><strong>Axum</strong> web server with tower-http tracing</li>
+<li><strong>SQLite</strong> (WAL mode) via <code>PlatformDb</code> with <code>Mutex&lt;Connection&gt;</code></li>
+<li><strong>JWT</strong> authentication (HS256, 7-day expiry, revocation support)</li>
+<li><strong>Rate limiting</strong>: In-memory sliding window per user/IP, tier-based limits</li>
+<li><strong>CORS</strong>: Permissive (configurable for production)</li>
+<li><strong>Stripe</strong>: Checkout sessions, portal, webhook handling with HMAC-SHA256 verification</li>
+<li><strong>OAuth</strong>: Google and GitHub (CSRF state tokens, one-time use)</li>
+<li><strong>WASM plugins</strong>: Runtime plugin loading and merge execution</li>
+</ul>
+<p>See <code>docs/api-reference.md</code> for full endpoint documentation.</p>
+<hr>
+<h3 id="suture-raft">suture-raft</h3>
+<p><strong>Path:</strong> <code>crates/suture-raft/</code> <strong>Tests:</strong> 30</p>
+<p>Raft consensus protocol implementation for hub clustering.</p>
+<p><strong>Key components:</strong></p>
+<thead><tr><th>Component</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>RaftNode</code></td><td>Raft node state machine (leader, follower, candidate)</td></tr>
+<tr><td><code>RaftTcpTransport</code></td><td>TCP transport with 4-byte BE length + JSON wire format</td></tr>
+<tr><td><code>RaftRuntime</code></td><td>Background tick loop, propose/apply channels, leader tracking</td></tr>
+<tr><td><code>SqliteRaftLog</code></td><td>Persisted Raft log (gated on <code>persist</code> feature)</td></tr>
+<tr><td><code>HubCommand</code></td><td>Command enum for state machine replication</td></tr>
+</tbody>
+</table>
+<p><strong>Protocol details:</strong></p>
+<ul>
+<li>Randomized election timeouts (Raft paper section 5.2) to prevent split-vote livelock</li>
+<li>Leader election, log replication, commit</li>
+<li>Multi-node 3-cluster integration test over real TCP</li>
+<li>3 Raft integration tests + 12 hub-Raft tests</li>
+</ul>
+<hr>
+<h3 id="suture-vfs">suture-vfs</h3>
+<p><strong>Path:</strong> <code>crates/suture-vfs/</code> <strong>Tests:</strong> 28 (2 ignored — require root)</p>
+<p>Exposes a Suture repository as a filesystem.</p>
+<thead><tr><th>Feature</th><th>Technology</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>FUSE3 mount</td><td><code>fuse3</code> + Tokio</td><td>Read/write access to repo as filesystem</td></tr>
+<tr><td>WebDAV server</td><td>Axum</td><td>HTTP-based file access (macOS Finder, Windows Explorer)</td></tr>
+<tr><td>Path translation</td><td>Custom</td><td>Maps between filesystem paths and repository paths</td></tr>
+<tr><td>Inode allocation</td><td>Custom</td><td>Stable inode assignment for FUSE operations</td></tr>
+</tbody>
+</table>
+<p>Integration tests (require root, <code>#[ignore]</code>d): mount read/write/modify/delete/stat, WebDAV serve.</p>
+<hr>
+<h3 id="suture-wasm-plugin">suture-wasm-plugin</h3>
+<p><strong>Path:</strong> <code>crates/suture-wasm-plugin/</code></p>
+<p>WASM plugin runtime for loading custom merge drivers at runtime.</p>
+<p><strong>ABI:</strong></p>
+<ul>
+<li>Version 1 ABI with version checking</li>
+<li><code>PluginManager</code>: Load, validate, list, and execute WASM plugins</li>
+<li><code>validate_plugin()</code>: Pre-load validation of Wasm modules</li>
+<li>Plugin descriptor files (<code>.suture-plugin</code>) for discovery</li>
+<li><code>discover_plugins(dir)</code>: Scan a directory for plugin descriptors</li>
+</ul>
+<p><strong>Integration with platform:</strong></p>
+<ul>
+<li>Plugins loaded at startup from <code>plugins/</code> directory</li>
+<li>Enterprise-tier users can upload plugins via REST API</li>
+<li><code>merge_with_plugin()</code> endpoint dispatches to loaded WASM drivers</li>
+</ul>
+<hr>
+<h3 id="suture-cli">suture-cli</h3>
+<p><strong>Path:</strong> <code>crates/suture-cli/</code> <strong>Tests:</strong> 32</p>
+<p>Command-line interface using <a href="https://docs.rs/clap">clap</a> with derive macros.</p>
+<p><strong>58 subcommands</strong> organized in <code>src/cmd/</code> (one file per command).</p>
+<p>Key commands:</p>
+<thead><tr><th>Command</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>init</code></td><td>Initialize repository (with <code>--type</code> and <code>--template</code> support)</td></tr>
+<tr><td><code>add</code></td><td>Stage files (recursive directory expansion)</td></tr>
+<tr><td><code>commit</code></td><td>Create patch from staged changes</td></tr>
+<tr><td><code>merge</code></td><td>Merge branches with semantic drivers (`-s ours</td><td>theirs</td><td>manual</td><td>semantic<code>, </code>--dry-run`)</td></tr>
+<tr><td><code>diff</code></td><td>Show semantic or line diffs (<code>--integrity</code>, <code>--classification</code>, <code>--summary</code>, <code>--name-only</code>)</td></tr>
+<tr><td><code>log</code></td><td>View patch history (<code>--stat</code>, <code>--diff</code>, <code>--audit</code>, <code>--graph</code>)</td></tr>
+<tr><td><code>push</code> / <code>pull</code></td><td>Remote sync via HTTP protocol</td></tr>
+<tr><td><code>stash</code></td><td>Stash and restore changes</td></tr>
+<tr><td><code>rebase</code></td><td>Rebase patches onto new base</td></tr>
+<tr><td><code>bisect</code></td><td>Binary search for bug-introducing commit</td></tr>
+<tr><td><code>tui</code></td><td>Launch terminal UI</td></tr>
+<tr><td><code>sync</code></td><td>Auto-commit, pull, push (Google Drive replacement)</td></tr>
+<tr><td><code>doctor</code></td><td>Health checks (<code>--fix</code> auto-remediation)</td></tr>
+<tr><td><code>export</code></td><td>Export clean snapshot</td></tr>
+<tr><td><code>undo</code></td><td>Reflog-aware undo</td></tr>
+<tr><td><code>verify</code></td><td>Ed25519 signature verification</td></tr>
+<tr><td><code>blame</code></td><td>Per-line blame with range filtering (<code>-L</code>)</td></tr>
+<tr><td><code>grep</code></td><td>Search tracked content with regex</td></tr>
+<tr><td><code>switch</code> / <code>restore</code></td><td>Modern alternatives to checkout</td></tr>
+<tr><td><code>archive</code></td><td>Export as tar.gz/tar/zip</td></tr>
+<tr><td><code>ls-remote</code></td><td>List remote branches without cloning</td></tr>
+<tr><td><code>timeline</code></td><td>OTIO import/export/summary/diff</td></tr>
+<tr><td><code>report</code></td><td>Batch operations, export templates</td></tr>
+<tr><td><code>git import</code></td><td>Read-only Git history import</td></tr>
+<tr><td><code>key generate</code></td><td>Ed25519 key generation</td></tr>
+<tr><td><code>hook list/run/edit</code></td><td>Hook management</td></tr>
+</tbody>
+</table>
+<p>Supporting modules:</p>
+<thead><tr><th>Module</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>driver_registry.rs</code></td><td>Builds <code>DriverRegistry</code> with all 17 builtin drivers</td></tr>
+<tr><td><code>display.rs</code></td><td>Terminal output formatting and colors</td></tr>
+<tr><td><code>fuzzy.rs</code></td><td>Fuzzy matching for branch/tag/patch selection</td></tr>
+<tr><td><code>remote_proto.rs</code></td><td>HTTP-based remote protocol implementation</td></tr>
+<tr><td><code>ref_utils.rs</code></td><td>Reference resolution utilities</td></tr>
+<tr><td><code>style.rs</code></td><td>CLI styling helpers</td></tr>
+</tbody>
+</table>
+<hr>
+<h3 id="suture-tui">suture-tui</h3>
+<p><strong>Path:</strong> <code>crates/suture-tui/</code> <strong>Tests:</strong> 31</p>
+<p>Terminal UI built with <a href="https://github.com/ratatui/ratatui">ratatui</a>.</p>
+<p><strong>7 tabs:</strong></p>
+<thead><tr><th>Tab</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>Status</td><td>Repository status, staged/untracked files</td></tr>
+<tr><td>Log</td><td>Commit history with graph</td></tr>
+<tr><td>Branch</td><td>Branch management</td></tr>
+<tr><td>Remote</td><td>Remote operations</td></tr>
+<tr><td>Conflict</td><td>Merge conflict resolution</td></tr>
+<tr><td>Diff</td><td>File diffs</td></tr>
+<tr><td>Help</td><td>Key bindings and documentation</td></tr>
+</tbody>
+</table>
+<p><strong>Conflict resolver:</strong></p>
+<ul>
+<li>Line-by-line hunk resolution (replaces binary ours/theirs-only choice)</li>
+<li><code>1</code>/<code>2</code>/<code>3</code> keys: take ours, theirs, or both per hunk</li>
+<li><code>j</code>/<code>k</code> keys: navigate between conflict hunks</li>
+<li><code>n</code>/<code>p</code> keys: next/previous conflict file</li>
+<li><code>a</code> key: accept all remaining with last used resolution</li>
+<li>Three-panel layout: file list, hunk detail, key bindings footer</li>
+</ul>
+<hr>
+<h3 id="suture-lsp">suture-lsp</h3>
+<p><strong>Path:</strong> <code>crates/suture-lsp/</code> <strong>Tests:</strong> 11</p>
+<p>Language Server Protocol implementation via <a href="https://github.com/ebkalderon/tower-lsp">tower-lsp</a>.</p>
+<p>Capabilities:</p>
+<ul>
+<li>Hover information for patches</li>
+<li>Diagnostics for merge conflicts</li>
+<li>Workspace-aware repository operations</li>
+<li>Activates for <code>.suture</code> directories</li>
+</ul>
+<hr>
+<h3 id="suture-daemon">suture-daemon</h3>
+<p><strong>Path:</strong> <code>crates/suture-daemon/</code> <strong>Tests:</strong> 33</p>
+<p>Background daemon for continuous operations.</p>
+<thead><tr><th>Feature</th><th>Implementation</th></tr></thead>
+<tbody>
+<tr><td>File watcher</td><td><code>notify</code> crate for working tree change detection</td></tr>
+<tr><td>Shared memory</td><td><code>memmap2</code>-based SHM for inter-process state</td></tr>
+<tr><td>Mount manager</td><td>FUSE/WebDAV lifecycle management</td></tr>
+<tr><td>Auto-sync</td><td>Automatic push/pull to configured remotes</td></tr>
+<tr><td>PID management</td><td>PID file management, signal handling (SIGTERM, SIGHUP)</td></tr>
+<tr><td>Log rotation</td><td><code>humantime</code>-based timestamps</td></tr>
+</tbody>
+</table>
+<hr>
+<h3 id="other-crates">Other Crates</h3>
+<thead><tr><th>Crate</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>suture-protocol</code></td><td>Binary wire protocol with V2 handshake, Zstd compression, delta encoding</td></tr>
+<tr><td><code>suture-merge</code></td><td>Standalone merge library (published to crates.io as <code>suture-merge</code> v0.2)</td></tr>
+<tr><td><code>suture-s3</code></td><td>S3-compatible blob storage (AWS SigV4, path/virtual-hosted, MinIO)</td></tr>
+<tr><td><code>suture-ooxml</code></td><td>Shared OOXML infrastructure for DOCX/XLSX/PPTX drivers</td></tr>
+<tr><td><code>suture-node</code></td><td>Node.js native addon via napi-rs</td></tr>
+<tr><td><code>suture-e2e</code></td><td>End-to-end workflow tests (226 tests)</td></tr>
+<tr><td><code>suture-fuzz</code></td><td>Fuzz testing (6 targets: CAS hash, patch serialization, merge, touch-set)</td></tr>
+<tr><td><code>suture-bench</code></td><td>Criterion benchmarks (44 functions)</td></tr>
+<tr><td><code>suture-py</code></td><td>Python bindings via PyO3</td></tr>
+</tbody>
+</table>
+<h2 id="data-model">Data Model</h2>
+<h3 id="repository">Repository</h3>
+<p>The <code>Repository</code> is the top-level object (<code>suture-core/src/repository/</code>). It coordinates:</p>
+<pre><code>
+Repository
+├── BlobStore (CAS)
+│   └── .suture/objects/{2-char-prefix}/{62-char-hash}
+├── PatchDag (in-memory)
+│   └── Nodes: patch_id → [parent_ids], branches: name → tip_patch_id
+├── MetadataStore (SQLite)
+│   └── .suture/metadata.db
+│       ├── patches table (serialized JSON)
+│       ├── branches table (name → tip)
+│       └── config key-value pairs
+├── Working Set
+│   └── Currently checked-out files, staged changes
+└── Audit Log
+    └── .suture/audit.jsonl (BLAKE3 hash chain)
+</code></pre>
+<h3 id="patch">Patch</h3>
+<p>The fundamental unit of change (<code>suture-core/src/patch/types.rs</code>):</p>
+<thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>id</code></td><td><code>Hash</code> (BLAKE3)</td><td>Content-addressed identifier</td></tr>
+<tr><td><code>parent_ids</code></td><td><code>Vec&lt;Hash&gt;</code></td><td>Parent patches (1 for linear, 2 for merge)</td></tr>
+<tr><td><code>operation_type</code></td><td><code>OperationType</code></td><td><code>Create</code>, <code>Delete</code>, <code>Modify</code>, <code>Move</code>, <code>Merge</code>, <code>Batch</code>, <code>Identity</code></td></tr>
+<tr><td><code>touch_set</code></td><td><code>TouchSet</code></td><td>Set of file paths this patch modifies</td></tr>
+<tr><td><code>target_path</code></td><td><code>Option&lt;String&gt;</code></td><td>Target file path</td></tr>
+<tr><td><code>payload</code></td><td><code>Vec&lt;u8&gt;</code></td><td>Serialized operation data</td></tr>
+<tr><td><code>timestamp</code></td><td><code>i64</code></td><td>Unix epoch seconds</td></tr>
+<tr><td><code>author</code></td><td><code>String</code></td><td>Author identifier</td></tr>
+<tr><td><code>message</code></td><td><code>String</code></td><td>Human-readable description</td></tr>
+</tbody>
+</table>
+<p>The <code>Batch</code> operation type groups multiple <code>FileChange</code> entries into a single commit (standard CLI commit path).</p>
+<h3 id="filechange">FileChange</h3>
+<p>Within a <code>Batch</code> patch:</p>
+<thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>path</code></td><td><code>String</code></td><td>Repository-relative file path</td></tr>
+<tr><td><code>content_hash</code></td><td><code>Hash</code></td><td>BLAKE3 hash of file content (stored in CAS)</td></tr>
+<tr><td><code>operation</code></td><td><code>FileOp</code></td><td><code>Add</code>, <code>Modify</code>, <code>Delete</code></td></tr>
+</tbody>
+</table>
+<h3 id="touch-set-and-commutativity">Touch Set and Commutativity</h3>
+<p>Touch sets are the basis for commutativity detection. Two patches <strong>commute</strong> (can be applied in either order) if and only if their touch sets are disjoint. This enables conflict detection without full content comparison.</p>
+<h3 id="branch">Branch</h3>
+<p>A branch maps a <code>BranchName</code> to a tip <code>PatchId</code> in the DAG.</p>
+<h3 id="storage-layout">Storage Layout</h3>
+<pre><code>
+.suture/
+├── objects/        # CAS blob storage (BLAKE3-indexed)
+│   └── ab/         # 2-char hex prefix (256 buckets)
+│       └── cdef... # Remaining 62 hex chars = blob filename
+├── metadata.db     # SQLite: patches, branches, config, refs
+├── HEAD            # Current branch reference
+├── hooks/          # Executable hook scripts
+├── keys/           # Ed25519 signing keys
+├── config          # Per-repo TOML configuration
+├── audit.jsonl     # Tamper-evident audit log
+└── worktree        # Marker file for worktree checkouts
+</code></pre>
+<h2 id="merge-algorithm">Merge Algorithm</h2>
+<p>Suture implements three-way merge with format-aware conflict detection:</p>
+<h3 id="step-by-step">Step-by-Step</h3>
+<ol>
+<li><strong>Compute merge base</strong>: <code>PatchDag::lca()</code> finds the Lowest Common Ancestor of the two branch tips</li>
+<li><strong>Reconstruct file trees</strong>: Apply patches from merge base to each branch tip, obtaining three versions per file: <code>base</code>, <code>ours</code>, <code>theirs</code></li>
+<li><strong>Per-file driver lookup</strong>: Check if a semantic driver exists for the file extension via <code>DriverRegistry</code></li>
+<li><strong>Driver present</strong>: Call <code>driver.merge(base, ours, theirs)</code> (or <code>merge_raw()</code> for binary formats)</li>
+<li><strong>No driver</strong>: Fall back to line-based text merge with conflict markers</li>
+<li><strong>Conflict handling for binary formats</strong> (DOCX/XLSX/PPTX): Preserve "ours" version, generate <code>.suture/conflicts/report.md</code></li>
+</ol>
+<h3 id="semantic-merge-format-aware">Semantic Merge (Format-Aware)</h3>
+<p>When a driver is available:</p>
+<ol>
+<li><strong>Parse all three versions</strong> (base, ours, theirs) using the format-specific driver</li>
+<li><strong>Compute structural diff</strong> using key-path based changes (not line-based)</li>
+<li><strong>Classify changes</strong>:</li>
+</ol>
+<ul>
+<li><strong>Same</strong>: No change between base and either branch</li>
+<li><strong>Ours-only</strong>: Changed in ours only → take ours</li>
+<li><strong>Theirs-only</strong>: Changed in theirs only → take theirs</li>
+<li><strong>Both-changed-same</strong>: Both changed identically → take either (no conflict)</li>
+<li><strong>Both-changed-different</strong>: Both changed differently → <strong>conflict</strong></li>
+</ul>
+<ol>
+<li><strong>Auto-resolve</strong>: Take changed version for ours-only and theirs-only</li>
+<li><strong>Detect conflicts</strong>: Both-changed-different entries produce conflicts</li>
+<li><strong>Return</strong>: <code>Some(merged_content)</code> for clean merge, <code>None</code> for conflicts</li>
+</ol>
+<h3 id="merge-strategies">Merge Strategies</h3>
+<thead><tr><th>Strategy</th><th>Flag</th><th>Behavior</th></tr></thead>
+<tbody>
+<tr><td>Semantic</td><td><code>-s semantic</code> (default)</td><td>Try semantic drivers first, fall back to text merge</td></tr>
+<tr><td>Ours</td><td><code>-s ours</code></td><td>Keep our version for all conflicts</td></tr>
+<tr><td>Theirs</td><td><code>-s theirs</code></td><td>Take their version for all conflicts</td></tr>
+<tr><td>Manual</td><td><code>-s manual</code></td><td>Leave all conflicts for manual resolution</td></tr>
+</tbody>
+</table>
+<h3 id="dry-run">Dry Run</h3>
+<p><code>--dry-run</code> previews the merge result without modifying the working tree. OOXML conflict handling is noted in the output.</p>
+<h2 id="api-reference">API Reference</h2>
+<h3 id="platform-rest-api">Platform REST API</h3>
+<thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>GET</td><td><code>/healthz</code></td><td>No</td><td>Health check</td></tr>
+<tr><td>GET</td><td><code>/</code></td><td>No</td><td>Web UI index</td></tr>
+<tr><td>GET</td><td><code>/static/{*path}</code></td><td>No</td><td>Static assets</td></tr>
+<tr><td>POST</td><td><code>/auth/register</code></td><td>No</td><td>Create account</td></tr>
+<tr><td>POST</td><td><code>/auth/login</code></td><td>No</td><td>Login, get JWT</td></tr>
+<tr><td>GET</td><td><code>/auth/me</code></td><td>Optional</td><td>Current user info</td></tr>
+<tr><td>POST</td><td><code>/auth/logout</code></td><td>Optional</td><td>Revoke token</td></tr>
+<tr><td>GET</td><td><code>/auth/oauth/start</code></td><td>No</td><td>Start OAuth flow</td></tr>
+<tr><td>GET</td><td><code>/auth/google/callback</code></td><td>No</td><td>Google OAuth callback</td></tr>
+<tr><td>GET</td><td><code>/auth/github/callback</code></td><td>No</td><td>GitHub OAuth callback</td></tr>
+<tr><td>POST</td><td><code>/api/merge</code></td><td>Optional</td><td>Three-way semantic merge</td></tr>
+<tr><td>GET</td><td><code>/api/drivers</code></td><td>No</td><td>List supported drivers</td></tr>
+<tr><td>GET</td><td><code>/api/usage</code></td><td>Optional</td><td>Current usage/limits</td></tr>
+<tr><td>GET</td><td><code>/api/analytics</code></td><td>Optional</td><td>Usage analytics (Pro+)</td></tr>
+<tr><td>POST</td><td><code>/api/orgs</code></td><td>Optional</td><td>Create org</td></tr>
+<tr><td>GET</td><td><code>/api/orgs</code></td><td>Optional</td><td>List user's orgs</td></tr>
+<tr><td>POST</td><td><code>/api/orgs/{org_id}/invite</code></td><td>Optional</td><td>Invite member</td></tr>
+<tr><td>GET</td><td><code>/api/orgs/{org_id}/members</code></td><td>Optional</td><td>List members</td></tr>
+<tr><td>PUT</td><td><code>/api/orgs/{org_id}/members/{user_id}/role</code></td><td>Optional</td><td>Update role</td></tr>
+<tr><td>DELETE</td><td><code>/api/orgs/{org_id}/members/{user_id}</code></td><td>Optional</td><td>Remove member</td></tr>
+<tr><td>GET</td><td><code>/api/invitations</code></td><td>Optional</td><td>List invitations</td></tr>
+<tr><td>POST</td><td><code>/api/invitations/{invite_id}/accept</code></td><td>Optional</td><td>Accept invitation</td></tr>
+<tr><td>GET</td><td><code>/api/plugins</code></td><td>No</td><td>List loaded plugins</td></tr>
+<tr><td>POST</td><td><code>/api/plugins/upload</code></td><td>Enterprise</td><td>Upload WASM plugin</td></tr>
+<tr><td>POST</td><td><code>/api/plugins/merge</code></td><td>Optional</td><td>Merge with plugin</td></tr>
+<tr><td>POST</td><td><code>/billing/checkout</code></td><td>Optional</td><td>Create checkout session</td></tr>
+<tr><td>POST</td><td><code>/billing/portal</code></td><td>Optional</td><td>Customer portal</td></tr>
+<tr><td>GET</td><td><code>/billing/subscription</code></td><td>Optional</td><td>Get subscription info</td></tr>
+<tr><td>POST</td><td><code>/billing/webhook</code></td><td>No</td><td>Stripe webhook</td></tr>
+<tr><td>GET</td><td><code>/admin/users</code></td><td>Admin</td><td>List all users</td></tr>
+</tbody>
+</table>
+<h3 id="hub-rest-api">Hub REST API</h3>
+<thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>GET</td><td><code>/healthz</code></td><td>No</td><td>Health check</td></tr>
+<tr><td>GET/POST</td><td><code>/handshake</code></td><td>No</td><td>V1 version/capability negotiation</td></tr>
+<tr><td>GET/POST</td><td><code>/v2/handshake</code></td><td>No</td><td>V2 with extended capabilities</td></tr>
+<tr><td>POST</td><td><code>/v2/push</code></td><td>No</td><td>Push patches and blobs</td></tr>
+<tr><td>POST</td><td><code>/v2/pull</code></td><td>No</td><td>Pull patches and blobs</td></tr>
+<tr><td>GET</td><td><code>/repos</code></td><td>No</td><td>List repositories</td></tr>
+<tr><td>POST</td><td><code>/repos</code></td><td>Auth</td><td>Create repository</td></tr>
+<tr><td>GET</td><td><code>/repo/{repo_id}</code></td><td>Auth</td><td>Get repo info</td></tr>
+<tr><td>DELETE</td><td><code>/repo/{repo_id}</code></td><td>Auth</td><td>Delete repository</td></tr>
+<tr><td>POST</td><td><code>/auth/register</code></td><td>No</td><td>Register user</td></tr>
+<tr><td>POST</td><td><code>/auth/login</code></td><td>No</td><td>Login (Ed25519)</td></tr>
+<tr><td>POST</td><td><code>/auth/token</code></td><td>Auth</td><td>Create auth token</td></tr>
+<tr><td>POST</td><td><code>/auth/verify</code></td><td>No</td><td>Verify auth token</td></tr>
+<tr><td>GET</td><td><code>/search</code></td><td>No</td><td>Cross-repo search</td></tr>
+<tr><td>GET</td><td><code>/activity</code></td><td>No</td><td>Activity feed</td></tr>
+<tr><td>POST</td><td><code>/lfs/batch</code></td><td>Auth</td><td>LFS batch operations</td></tr>
+<tr><td>POST</td><td><code>/webhooks</code></td><td>Auth</td><td>Create webhook</td></tr>
+<tr><td>POST/GET</td><td>`/mirror/setup</td><td>sync</td><td>status`</td><td>Auth</td><td>Mirror management</td></tr>
+<tr><td>POST/GET/DELETE</td><td><code>/replication/peers</code></td><td>Auth</td><td>Raft peer management</td></tr>
+</tbody>
+</table>
+<h3 id="grpc-service-hub">gRPC Service (Hub)</h3>
+<p><code>SutureHub</code> service defined in <code>crates/suture-hub/proto/suture.proto</code>:</p>
+<p><code>Handshake</code>, <code>ListRepos</code>, <code>GetRepoInfo</code>, <code>CreateRepo</code>, <code>DeleteRepo</code>, <code>ListBranches</code>, <code>CreateBranch</code>, <code>DeleteBranch</code>, <code>ListPatches</code>, <code>GetBlob</code>, <code>Push</code>, <code>Pull</code>, <code>GetTree</code>, <code>Search</code></p>
+<h3 id="wire-protocol-suture-protocol">Wire Protocol (suture-protocol)</h3>
+<p>Binary protocol with Zstd compression for CLI-to-Hub communication:</p>
+<ul>
+<li>V2 handshake with capability negotiation</li>
+<li>Delta encoding for efficient transfer</li>
+<li>Batch operations for push/pull</li>
+</ul>
+<h2 id="security-model">Security Model</h2>
+<h3 id="authentication">Authentication</h3>
+<p><strong>Platform (JWT):</strong></p>
+<ul>
+<li>HS256 JWT with configurable secret (<code>SUTURE_JWT_SECRET</code>)</li>
+<li>7-day session duration</li>
+<li>Token revocation via <code>revoked_tokens</code> table (checked on every authenticated request)</li>
+<li>Revoked tokens auto-cleaned on verification</li>
+</ul>
+<p><strong>Hub (Ed25519):</strong></p>
+<ul>
+<li>Ed25519 key-based authentication</li>
+<li>Token creation and verification endpoints</li>
+<li>Key generation via <code>suture key generate</code></li>
+</ul>
+<p><strong>OAuth (Google, GitHub):</strong></p>
+<ul>
+<li>Authorization code flow with PKCE-style state tokens</li>
+<li>CSRF protection: UUID v4 state stored in <code>oauth_states</code> table with 10-minute expiry</li>
+<li>State is one-time use (deleted after validation)</li>
+<li>Provider identity stored as <code>oauth:&lt;provider_id&gt;</code> marker in password_hash field</li>
+</ul>
+<h3 id="authorization">Authorization</h3>
+<p><strong>Tier-based rate limiting</strong> (per-minute sliding window):</p>
+<thead><tr><th>Tier</th><th>Rate Limit</th><th>Merge Limit/mo</th><th>Storage</th><th>Repos</th><th>Price</th></tr></thead>
+<tbody>
+<tr><td>Free</td><td>30 req/min</td><td>100</td><td>100 MB</td><td>5</td><td>$0</td></tr>
+<tr><td>Pro</td><td>300 req/min</td><td>10,000</td><td>10 GB</td><td>Unlimited</td><td>$9/seat</td></tr>
+<tr><td>Enterprise</td><td>3,000 req/min</td><td>Unlimited</td><td>100 GB</td><td>Unlimited</td><td>$29/seat</td></tr>
+</tbody>
+</table>
+<p>Rate limit headers: <code>X-RateLimit-Limit</code>, <code>X-RateLimit-Remaining</code>, <code>X-RateLimit-Reset</code>, <code>Retry-After</code></p>
+<p>Anonymous requests: 10 req/min per IP (uses <code>X-Forwarded-For</code> header)</p>
+<h3 id="stripe-integration">Stripe Integration</h3>
+<ul>
+<li><strong>Webhook HMAC verification</strong>: Stripe-Signature header parsed for <code>t=&lt;timestamp&gt;,v1=&lt;signature&gt;</code>. HMAC-SHA256 computed over <code>timestamp.payload</code>. Timestamp must be within 300 seconds to prevent replay attacks.</li>
+<li><strong>Customer management</strong>: Auto-create Stripe customer on first checkout. Customer ID stored in accounts table.</li>
+<li><strong>Subscription lifecycle</strong>: Handles <code>checkout.session.completed</code>, <code>customer.subscription.updated</code>, <code>customer.subscription.deleted</code>, <code>invoice.payment_failed</code></li>
+<li><strong>Grace period</strong>: 7-day grace period on payment failure before downgrade</li>
+<li><strong>Price IDs</strong>: Configured via <code>STRIPE_PRICE_PRO</code> and <code>STRIPE_PRICE_ENTERPRISE</code> env vars</li>
+</ul>
+<h3 id="self-hosted-hub">Self-Hosted (Hub)</h3>
+<ul>
+<li>Ed25519 token-based auth</li>
+<li>Per-IP rate limiting</li>
+<li>Repository-level access control</li>
+<li>Webhook delivery with HMAC-SHA256 signing</li>
+<li>Branch protection rules</li>
+</ul>
+<h3 id="input-validation">Input Validation</h3>
+<ul>
+<li><code>RepoPath::new()</code> rejects <code>..</code>, absolute paths, null bytes (path traversal protection)</li>
+<li><code>BranchName::new()</code> validates non-empty, no null bytes</li>
+<li>Email validation: must contain <code>@</code>, max 254 characters</li>
+<li>Password: minimum 8 characters</li>
+<li>Org names: 2-39 alphanumeric characters (hyphens and underscores allowed)</li>
+<li>Blob size limits: 50MB max (<code>max_blob_size</code>)</li>
+<li>Page size limits: 10K max (<code>max_page_size</code>)</li>
+</ul>
+<h3 id="audit-trail">Audit Trail</h3>
+<ul>
+<li>Append-only JSONL with BLAKE3 hash chaining</li>
+<li>Optional Ed25519 signatures for non-repudiation</li>
+<li><code>suture log --audit</code> for compliance reporting</li>
+<li>Export formats: JSON, CSV, text</li>
+</ul>
+<h2 id="error-handling">Error Handling</h2>
+<p>All crates use <code>thiserror</code> for error types:</p>
+<thead><tr><th>Error Type</th><th>Source</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>RepoError</code></td><td>suture-core</td><td>Repository operations (init, commit, merge)</td></tr>
+<tr><td><code>CasError</code></td><td>suture-core</td><td>Content-addressable storage</td></tr>
+<tr><td><code>DagError</code></td><td>suture-core</td><td>DAG operations (cycle detection, missing patches)</td></tr>
+<tr><td><code>DriverError</code></td><td>suture-driver</td><td>Driver parsing and merge errors</td></tr>
+<tr><td><code>MetaError</code></td><td>suture-core</td><td>SQLite metadata operations</td></tr>
+<tr><td><code>MergeError</code></td><td>suture-core</td><td>Merge results and failures</td></tr>
+<tr><td><code>OrgError</code></td><td>suture-platform</td><td>Organization management errors</td></tr>
+</tbody>
+</table>
+<h2 id="dependency-graph">Dependency Graph</h2>
+<pre><code>
+suture-common (no deps)
+    ↑
+suture-core → suture-common
+    ↑
+suture-driver → suture-core, suture-common
+    ↑
+suture-merge → suture-driver
+suture-ooxml → suture-common
+suture-driver-{docx,xlsx,pptx} → suture-driver, suture-ooxml
+suture-driver-{json,yaml,toml,csv,xml,...} → suture-driver
+suture-protocol → suture-common
+suture-cli → suture-core, suture-common, suture-driver, suture-merge, all drivers
+suture-hub → suture-common, suture-core, suture-protocol
+suture-raft (standalone)
+suture-s3 (standalone)
+suture-platform → suture-driver (all 17), suture-wasm-plugin
+suture-vfs → suture-core
+suture-tui → suture-core
+suture-lsp → suture-core
+suture-daemon → suture-core
+suture-wasm-plugin (standalone)
+</code></pre>
+<p>Total: 37 crates in workspace (2 excluded: suture-py, desktop-app).</p>
+    </article>
+    <div class="doc-footer">
+      <a href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">GitHub</a> &middot;
+      <a href="https://github.com/WyattAu/suture/blob/main/LICENSE" target="_blank" rel="noopener">Apache-2.0</a>
+    </div>
+  </main>
+</div>
+
+<script>
+function toggleSidebar(){
+  document.getElementById("sidebar").classList.toggle("open");
+  document.getElementById("sidebarOverlay").classList.toggle("open");
+}
+</script>
+</body>
+</html>

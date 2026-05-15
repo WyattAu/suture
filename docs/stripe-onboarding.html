@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Suture for Video Editors — Suture</title>
+<title>Stripe Onboarding Guide — Suture</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -143,7 +143,7 @@ a:hover{color:#a78bfa}
 <div class="nav-group-title">Guides</div>
 <a href="data-science.html" class="nav-item">Suture for Data Science</a>
 <a href="document-authors.html" class="nav-item">Suture for Document Authors</a>
-<a href="video-editors.html" class="nav-item active">Suture for Video Editors</a>
+<a href="video-editors.html" class="nav-item">Suture for Video Editors</a>
 <a href="video-merge-guide.html" class="nav-item">Video Merge Guide: Version Control for OTIO Timelines</a>
 </div>
 <div class="nav-group">
@@ -176,7 +176,7 @@ a:hover{color:#a78bfa}
 <a href="merge-driver-quickstart.html" class="nav-item">5-Minute Git Merge Driver Quickstart</a>
 <a href="PRODUCTION_ROADMAP.html" class="nav-item">Suture Production Roadmap</a>
 <a href="self-hosting.html" class="nav-item">Self-Hosting Suture Hub</a>
-<a href="stripe-onboarding.html" class="nav-item">Stripe Onboarding Guide</a>
+<a href="stripe-onboarding.html" class="nav-item active">Stripe Onboarding Guide</a>
 <a href="user-guide.html" class="nav-item">Suture User Guide</a>
 </div>
   </aside>
@@ -187,102 +187,143 @@ a:hover{color:#a78bfa}
       <span>Docs</span>
     </div>
     <article class="doc">
-      <h1>Suture for Video Editors</h1>
-<h2 id="the-problem">The Problem</h2>
-<p>Non-linear editors (NLEs) like DaVinci Resolve, Adobe Premiere, and Avid Media Composer have no built-in version control. When a team shares a timeline, the workflow looks like this:</p>
-<pre><code>
-Project_v1.drp
-Project_v1_JANE_edit.drp
-Project_v1_JANE_edit_FINAL.drp
-Project_v1_JANE_edit_FINAL_v2_REAL.drp
-Project_v2_MIKE_color.drp
-</code></pre>
-<p>Nobody knows what changed between versions. Merging two editors' work means manually replaying edits by hand. There's no way to answer "what did Jane change in the color grade last Tuesday?"</p>
-<h2 id="how-suture-helps">How Suture Helps</h2>
-<p>Suture understands <a href="https://opentimelineio.io/">OpenTimelineIO</a> (OTIO) timelines — the industry-standard interchange format for editorial data. It tracks changes at the clip and track level:</p>
+      <h1>Stripe Onboarding Guide</h1>
+<p>This guide walks through setting up Stripe billing for the Suture Platform.</p>
+<h2 id="prerequisites">Prerequisites</h2>
 <ul>
-<li>Clip reorders, trims, and replacements</li>
-<li>Grade and effect changes</li>
-<li>Audio track modifications</li>
-<li>Marker and metadata edits</li>
+<li>A Stripe account (https://stripe.com)</li>
+<li>Stripe API key (from https://dashboard.stripe.com/apikeys)</li>
+<li>The Suture Platform running locally or deployed</li>
 </ul>
-<p>When two editors work on the same timeline, Suture merges non-overlapping changes automatically. If Jane retimes a clip on V2 while Mike adjusts audio on A1, both changes land cleanly.</p>
-<h2 id="example-timeline-diff">Example: Timeline Diff</h2>
-<pre><code>
-$ suture diff HEAD~1 timeline.otio
+<h2 id="step-1-create-products-and-prices">Step 1: Create Products and Prices</h2>
+<p>In the Stripe Dashboard:</p>
+<ol>
+<li>Go to <strong>Products</strong> → <strong>Add Product</strong></li>
+<li>Create three products:</li>
+</ol>
+<h3 id="free-tier-no-stripe-product-needed">Free Tier (no Stripe product needed)</h3>
+<p>The free tier is handled entirely by the platform code. No Stripe configuration needed.</p>
+<h3 id="pro-plan">Pro Plan</h3>
+<ul>
+<li><strong>Name:</strong> Suture Pro</li>
+<li><strong>Description:</strong> Unlimited repos, 10,000 merges/month, 10 GB storage, all drivers</li>
+<li><strong>Pricing:</strong> One-time → switch to <strong>Recurring</strong></li>
+<li><strong>Price:</strong> $9/month</li>
+<li><strong>Billing:</strong> Monthly</li>
+<li>Note the <strong>Price ID</strong> (starts with <code>price_</code>)</li>
+</ul>
+<h3 id="enterprise-plan">Enterprise Plan</h3>
+<ul>
+<li><strong>Name:</strong> Suture Enterprise</li>
+<li><strong>Description:</strong> Unlimited everything, SSO, audit log, 99.99% SLA</li>
+<li><strong>Pricing:</strong> One-time → switch to <strong>Recurring</strong></li>
+<li><strong>Price:</strong> $29/month</li>
+<li><strong>Billing:</strong> Monthly</li>
+<li>Note the <strong>Price ID</strong> (starts with <code>price_</code>)</li>
+</ul>
+<h2 id="step-2-configure-webhooks">Step 2: Configure Webhooks</h2>
+<ol>
+<li>Go to <strong>Developers</strong> → <strong>Webhooks</strong></li>
+<li>Click <strong>Add endpoint</strong></li>
+<li><strong>URL:</strong> <code>https://your-domain.com/billing/webhook</code></li>
+<li><strong>Events to listen for:</strong></li>
+</ol>
+<ul>
+<li><code>checkout.session.completed</code></li>
+<li><code>customer.subscription.updated</code></li>
+<li><code>customer.subscription.deleted</code></li>
+<li><code>invoice.payment_failed</code></li>
+<li><code>invoice.payment_succeeded</code></li>
+</ul>
+<ol>
+<li>Note the <strong>Signing secret</strong> (starts with <code>whsec_</code>)</li>
+</ol>
+<h2 id="step-3-update-platform-configuration">Step 3: Update Platform Configuration</h2>
+<p>Set these environment variables:</p>
+<pre><code class="language-bash"># Required
+SUTURE_STRIPE_KEY=sk_live_...           # From Stripe API keys (live mode)
+SUTURE_JWT_SECRET=&lt;random-secret&gt;       # Generate with: openssl rand -hex 32
 
- track: V1
-   clip "Interview_A" @ 00:01:12:00
--    duration: 00:00:15:00
-+    duration: 00:00:12:08        ← trimmed 2s04f
-+    effect: "FilmLook_v3"        ← new grade applied
+# Optional (for webhook signature verification)
+STRIPE_WEBHOOK_SECRET=whsec_...        # From Stripe webhooks
+STRIPE_WEBHOOK_ID=we_...               # From Stripe webhooks
 
- track: A1
-   clip "Ambience_Wind"
--    gain: -6.0 dB
-+    gain: -3.0 dB                ← raised 3 dB
+# For local testing, use test mode:
+SUTURE_STRIPE_KEY=sk_test_...
+</code></pre>
+<h2 id="step-4-update-price-ids-in-code">Step 4: Update Price IDs in Code</h2>
+<p>Edit <code>crates/suture-platform/src/stripe.rs</code> and replace the placeholder price IDs:</p>
+<pre><code class="language-rust">// Before:
+const PRICE_PRO_MONTHLY: &amp;str = "price_placeholder_pro";
+const PRICE_ENTERPRISE_MONTHLY: &amp;str = "price_placeholder_enterprise";
 
-2 clips changed, 0 conflicts
+// After (replace with your actual price IDs):
+const PRICE_PRO_MONTHLY: &amp;str = "price_1ABC...";        // Your Pro price ID
+const PRICE_ENTERPRISE_MONTHLY: &amp;str = "price_1XYZ..."; // Your Enterprise price ID
 </code></pre>
-<h2 id="5-minute-setup">5-Minute Setup</h2>
-<h3 id="1-install-suture">1. Install Suture</h3>
-<pre><code class="language-bash">cargo install suture-cli
+<h2 id="step-5-test-the-checkout-flow">Step 5: Test the Checkout Flow</h2>
+<ol>
+<li>Start the platform: <code>suture-platform --stripe-key sk_test_...</code></li>
+<li>Register a user account</li>
+<li>Call the checkout endpoint:</li>
+</ol>
+<pre><code class="language-bash">curl -X POST http://localhost:8080/billing/checkout \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"tier": "pro"}'
 </code></pre>
-<h3 id="2-initialize-a-project">2. Initialize a project</h3>
-<pre><code class="language-bash">mkdir my-project &amp;&amp; cd my-project
-suture init
-suture config user.name "Jane Editor"
-</code></pre>
-<h3 id="3-import-your-timeline">3. Import your timeline</h3>
-<p>Export from your NLE as OTIO, or use the FUSE mount:</p>
-<pre><code class="language-bash"># Option A: Copy exported OTIO file
-cp /path/to/export/timeline.otio .
-suture add . &amp;&amp; suture commit "initial assembly"
+<ol>
+<li>You'll get a Stripe Checkout URL. Open it in a browser.</li>
+<li>Use Stripe test card <code>4242 4242 4242 4242</code> with any future date/CVC.</li>
+<li>After completing checkout, the webhook fires and the user's tier updates to "pro".</li>
+</ol>
+<h2 id="step-6-verify-tier-upgrade">Step 6: Verify Tier Upgrade</h2>
+<pre><code class="language-bash"># Check subscription
+curl http://localhost:8080/billing/subscription \
+  -H "Authorization: Bearer $TOKEN"
 
-# Option B: Mount and work directly (editors save to the mount)
-suture vfs mount . /mnt/project
-# Now your NLE can open files from /mnt/project
+# Check usage (should now show pro limits)
+curl http://localhost:8080/api/usage \
+  -H "Authorization: Bearer $TOKEN"
 </code></pre>
-<h3 id="4-branch-and-experiment">4. Branch and experiment</h3>
-<pre><code class="language-bash">suture branch try-alt-music
-suture checkout try-alt-music
-# Edit timeline — swap music track, adjust timing
-suture add . &amp;&amp; suture commit "alt music track with crossfade"
+<h2 id="step-7-webhook-signature-verification-production">Step 7: Webhook Signature Verification (Production)</h2>
+<p>For production, verify webhook signatures to prevent spoofing. Add to <code>crates/suture-platform/src/stripe.rs</code> in the <code>handle_webhook</code> function:</p>
+<pre><code class="language-rust">use hmac::{Hmac, Mac};
+use sha2::Sha256;
 
-suture checkout main
-# Make different edits on main
-suture add . &amp;&amp; suture commit "tighten act 2 by 4 seconds"
+fn verify_webhook_signature(body: &amp;str, signature: &amp;str, secret: &amp;str) -&gt; bool {
+    let timestamp = signature.split('.').nth(1).unwrap_or("");
+    let signed_payload = format!("{}.{}", timestamp, body);
+    let expected = hmac_sha256(secret.as_bytes(), signed_payload.as_bytes());
+    let actual = signature.split('=').nth(1).unwrap_or("");
+    constant_time_compare(expected, actual)
+}
+</code></pre>
+<h2 id="testing-with-stripe-cli">Testing with Stripe CLI</h2>
+<pre><code class="language-bash"># Install Stripe CLI
+brew install stripe/stripe-cli/stripe
 
-# Merge — non-overlapping edits combine cleanly
-suture merge try-alt-music
+# Login
+stripe login
+
+# Forward webhooks to localhost
+stripe listen --forward-to localhost:8080/billing/webhook
+
+# Trigger test events
+stripe trigger checkout.session.completed
+stripe trigger customer.subscription.updated
+stripe trigger customer.subscription.deleted
 </code></pre>
-<h3 id="5-review-history">5. Review history</h3>
-<pre><code class="language-bash">suture log --oneline
-suture diff HEAD~2 timeline.otio
-suture blame timeline.otio   # who changed each clip, when
-</code></pre>
-<h2 id="comparison">Comparison</h2>
-<thead><tr><th></th><th>Suture</th><th>Manual file naming</th><th>No version control</th></tr></thead>
+<h2 id="troubleshooting">Troubleshooting</h2>
+<thead><tr><th>Issue</th><th>Solution</th></tr></thead>
 <tbody>
-<tr><td>See what changed</td><td>Yes — clip-level diff</td><td>No — must open both files</td><td>No</td></tr>
-<tr><td>Merge two editors' work</td><td>Automatic for non-overlapping edits</td><td>Manual replay</td><td>Manual replay</td></tr>
-<tr><td>History / blame</td><td>Full commit log with per-clip attribution</td><td>Folder full of files</td><td>None</td></tr>
-<tr><td>Undo a specific change</td><td><code>suture revert</code></td><td>Find old file, copy back</td><td>Impossible</td></tr>
-<tr><td>Collaboration</td><td>Push/pull via Suture Hub</td><td>Dropbox/Drive sync</td><td>Drive/email</td></tr>
+<tr><td>"billing is not configured"</td><td>Set <code>SUTURE_STRIPE_KEY</code> env var</td></tr>
+<tr><td>Checkout returns invalid URL</td><td>Check price IDs are correct</td></tr>
+<tr><td>Webhook returns "invalid payload"</td><td>Check webhook secret matches</td></tr>
+<tr><td>Tier not updating after payment</td><td>Check webhook is firing (Stripe Dashboard → Logs)</td></tr>
+<tr><td>Rate limit exceeded on Stripe</td><td>Use test mode keys for development</td></tr>
 </tbody>
 </table>
-<h2 id="nle-integration">NLE Integration</h2>
-<ul>
-<li><strong>FUSE mount</strong>: Mount the Suture repo as a directory. Your NLE opens and saves files normally. Every save becomes a commit.</li>
-<li><strong>WebDAV mount</strong>: Cross-platform alternative (macOS Finder, Windows Explorer).</li>
-<li><strong>OTIO round-trip</strong>: Export from Premiere/Resolve as OTIO, version with Suture, re-import.</li>
-</ul>
-<h2 id="see-also">See Also</h2>
-<ul>
-<li><a href="why-suture.html">Why Suture?</a> — how semantic understanding works</li>
-<li><a href="comparing-with-git.html">Suture vs. Git</a> — honest comparison</li>
-<li><a href="quickstart.html">Quick Start</a> — general setup guide</li>
-</ul>
     </article>
     <div class="doc-footer">
       <a href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">GitHub</a> &middot;
