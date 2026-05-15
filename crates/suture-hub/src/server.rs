@@ -7011,6 +7011,9 @@ mod tests {
             fn list_blobs(&self, _repo_id: &str) -> Result<Vec<String>, String> {
                 Ok(vec![])
             }
+            fn backend_name(&self) -> &'static str {
+                "mock"
+            }
         }
 
         let mock = Arc::new(MockBackend::new());

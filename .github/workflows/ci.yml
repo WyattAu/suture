@@ -102,6 +102,18 @@ jobs:
         with:
           key: cli-${{ matrix.os }}-${{ matrix.toolchain }}
 
+      - name: Install protoc (for suture-hub gRPC)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Install protoc (macOS)
+        if: runner.os == 'macOS'
+        run: brew install protobuf
+
+      - name: Install protoc (Windows)
+        if: runner.os == 'Windows'
+        run: choco install protoc -y
+
       - name: Run CLI tests
         run: cargo test -p suture-cli
 
