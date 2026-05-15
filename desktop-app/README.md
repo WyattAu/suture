@@ -56,7 +56,7 @@ cargo tauri build
 
 ## Version
 
-Current version: **5.1.0**
+Current version: **5.4.0**
 
 ## License
 

@@ -109,7 +109,7 @@ pub enum ConflictResolution {
 
 /// Merge with conflict details returned for programmatic resolution.
 ///
-/// Performs the same semantic merge as [`perform_merge`], but instead of
+/// Performs the same semantic merge as `perform_merge`, but instead of
 /// returning only the final result, returns detailed conflict information
 /// so callers can resolve conflicts programmatically.
 pub fn merge_with_conflicts(base: &str, ours: &str, theirs: &str, path: &str) -> MergeOutput {

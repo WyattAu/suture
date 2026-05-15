@@ -1,6 +1,6 @@
-# Suture 5.3.1 Deployment Runbook
+# Suture 5.4.0 Deployment Runbook
 
-Step-by-step instructions for deploying the Suture platform, publishing packages, and launching v5.3.1. Every command, every click, no ambiguity.
+Step-by-step instructions for deploying the Suture platform, publishing packages, and launching v5.4.0. Every command, every click, no ambiguity.
 
 ---
 
@@ -170,7 +170,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: WyattAu/suture@v5.1.0
+      - uses: WyattAu/suture@v5.4.0
         with:
           formats: "json,yaml,toml"
 ```

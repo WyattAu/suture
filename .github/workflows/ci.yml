@@ -291,15 +291,15 @@ jobs:
 
       - name: Enforce coverage threshold
         run: |
-          COVERAGE=$(cargo llvm-cov --workspace --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suspense-lsp --exclude suture-daemon --summary-only 2>/dev/null | grep -oP '\d+\.\d+% line' | head -1)
-          echo "Line coverage: $COVERAGE"
+          COVERAGE_LINE=$(cargo llvm-cov --workspace --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon --summary-only 2>/dev/null | grep -oE '[0-9]+\.[0-9]+% line' | head -1 || true)
+          echo "Line coverage: $COVERAGE_LINE"
           THRESHOLD=50.0
-          if [[ -n "$COVERAGE" ]]; then
-            COVERAGE_NUM=$(echo "$COVERAGE" | sed 's/%//')
-            if (( $(echo "$COVERAGE_NUM >= $THRESHOLD" )); then
-              echo "Coverage $COVERAGE meets threshold of $THRESHOLD%"
+          if [ -n "$COVERAGE_LINE" ]; then
+            COVERAGE_NUM=$(echo "$COVERAGE_LINE" | sed 's/%//')
+            if awk "BEGIN { exit ($COVERAGE_NUM >= $THRESHOLD) ? 1 : 0 }"; then
+              echo "Coverage $COVERAGE_LINE meets threshold of $THRESHOLD%"
             else
-              echo "::warning::Coverage $COVERAGE is below threshold of $THRESHOLD%"
+              echo "::warning::Coverage $COVERAGE_LINE is below threshold of $THRESHOLD%"
             fi
           else
             echo "::warning::Could not parse coverage output"

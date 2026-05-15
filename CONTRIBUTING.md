@@ -203,12 +203,12 @@ Drivers are format-specific plugins that implement the `SutureDriver` trait from
    ```toml
    [package]
    name = "suture-driver-<name>"
-    version = "5.3.1"
+     version = "5.4.0"
    edition = "2024"
 
    [dependencies]
-   suture-driver = { path = "../suture-driver", version = "5.0.0" }
-   suture-common = { path = "../suture-common", version = "5.0.0" }
+    suture-driver = { path = "../suture-driver", version = "5.4.0" }
+    suture-common = { path = "../suture-common", version = "5.4.0" }
    serde = { version = "1", features = ["derive"] }
    serde_json = "1"
    thiserror = "2"
@@ -357,4 +357,4 @@ The script publishes all 37 crates to crates.io in dependency order.
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the Apache License 2.0.
+By contributing, you agree that your contributions will be licensed under the AGPL-3.0-or-later license.

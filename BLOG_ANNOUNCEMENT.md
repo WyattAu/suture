@@ -53,7 +53,7 @@ Under the hood: BLAKE3-hashed blobs (Zstd compressed), content-addressable store
 - **602 tests, 0 failures** — no skipped, no ignored
 - **Clippy-clean** with all pedantic lints
 - **9 built-in format drivers** for JSON, YAML, TOML, CSV, XML, Markdown, DOCX, XLSX, PPTX
-- **20 crates** published to crates.io, Apache 2.0 licensed
+- **20 crates** published to crates.io, AGPL-3.0 licensed
 - Core patch algebra verified via extensive property-based testing (proptest)
 
 ## Honesty Check

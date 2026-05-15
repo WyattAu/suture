@@ -52,7 +52,7 @@ pub enum OperationType {
     /// No-op / identity patch.
     Identity,
     /// A batched commit containing multiple file changes.
-    /// The payload contains a JSON-serialized Vec<FileChange>.
+    /// The payload contains a JSON-serialized `Vec<FileChange>`.
     Batch,
 }
 

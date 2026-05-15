@@ -114,4 +114,4 @@ cargo build --release
 
 - [Main repository](https://github.com/WyattAu/suture)
 - [Documentation](https://github.com/WyattAu/suture/tree/main/docs)
-- [License (Apache 2.0)](https://github.com/WyattAu/suture/blob/main/LICENSE)
+- [License (AGPL-3.0)](https://github.com/WyattAu/suture/blob/main/LICENSE)

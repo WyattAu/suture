@@ -844,7 +844,7 @@ $S completions nushell | head -3  # should output nushell completion script
 ## 25. Misc
 
 ```bash
-$S version          # should print: suture 5.3.1
+$S version          # should print: suture 5.4.0
 $S drivers          # should list 17+ drivers with extensions
 $S shortlog         # should show compact commit summary
 ```

@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 pub struct OidcConfig {
     /// Display name for this provider (e.g., "Google", "Okta").
     pub provider_name: String,
-    /// OIDC issuer URL (e.g., "https://accounts.google.com").
+    /// OIDC issuer URL (e.g., `https://accounts.google.com`).
     pub issuer_url: String,
     /// Client ID registered with the OIDC provider.
     pub client_id: String,

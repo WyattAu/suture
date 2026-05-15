@@ -3900,7 +3900,7 @@ impl Repository {
     // =========================================================================
 
     /// Add a remote Hub.
-    /// Stores the remote URL in metadata config as "remote.<name>.url".
+    /// Stores the remote URL in metadata config as `remote.<name>.url`.
     pub fn add_remote(&self, name: &str, url: &str) -> Result<(), RepoError> {
         let key = format!("remote.{name}.url");
         self.meta.set_config(&key, url).map_err(RepoError::Meta)

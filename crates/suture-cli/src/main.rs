@@ -26,7 +26,7 @@ mod util;
     about = "Universal Semantic Version Control System"
 )]
 struct Cli {
-    /// Run as if suture was started in <path>
+    /// Run as if suture was started in `<path>`
     #[arg(short = 'C', global = true)]
     repo_path: Option<String>,
     #[command(subcommand)]
@@ -226,7 +226,7 @@ EXAMPLES:
         #[arg(short = 'c', long)]
         create: Option<String>,
     },
-    /// Restore working tree files (modern alternative to checkout -- <path>)
+    /// Restore working tree files (modern alternative to checkout -- `<path>`)
     #[command(after_long_help = "\
 EXAMPLES:
     suture restore file.txt          # Restore file from HEAD
