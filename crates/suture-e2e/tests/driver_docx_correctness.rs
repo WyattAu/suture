@@ -38,12 +38,6 @@ fn make_docx_bytes(paragraphs: &[&str]) -> Vec<u8> {
     buf
 }
 
-/// Create a DOCX as a String via from_utf8_unchecked (for diff/format tests
-/// where the text-oriented API is sufficient and data stays valid UTF-8).
-fn make_docx(paragraphs: &[&str]) -> String {
-    unsafe { String::from_utf8_unchecked(make_docx_bytes(paragraphs)) }
-}
-
 #[test]
 fn docx_two_editor_merge_different_paragraphs() {
     let driver = DocxDriver::new();
@@ -58,9 +52,7 @@ fn docx_two_editor_merge_different_paragraphs() {
     );
 
     let merged_bytes = merged.unwrap();
-    let merged_str = unsafe { String::from_utf8_unchecked(merged_bytes) };
-    let base_str = unsafe { String::from_utf8_unchecked(base) };
-    let diff = driver.diff(Some(&base_str), &merged_str).unwrap();
+    let diff = driver.diff_raw(Some(&base), &merged_bytes).unwrap();
     assert!(
         diff.iter().any(|c| matches!(c, SemanticChange::Modified { new_value, .. } if new_value == "Alpha Modified")),
         "merge should preserve editor A's change to paragraph 0"
@@ -82,9 +74,7 @@ fn docx_two_editor_merge_a_adds_b_edits() {
     assert!(merged.is_some(), "merge with add + edit should succeed");
 
     let merged_bytes = merged.unwrap();
-    let merged_str = unsafe { String::from_utf8_unchecked(merged_bytes) };
-    let base_str = unsafe { String::from_utf8_unchecked(base) };
-    let diff = driver.diff(Some(&base_str), &merged_str).unwrap();
+    let diff = driver.diff_raw(Some(&base), &merged_bytes).unwrap();
     assert!(
         diff.iter()
             .any(|c| matches!(c, SemanticChange::Added { value, .. } if value == "New Paragraph")),
@@ -99,11 +89,11 @@ fn docx_two_editor_merge_a_adds_b_edits() {
 #[test]
 fn docx_two_editor_conflict_same_paragraph() {
     let driver = DocxDriver::new();
-    let base = make_docx(&["Shared", "Other"]);
-    let ours = make_docx(&["Changed by A", "Other"]);
-    let theirs = make_docx(&["Changed by B", "Other"]);
+    let base = make_docx_bytes(&["Shared", "Other"]);
+    let ours = make_docx_bytes(&["Changed by A", "Other"]);
+    let theirs = make_docx_bytes(&["Changed by B", "Other"]);
 
-    let result = driver.merge(&base, &ours, &theirs).unwrap();
+    let result = driver.merge_raw(&base, &ours, &theirs).unwrap();
     assert!(
         result.is_none(),
         "conflicting edits to same paragraph should return None"
@@ -113,10 +103,10 @@ fn docx_two_editor_conflict_same_paragraph() {
 #[test]
 fn docx_diff_detects_all_change_types() {
     let driver = DocxDriver::new();
-    let base = make_docx(&["Keep", "Modify"]);
-    let new = make_docx(&["Keep", "Modified", "Added"]);
+    let base = make_docx_bytes(&["Keep", "Modify"]);
+    let new = make_docx_bytes(&["Keep", "Modified", "Added"]);
 
-    let changes = driver.diff(Some(&base), &new).unwrap();
+    let changes = driver.diff_raw(Some(&base), &new).unwrap();
     let modified = changes
         .iter()
         .filter(|c| matches!(c, SemanticChange::Modified { .. }))
@@ -133,33 +123,31 @@ fn docx_diff_detects_all_change_types() {
 #[test]
 fn docx_format_diff_readable() {
     let driver = DocxDriver::new();
-    let base = make_docx(&["Old"]);
-    let new = make_docx(&["New"]);
+    let base = make_docx_bytes(&["Old"]);
+    let new = make_docx_bytes(&["New"]);
 
-    let output = driver.format_diff(Some(&base), &new).unwrap();
+    let changes = driver.diff_raw(Some(&base), &new).unwrap();
     assert!(
-        output.contains("MODIFIED"),
-        "format_diff should show MODIFIED"
+        changes.iter().any(|c| matches!(c, SemanticChange::Modified { old_value, new_value, .. } if old_value == "Old" && new_value == "New")),
+        "diff_raw should show Modified change"
     );
-    assert!(output.contains("Old"), "format_diff should show old value");
-    assert!(output.contains("New"), "format_diff should show new value");
 }
 
 #[test]
 fn docx_format_diff_no_changes() {
     let driver = DocxDriver::new();
-    let doc = make_docx(&["Same"]);
+    let doc = make_docx_bytes(&["Same"]);
 
-    let output = driver.format_diff(Some(&doc), &doc).unwrap();
-    assert_eq!(output, "no changes");
+    let changes = driver.diff_raw(Some(&doc), &doc).unwrap();
+    assert!(changes.is_empty());
 }
 
 #[test]
 fn docx_diff_new_file() {
     let driver = DocxDriver::new();
-    let new = make_docx(&["First", "Second"]);
+    let new = make_docx_bytes(&["First", "Second"]);
 
-    let changes = driver.diff(None, &new).unwrap();
+    let changes = driver.diff_raw(None, &new).unwrap();
     assert_eq!(
         changes.len(),
         2,
@@ -175,11 +163,11 @@ fn docx_diff_new_file() {
 #[test]
 fn docx_merge_both_add_same_paragraph() {
     let driver = DocxDriver::new();
-    let base = make_docx(&["Existing"]);
-    let ours = make_docx(&["Existing", "Convergent"]);
-    let theirs = make_docx(&["Existing", "Convergent"]);
+    let base = make_docx_bytes(&["Existing"]);
+    let ours = make_docx_bytes(&["Existing", "Convergent"]);
+    let theirs = make_docx_bytes(&["Existing", "Convergent"]);
 
-    let result = driver.merge(&base, &ours, &theirs).unwrap();
+    let result = driver.merge_raw(&base, &ours, &theirs).unwrap();
     assert!(
         result.is_some(),
         "identical additions from both sides should merge cleanly"
@@ -189,11 +177,11 @@ fn docx_merge_both_add_same_paragraph() {
 #[test]
 fn docx_merge_both_add_different_paragraphs_conflict() {
     let driver = DocxDriver::new();
-    let base = make_docx(&["Existing"]);
-    let ours = make_docx(&["Existing", "From A"]);
-    let theirs = make_docx(&["Existing", "From B"]);
+    let base = make_docx_bytes(&["Existing"]);
+    let ours = make_docx_bytes(&["Existing", "From A"]);
+    let theirs = make_docx_bytes(&["Existing", "From B"]);
 
-    let result = driver.merge(&base, &ours, &theirs).unwrap();
+    let result = driver.merge_raw(&base, &ours, &theirs).unwrap();
     assert!(
         result.is_none(),
         "different additions at the same index should conflict"
@@ -213,9 +201,7 @@ fn docx_merge_one_side_unchanged() {
         "merge with one side unchanged should succeed"
     );
     let merged_bytes = result.unwrap();
-    let merged_str = unsafe { String::from_utf8_unchecked(merged_bytes) };
-    let base_str = unsafe { String::from_utf8_unchecked(base) };
-    let diff = driver.diff(Some(&base_str), &merged_str).unwrap();
+    let diff = driver.diff_raw(Some(&base), &merged_bytes).unwrap();
     assert!(
         diff.iter().any(
             |c| matches!(c, SemanticChange::Modified { new_value, .. } if new_value == "B Modified")
@@ -227,10 +213,10 @@ fn docx_merge_one_side_unchanged() {
 #[test]
 fn docx_merge_empty_document() {
     let driver = DocxDriver::new();
-    let base = make_docx(&[]);
-    let ours = make_docx(&["First"]);
-    let theirs = make_docx(&[]);
+    let base = make_docx_bytes(&[]);
+    let ours = make_docx_bytes(&["First"]);
+    let theirs = make_docx_bytes(&[]);
 
-    let result = driver.merge(&base, &ours, &theirs).unwrap();
+    let result = driver.merge_raw(&base, &ours, &theirs).unwrap();
     assert!(result.is_some(), "merge with empty base should succeed");
 }

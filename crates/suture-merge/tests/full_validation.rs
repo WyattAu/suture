@@ -54,6 +54,10 @@ fn make_minimal_docx(paragraphs: &[&str]) -> String {
     // String::from_utf8_unchecked internally for the same reason — it
     // re-parses as bytes when reading the ZIP, so the String is just a
     // byte transport.
+    debug_assert!(
+        std::str::from_utf8(&zip_bytes).is_ok(),
+        "from_utf8_unchecked precondition violated"
+    );
     unsafe { String::from_utf8_unchecked(zip_bytes) }
 }
 
@@ -100,6 +104,10 @@ fn make_minimal_xlsx(cells: &[(&str, &str)]) -> String {
         ),
     ]);
     // SAFETY: ZIP bytes are not valid UTF-8. See make_minimal_docx.
+    debug_assert!(
+        std::str::from_utf8(&zip_bytes).is_ok(),
+        "from_utf8_unchecked precondition violated"
+    );
     unsafe { String::from_utf8_unchecked(zip_bytes) }
 }
 
@@ -207,6 +215,10 @@ fn make_minimal_pptx(slides: &[&str]) -> String {
     let zip_inputs: Vec<(&str, &str)> = files.iter().map(|(p, c)| (*p, c.as_str())).collect();
     let zip_bytes = make_minimal_zip(&zip_inputs);
     // SAFETY: ZIP bytes are not valid UTF-8. See make_minimal_docx.
+    debug_assert!(
+        std::str::from_utf8(&zip_bytes).is_ok(),
+        "from_utf8_unchecked precondition violated"
+    );
     unsafe { String::from_utf8_unchecked(zip_bytes) }
 }
 

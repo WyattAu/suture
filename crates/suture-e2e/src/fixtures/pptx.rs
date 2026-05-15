@@ -1,16 +1,12 @@
 use std::io::{Cursor, Write};
 
-fn zip_to_string(buf: Vec<u8>) -> String {
-    unsafe { String::from_utf8_unchecked(buf) }
-}
-
 #[must_use]
-pub fn simple() -> String {
+pub fn simple() -> Vec<u8> {
     make_pptx(&["Title Slide", "Content Slide", "Summary Slide"])
 }
 
 #[must_use]
-pub fn multi_layout() -> String {
+pub fn multi_layout() -> Vec<u8> {
     make_pptx(&[
         "Title",
         "Agenda",
@@ -28,7 +24,7 @@ pub fn multi_layout() -> String {
 }
 
 #[must_use]
-pub fn styled() -> String {
+pub fn styled() -> Vec<u8> {
     make_pptx(&[
         "Acme Corp Annual Report 2025",
         "Executive Summary",
@@ -42,7 +38,7 @@ pub fn styled() -> String {
 }
 
 #[must_use]
-pub fn complex() -> String {
+pub fn complex() -> Vec<u8> {
     make_pptx(&[
         "Project Phoenix - Kickoff",
         "Agenda",
@@ -62,12 +58,11 @@ pub fn complex() -> String {
     ])
 }
 
-fn make_pptx(slide_names: &[impl AsRef<str>]) -> String {
+fn make_pptx(slide_names: &[impl AsRef<str>]) -> Vec<u8> {
     let mut buf = Vec::new();
     {
         let mut zip = zip::ZipWriter::new(Cursor::new(&mut buf));
 
-        // [Content_Types].xml
         let ct_overrides: String = slide_names
             .iter()
             .enumerate()
@@ -99,7 +94,6 @@ fn make_pptx(slide_names: &[impl AsRef<str>]) -> String {
         )
         .unwrap();
 
-        // ppt/_rels/presentation.xml.rels
         let slide_rels: String = slide_names
             .iter()
             .enumerate()
@@ -129,7 +123,6 @@ fn make_pptx(slide_names: &[impl AsRef<str>]) -> String {
         )
         .unwrap();
 
-        // ppt/presentation.xml with <p:sldIdLst>
         let sld_ids: String = slide_names
             .iter()
             .enumerate()
@@ -161,7 +154,6 @@ fn make_pptx(slide_names: &[impl AsRef<str>]) -> String {
         )
         .unwrap();
 
-        // Individual slide files
         for (i, name) in slide_names.iter().enumerate() {
             zip.start_file(
                 format!("ppt/slides/slide{}.xml", i + 1),
@@ -187,9 +179,9 @@ fn make_pptx(slide_names: &[impl AsRef<str>]) -> String {
 
         zip.finish().unwrap();
     }
-    zip_to_string(buf)
+    buf
 }
 
-pub fn make_from_slides(slide_names: &[impl AsRef<str>]) -> String {
+pub fn make_from_slides(slide_names: &[impl AsRef<str>]) -> Vec<u8> {
     make_pptx(slide_names)
 }

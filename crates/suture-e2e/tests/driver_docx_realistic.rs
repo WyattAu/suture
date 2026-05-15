@@ -7,7 +7,7 @@ fn docx_realistic_simple_parse_and_diff() {
     let driver = DocxDriver::new();
     let doc = docx::simple();
 
-    let changes = driver.diff(None, &doc).unwrap();
+    let changes = driver.diff_raw(None, &doc).unwrap();
     assert_eq!(changes.len(), 1, "simple doc should have 1 paragraph");
     assert!(
         matches!(&changes[0], SemanticChange::Added { value, .. } if value.contains("simple document")),
@@ -25,7 +25,7 @@ fn docx_realistic_simple_modify_and_diff() {
         "This is an UPDATED simple document.",
     );
 
-    let changes = driver.diff(Some(&base), &modified).unwrap();
+    let changes = driver.diff_raw(Some(&base), &modified).unwrap();
     assert_eq!(changes.len(), 1);
     assert!(
         matches!(&changes[0], SemanticChange::Modified { old_value, new_value, .. }
@@ -55,9 +55,8 @@ fn docx_realistic_multi_section_merge_different_paragraphs() {
         "changes to different paragraphs should merge"
     );
 
-    let merged_str = unsafe { String::from_utf8_unchecked(merged.unwrap()) };
-    let base_str = unsafe { String::from_utf8_unchecked(base) };
-    let diff = driver.diff(Some(&base_str), &merged_str).unwrap();
+    let merged_bytes = merged.unwrap();
+    let diff = driver.diff_raw(Some(&base), &merged_bytes).unwrap();
     assert!(
         diff.iter().any(|c| matches!(c, SemanticChange::Modified { new_value, .. } if new_value.contains("MODIFIED TITLE"))),
         "should preserve editor A change"
@@ -83,7 +82,7 @@ fn docx_realistic_multi_section_conflict_same_paragraph() {
         "CHANGED BY EDITOR B: Revenue increased by 30%.",
     );
 
-    let result = driver.merge(&base, &ours, &theirs).unwrap();
+    let result = driver.merge_raw(&base, &ours, &theirs).unwrap();
     assert!(result.is_none(), "same paragraph edits should conflict");
 }
 
@@ -92,7 +91,7 @@ fn docx_realistic_styled_preserves_structure() {
     let driver = DocxDriver::new();
     let doc = docx::styled();
 
-    let changes = driver.diff(None, &doc).unwrap();
+    let changes = driver.diff_raw(None, &doc).unwrap();
     assert!(
         changes.len() >= 10,
         "styled doc should have at least 10 paragraphs, got {}",
@@ -121,7 +120,7 @@ fn docx_realistic_complex_legal_document_merge() {
         "3.1 Client shall pay Company a monthly retainer of $20,000.",
     );
 
-    let merged = driver.merge(&base, &ours, &theirs).unwrap();
+    let merged = driver.merge_raw(&base, &ours, &theirs).unwrap();
     assert!(
         merged.is_some(),
         "legal doc: changes to different articles should merge"
@@ -143,7 +142,7 @@ fn docx_realistic_complex_legal_conflict() {
         "5.1 Total liability shall not exceed $500,000.",
     );
 
-    let result = driver.merge(&base, &ours, &theirs).unwrap();
+    let result = driver.merge_raw(&base, &ours, &theirs).unwrap();
     assert!(
         result.is_none(),
         "legal doc: conflicting clause edits should conflict"
@@ -155,7 +154,7 @@ fn docx_realistic_long_document_performance() {
     let driver = DocxDriver::new();
     let doc = docx::long();
 
-    let changes = driver.diff(None, &doc).unwrap();
+    let changes = driver.diff_raw(None, &doc).unwrap();
     assert!(
         changes.len() >= 50,
         "long doc should have at least 50 paragraphs, got {}",
@@ -168,7 +167,7 @@ fn docx_realistic_long_document_performance() {
         0,
         "UPDATED: THE COMPREHENSIVE GUIDE TO MODERN SOFTWARE ARCHITECTURE - V2",
     );
-    let diff = driver.diff(Some(&doc), &modified).unwrap();
+    let diff = driver.diff_raw(Some(&doc), &modified).unwrap();
     assert_eq!(
         diff.len(),
         1,
@@ -185,7 +184,7 @@ fn docx_realistic_long_merge_across_chapters() {
     let theirs =
         docx::with_modified_paragraph(&paras, 25, "Section 2.6: UPDATED Microservice Patterns");
 
-    let merged = driver.merge(&base, &ours, &theirs).unwrap();
+    let merged = driver.merge_raw(&base, &ours, &theirs).unwrap();
     assert!(
         merged.is_some(),
         "long doc: changes in different chapters should merge"
@@ -202,8 +201,13 @@ fn docx_realistic_format_diff_multi_section() {
         "Total revenue reached $5.0 million, exceeding our target.",
     );
 
-    let output = driver.format_diff(Some(&base), &modified).unwrap();
-    assert!(output.contains("MODIFIED"));
+    let changes = driver.diff_raw(Some(&base), &modified).unwrap();
+    assert!(
+        changes
+            .iter()
+            .any(|c| matches!(c, SemanticChange::Modified { .. })),
+        "should detect modification"
+    );
 }
 
 #[test]
@@ -217,7 +221,7 @@ fn test_docx_two_editor_paragraph_conflict() {
         "Conclusions and next steps",
     ];
     let base = docx::with_modified_paragraph(five_paras, 0, five_paras[0]);
-    assert!(base.starts_with("PK"), "base should be valid DOCX (ZIP)");
+    assert!(base.starts_with(b"PK"), "base should be valid DOCX (ZIP)");
 
     let ours = docx::with_modified_paragraph(
         five_paras,
@@ -230,7 +234,7 @@ fn test_docx_two_editor_paragraph_conflict() {
         "EDITOR B: Research findings require further review.",
     );
 
-    let result = driver.merge(&base, &ours, &theirs).unwrap();
+    let result = driver.merge_raw(&base, &ours, &theirs).unwrap();
     assert!(
         result.is_none(),
         "both editors modifying the same paragraph should conflict"
@@ -264,9 +268,7 @@ fn test_docx_table_insertion_merge() {
         "merged output should be valid DOCX (ZIP magic bytes)"
     );
 
-    let merged_str = unsafe { String::from_utf8_unchecked(merged_bytes) };
-    let base_str = unsafe { String::from_utf8_unchecked(base) };
-    let diff = driver.diff(Some(&base_str), &merged_str).unwrap();
+    let diff = driver.diff_raw(Some(&base), &merged_bytes).unwrap();
     assert!(
         diff.iter().any(|c| matches!(c, SemanticChange::Modified { new_value, .. } if new_value.contains("[TABLE INSERTED BY EDITOR A]"))),
         "should preserve editor A table insertion"
@@ -283,7 +285,7 @@ fn test_docx_large_document_stress() {
     let base = docx::long();
     let paras = docx::long_paragraphs();
 
-    let changes = driver.diff(None, &base).unwrap();
+    let changes = driver.diff_raw(None, &base).unwrap();
     assert!(
         changes.len() >= 50,
         "large doc should have at least 50 paragraphs, got {}",
@@ -294,11 +296,11 @@ fn test_docx_large_document_stress() {
     let theirs = docx::with_modified_paragraph(&paras, 30, "STRESS: Modified section 2.6");
     let another = docx::with_modified_paragraph(&paras, 45, "STRESS: Modified section 3.8");
 
-    let _ = driver.diff(Some(&base), &ours).unwrap();
-    let _ = driver.diff(Some(&base), &theirs).unwrap();
-    let _ = driver.diff(Some(&base), &another).unwrap();
+    let _ = driver.diff_raw(Some(&base), &ours).unwrap();
+    let _ = driver.diff_raw(Some(&base), &theirs).unwrap();
+    let _ = driver.diff_raw(Some(&base), &another).unwrap();
 
-    let merge_result = driver.merge(&base, &ours, &theirs);
+    let merge_result = driver.merge_raw(&base, &ours, &theirs);
     assert!(
         merge_result.is_ok(),
         "large document merge should not error"

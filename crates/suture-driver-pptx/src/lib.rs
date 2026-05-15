@@ -629,9 +629,22 @@ impl SutureDriver for PptxDriver {
         base: Option<&[u8]>,
         new_content: &[u8],
     ) -> Result<Vec<SemanticChange>, DriverError> {
-        let base_str = base.map(|b| bytes_to_string_lossy(b.to_vec()));
-        let new_str = bytes_to_string_lossy(new_content.to_vec());
-        self.diff(base_str.as_deref(), &new_str)
+        // Parse directly from bytes. PPTX files are ZIP archives (binary),
+        // so they cannot round-trip through &str without corruption.
+        let new_doc = OoxmlDocument::from_bytes(new_content)
+            .map_err(|e| DriverError::ParseError(e.to_string()))?;
+        let new_slides = Self::extract_slides(&new_doc)?;
+
+        let base_slides: Vec<SlideRef> = match base {
+            None => Vec::new(),
+            Some(b) => {
+                let base_doc = OoxmlDocument::from_bytes(b)
+                    .map_err(|e| DriverError::ParseError(e.to_string()))?;
+                Self::extract_slides(&base_doc)?
+            }
+        };
+
+        Ok(Self::diff_slides(&base_slides, &new_slides))
     }
 }
 
@@ -1254,28 +1267,27 @@ mod tests {
         buf
     }
 
+    fn pptx_diff(driver: &PptxDriver, base: Option<&[u8]>, new: &[u8]) -> Vec<SemanticChange> {
+        driver.diff_raw(base, new).unwrap()
+    }
+
     #[test]
     fn test_full_roundtrip_single_slide() {
         let driver = PptxDriver::new();
         let pptx_bytes = build_minimal_pptx(&["Hello"]);
-        // SAFETY: PPTX files are ZIP archives containing XML parts.
-        // The XML parts extracted by the OOXML parser are valid UTF-8.
-        // Using `from_utf8_unchecked` avoids an O(n) validation pass.
-        let pptx_str = unsafe { String::from_utf8_unchecked(pptx_bytes.clone()) };
 
-        // Extract slides
         let doc = OoxmlDocument::from_bytes(&pptx_bytes).unwrap();
         let slides = PptxDriver::extract_slides(&doc).unwrap();
         assert_eq!(slides.len(), 1);
         assert_eq!(slides[0].slide_id, 256);
 
         // Diff against nothing (new file)
-        let changes = driver.diff(None, &pptx_str).unwrap();
+        let changes = pptx_diff(&driver, None, &pptx_bytes);
         assert_eq!(changes.len(), 1);
         assert!(matches!(&changes[0], SemanticChange::Added { .. }));
 
         // Diff against itself (no changes)
-        let changes = driver.diff(Some(&pptx_str), &pptx_str).unwrap();
+        let changes = pptx_diff(&driver, Some(&pptx_bytes), &pptx_bytes);
         assert!(changes.is_empty());
     }
 
@@ -1283,22 +1295,11 @@ mod tests {
     fn test_full_diff_added_slide() {
         let driver = PptxDriver::new();
         let base_bytes = build_minimal_pptx(&["Slide A"]);
-        // SAFETY: PPTX files are ZIP archives containing XML parts.
-        // The XML parts extracted by the OOXML parser are valid UTF-8.
-        // Using `from_utf8_unchecked` avoids an O(n) validation pass.
-        let base_str = unsafe { String::from_utf8_unchecked(base_bytes) };
         let new_bytes = build_minimal_pptx(&["Slide A", "Slide B"]);
-        // SAFETY: PPTX files are ZIP archives containing XML parts.
-        // The XML parts extracted by the OOXML parser are valid UTF-8.
-        // Using `from_utf8_unchecked` avoids an O(n) validation pass.
-        let new_str = unsafe { String::from_utf8_unchecked(new_bytes) };
 
-        let changes = driver.diff(Some(&base_str), &new_str).unwrap();
+        let changes = pptx_diff(&driver, Some(&base_bytes), &new_bytes);
         assert_eq!(changes.len(), 1);
         assert!(matches!(&changes[0], SemanticChange::Added { .. }));
-
-        let fmt = driver.format_diff(Some(&base_str), &new_str).unwrap();
-        assert!(fmt.contains("ADDED"));
     }
 
     #[test]

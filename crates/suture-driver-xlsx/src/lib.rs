@@ -722,9 +722,29 @@ impl SutureDriver for XlsxDriver {
         base: Option<&[u8]>,
         new_content: &[u8],
     ) -> Result<Vec<SemanticChange>, DriverError> {
-        let base_str = base.map(|b| bytes_to_string_lossy(b.to_vec()));
-        let new_str = bytes_to_string_lossy(new_content.to_vec());
-        self.diff(base_str.as_deref(), &new_str)
+        let new_doc = OoxmlDocument::from_bytes(new_content)
+            .map_err(|e| DriverError::ParseError(e.to_string()))?;
+        let new_sheets = Self::parse_sheets(&new_doc)?;
+
+        #[allow(clippy::type_complexity)]
+        let base_sheets: Vec<SheetData> = match base {
+            None => Vec::new(),
+            Some(b) => {
+                let base_doc = OoxmlDocument::from_bytes(b)
+                    .map_err(|e| DriverError::ParseError(e.to_string()))?;
+                Self::parse_sheets(&base_doc)?
+            }
+        };
+
+        let mut changes = Vec::new();
+        for (name, cells) in &new_sheets {
+            let base_cells = base_sheets
+                .iter()
+                .find(|(n, _)| n == name)
+                .map_or(&[][..], |(_, c)| c.as_slice());
+            changes.extend(Self::diff_cells(base_cells, cells, name));
+        }
+        Ok(changes)
     }
 }
 

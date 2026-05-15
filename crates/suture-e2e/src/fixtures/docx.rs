@@ -1,10 +1,5 @@
 use std::io::{Cursor, Write};
 
-fn zip_to_string(buf: Vec<u8>) -> String {
-    unsafe { String::from_utf8_unchecked(buf) }
-}
-
-/// Build a DOCX as raw bytes (binary-safe, for use with merge_raw).
 fn make_docx_bytes(paragraphs: &[impl AsRef<str>]) -> Vec<u8> {
     let content_types = r#"<?xml version="1.0"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -71,8 +66,8 @@ pub fn with_modified_paragraph_bytes(
 pub const SIMPLE_PARAGRAPHS: &[&str] = &["This is a simple document with a single paragraph."];
 
 #[must_use]
-pub fn simple() -> String {
-    make_docx(SIMPLE_PARAGRAPHS)
+pub fn simple() -> Vec<u8> {
+    make_docx_bytes(SIMPLE_PARAGRAPHS)
 }
 
 pub const MULTI_SECTION_PARAGRAPHS: &[&str] = &[
@@ -90,8 +85,8 @@ pub const MULTI_SECTION_PARAGRAPHS: &[&str] = &[
 ];
 
 #[must_use]
-pub fn multi_section() -> String {
-    make_docx(MULTI_SECTION_PARAGRAPHS)
+pub fn multi_section() -> Vec<u8> {
+    make_docx_bytes(MULTI_SECTION_PARAGRAPHS)
 }
 
 pub const STYLED_PARAGRAPHS: &[&str] = &[
@@ -109,8 +104,8 @@ pub const STYLED_PARAGRAPHS: &[&str] = &[
 ];
 
 #[must_use]
-pub fn styled() -> String {
-    make_docx(STYLED_PARAGRAPHS)
+pub fn styled() -> Vec<u8> {
+    make_docx_bytes(STYLED_PARAGRAPHS)
 }
 
 pub const COMPLEX_PARAGRAPHS: &[&str] = &[
@@ -141,8 +136,8 @@ pub const COMPLEX_PARAGRAPHS: &[&str] = &[
 ];
 
 #[must_use]
-pub fn complex() -> String {
-    make_docx(COMPLEX_PARAGRAPHS)
+pub fn complex() -> Vec<u8> {
+    make_docx_bytes(COMPLEX_PARAGRAPHS)
 }
 
 #[must_use]
@@ -196,64 +191,20 @@ pub fn long_paragraphs() -> Vec<String> {
 }
 
 #[must_use]
-pub fn long() -> String {
-    make_docx(&long_paragraphs())
-}
-
-fn make_docx(paragraphs: &[impl AsRef<str>]) -> String {
-    let content_types = r#"<?xml version="1.0"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-  <Default Extension="xml" ContentType="application/xml"/>
-  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
-</Types>"#;
-
-    let mut doc_xml = String::from(
-        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n\
-         <w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">\n\
-         <w:body>\n",
-    );
-    for p in paragraphs {
-        let text = p.as_ref();
-        let escaped = text
-            .replace('&', "&amp;")
-            .replace('<', "&lt;")
-            .replace('>', "&gt;")
-            .replace('"', "&quot;");
-        doc_xml.push_str(&format!("    <w:p><w:r><w:t>{escaped}</w:t></w:r></w:p>\n"));
-    }
-    doc_xml.push_str("  </w:body>\n</w:document>");
-
-    let mut buf = Vec::new();
-    {
-        let mut zip = zip::ZipWriter::new(Cursor::new(&mut buf));
-        zip.start_file(
-            "[Content_Types].xml",
-            zip::write::SimpleFileOptions::default(),
-        )
-        .unwrap();
-        zip.write_all(content_types.as_bytes()).unwrap();
-        zip.start_file(
-            "word/document.xml",
-            zip::write::SimpleFileOptions::default(),
-        )
-        .unwrap();
-        zip.write_all(doc_xml.as_bytes()).unwrap();
-        zip.finish().unwrap();
-    }
-    zip_to_string(buf)
+pub fn long() -> Vec<u8> {
+    make_docx_bytes(&long_paragraphs())
 }
 
 pub fn with_modified_paragraph(
     paragraphs: &[impl AsRef<str>],
     index: usize,
     new_text: &str,
-) -> String {
+) -> Vec<u8> {
     let mut modified: Vec<String> = paragraphs.iter().map(|p| p.as_ref().to_owned()).collect();
     if index < modified.len() {
         modified[index] = new_text.to_owned();
     } else {
         modified.push(new_text.to_owned());
     }
-    make_docx(&modified)
+    make_docx_bytes(&modified)
 }

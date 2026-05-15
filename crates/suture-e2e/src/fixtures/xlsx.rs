@@ -5,7 +5,7 @@ use std::fmt::Write;
 pub type CellData = (usize, usize, String);
 
 #[must_use]
-pub fn simple() -> String {
+pub fn simple() -> Vec<u8> {
     make_xlsx(&simple_sheets())
 }
 
@@ -25,7 +25,7 @@ pub fn simple_sheets() -> Vec<(&'static str, Vec<CellData>)> {
 }
 
 #[must_use]
-pub fn multi_sheet() -> String {
+pub fn multi_sheet() -> Vec<u8> {
     make_xlsx(&multi_sheet_sheets())
 }
 
@@ -123,7 +123,7 @@ pub fn multi_sheet_sheets() -> Vec<(&'static str, Vec<CellData>)> {
 }
 
 #[must_use]
-pub fn formula_heavy() -> String {
+pub fn formula_heavy() -> Vec<u8> {
     make_xlsx(&formula_heavy_sheets())
 }
 
@@ -200,7 +200,7 @@ pub fn formula_heavy_sheets() -> Vec<(&'static str, Vec<CellData>)> {
 }
 
 #[must_use]
-pub fn structured() -> String {
+pub fn structured() -> Vec<u8> {
     make_xlsx(&structured_sheets())
 }
 
@@ -246,7 +246,7 @@ pub fn structured_sheets() -> Vec<(&'static str, Vec<CellData>)> {
 }
 
 #[must_use]
-pub fn wide() -> String {
+pub fn wide() -> Vec<u8> {
     make_xlsx(&wide_sheets())
 }
 
@@ -285,11 +285,7 @@ fn col_to_letter(col: usize) -> String {
     result
 }
 
-fn zip_to_string(buf: Vec<u8>) -> String {
-    unsafe { String::from_utf8_unchecked(buf) }
-}
-
-fn make_xlsx(sheets: &[(&str, Vec<CellData>)]) -> String {
+fn make_xlsx(sheets: &[(&str, Vec<CellData>)]) -> Vec<u8> {
     let content_types = r#"<?xml version="1.0"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
@@ -334,7 +330,7 @@ fn make_xlsx(sheets: &[(&str, Vec<CellData>)]) -> String {
         }
         zip.finish().unwrap();
     }
-    zip_to_string(buf)
+    buf
 }
 
 #[must_use]
@@ -344,7 +340,7 @@ pub fn with_modified_cell(
     row: usize,
     col: usize,
     new_val: &str,
-) -> String {
+) -> Vec<u8> {
     let mut modified_sheets: Vec<(String, Vec<CellData>)> = Vec::new();
     for (i, (name, cells)) in sheets.iter().enumerate() {
         if i == sheet_idx {

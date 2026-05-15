@@ -1,7 +1,7 @@
 pub const SIMPLE_PAGES: &[&str] = &["Hello, World! This is a simple one-page PDF document."];
 
 #[must_use]
-pub fn simple() -> String {
+pub fn simple() -> Vec<u8> {
     make_pdf(SIMPLE_PAGES)
 }
 
@@ -24,7 +24,7 @@ pub const MULTI_PAGE_PAGES: &[&str] = &[
 ];
 
 #[must_use]
-pub fn multi_page() -> String {
+pub fn multi_page() -> Vec<u8> {
     make_pdf(MULTI_PAGE_PAGES)
 }
 
@@ -49,11 +49,11 @@ pub const COMPLEX_PAGES: &[&str] = &[
 ];
 
 #[must_use]
-pub fn complex() -> String {
+pub fn complex() -> Vec<u8> {
     make_pdf(COMPLEX_PAGES)
 }
 
-fn make_pdf(page_texts: &[impl AsRef<str>]) -> String {
+fn make_pdf(page_texts: &[impl AsRef<str>]) -> Vec<u8> {
     let mut objects = Vec::new();
     let mut obj_offsets = Vec::new();
 
@@ -123,10 +123,10 @@ fn make_pdf(page_texts: &[impl AsRef<str>]) -> String {
     );
     pdf.extend_from_slice(trailer.as_bytes());
 
-    unsafe { String::from_utf8_unchecked(pdf) }
+    pdf
 }
 
-pub fn with_modified_page(page_texts: &[impl AsRef<str>], index: usize, new_text: &str) -> String {
+pub fn with_modified_page(page_texts: &[impl AsRef<str>], index: usize, new_text: &str) -> Vec<u8> {
     let mut modified: Vec<String> = page_texts.iter().map(|p| p.as_ref().to_owned()).collect();
     if index < modified.len() {
         modified[index] = new_text.to_owned();

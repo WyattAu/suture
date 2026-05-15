@@ -588,9 +588,53 @@ impl SutureDriver for DocxDriver {
         base: Option<&[u8]>,
         new_content: &[u8],
     ) -> Result<Vec<SemanticChange>, DriverError> {
-        let base_str = base.map(|b| bytes_to_string_lossy(b.to_vec()));
-        let new_str = bytes_to_string_lossy(new_content.to_vec());
-        self.diff(base_str.as_deref(), &new_str)
+        // Parse directly from bytes. DOCX files are ZIP archives (binary),
+        // so they cannot round-trip through &str without corruption.
+        let new_doc = OoxmlDocument::from_bytes(new_content)
+            .map_err(|e| DriverError::ParseError(e.to_string()))?;
+        let new_blocks = extract_blocks_from_doc(&new_doc)?;
+
+        let base_blocks: Vec<Block> = match base {
+            None => Vec::new(),
+            Some(b) => {
+                let base_doc = OoxmlDocument::from_bytes(b)
+                    .map_err(|e| DriverError::ParseError(e.to_string()))?;
+                extract_blocks_from_doc(&base_doc)?
+            }
+        };
+
+        let max_len = base_blocks.len().max(new_blocks.len());
+        let mut changes = Vec::new();
+
+        for i in 0..max_len {
+            let block_type = new_blocks.get(i).map_or("paragraph", |b| {
+                if b.kind == BlockKind::Table {
+                    "table"
+                } else {
+                    "paragraph"
+                }
+            });
+            let path = format!("/{block_type}/{i}");
+            match (base_blocks.get(i), new_blocks.get(i)) {
+                (None, Some(new)) => changes.push(SemanticChange::Added {
+                    path,
+                    value: new.text.clone(),
+                }),
+                (Some(old), None) => changes.push(SemanticChange::Removed {
+                    path,
+                    old_value: old.text.clone(),
+                }),
+                (Some(old), Some(new)) if old.text != new.text => {
+                    changes.push(SemanticChange::Modified {
+                        path,
+                        old_value: old.text.clone(),
+                        new_value: new.text.clone(),
+                    });
+                }
+                _ => {}
+            }
+        }
+        Ok(changes)
     }
 }
 
@@ -669,9 +713,10 @@ mod tests {
         buf
     }
 
-    fn docx_str(bytes: &[u8]) -> String {
-        // SAFETY: DOCX files store text as UTF-8 per the OOXML specification.
-        unsafe { String::from_utf8_unchecked(bytes.to_vec()) }
+    /// Test helper: diff two DOCX byte buffers directly via diff_raw.
+    /// DOCX files are ZIP archives (binary), so they cannot be represented as valid UTF-8 strings.
+    fn docx_diff(d: &DocxDriver, base: Option<&[u8]>, new: &[u8]) -> Vec<SemanticChange> {
+        d.diff_raw(base, new).unwrap()
     }
 
     #[test]
@@ -691,7 +736,7 @@ mod tests {
         let d = DocxDriver::new();
         let doc1 = make_docx(&["Hello"]);
         let doc2 = make_docx(&["Hello", "World"]);
-        let changes = d.diff(Some(&docx_str(&doc1)), &docx_str(&doc2)).unwrap();
+        let changes = docx_diff(&d, Some(&doc1), &doc2);
         assert!(changes.iter().any(|c| matches!(
             c,
             SemanticChange::Added { value, .. } if value == "World"
@@ -703,7 +748,7 @@ mod tests {
         let d = DocxDriver::new();
         let doc1 = make_docx(&["Hello", "World"]);
         let doc2 = make_docx(&["Hello"]);
-        let changes = d.diff(Some(&docx_str(&doc1)), &docx_str(&doc2)).unwrap();
+        let changes = docx_diff(&d, Some(&doc1), &doc2);
         assert!(changes.iter().any(|c| matches!(
             c,
             SemanticChange::Removed { old_value, .. } if old_value == "World"
@@ -715,7 +760,7 @@ mod tests {
         let d = DocxDriver::new();
         let doc1 = make_docx(&["Hello"]);
         let doc2 = make_docx(&["Goodbye"]);
-        let changes = d.diff(Some(&docx_str(&doc1)), &docx_str(&doc2)).unwrap();
+        let changes = docx_diff(&d, Some(&doc1), &doc2);
         assert!(changes.iter().any(|c| matches!(
             c,
             SemanticChange::Modified { old_value, new_value, .. } if old_value == "Hello" && new_value == "Goodbye"
@@ -728,9 +773,7 @@ mod tests {
         let base = make_docx(&["A", "B", "C"]);
         let ours = make_docx(&["A", "X", "C"]);
         let theirs = make_docx(&["A", "B", "Y"]);
-        let result = d
-            .merge(&docx_str(&base), &docx_str(&ours), &docx_str(&theirs))
-            .unwrap();
+        let result = d.merge_raw(&base, &ours, &theirs).unwrap();
         assert!(result.is_some());
     }
 
@@ -740,9 +783,7 @@ mod tests {
         let base = make_docx(&["A"]);
         let ours = make_docx(&["X"]);
         let theirs = make_docx(&["Y"]);
-        let result = d
-            .merge(&docx_str(&base), &docx_str(&ours), &docx_str(&theirs))
-            .unwrap();
+        let result = d.merge_raw(&base, &ours, &theirs).unwrap();
         assert!(result.is_none());
     }
 
@@ -783,13 +824,17 @@ mod tests {
             ("CHANGED Outro", vec![]),
         ]);
 
-        let merged = d
-            .merge(&docx_str(&base), &docx_str(&ours), &docx_str(&theirs))
-            .unwrap();
+        let merged = d.merge_raw(&base, &ours, &theirs).unwrap();
         assert!(merged.is_some());
 
         // Verify table survived
-        let merged_str = merged.unwrap();
+        let merged_bytes = merged.unwrap();
+        let merged_doc = OoxmlDocument::from_bytes(&merged_bytes).unwrap();
+        let merged_main = merged_doc
+            .get_part(merged_doc.main_document_path().unwrap())
+            .unwrap();
+        let merged_body = parse_body(&merged_main.content).unwrap();
+        let merged_str = merged_main.content.clone();
         assert!(merged_str.contains("<w:tbl>"), "table should be preserved");
         assert!(
             merged_str.contains("<w:tblGrid>"),
@@ -835,9 +880,7 @@ mod tests {
             ("After", vec![]),
         ]);
 
-        let result = d
-            .merge(&docx_str(&base), &docx_str(&ours), &docx_str(&theirs))
-            .unwrap();
+        let result = d.merge_raw(&base, &ours, &theirs).unwrap();
         assert!(
             result.is_none(),
             "conflicting edits to paragraph before table should conflict"
@@ -853,7 +896,7 @@ mod tests {
             ("", vec![vec!["H1", "H2"], vec!["V1", "V2"]]),
         ]);
 
-        let changes = d.diff(Some(&docx_str(&base)), &docx_str(&new)).unwrap();
+        let changes = docx_diff(&d, Some(&base), &new);
         assert!(changes.iter().any(|c| matches!(
             c,
             SemanticChange::Added { path, .. } if path.starts_with("/table/")
@@ -901,7 +944,6 @@ mod tests {
     fn test_merge_preserves_formatting() {
         let d = DocxDriver::new();
         let styled = make_styled_docx();
-        let styled_str = docx_str(&styled);
 
         let modified_doc_xml = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
@@ -912,7 +954,7 @@ mod tests {
     <w:p w:rsidR="00112233"><w:r><w:t xml:space="preserve">Preserved  space text</w:t></w:r></w:p>
   </w:body>
 </w:document>"#;
-        let modified_str = docx_bytes(&make_docx_from_xml(modified_doc_xml));
+        let modified_bytes = make_docx_from_xml(modified_doc_xml);
 
         let modified2_doc_xml = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
@@ -923,14 +965,10 @@ mod tests {
     <w:p w:rsidR="00112233"><w:r><w:t xml:space="preserve">Preserved  space text</w:t></w:r></w:p>
   </w:body>
 </w:document>"#;
-        let modified2_str = docx_bytes(&make_docx_from_xml(modified2_doc_xml));
+        let modified2_bytes = make_docx_from_xml(modified2_doc_xml);
 
         let merged = d
-            .merge_raw(
-                styled_str.as_bytes(),
-                modified_str.as_bytes(),
-                modified2_str.as_bytes(),
-            )
+            .merge_raw(&styled, &modified_bytes, &modified2_bytes)
             .unwrap();
         assert!(merged.is_some(), "non-overlapping edits should merge");
 
@@ -1012,7 +1050,7 @@ mod tests {
         }
 
         let d = DocxDriver::new();
-        let changes = d.diff(None, &docx_str(&buf)).unwrap();
+        let changes = docx_diff(&d, None, &buf);
         assert_eq!(changes.len(), 2);
         assert!(matches!(&changes[0], SemanticChange::Added { value, .. } if value.is_empty()));
         assert!(matches!(&changes[1], SemanticChange::Added { value, .. } if value == "Text"));
@@ -1092,13 +1130,6 @@ mod tests {
             zip.finish().unwrap();
         }
         buf
-    }
-
-    fn docx_bytes(bytes: &[u8]) -> String {
-        // SAFETY: DOCX files contain OOXML parts which are valid UTF-8 per the
-        // Open XML specification (ECMA-376). The test helper constructs these
-        // parts from &str literals, so the bytes are known-valid UTF-8.
-        unsafe { String::from_utf8_unchecked(bytes.to_vec()) }
     }
 
     // === Track changes tests ===

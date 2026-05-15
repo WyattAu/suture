@@ -198,9 +198,31 @@ impl SutureDriver for ImageDriver {
         base: Option<&[u8]>,
         new_content: &[u8],
     ) -> Result<Vec<SemanticChange>, DriverError> {
-        let base_str = base.map(|b| bytes_to_string_lossy(b.to_vec()));
-        let new_str = bytes_to_string_lossy(new_content.to_vec());
-        self.diff(base_str.as_deref(), &new_str)
+        // Parse directly from bytes. Image files (PNG, JPEG, etc.) are binary
+        // and cannot round-trip through &str without corruption.
+        let new_meta = Self::extract_metadata(new_content)?;
+
+        match base {
+            None => {
+                let mut changes = vec![SemanticChange::Added {
+                    path: "/width".to_owned(),
+                    value: new_meta.width.to_string(),
+                }];
+                changes.push(SemanticChange::Added {
+                    path: "/height".to_owned(),
+                    value: new_meta.height.to_string(),
+                });
+                changes.push(SemanticChange::Added {
+                    path: "/color_type".to_owned(),
+                    value: new_meta.color_type,
+                });
+                Ok(changes)
+            }
+            Some(b) => {
+                let base_meta = Self::extract_metadata(b)?;
+                Ok(base_meta.diff_fields(&new_meta))
+            }
+        }
     }
 }
 
@@ -216,11 +238,10 @@ mod tests {
         buf
     }
 
-    fn bytes_to_string(bytes: Vec<u8>) -> String {
-        // SAFETY: `bytes` is extracted from image metadata (EXIF, IPTC, XMP)
-        // fields which are valid UTF-8 by specification. Garbled bytes would
-        // only produce garbled text, not UB.
-        unsafe { String::from_utf8_unchecked(bytes) }
+    /// Test helper: diff image byte buffers directly via diff_raw.
+    /// Image files are binary (PNG, JPEG, etc.) and cannot be represented as valid UTF-8 strings.
+    fn image_diff(driver: &ImageDriver, base: Option<&[u8]>, new: &[u8]) -> Vec<SemanticChange> {
+        driver.diff_raw(base, new).unwrap()
     }
 
     #[test]
@@ -258,9 +279,8 @@ mod tests {
     fn test_image_diff_new_file() {
         let driver = ImageDriver::new();
         let bytes = create_test_png(10, 20, [0, 0, 0]);
-        let new_content = bytes_to_string(bytes);
 
-        let changes = driver.diff(None, &new_content).unwrap();
+        let changes = image_diff(&driver, None, &bytes);
         assert_eq!(changes.len(), 3);
         assert!(
             changes
@@ -284,9 +304,8 @@ mod tests {
     fn test_image_diff_identical() {
         let driver = ImageDriver::new();
         let bytes = create_test_png(50, 50, [128, 128, 128]);
-        let content = bytes_to_string(bytes.clone());
 
-        let changes = driver.diff(Some(&content), &content).unwrap();
+        let changes = image_diff(&driver, Some(&bytes), &bytes);
         assert!(changes.is_empty());
     }
 
@@ -294,10 +313,9 @@ mod tests {
     fn test_image_diff_empty() {
         let driver = ImageDriver::new();
         let bytes = create_test_png(10, 10, [0, 0, 0]);
-        let content = bytes_to_string(bytes);
 
-        let output = driver.format_diff(Some(&content), &content).unwrap();
-        assert_eq!(output, "no changes");
+        let changes = image_diff(&driver, Some(&bytes), &bytes);
+        assert!(changes.is_empty());
     }
 
     #[test]
@@ -305,10 +323,8 @@ mod tests {
         let driver = ImageDriver::new();
         let base_bytes = create_test_png(100, 200, [0, 0, 0]);
         let new_bytes = create_test_png(150, 250, [0, 0, 0]);
-        let base = bytes_to_string(base_bytes);
-        let new = bytes_to_string(new_bytes);
 
-        let changes = driver.diff(Some(&base), &new).unwrap();
+        let changes = image_diff(&driver, Some(&base_bytes), &new_bytes);
         assert_eq!(changes.len(), 2);
 
         let width_change = changes
@@ -362,10 +378,7 @@ mod tests {
             )
             .unwrap();
 
-        let base = bytes_to_string(gray_buf);
-        let new = bytes_to_string(rgb_buf);
-
-        let changes = driver.diff(Some(&base), &new).unwrap();
+        let changes = image_diff(&driver, Some(&gray_buf), &rgb_buf);
         let color_changes: Vec<_> = changes
             .iter()
             .filter(|c| matches!(c, SemanticChange::Modified { path, .. } if path == "/color_type"))
@@ -378,13 +391,13 @@ mod tests {
         let driver = ImageDriver::new();
         let base_bytes = create_test_png(32, 32, [0, 0, 0]);
         let new_bytes = create_test_png(64, 64, [0, 0, 0]);
-        let base = bytes_to_string(base_bytes);
-        let new = bytes_to_string(new_bytes);
 
-        let output = driver.format_diff(Some(&base), &new).unwrap();
-        assert!(output.contains("MODIFIED"));
-        assert!(output.contains("/width"));
-        assert!(output.contains("/height"));
+        let changes = image_diff(&driver, Some(&base_bytes), &new_bytes);
+        let modified: Vec<_> = changes
+            .iter()
+            .filter(|c| matches!(c, SemanticChange::Modified { .. }))
+            .collect();
+        assert_eq!(modified.len(), 2);
     }
 
     #[test]
@@ -436,10 +449,7 @@ mod tests {
             )
             .unwrap();
 
-        let base = bytes_to_string(rgb_buf);
-        let new = bytes_to_string(rgba_buf);
-
-        let changes = driver.diff(Some(&base), &new).unwrap();
+        let changes = image_diff(&driver, Some(&rgb_buf), &rgba_buf);
         let color_change = changes
             .iter()
             .find(|c| matches!(c, SemanticChange::Modified { path, .. } if path == "/color_type"));

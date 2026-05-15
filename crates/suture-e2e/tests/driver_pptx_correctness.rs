@@ -2,7 +2,7 @@ use std::io::{Cursor, Write};
 use suture_driver::{SemanticChange, SutureDriver};
 use suture_driver_pptx::PptxDriver;
 
-fn make_pptx(slide_names: &[&str]) -> String {
+fn make_pptx(slide_names: &[&str]) -> Vec<u8> {
     let mut buf = Vec::new();
     {
         let mut zip = zip::ZipWriter::new(Cursor::new(&mut buf));
@@ -114,7 +114,7 @@ fn make_pptx(slide_names: &[&str]) -> String {
 
         zip.finish().unwrap();
     }
-    unsafe { String::from_utf8_unchecked(buf) }
+    buf
 }
 
 #[test]
@@ -124,7 +124,7 @@ fn pptx_two_editor_merge_different_slides_added() {
     let ours = make_pptx(&["Slide1", "Slide2"]);
     let theirs = make_pptx(&["Slide1", "Slide3"]);
 
-    let merged = driver.merge(&base, &ours, &theirs).unwrap();
+    let merged = driver.merge_raw(&base, &ours, &theirs).unwrap();
     assert!(
         merged.is_some(),
         "merge adding different slides should succeed"
@@ -142,7 +142,7 @@ fn pptx_two_editor_merge_a_adds_b_removes() {
     let ours = make_pptx(&["Keep", "Remove", "Stay", "NewSlide"]);
     let theirs = make_pptx(&["Keep", "Stay"]);
 
-    let merged = driver.merge(&base, &ours, &theirs).unwrap();
+    let merged = driver.merge_raw(&base, &ours, &theirs).unwrap();
     assert!(merged.is_some(), "merge with add + remove should succeed");
     assert!(
         !merged.unwrap().is_empty(),
@@ -156,7 +156,7 @@ fn pptx_diff_detects_added_slide() {
     let base = make_pptx(&["Slide1"]);
     let new = make_pptx(&["Slide1", "Slide2"]);
 
-    let changes = driver.diff(Some(&base), &new).unwrap();
+    let changes = driver.diff_raw(Some(&base), &new).unwrap();
     assert_eq!(changes.len(), 1);
     assert!(matches!(&changes[0], SemanticChange::Added { value, .. } if value == "Slide2"));
 }
@@ -167,7 +167,7 @@ fn pptx_diff_detects_removed_slide() {
     let base = make_pptx(&["Slide1", "Slide2"]);
     let new = make_pptx(&["Slide1"]);
 
-    let changes = driver.diff(Some(&base), &new).unwrap();
+    let changes = driver.diff_raw(Some(&base), &new).unwrap();
     assert_eq!(changes.len(), 1);
     assert!(
         matches!(&changes[0], SemanticChange::Removed { old_value, .. } if old_value == "Slide2")
@@ -179,7 +179,7 @@ fn pptx_diff_no_changes() {
     let driver = PptxDriver::new();
     let doc = make_pptx(&["A", "B"]);
 
-    let changes = driver.diff(Some(&doc), &doc).unwrap();
+    let changes = driver.diff_raw(Some(&doc), &doc).unwrap();
     assert!(changes.is_empty());
 }
 
@@ -189,8 +189,13 @@ fn pptx_format_diff() {
     let base = make_pptx(&["Old"]);
     let new = make_pptx(&["Old", "New"]);
 
-    let output = driver.format_diff(Some(&base), &new).unwrap();
-    assert!(output.contains("ADDED"), "format_diff should show ADDED");
+    let changes = driver.diff_raw(Some(&base), &new).unwrap();
+    assert!(
+        changes
+            .iter()
+            .any(|c| matches!(c, SemanticChange::Added { .. })),
+        "should detect added slide"
+    );
 }
 
 #[test]
@@ -198,8 +203,8 @@ fn pptx_format_diff_no_changes() {
     let driver = PptxDriver::new();
     let doc = make_pptx(&["Same"]);
 
-    let output = driver.format_diff(Some(&doc), &doc).unwrap();
-    assert_eq!(output, "no changes");
+    let changes = driver.diff_raw(Some(&doc), &doc).unwrap();
+    assert!(changes.is_empty());
 }
 
 #[test]
@@ -207,7 +212,7 @@ fn pptx_diff_new_file() {
     let driver = PptxDriver::new();
     let new = make_pptx(&["Title", "Content"]);
 
-    let changes = driver.diff(None, &new).unwrap();
+    let changes = driver.diff_raw(None, &new).unwrap();
     assert_eq!(changes.len(), 2);
     assert!(
         changes
@@ -223,7 +228,7 @@ fn pptx_merge_one_side_unchanged() {
     let ours = make_pptx(&["S1", "S2"]);
     let theirs = make_pptx(&["S1"]);
 
-    let result = driver.merge(&base, &ours, &theirs).unwrap();
+    let result = driver.merge_raw(&base, &ours, &theirs).unwrap();
     assert!(
         result.is_some(),
         "merge with theirs unchanged should succeed"
@@ -237,7 +242,7 @@ fn pptx_merge_empty_base() {
     let ours = make_pptx(&["FromA"]);
     let theirs = make_pptx(&["FromB"]);
 
-    let result = driver.merge(&base, &ours, &theirs).unwrap();
+    let result = driver.merge_raw(&base, &ours, &theirs).unwrap();
     assert!(
         result.is_some(),
         "different additions to empty base should succeed (set-based merge)"

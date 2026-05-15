@@ -7,7 +7,7 @@ fn pptx_realistic_simple_parse_and_diff() {
     let driver = PptxDriver::new();
     let doc = pptx::simple();
 
-    let changes = driver.diff(None, &doc).unwrap();
+    let changes = driver.diff_raw(None, &doc).unwrap();
     assert_eq!(changes.len(), 3, "simple pptx should have 3 slides");
     assert!(
         changes
@@ -35,7 +35,7 @@ fn pptx_realistic_simple_add_slide_merge() {
         "References",
     ]);
 
-    let merged = driver.merge(&base, &ours, &theirs).unwrap();
+    let merged = driver.merge_raw(&base, &ours, &theirs).unwrap();
     assert!(merged.is_some(), "adding different slides should merge");
     assert!(
         !merged.unwrap().is_empty(),
@@ -51,7 +51,7 @@ fn pptx_realistic_simple_conflict_same_slide_removed() {
     let ours = pptx::make_from_slides(&["Title Slide", "Content Slide"]);
     let theirs = pptx::make_from_slides(&["Title Slide", "Content Slide"]);
 
-    let merged = driver.merge(&base, &ours, &theirs).unwrap();
+    let merged = driver.merge_raw(&base, &ours, &theirs).unwrap();
     assert!(merged.is_some(), "both removing same slide should merge");
 }
 
@@ -60,7 +60,7 @@ fn pptx_realistic_multi_layout_parse() {
     let driver = PptxDriver::new();
     let doc = pptx::multi_layout();
 
-    let changes = driver.diff(None, &doc).unwrap();
+    let changes = driver.diff_raw(None, &doc).unwrap();
     assert!(
         changes.len() >= 12,
         "multi-layout pptx should have at least 12 slides, got {}",
@@ -104,7 +104,7 @@ fn pptx_realistic_multi_layout_merge_different_adds() {
         "ADDED BY B: Security Overview",
     ]);
 
-    let merged = driver.merge(&base, &ours, &theirs).unwrap();
+    let merged = driver.merge_raw(&base, &ours, &theirs).unwrap();
     assert!(
         merged.is_some(),
         "multi-layout: different slide additions should merge"
@@ -136,7 +136,7 @@ fn pptx_realistic_styled_merge_add_and_unchanged() {
         "Strategic Priorities 2026",
     ]);
 
-    let merged = driver.merge(&base, &ours, &theirs).unwrap();
+    let merged = driver.merge_raw(&base, &ours, &theirs).unwrap();
     assert!(merged.is_some(), "styled: add + unchanged should merge");
 }
 
@@ -144,9 +144,6 @@ fn pptx_realistic_styled_merge_add_and_unchanged() {
 fn pptx_realistic_styled_diff_detects_changes() {
     let driver = PptxDriver::new();
     let base = pptx::styled();
-    // Same first 7 slides + a new 8th slide (9 total, so slide 9 is Added).
-    // Since both have IDs starting from 256, the first 8 IDs overlap and the
-    // 9th slide in modified has a new ID → detected as Added.
     let modified = pptx::make_from_slides(&[
         "Acme Corp Annual Report 2025",
         "Executive Summary",
@@ -159,7 +156,7 @@ fn pptx_realistic_styled_diff_detects_changes() {
         "New Slide",
     ]);
 
-    let changes = driver.diff(Some(&base), &modified).unwrap();
+    let changes = driver.diff_raw(Some(&base), &modified).unwrap();
     assert!(
         changes
             .iter()
@@ -173,7 +170,7 @@ fn pptx_realistic_complex_project_parse() {
     let driver = PptxDriver::new();
     let doc = pptx::complex();
 
-    let changes = driver.diff(None, &doc).unwrap();
+    let changes = driver.diff_raw(None, &doc).unwrap();
     assert!(
         changes.len() >= 15,
         "complex pptx should have at least 15 slides, got {}",
@@ -201,7 +198,7 @@ fn pptx_realistic_complex_merge_add_and_remove() {
         "Team Structure",
     ]);
 
-    let merged = driver.merge(&base, &ours, &theirs).unwrap();
+    let merged = driver.merge_raw(&base, &ours, &theirs).unwrap();
     assert!(merged.is_some(), "complex: add + remove should merge");
 }
 
@@ -216,8 +213,13 @@ fn pptx_realistic_format_diff() {
         "Bonus Slide",
     ]);
 
-    let output = driver.format_diff(Some(&base), &new).unwrap();
-    assert!(output.contains("ADDED"), "format_diff should show ADDED");
+    let changes = driver.diff_raw(Some(&base), &new).unwrap();
+    assert!(
+        changes
+            .iter()
+            .any(|c| matches!(c, SemanticChange::Added { .. })),
+        "diff_raw should show Added changes"
+    );
 }
 
 #[test]
@@ -227,15 +229,15 @@ fn test_pptx_slide_reorder_merge() {
     let ours = pptx::make_from_slides(&["S1", "S3", "S2", "S4", "S5"]);
     let theirs = pptx::make_from_slides(&["S1", "S2", "S3", "S4 Updated", "S5"]);
 
-    let merged = driver.merge(&base, &ours, &theirs).unwrap();
+    let merged = driver.merge_raw(&base, &ours, &theirs).unwrap();
     assert!(
         merged.is_some(),
         "slide reorder + non-overlapping text edit should produce a merge result"
     );
 
-    let merged_str = merged.unwrap();
+    let merged_bytes = merged.unwrap();
     assert!(
-        merged_str.starts_with("PK"),
+        merged_bytes.starts_with(b"PK"),
         "merged output should be valid PPTX (ZIP magic bytes)"
     );
 }
@@ -276,15 +278,15 @@ fn test_pptx_multi_slide_edit_merge() {
     let ours = pptx::make_from_slides(&ours_names);
     let theirs = pptx::make_from_slides(&theirs_names);
 
-    let merged = driver.merge(&base, &ours, &theirs).unwrap();
+    let merged = driver.merge_raw(&base, &ours, &theirs).unwrap();
     assert!(
         merged.is_some(),
         "non-overlapping multi-slide edits should merge"
     );
 
-    let merged_str = merged.unwrap();
+    let merged_bytes = merged.unwrap();
     assert!(
-        merged_str.starts_with("PK"),
+        merged_bytes.starts_with(b"PK"),
         "merged output should be valid PPTX (ZIP magic bytes)"
     );
 }
@@ -295,7 +297,7 @@ fn test_pptx_large_deck_stress() {
     let slides: Vec<String> = (1..=30).map(|i| format!("Slide {i}")).collect();
     let doc = pptx::make_from_slides(&slides);
 
-    let changes = driver.diff(None, &doc).unwrap();
+    let changes = driver.diff_raw(None, &doc).unwrap();
     assert!(
         changes.len() >= 30,
         "30-slide deck should have at least 30 slides, got {}",

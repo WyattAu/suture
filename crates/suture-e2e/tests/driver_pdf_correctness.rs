@@ -1,7 +1,7 @@
 use suture_driver::{SemanticChange, SutureDriver};
 use suture_driver_pdf::PdfDriver;
 
-fn make_minimal_pdf(page_texts: &[&str]) -> String {
+fn make_minimal_pdf(page_texts: &[&str]) -> Vec<u8> {
     let mut objects = Vec::new();
     let mut obj_offsets = Vec::new();
 
@@ -71,7 +71,7 @@ fn make_minimal_pdf(page_texts: &[&str]) -> String {
     );
     pdf.extend_from_slice(trailer.as_bytes());
 
-    unsafe { String::from_utf8_unchecked(pdf) }
+    pdf
 }
 
 #[test]
@@ -79,7 +79,7 @@ fn pdf_text_extraction_accuracy() {
     let driver = PdfDriver::new();
     let pdf = make_minimal_pdf(&["Hello World", "Second Page"]);
 
-    let changes = driver.diff(None, &pdf).unwrap();
+    let changes = driver.diff_raw(None, &pdf).unwrap();
     assert_eq!(changes.len(), 2, "should extract text from both pages");
 
     assert!(
@@ -98,7 +98,7 @@ fn pdf_page_level_diff_modifications() {
     let base = make_minimal_pdf(&["Page One", "Page Two", "Page Three"]);
     let new = make_minimal_pdf(&["Page One", "Modified Two", "Page Three"]);
 
-    let changes = driver.diff(Some(&base), &new).unwrap();
+    let changes = driver.diff_raw(Some(&base), &new).unwrap();
     assert_eq!(changes.len(), 1, "should detect one modified page");
     assert!(
         matches!(&changes[0], SemanticChange::Modified { old_value, new_value, .. }
@@ -113,7 +113,7 @@ fn pdf_page_level_diff_addition() {
     let base = make_minimal_pdf(&["Existing"]);
     let new = make_minimal_pdf(&["Existing", "New Page"]);
 
-    let changes = driver.diff(Some(&base), &new).unwrap();
+    let changes = driver.diff_raw(Some(&base), &new).unwrap();
     assert!(
         changes
             .iter()
@@ -128,7 +128,7 @@ fn pdf_page_level_diff_removal() {
     let base = make_minimal_pdf(&["Keep", "Remove Me"]);
     let new = make_minimal_pdf(&["Keep"]);
 
-    let changes = driver.diff(Some(&base), &new).unwrap();
+    let changes = driver.diff_raw(Some(&base), &new).unwrap();
     assert!(
         changes.iter().any(
             |c| matches!(c, SemanticChange::Removed { old_value, .. } if old_value == "Remove Me")
@@ -144,7 +144,7 @@ fn pdf_two_editor_merge_different_pages() {
     let ours = make_minimal_pdf(&["A Modified", "B", "C"]);
     let theirs = make_minimal_pdf(&["A", "B", "C Modified"]);
 
-    let result = driver.merge(&base, &ours, &theirs).unwrap();
+    let result = driver.merge_raw(&base, &ours, &theirs).unwrap();
     assert!(
         result.is_some(),
         "merge with changes to different pages should succeed"
@@ -158,7 +158,7 @@ fn pdf_two_editor_conflict_same_page() {
     let ours = make_minimal_pdf(&["Changed by A"]);
     let theirs = make_minimal_pdf(&["Changed by B"]);
 
-    let result = driver.merge(&base, &ours, &theirs).unwrap();
+    let result = driver.merge_raw(&base, &ours, &theirs).unwrap();
     assert!(
         result.is_none(),
         "conflicting changes to the same page should return None"
@@ -172,7 +172,7 @@ fn pdf_two_editor_a_adds_b_edits() {
     let ours = make_minimal_pdf(&["Hello", "New Page"]);
     let theirs = make_minimal_pdf(&["Hello Modified"]);
 
-    let result = driver.merge(&base, &ours, &theirs).unwrap();
+    let result = driver.merge_raw(&base, &ours, &theirs).unwrap();
     assert!(
         result.is_some(),
         "merge with one side adding a page and the other editing should succeed"
@@ -185,13 +185,11 @@ fn pdf_format_diff() {
     let base = make_minimal_pdf(&["Old text"]);
     let new = make_minimal_pdf(&["New text"]);
 
-    let output = driver.format_diff(Some(&base), &new).unwrap();
+    let changes = driver.diff_raw(Some(&base), &new).unwrap();
     assert!(
-        output.contains("MODIFIED"),
-        "format_diff should show MODIFIED"
+        changes.iter().any(|c| matches!(c, SemanticChange::Modified { old_value, new_value, .. } if old_value == "Old text" && new_value == "New text")),
+        "should detect modified page"
     );
-    assert!(output.contains("Old text"));
-    assert!(output.contains("New text"));
 }
 
 #[test]
@@ -199,8 +197,8 @@ fn pdf_format_diff_no_changes() {
     let driver = PdfDriver::new();
     let pdf = make_minimal_pdf(&["Same"]);
 
-    let output = driver.format_diff(Some(&pdf), &pdf).unwrap();
-    assert_eq!(output, "no changes");
+    let changes = driver.diff_raw(Some(&pdf), &pdf).unwrap();
+    assert!(changes.is_empty());
 }
 
 #[test]
@@ -209,7 +207,7 @@ fn pdf_diff_empty_pages() {
     let base = make_minimal_pdf(&[""]);
     let new = make_minimal_pdf(&[""]);
 
-    let changes = driver.diff(Some(&base), &new).unwrap();
+    let changes = driver.diff_raw(Some(&base), &new).unwrap();
     assert!(
         changes.is_empty(),
         "identical empty pages should produce no changes"
@@ -223,7 +221,7 @@ fn pdf_merge_one_side_unchanged() {
     let ours = make_minimal_pdf(&["Original"]);
     let theirs = make_minimal_pdf(&["Changed"]);
 
-    let result = driver.merge(&base, &ours, &theirs).unwrap();
+    let result = driver.merge_raw(&base, &ours, &theirs).unwrap();
     assert!(
         result.is_some(),
         "merge with one side unchanged should succeed"
@@ -237,7 +235,7 @@ fn pdf_merge_multiple_page_changes() {
     let ours = make_minimal_pdf(&["P1 Edited", "P2", "P3", "P4"]);
     let theirs = make_minimal_pdf(&["P1", "P2", "P3 Edited", "P4"]);
 
-    let result = driver.merge(&base, &ours, &theirs).unwrap();
+    let result = driver.merge_raw(&base, &ours, &theirs).unwrap();
     assert!(
         result.is_some(),
         "merge with non-overlapping multi-page edits should succeed"

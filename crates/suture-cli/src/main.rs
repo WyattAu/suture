@@ -2004,6 +2004,10 @@ struct CwdGuard(std::path::PathBuf);
 #[cfg(test)]
 impl CwdGuard {
     fn new() -> Self {
+        // SAFETY: `unshare(CLONE_FS)` is called only in tests to isolate
+        // filesystem changes (chdir) to the current thread. It requires
+        // CAP_SYS_ADMIN or the kernel's `unshare` user namespace support.
+        // The CwdGuard::drop reverts via chdir to the saved cwd.
         #[cfg(target_os = "linux")]
         unsafe {
             libc::unshare(libc::CLONE_FS);
