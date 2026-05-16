@@ -68,7 +68,7 @@ jobs:
         run: |
           IMAGE="ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]'):main"
           docker pull "$IMAGE" || true
-          docker run -d --name suture-test -p 8080:8080 --entrypoint /usr/local/bin/suture-platform "$IMAGE" --db platform.db --hub-db hub.db --jwt-secret ci-test-secret-not-for-production
+          docker run -d --name suture-test -p 8080:8080 --entrypoint /usr/local/bin/suture-platform "$IMAGE" --host 0.0.0.0:8080 --db platform.db --hub-db hub.db --jwt-secret ci-test-secret-not-for-production
           echo "Waiting for container to start..."
           for i in $(seq 1 15); do
             if curl -sf http://localhost:8080/healthz 2>/dev/null | grep -q "ok"; then

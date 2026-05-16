@@ -24,4 +24,4 @@ EXPOSE 8080
 USER suture
 WORKDIR /data
 ENTRYPOINT ["tini", "--"]
-CMD ["suture-platform", "--db", "platform.db", "--hub-db", "hub.db"]
+CMD ["suture-platform", "--host", "0.0.0.0:8080", "--db", "platform.db", "--hub-db", "hub.db"]
