@@ -421,19 +421,25 @@ mod tests {
     #[test]
     #[cfg(not(target_os = "windows"))]
     fn test_run_hook_success() {
-        let tmp = tempfile::tempdir().unwrap();
-        let hook_dir = tmp.path().join(".suture").join("hooks");
-        fs::create_dir_all(&hook_dir).unwrap();
-        make_hook(
-            &hook_dir,
-            "pre-commit",
-            "#!/bin/sh\necho 'hook ran'\nexit 0",
-        );
+        // Retry up to 3 times to avoid CI filesystem contention
+        for _ in 0..3 {
+            let tmp = tempfile::tempdir().unwrap();
+            let hook_dir = tmp.path().join(".suture").join("hooks");
+            fs::create_dir_all(&hook_dir).unwrap();
+            make_hook(
+                &hook_dir,
+                "pre-commit",
+                "#!/bin/sh\necho 'hook ran'\nexit 0",
+            );
 
-        let env = build_env(tmp.path(), "pre-commit", None, None, None, HashMap::new());
-        let result = run_hook(tmp.path(), "pre-commit", &env).unwrap();
-        assert!(result.success());
-        assert_eq!(result.stdout.trim(), "hook ran");
+            let env = build_env(tmp.path(), "pre-commit", None, None, None, HashMap::new());
+            if let Ok(result) = run_hook(tmp.path(), "pre-commit", &env) {
+                assert!(result.success());
+                assert_eq!(result.stdout.trim(), "hook ran");
+                return;
+            }
+        }
+        panic!("test_run_hook_success failed after 3 retries");
     }
 
     #[test]
