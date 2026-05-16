@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Suture 5.3.1 Deployment Runbook — Suture</title>
+<title>Suture 5.4.0 Deployment Runbook — Suture</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -161,7 +161,6 @@ a:hover{color:#a78bfa}
 <div class="nav-group">
 <div class="nav-group-title">Development</div>
 <a href="performance.html" class="nav-item">Suture Performance Baseline</a>
-<a href="release-notes.html" class="nav-item">Suture v2.9.0 — First Public Release</a>
 <a href="shipping-checklist.html" class="nav-item">Suture v2.9.0 Shipping Checklist</a>
 </div>
 <div class="nav-group">
@@ -170,7 +169,7 @@ a:hover{color:#a78bfa}
 <a href="architecture.html" class="nav-item">Suture Architecture v5.3.1</a>
 <a href="ci-integration.html" class="nav-item">CI Integration Guide</a>
 <a href="demo.html" class="nav-item">Suture Demo: Semantic Merge in 60 Seconds</a>
-<a href="deploy-runbook.html" class="nav-item active">Suture 5.3.1 Deployment Runbook</a>
+<a href="deploy-runbook.html" class="nav-item active">Suture 5.4.0 Deployment Runbook</a>
 <a href="gitlab-ci-integration.html" class="nav-item">GitLab CI Integration</a>
 <a href="git-merge-driver.html" class="nav-item">Git Merge Driver — Comprehensive Guide</a>
 <a href="merge-driver-quickstart.html" class="nav-item">5-Minute Git Merge Driver Quickstart</a>
@@ -187,8 +186,8 @@ a:hover{color:#a78bfa}
       <span>Docs</span>
     </div>
     <article class="doc">
-      <h1>Suture 5.3.1 Deployment Runbook</h1>
-<p>Step-by-step instructions for deploying the Suture platform, publishing packages, and launching v5.3.1. Every command, every click, no ambiguity.</p>
+      <h1>Suture 5.4.0 Deployment Runbook</h1>
+<p>Step-by-step instructions for deploying the Suture platform, publishing packages, and launching v5.4.0. Every command, every click, no ambiguity.</p>
 <hr>
 <h2 id="section-1-prerequisites">Section 1: Prerequisites</h2>
 <thead><tr><th>Requirement</th><th>Details</th></tr></thead>
@@ -341,7 +340,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: WyattAu/suture@v5.1.0
+      - uses: WyattAu/suture@v5.4.0
         with:
           formats: "json,yaml,toml"
 </code></pre>
@@ -497,7 +496,7 @@ git push origin v5.1.0
     </article>
     <div class="doc-footer">
       <a href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">GitHub</a> &middot;
-      <a href="https://github.com/WyattAu/suture/blob/main/LICENSE" target="_blank" rel="noopener">Apache-2.0</a>
+      <a href="https://github.com/WyattAu/suture/blob/main/LICENSE" target="_blank" rel="noopener">AGPL-3.0</a>
     </div>
   </main>
 </div>
