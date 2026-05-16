@@ -2334,7 +2334,7 @@ mod tests {
         }
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn make_branch(name: &str, target: &str) -> BranchProto {
         BranchProto {
             name: name.to_string(),

@@ -43,6 +43,72 @@
 
 ## [Unreleased]
 
+## [5.4.0] - 2026-05-16
+
+### Security
+- **Ratatui/crossterm upgrade** (0.29→0.30, 0.28→0.29) — resolve known vulnerabilities
+- **Replace unsound serde_yml/libyml** with serde_yaml 0.9
+- **from_utf8_unchecked UB eliminated** on binary ZIP/image bytes
+- **Configurable CORS origins**, fix blocking I/O in plugin upload
+
+### Performance
+- **O(A×B) merge → indexed O(A+B)** — indexed merge eliminates quadratic comparison
+- **N+1 SQL queries eliminated** — batch loading in hub storage layer
+- **O(m×n) diff memory reduction** — streaming diff computation
+- **O(D×A) rename scan optimization** — indexed rename detection
+- **Blob cache, driver proptests, hot-path clone elimination**
+
+### Quality
+- **Clippy pedantic+nursery sweep** — 3,400→121 warnings resolved
+- **Comprehensive security and quality audits** — 26 findings resolved across security/determinism/concurrency
+- **12 Lean 4 formal verification proofs** (8 new in Phase 8, 16 total theorems)
+- **7 new benchmarks** — indexed merge, stash, diff sort, async storage, wire compression
+- **1,759 tests, 0 failures**
+
+### Features
+- **Lean 4 formal verification** — 16 theorems proving touch-set algebra, DAG properties, LCA correctness, merge determinism, GC reachability
+- **Production roadmap** — 12-phase plan from v5.4 to v10.0
+- **Repo size command**, API stability annotations, zstd wire compression
+- **Phase 2-6**: requirements reconciliation, ADRs, performance optimizations, ecosystem alignment, advanced merge (lockfile merge, properties driver, conflict API), hub observability
+
+### Deployment
+- **Universal container configs** — Docker multi-stage, K8s manifests, Terraform modules, systemd units, Nix flakes
+- **CI/CD improvements** — checkout@v5, docs deployment to Pages, coverage thresholds, protoc in release job
+
+### Documentation
+- **Roadmap rewrite** with full audit findings (3 revisions)
+- **Doc audit** — emojis removed, test counts updated, stale LFS comments fixed, broken links resolved
+- **Stale files archived** — BLOG_ANNOUNCEMENT.md, release-notes.md
+
+## [5.3.1] - 2026-05-10
+
+### Fixed
+- **DAG LCA bug** — non-deterministic HashSet iteration caused incorrect lowest-common-ancestor results; switched to BTreeSet
+- **Fragile unwrap in DAG LCA** — replaced with graceful error handling
+- **BranchName duplication** — eliminated redundant type, unified on single definition
+
+### Changed
+- **wasmtime v28→v44** — security and performance upgrades for WASM plugin host
+
+## [5.3.0] - 2026-05-08
+
+### Added
+- **Notion and Airtable API connectors** for content import/export
+- **WASM plugin ABI v1** — stabilized SDK, version enforcement, extensions, error reporting
+- **Audit fixes, SSO enhancements, webhook improvements, FUSE hardening, scale benchmarks**
+
+### Fixed
+- **Zero-tolerance audit** — 16 findings resolved across security, determinism, concurrency
+- **Comprehensive security audit** — 10 findings resolved
+
+## [5.2.0] - 2026-05-05
+
+### Added
+- **OIDC SSO support** with provider configuration API
+- **Audit logging** for all mutating Hub operations
+- **Raft consensus wired into Hub** — leader election and status endpoint
+- **Plugin SDK thread_local const initializer** for clippy compliance
+
 ### Error Quality — Typed Error Variants
 - **150 → 0 `Custom(String)` usages in production code** — Replaced with 35+ typed variants across `RepoError`, `StorageError`, `MetaError`, `CommonError`, `DagError`, `ApplyError`. Examples: `RepoError::PatchNotFound(id)`, `RepoError::InvalidHeadOffset(n)`, `StorageError::PoisonedLock(msg)`, `MetaError::Serialization(err)`.
 - **7 unused `Custom(String)` definitions removed** from `CommonError`, `MetaError`, `DagError`, `ApplyError`, `SigningError`, `MergeError`, `OtioError`. Kept on `RepoError` and `StorageError` as forward-compatibility escape hatches.

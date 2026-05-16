@@ -7,6 +7,10 @@ on:
       - '*.yml'
       - '*.toml'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   auto-merge-configs:
     runs-on: ubuntu-latest

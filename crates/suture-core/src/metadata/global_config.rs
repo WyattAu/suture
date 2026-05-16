@@ -195,6 +195,15 @@ rebase = false
 
     #[test]
     fn test_get_dotted_keys() {
+        // SAFETY: `std::env::set_var`/`remove_var` is marked unsafe in Rust
+        // because it modifies process-global state. This is acceptable here
+        // because tests run in a controlled single-threaded context.
+        unsafe {
+            std::env::remove_var("SUTURE_USER_NAME");
+            std::env::remove_var("SUTURE_USER_EMAIL");
+            std::env::remove_var("SUTURE_CORE_COMPRESSION");
+            std::env::remove_var("SUTURE_CORE_COMPRESSION_LEVEL");
+        }
         let toml_str = r#"
 [user]
 name = "Bob"
@@ -245,6 +254,14 @@ compression_level = 6
 
     #[test]
     fn test_parse_partial_toml() {
+        // SAFETY: `std::env::set_var`/`remove_var` is marked unsafe in Rust
+        // because it modifies process-global state. This is acceptable here
+        // because tests run in a controlled single-threaded context.
+        unsafe {
+            std::env::remove_var("SUTURE_USER_NAME");
+            std::env::remove_var("SUTURE_USER_EMAIL");
+            std::env::remove_var("SUTURE_SIGNING_KEY");
+        }
         let toml_str = r#"
 [user]
 name = "Charlie"

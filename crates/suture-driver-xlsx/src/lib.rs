@@ -505,7 +505,7 @@ impl XlsxDriver {
         changes
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn merge_cells(base: &[Cell], ours: &[Cell], theirs: &[Cell]) -> Option<Vec<Cell>> {
         let base_map: HashMap<(usize, usize), &String> =
             base.iter().map(|(r, c, v)| ((*r, *c), v)).collect();
@@ -755,7 +755,7 @@ impl XlsxDriver {
     /// This preserves everything outside `<sheetData>...</sheetData>`
     /// (column widths, sheet views, merge cells, etc.) and only replaces
     /// the actual cell data.
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn rebuild_sheet_xml(original_xml: &str, cells: &[Cell]) -> String {
         // Find <sheetData> and </sheetData> boundaries
         let data_start = match original_xml.find("<sheetData") {

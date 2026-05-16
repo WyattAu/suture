@@ -56,6 +56,7 @@ pub struct PullSection {
 
 impl RepoConfig {
     /// Parse configuration from a TOML string.
+    // Public API; reserved for future config parsing
     #[allow(dead_code)]
     pub fn from_str(s: &str) -> Result<Self, toml::de::Error> {
         toml::from_str(s)

@@ -254,6 +254,7 @@ pub struct PackCache {
     indices: HashMap<PathBuf, PackIndex>,
 }
 
+// Public API; reserved for future pack operations
 #[allow(dead_code)]
 impl PackCache {
     #[must_use]

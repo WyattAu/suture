@@ -127,7 +127,7 @@ fill_template() {
 
 chmod +x "$MD2HTML"
 
-mapfile -t md_files < <(find . -maxdepth 1 -name '*.md' | sort)
+mapfile -t md_files < <(find . -name '*.md' | sort)
 
 if [ ${#md_files[@]} -eq 0 ]; then
     echo "No markdown files found in $SCRIPT_DIR"
@@ -142,7 +142,13 @@ skipped=0
 
 for md_file in "${md_files[@]}"; do
     base="$(basename "$md_file" .md)"
-    html_file="${base}.html"
+    dir="$(dirname "$md_file")"
+    if [ "$dir" = "." ]; then
+        html_file="${base}.html"
+    else
+        html_file="${dir}/${base}.html"
+        mkdir -p "$dir"
+    fi
 
     if should_skip "$base"; then
         echo "  SKIP $md_file (protected: $html_file exists)"

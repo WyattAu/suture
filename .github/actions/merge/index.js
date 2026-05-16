@@ -1,5 +1,5 @@
 const core = require('@actions/core');
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -19,7 +19,7 @@ async function fetchMerge(apiUrl, apiToken, driver, base, ours, theirs) {
 
 function getFileAtRef(filePath, ref) {
   try {
-    return execSync(`git show ${ref}:${filePath}`, { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
+    return execFileSync('git', ['show', `${ref}:${filePath}`], { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
   } catch {
     return null;
   }

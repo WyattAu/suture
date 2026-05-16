@@ -6,6 +6,10 @@ on:
 
 workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   semantic-merge:
     runs-on: ubuntu-latest
@@ -142,6 +146,8 @@ jobs:
       - name: Commit resolved files
         if: steps.conflicts.outputs.conflict_count != '0' && steps.resolve.outputs.resolved != '0'
         run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "resolve: semantic merge via Suture (${{ steps.resolve.outputs.resolved }}/${{ steps.conflicts.outputs.conflict_count }} files)"
 
       - name: Comment on PR

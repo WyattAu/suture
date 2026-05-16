@@ -14,10 +14,10 @@ echo "  cargo check..."
 cargo check --workspace --exclude suture-py
 
 echo "  cargo test..."
-cargo test --workspace --exclude suture-py -- --test-threads=4
+cargo test --workspace -- --test-threads=4
 
 echo "  cargo clippy..."
-cargo clippy --workspace --exclude suture-py -- -D warnings
+cargo clippy --workspace -- -D warnings
 
 echo "  cargo fmt..."
 cargo fmt --check --all

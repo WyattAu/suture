@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stop Having Merge Conflicts in package.json — Suture</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0a0a0f;--bg2:#12121a;--bg3:#1a1a2e;
+  --fg:#e2e2f0;--fg2:#8888a8;
+  --accent:#7c3aed;--accent2:#3b82f6;--accent-grad:linear-gradient(135deg,#7c3aed,#3b82f6);
+  --border:#2a2a3e;
+  --mono:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+  --radius:12px;
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);line-height:1.7;overflow-x:hidden}
+a{color:var(--accent);text-decoration:none;transition:color .15s}
+a:hover{color:#a78bfa}
+
+.topnav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(10,10,15,.85);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);height:52px;display:flex;align-items:center;padding:0 20px}
+.topnav-inner{max-width:1400px;width:100%;margin:0 auto;display:flex;align-items:center;justify-content:space-between}
+.topnav-logo{font-family:var(--mono);font-weight:800;font-size:1.1rem;color:#fff;display:flex;align-items:center;gap:8px}
+.topnav-logo span{color:var(--accent)}
+.topnav-links{display:flex;gap:20px;align-items:center}
+.topnav-links a{color:var(--fg2);font-size:.85rem}
+.topnav-links a:hover{color:#fff}
+.menu-btn{display:none;background:none;border:1px solid var(--border);color:var(--fg);padding:6px 10px;border-radius:6px;cursor:pointer;font-size:1.1rem;line-height:1}
+
+.layout{display:flex;margin-top:52px;min-height:calc(100vh - 52px)}
+
+.sidebar{width:260px;min-width:260px;background:var(--bg2);border-right:1px solid var(--border);height:calc(100vh - 52px);position:sticky;top:52px;overflow-y:auto;padding:20px 0}
+.sidebar::-webkit-scrollbar{width:4px}
+.sidebar::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.sidebar-home{display:block;padding:8px 20px;color:var(--fg2);font-size:.8rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
+.sidebar-home:hover{color:var(--fg)}
+.nav-group{margin-bottom:4px}
+.nav-group-title{padding:8px 20px 4px;font-size:.7rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--fg2);opacity:.7}
+.nav-item{display:block;padding:6px 20px 6px 28px;color:var(--fg2);font-size:.85rem;border-left:2px solid transparent;transition:all .15s}
+.nav-item:hover{color:var(--fg);background:rgba(124,58,237,.05)}
+.nav-item.active{color:#fff;border-left-color:var(--accent);background:rgba(124,58,237,.08)}
+
+.content{flex:1;max-width:860px;padding:32px 40px 80px}
+.breadcrumb{font-size:.8rem;color:var(--fg2);margin-bottom:24px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.breadcrumb a{color:var(--fg2)}
+.breadcrumb a:hover{color:var(--accent)}
+.breadcrumb .sep{opacity:.4}
+
+.doc h1{font-size:2rem;color:#fff;font-weight:700;letter-spacing:-.02em;margin-bottom:8px;line-height:1.3}
+.doc h1:first-child{margin-top:0}
+.doc h2{font-size:1.4rem;color:#fff;font-weight:600;margin:40px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.doc h3{font-size:1.1rem;color:#fff;font-weight:600;margin:28px 0 8px}
+.doc h4{font-size:.95rem;color:var(--fg);font-weight:600;margin:24px 0 6px}
+.doc p{margin:0 0 16px;color:var(--fg)}
+.doc ul,.doc ol{margin:0 0 16px 24px;color:var(--fg)}
+.doc li{margin-bottom:4px}
+.doc li>p{margin-bottom:8px}
+.doc strong{color:#fff;font-weight:600}
+.doc em{color:var(--fg2);font-style:italic}
+.doc code{font-family:var(--mono);background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:2px 6px;font-size:.85em;color:#a78bfa}
+.doc pre{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:20px 24px;overflow-x:auto;font-size:.85rem;line-height:1.7;margin:0 0 20px}
+.doc pre code{background:none;border:none;padding:0;color:var(--fg);font-size:inherit}
+.doc blockquote{border-left:3px solid var(--accent);padding:12px 20px;margin:0 0 20px;background:rgba(124,58,237,.05);border-radius:0 var(--radius) var(--radius) 0}
+.doc blockquote p{color:var(--fg2);margin-bottom:0}
+.doc blockquote p:last-child{margin-bottom:0}
+.doc hr{border:none;border-top:1px solid var(--border);margin:32px 0}
+.doc img{max-width:100%;border-radius:var(--radius);margin:8px 0 20px}
+.doc table{width:100%;border-collapse:collapse;margin:0 0 20px;font-size:.9rem}
+.doc thead th{text-align:left;padding:10px 14px;border-bottom:2px solid var(--border);color:var(--fg);font-weight:600;font-size:.8rem;text-transform:uppercase;letter-spacing:.04em}
+.doc tbody td{padding:10px 14px;border-bottom:1px solid var(--border);color:var(--fg)}
+.doc tbody tr:hover{background:rgba(124,58,237,.03)}
+.doc del{opacity:.5}
+
+.doc-footer{margin-top:48px;padding-top:24px;border-top:1px solid var(--border);font-size:.8rem;color:var(--fg2)}
+.doc-footer a{color:var(--fg2)}
+.doc-footer a:hover{color:var(--accent)}
+
+@media(max-width:900px){
+  .menu-btn{display:block}
+  .sidebar{position:fixed;top:52px;left:-280px;height:calc(100vh - 52px);z-index:90;transition:left .25s ease;box-shadow:none}
+  .sidebar.open{left:0;box-shadow:4px 0 24px rgba(0,0,0,.4)}
+  .sidebar-overlay{display:none;position:fixed;top:52px;left:0;right:0;bottom:0;z-index:89;background:rgba(0,0,0,.4)}
+  .sidebar-overlay.open{display:block}
+  .content{padding:24px 20px 60px}
+}
+@media(max-width:600px){
+  .topnav-links{display:none}
+  .doc h1{font-size:1.5rem}
+  .doc h2{font-size:1.2rem}
+}
+</style>
+</head>
+<body>
+
+<nav class="topnav">
+  <div class="topnav-inner">
+    <a href="index.html" class="topnav-logo">/suture<span>/</span></a>
+    <div class="topnav-links">
+      <a href="index.html">Home</a>
+      <a href="quickstart.html">Docs</a>
+      <a href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">GitHub</a>
+    </div>
+    <button class="menu-btn" onclick="toggleSidebar()" aria-label="Menu">&#9776;</button>
+  </div>
+</nav>
+
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <a href="index.html" class="sidebar-home">&larr; Back to Home</a>
+<div class="nav-group">
+<div class="nav-group-title">Getting Started</div>
+<a href="getting_started.html" class="nav-item">Getting Started with Suture</a>
+<a href="quickstart.html" class="nav-item">Quickstart: Stop Losing Work to Google Drive</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Core Concepts</div>
+<a href="semantic-merge.html" class="nav-item">---</a>
+<a href="comparing-with-git.html" class="nav-item">Suture vs. Git: When to Use What</a>
+<a href="comparison.html" class="nav-item">Suture vs Other Version Control Systems</a>
+<a href="semantic-merge.html" class="nav-item">Semantic Merge</a>
+<a href="why-suture.html" class="nav-item">Why Suture?</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Reference</div>
+<a href="api_reference.html" class="nav-item">API Reference</a>
+<a href="cli-reference.html" class="nav-item">CLI Reference</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Merge Drivers</div>
+<a href="driver_sdk.html" class="nav-item">Driver SDK</a>
+<a href="git_merge_driver.html" class="nav-item">Git Merge Driver</a>
+<a href="merge-driver-guide.html" class="nav-item">Suture Merge Driver Guide</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Integration</div>
+<a href="github-action.html" class="nav-item">Suture Semantic Merge GitHub Action</a>
+<a href="ide-integration.html" class="nav-item">IDE Integration</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Guides</div>
+<a href="data-science.html" class="nav-item">Suture for Data Science</a>
+<a href="document-authors.html" class="nav-item">Suture for Document Authors</a>
+<a href="video-editors.html" class="nav-item">Suture for Video Editors</a>
+<a href="video-merge-guide.html" class="nav-item">Video Merge Guide: Version Control for OTIO Timelines</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Onboarding</div>
+<a href="onboarding-guide.html" class="nav-item">Suture Onboarding Guide</a>
+<a href="onboarding-defence.html" class="nav-item">Suture VCS — Defence Contractor Onboarding Guide</a>
+<a href="onboarding-film.html" class="nav-item">Suture VCS — Onboarding Guide for Film & TV Post-Production</a>
+<a href="onboarding-youtube.html" class="nav-item">Suture VCS — Onboarding Guide for YouTube Channel Managers & PE Firms</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Platform</div>
+<a href="desktop-build.html" class="nav-item">Building the Suture Desktop App</a>
+<a href="hub.html" class="nav-item">Suture Hub</a>
+<a href="wasm-feasibility.html" class="nav-item">WASM Feasibility Report: Suture Semantic Merge Engine</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Development</div>
+<a href="performance.html" class="nav-item">Suture Performance Baseline</a>
+<a href="shipping-checklist.html" class="nav-item">Suture v2.9.0 Shipping Checklist</a>
+</div>
+<div class="nav-group">
+<div class="nav-group-title">Other</div>
+<a href="api-reference.html" class="nav-item">Suture Platform API Reference</a>
+<a href="architecture.html" class="nav-item">Suture Architecture v5.3.1</a>
+<a href="hn-launch-post.html" class="nav-item">Show HN: Suture – Semantic merge for 18 file formats (JSON, YAML, XML, CSV, Word, Excel, PDF...)</a>
+<a href="hn-show-launch.html" class="nav-item">Show HN: Suture – Semantic merge for JSON, YAML, TOML, XML, CSV (18 formats)</a>
+<a href="launch-v5.1.0.html" class="nav-item">Suture 5.1.0: Semantic Merge for Every Format</a>
+<a href="reddit-launch.html" class="nav-item">Suture 5.1.0 – Semantic merge for 18 file formats, git merge driver, TUI, LSP, WASM plugins, Raft consensus, SaaS platform</a>
+<a href="reddit-launch-post.html" class="nav-item">Title: r/programming: I built a semantic merge engine that understands file structure — works with JSON, YAML, XML, Word, Excel, and 13 more formats</a>
+<a href="semantic-merge-explained.html" class="nav-item">Semantic Merge Explained: How Structure-Aware Merging Actually Works</a>
+<a href="semantic-merge-for-17-file-formats.html" class="nav-item">Semantic Merge for 17 File Formats</a>
+<a href="semantic-merge-for-binary-documents.html" class="nav-item">---</a>
+<a href="stop-having-merge-conflicts-in-json.html" class="nav-item active">Stop Having Merge Conflicts in package.json</a>
+<a href="twitter-launch.html" class="nav-item">Suture 5.1.0 is live — semantic merge for every format.</a>
+<a href="why-git-merge-fails-on-json.html" class="nav-item">Why Git Merge Fails on JSON (And How to Never See a Config Conflict Again)</a>
+<a href="ci-integration.html" class="nav-item">CI Integration Guide</a>
+<a href="demo.html" class="nav-item">Suture Demo: Semantic Merge in 60 Seconds</a>
+<a href="deployment.html" class="nav-item">Deployment Guide</a>
+<a href="github-action-marketplace.html" class="nav-item">GitHub Action Marketplace Submission</a>
+<a href="stripe-setup.html" class="nav-item">Stripe Setup Guide</a>
+<a href="vscode-marketplace.html" class="nav-item">VS Code Marketplace Submission</a>
+<a href="deploy-runbook.html" class="nav-item">Suture 5.4.0 Deployment Runbook</a>
+<a href="gitlab-ci-integration.html" class="nav-item">GitLab CI Integration</a>
+<a href="git-merge-driver.html" class="nav-item">Git Merge Driver — Comprehensive Guide</a>
+<a href="merge-driver-quickstart.html" class="nav-item">5-Minute Git Merge Driver Quickstart</a>
+<a href="PRODUCTION_ROADMAP.html" class="nav-item">Suture Production Roadmap</a>
+<a href="enterprise-features.html" class="nav-item">Enterprise Features Roadmap</a>
+<a href="multi-region-raft.html" class="nav-item">Multi-Region Raft Clusters</a>
+<a href="partner-integrations.html" class="nav-item">Partner Integration Roadmap</a>
+<a href="plugin-sdk.html" class="nav-item">Suture Plugin SDK</a>
+<a href="audit-report.html" class="nav-item">Security Audit Report</a>
+<a href="self-hosting.html" class="nav-item">Self-Hosting Suture Hub</a>
+<a href="stripe-onboarding.html" class="nav-item">Stripe Onboarding Guide</a>
+<a href="user-guide.html" class="nav-item">Suture User Guide</a>
+</div>
+  </aside>
+  <main class="content">
+    <div class="breadcrumb">
+      <a href="index.html">Home</a>
+      <span class="sep">/</span>
+      <span>Docs</span>
+    </div>
+    <article class="doc">
+      <h1>Stop Having Merge Conflicts in package.json</h1>
+<p>You know the feeling. You're wrapping up a feature branch, you run <code>git merge main</code>, and:</p>
+<pre><code>
+CONFLICT (content): Merge conflict in package.json
+Automatic merge failed; fix conflicts and then commit the result.
+</code></pre>
+<p>You open the file and find this:</p>
+<pre><code class="language-json">{
+&lt;&lt;&lt;&lt;&lt;&lt;&lt; HEAD
+  "name": "my-app",
+  "version": "2.1.0",
+  "dependencies": {
+    "react": "^18.2.0",
+    "express": "^4.18.2",
+    "zod": "^3.22.4"
+  }
+=======
+  "name": "my-app",
+  "version": "2.1.0",
+  "dependencies": {
+    "react": "^18.2.0",
+    "express": "^4.19.0",
+    "pg": "^8.11.3"
+  }
+&gt;&gt;&gt;&gt;&gt;&gt;&gt; main
+}
+</code></pre>
+<p>You added <code>zod</code>. Your coworker upgraded <code>express</code> and added <code>pg</code>. These changes have nothing to do with each other. There is no logical conflict here. But Git doesn't care about logic -- it cares about lines.</p>
+<h2 id="why-git-gets-this-wrong">Why Git Gets This Wrong</h2>
+<p>Git's merge algorithm is line-based. It computes a longest common subsequence between the base, ours, and theirs, then checks whether the changed line ranges overlap. If two people edit lines that are close together -- even if they're modifying completely different JSON keys -- Git flags a conflict.</p>
+<p>This isn't a bug in Git. Git was designed for source code, where a changed line in the middle of a function genuinely might conflict with another changed line two lines below. The algorithm works well for <code>.rs</code>, <code>.py</code>, <code>.js</code>, and <code>.c</code> files.</p>
+<p>The problem is that structured data formats like JSON, YAML, TOML, and XML have a different notion of identity. In a JSON file, the meaningful unit is a key-value pair, not a line. A file with the same keys rearranged is semantically identical. A file with two different keys changed on adjacent lines has no conflict at all.</p>
+<p>Git can't do better because it has no parser. It doesn't know what JSON is. It doesn't understand that <code>{"a": 1, "b": 2}</code> and <code>{\n  "b": 2,\n  "a": 1\n}</code> are the same object. It just sees different lines.</p>
+<h2 id="semantic-merge">Semantic Merge</h2>
+<p>The fix is to merge at the structural level instead of the line level. A semantic merge driver parses the file format, computes diffs at the field level, and serializes the result back. If two people change different keys, the driver applies both changes. If they change the same key, it reports a real conflict.</p>
+<p>The three-way merge works like this: the driver receives the base version (common ancestor), ours, and theirs. It parses all three into an intermediate representation, computes what changed on each side relative to the base, checks whether the changes overlap, and writes the merged output. Non-overlapping changes apply cleanly. Overlapping changes produce a conflict only when both sides modified the same logical element.</p>
+<h2 id="before-and-after">Before and After</h2>
+<p>Here's the same merge scenario -- two developers editing different keys in a Kubernetes deployment config -- with Git and with Suture.</p>
+<p><strong>Git (line-based):</strong></p>
+<pre><code class="language-yaml">&lt;&lt;&lt;&lt;&lt;&lt;&lt; HEAD
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  replicas: 3
+  template:
+    spec:
+      containers:
+      - name: app
+        image: myapp:2.1.0
+        resources:
+          limits:
+            cpu: "500m"
+=======
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  replicas: 5
+  template:
+    spec:
+      containers:
+      - name: app
+        image: myapp:2.1.0
+        env:
+        - name: LOG_LEVEL
+          value: "debug"
+&gt;&gt;&gt;&gt;&gt;&gt;&gt; main
+</code></pre>
+<p>You changed <code>replicas</code> and added a CPU limit. Your coworker changed <code>replicas</code> too and added an environment variable. Git can't tell which changes are independent.</p>
+<p><strong>Suture (semantic):</strong></p>
+<pre><code class="language-yaml">apiVersion: apps/v1
+kind: Deployment
+spec:
+  replicas: 5
+  template:
+    spec:
+      containers:
+      - name: app
+        image: myapp:2.1.0
+        env:
+        - name: LOG_LEVEL
+          value: "debug"
+        resources:
+          limits:
+            cpu: "500m"
+</code></pre>
+<p>Suture merges at the key level. <code>replicas</code> is a genuine conflict (both sides changed it), but <code>resources</code> and <code>env</code> are independent -- both apply cleanly. For the conflicting <code>replicas</code> field, Suture falls back to standard conflict markers on just that key, leaving the rest of the file intact and valid.</p>
+<h2 id="installation">Installation</h2>
+<p>Install the merge driver with your preferred package manager:</p>
+<pre><code class="language-bash">npm install -g suture-merge-driver
+</code></pre>
+<pre><code class="language-bash">pip install suture-merge-driver
+</code></pre>
+<pre><code class="language-bash">cargo install suture-merge
+</code></pre>
+<p>All three commands install the same underlying merge engine (written in Rust). The npm and pip packages download a prebuilt platform binary automatically.</p>
+<h2 id="configuration">Configuration</h2>
+<p>Once installed, tell Git to use Suture for structured files. This takes four lines:</p>
+<pre><code class="language-bash">git config merge.suture.name "Suture semantic merge"
+git config merge.suture.driver "suture-merge-driver %O %A %B %P"
+echo "*.json merge=suture" &gt;&gt; .gitattributes
+echo "*.yaml merge=suture" &gt;&gt; .gitattributes
+</code></pre>
+<p>The first two lines register the merge driver. The <code>.gitattributes</code> lines tell Git which file types to route through it. Add more patterns for other formats:</p>
+<pre><code class="language-bash">echo "*.toml merge=suture" &gt;&gt; .gitattributes
+echo "*.csv merge=suture" &gt;&gt; .gitattributes
+echo "*.xml merge=suture" &gt;&gt; .gitattributes
+echo "*.md merge=suture" &gt;&gt; .gitattributes
+echo "*.docx merge=suture" &gt;&gt; .gitattributes
+echo "*.xlsx merge=suture" &gt;&gt; .gitattributes
+echo "*.pptx merge=suture" &gt;&gt; .gitattributes
+</code></pre>
+<p>Commit the <code>.gitattributes</code> file and you're done. Every subsequent <code>git merge</code> on supported formats will use semantic merge automatically. Files not listed in <code>.gitattributes</code> continue to use Git's default line-based merge.</p>
+<p>For a one-command setup, run <code>suture git driver install</code> if you have the full CLI installed. It writes the config and <code>.gitattributes</code> for all 20+ supported formats at once.</p>
+<h2 id="supported-formats">Supported Formats</h2>
+<thead><tr><th>Format</th><th>Extensions</th><th>Merge Granularity</th></tr></thead>
+<tbody>
+<tr><td>JSON</td><td><code>.json</code>, <code>.jsonl</code></td><td>Field-level (RFC 6901 paths)</td></tr>
+<tr><td>YAML</td><td><code>.yaml</code>, <code>.yml</code></td><td>Key-level</td></tr>
+<tr><td>TOML</td><td><code>.toml</code></td><td>Table and key-aware</td></tr>
+<tr><td>CSV</td><td><code>.csv</code>, <code>.tsv</code></td><td>Row-level with header detection</td></tr>
+<tr><td>XML</td><td><code>.xml</code>, <code>.xsl</code>, <code>.svg</code></td><td>Element/attribute-aware</td></tr>
+<tr><td>Markdown</td><td><code>.md</code>, <code>.markdown</code></td><td>Section-aware</td></tr>
+<tr><td>HTML</td><td><code>.html</code></td><td>DOM-aware</td></tr>
+<tr><td>DOCX</td><td><code>.docx</code>, <code>.docm</code></td><td>Paragraph-level</td></tr>
+<tr><td>XLSX</td><td><code>.xlsx</code>, <code>.xlsm</code></td><td>Cell-level</td></tr>
+<tr><td>PPTX</td><td><code>.pptx</code>, <code>.pptm</code></td><td>Slide-level</td></tr>
+<tr><td>OTIO</td><td><code>.otio</code></td><td>Clip-level (video timelines)</td></tr>
+<tr><td>SQL</td><td><code>.sql</code></td><td>DDL schema diff</td></tr>
+<tr><td>PDF</td><td><code>.pdf</code></td><td>Page-level text diff</td></tr>
+<tr><td>Image</td><td><code>.png</code>, <code>.jpg</code>, <code>.gif</code>, <code>.bmp</code>, <code>.webp</code>, <code>.tiff</code>, <code>.ico</code>, <code>.avif</code></td><td>Metadata diff</td></tr>
+<tr><td>iCalendar</td><td><code>.ics</code></td><td>Event-level merge</td></tr>
+<tr><td>RSS/Atom</td><td><code>.rss</code>, <code>.atom</code></td><td>Feed and entry-aware</td></tr>
+</tbody>
+</table>
+<p>Files without a matching driver fall back to Git's standard line-based merge. No behavior changes for unsupported formats.</p>
+<h2 id="how-it-works-under-the-hood">How It Works Under the Hood</h2>
+<p>Suture uses a three-way merge at the semantic level. When Git invokes the driver, it passes three file paths: the base (common ancestor), ours (your version), and theirs (their version). Suture detects the file format from the extension, parses all three versions into an intermediate representation, and computes the diff between base and each side.</p>
+<p>Each change is mapped to a logical address -- for JSON, that's an RFC 6901 JSON Pointer like <code>/spec/replicas</code>; for YAML, a dot-separated key path; for DOCX, a paragraph index. Two changes conflict only when their logical addresses overlap. If Alice changed <code>/spec/replicas</code> and Bob changed <code>/spec/template/spec/containers/0/env</code>, the touch sets are disjoint, so both patches apply cleanly and the merge is deterministic.</p>
+<p>The patch algebra is verified via extensive property-based testing (proptest): if the touch sets of two patches are disjoint, their composition commutes. The merge result is the same regardless of which side is applied first. This isn't a heuristic -- it's a structural guarantee verified by thousands of randomized test cases.</p>
+<h2 id="try-it">Try It</h2>
+<p>If you work with JSON configs, Kubernetes manifests, CI pipelines, or any structured data in Git, semantic merge eliminates a class of merge conflicts that shouldn't exist in the first place.</p>
+<p>Install it, add the four config lines, and merge your next PR. If you hit an edge case or a format that isn't supported yet, open an issue on GitHub. The project is actively developed, and the driver list is growing.</p>
+<ul>
+<li>GitHub: https://github.com/WyattAu/suture</li>
+<li>Documentation: https://github.com/WyattAu/suture/tree/main/docs</li>
+<li>License: Apache 2.0</li>
+</ul>
+    </article>
+    <div class="doc-footer">
+      <a href="https://github.com/WyattAu/suture" target="_blank" rel="noopener">GitHub</a> &middot;
+      <a href="https://github.com/WyattAu/suture/blob/main/LICENSE" target="_blank" rel="noopener">AGPL-3.0</a>
+    </div>
+  </main>
+</div>
+
+<script>
+function toggleSidebar(){
+  document.getElementById("sidebar").classList.toggle("open");
+  document.getElementById("sidebarOverlay").classList.toggle("open");
+}
+</script>
+</body>
+</html>

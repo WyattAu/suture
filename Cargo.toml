@@ -5,6 +5,7 @@ members = [
 ]
 exclude = [
     "desktop-app",
+    "crates/suture-py",
 ]
 
 # Note: CWD-dependent tests in suture-cli use a mutex guard.

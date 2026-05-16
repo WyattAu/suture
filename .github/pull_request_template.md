@@ -9,9 +9,9 @@ Brief description of changes.
 - [ ] Refactor
 
 ## Testing
-- [ ] `cargo check --workspace --exclude suture-py` passes
-- [ ] `cargo test --workspace --exclude suture-py` passes (1,747 tests)
-- [ ] `cargo clippy --workspace --exclude suture-py -- -D warnings` passes
+- [ ] `cargo check --workspace` passes
+- [ ] `cargo test --workspace` passes (1,759 tests)
+- [ ] `cargo clippy --workspace -- -D warnings` passes
 - [ ] `cargo fmt --check` passes
 - [ ] New tests added for new functionality
 

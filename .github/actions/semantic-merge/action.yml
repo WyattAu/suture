@@ -128,7 +128,7 @@ runs:
           exit 0
         fi
 
-        COMMENT=$(cat <<BODY
+        COMMENT=$(cat <<-'BODY'
         ## 🔀 Suture Semantic Merge Check
 
         | File | Format | Status | Details |
