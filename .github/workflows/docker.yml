@@ -74,9 +74,9 @@ jobs:
             if [ "$i" = "15" ]; then
               echo "Container logs:"
               docker logs suture-test 2>&1 | tail -30
-              echo "WARNING: Health check did not pass, skipping API tests"
+              echo "ERROR: Health check did not pass after 30s"
               docker stop suture-test
-              exit 0
+              exit 1
             fi
             sleep 2
           done

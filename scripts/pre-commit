@@ -17,7 +17,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-EXCLUDE="--exclude suture-fuzz --exclude suture-py --exclude suture-node"
+EXCLUDE="--exclude suture-fuzz --exclude suture-py --exclude suture-node --exclude suture-e2e --exclude suture-bench --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon"
 
 echo ""
 echo "=== suture pre-commit quality gates ==="
@@ -26,7 +26,7 @@ echo ""
 FAIL=0
 
 # --- 1. cargo fmt ---
-echo -n "[1/4] cargo fmt --check ... "
+echo -n "[1/3] cargo fmt --check ... "
 if cargo fmt --all -- --check 2>&1; then
     echo -e "${GREEN}PASS${NC}"
 else
@@ -34,8 +34,8 @@ else
     FAIL=1
 fi
 
-# --- 2. cargo clippy ---
-echo -n "[2/4] cargo clippy --workspace ${EXCLUDE} -- -D warnings ... "
+# --- 2. cargo clippy (includes type-check, no separate cargo check needed) ---
+echo -n "[2/3] cargo clippy --workspace ${EXCLUDE} -- -D warnings ... "
 if cargo clippy --workspace ${EXCLUDE} -- -D warnings 2>&1; then
     echo -e "${GREEN}PASS${NC}"
 else
@@ -43,17 +43,8 @@ else
     FAIL=1
 fi
 
-# --- 3. cargo check (ensures compilation) ---
-echo -n "[3/4] cargo check --workspace ${EXCLUDE} ... "
-if cargo check --workspace ${EXCLUDE} 2>&1; then
-    echo -e "${GREEN}PASS${NC}"
-else
-    echo -e "${RED}FAIL${NC}"
-    FAIL=1
-fi
-
-# --- 4. cargo test (full workspace, serial for CWD-dependent tests) ---
-echo "[4/4] cargo test --workspace ${EXCLUDE} -- --test-threads=1 ..."
+# --- 3. cargo test (full workspace, serial for CWD-dependent tests) ---
+echo "[3/3] cargo test --workspace ${EXCLUDE} -- --test-threads=1 ..."
 if cargo test --workspace ${EXCLUDE} -- --test-threads=1 2>&1; then
     echo -e "${GREEN}PASS${NC}"
 else

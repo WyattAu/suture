@@ -11,7 +11,7 @@ exclude = [
 # CI should use: cargo test -- --test-threads=1
 
 [workspace.package]
-license = "Apache-2.0"
+license = "AGPL-3.0-or-later"
 repository = "https://github.com/WyattAu/suture"
 description = "A patch-based version control system with semantic merge and format-aware drivers"
 readme = "README.md"

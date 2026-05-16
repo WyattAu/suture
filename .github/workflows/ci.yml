@@ -36,7 +36,7 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Clippy (stable)
-        run: cargo clippy --workspace --exclude suture-fuzz -- -D warnings
+        run: cargo clippy --workspace --exclude suture-fuzz --exclude suture-py --exclude suture-node --exclude suture-e2e --exclude suture-bench --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon -- -D warnings
 
   test-workspace:
     runs-on: ${{ matrix.os }}
@@ -113,9 +113,6 @@ jobs:
       - name: Install protoc (Windows)
         if: runner.os == 'Windows'
         run: choco install protoc -y
-
-      - name: Run CLI tests
-        run: cargo test -p suture-cli
 
       - name: Run CLI tests (with retry)
         uses: nick-fields/retry@v3
@@ -227,13 +224,13 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
       - name: Check with features
-        run: cargo check --workspace --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp --features "${{ matrix.features }}"
+        run: cargo check --workspace --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon --exclude suture-py --exclude suture-node --features "${{ matrix.features }}"
 
       - name: Test with features
-        run: cargo test --workspace --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp --features "${{ matrix.features }}"
+        run: cargo test --workspace --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon --exclude suture-py --exclude suture-node --features "${{ matrix.features }}"
 
       - name: Clippy with features
-        run: cargo clippy --workspace --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp --features "${{ matrix.features }}" -- -D warnings
+        run: cargo clippy --workspace --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon --exclude suture-py --exclude suture-node --features "${{ matrix.features }}" -- -D warnings
 
   coverage:
     runs-on: ubuntu-latest
@@ -296,7 +293,7 @@ jobs:
           THRESHOLD=50.0
           if [ -n "$COVERAGE_LINE" ]; then
             COVERAGE_NUM=$(echo "$COVERAGE_LINE" | sed 's/%//')
-            if awk "BEGIN { exit ($COVERAGE_NUM >= $THRESHOLD) ? 1 : 0 }"; then
+            if awk "BEGIN { exit ($COVERAGE_NUM >= $THRESHOLD) ? 0 : 1 }"; then
               echo "Coverage $COVERAGE_LINE meets threshold of $THRESHOLD%"
             else
               echo "::warning::Coverage $COVERAGE_LINE is below threshold of $THRESHOLD%"

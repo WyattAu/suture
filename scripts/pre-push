@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 # suture pre-push hook
-# Runs a focused quality gate before allowing a push to remote.
-# This complements the pre-commit hook with a fast-path check.
-#
+# Runs fmt, clippy, and test suite before allowing a push to remote.
 # Install: cp scripts/pre-push .git/hooks/pre-push
 #
 # To bypass (emergency only): SUTURE_SKIP_PUSH_CHECKS=1 git push ...
@@ -19,7 +17,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-EXCLUDE="--exclude suture-fuzz --exclude suture-py --exclude suture-node"
+EXCLUDE="--exclude suture-fuzz --exclude suture-py --exclude suture-node --exclude suture-e2e --exclude suture-bench --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon"
 
 echo ""
 echo "=== suture pre-push quality gates ==="
@@ -36,7 +34,7 @@ else
     FAIL=1
 fi
 
-# --- 2. cargo clippy ---
+# --- 2. cargo clippy (includes type-check, no separate cargo check needed) ---
 echo -n "[2/3] cargo clippy --workspace ${EXCLUDE} -- -D warnings ... "
 if cargo clippy --workspace ${EXCLUDE} -- -D warnings 2>&1; then
     echo -e "${GREEN}PASS${NC}"

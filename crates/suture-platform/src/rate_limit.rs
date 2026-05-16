@@ -8,7 +8,7 @@
 use axum::{
     Json,
     extract::State,
-    http::StatusCode,
+    http::{HeaderValue, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
 };
@@ -141,13 +141,10 @@ pub async fn rate_limit(
             .into_response();
 
         let headers = response.headers_mut();
-        headers.insert("X-RateLimit-Limit", limit.to_string().parse().unwrap());
-        headers.insert("X-RateLimit-Remaining", 0u32.to_string().parse().unwrap());
-        headers.insert(
-            "X-RateLimit-Reset",
-            reset_after.to_string().parse().unwrap(),
-        );
-        headers.insert("Retry-After", reset_after.to_string().parse().unwrap());
+        headers.insert("X-RateLimit-Limit", HeaderValue::from(limit));
+        headers.insert("X-RateLimit-Remaining", HeaderValue::from(0u32));
+        headers.insert("X-RateLimit-Reset", HeaderValue::from(reset_after));
+        headers.insert("Retry-After", HeaderValue::from(reset_after));
 
         return response;
     }
@@ -155,15 +152,9 @@ pub async fn rate_limit(
     let mut response = next.run(request).await;
 
     let headers = response.headers_mut();
-    headers.insert("X-RateLimit-Limit", limit.to_string().parse().unwrap());
-    headers.insert(
-        "X-RateLimit-Remaining",
-        remaining.to_string().parse().unwrap(),
-    );
-    headers.insert(
-        "X-RateLimit-Reset",
-        reset_after.to_string().parse().unwrap(),
-    );
+    headers.insert("X-RateLimit-Limit", HeaderValue::from(limit));
+    headers.insert("X-RateLimit-Remaining", HeaderValue::from(remaining));
+    headers.insert("X-RateLimit-Reset", HeaderValue::from(reset_after));
 
     response
 }

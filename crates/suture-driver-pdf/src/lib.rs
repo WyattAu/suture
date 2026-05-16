@@ -417,14 +417,7 @@ fn make_minimal_pdf(page_texts: &[&str]) -> Vec<u8> {
 
 #[cfg(test)]
 fn pdf_str(bytes: &[u8]) -> String {
-    // SAFETY: `bytes` comes from lopdf's text extraction which produces
-    // valid UTF-8 PDF text content. Invalid bytes are extremely rare in
-    // practice and would only produce garbled text, not UB.
-    debug_assert!(
-        std::str::from_utf8(bytes).is_ok(),
-        "from_utf8_unchecked precondition violated"
-    );
-    unsafe { String::from_utf8_unchecked(bytes.to_vec()) }
+    String::from_utf8_lossy(bytes).into_owned()
 }
 
 #[cfg(test)]
