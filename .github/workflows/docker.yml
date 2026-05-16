@@ -66,7 +66,7 @@ jobs:
 
       - name: Pull and test
         run: |
-          IMAGE="ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]'):sha-${{ github.sha }}"
+          IMAGE="ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]'):main"
           docker pull "$IMAGE" || true
           docker run -d --name suture-test -p 8080:8080 "$IMAGE" --jwt-secret ci-test-secret-not-for-production
           echo "Waiting for container to start..."
