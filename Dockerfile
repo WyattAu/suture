@@ -22,5 +22,6 @@ ENV RUST_BACKTRACE=1
 EXPOSE 8080
 
 USER suture
+WORKDIR /data
 ENTRYPOINT ["tini", "--"]
-CMD ["suture-platform"]
+CMD ["suture-platform", "--db", "platform.db", "--hub-db", "hub.db"]
