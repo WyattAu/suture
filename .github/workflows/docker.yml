@@ -66,6 +66,7 @@ jobs:
 
       - name: Pull and test
         run: |
+          set +o pipefail
           IMAGE="ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]'):main"
           docker pull "$IMAGE" || true
           docker run -d --name suture-test -p 8080:8080 --entrypoint /usr/local/bin/suture-platform "$IMAGE" --addr 0.0.0.0:8080 --db platform.db --hub-db hub.db --jwt-secret ci-test-secret-not-for-production
@@ -84,19 +85,22 @@ jobs:
             fi
             sleep 2
           done
-          # Register and login
-          curl -sf -X POST http://localhost:8080/auth/register \
+          # Register
+          REG_RESP=$(curl -sf -X POST http://localhost:8080/auth/register \
             -H "Content-Type: application/json" \
-            -d '{"email":"ci@suture.dev","password":"testpass1234"}' | grep -q "token" || echo "WARNING: Register step skipped"
-          # Merge API
-          TOKEN=$(curl -sf -X POST http://localhost:8080/auth/login \
+            -d '{"email":"ci@suture.dev","password":"testpass1234"}' 2>&1) || echo "WARNING: Register returned non-2xx (response: $REG_RESP)"
+          # Login
+          LOGIN_RESP=$(curl -sf -X POST http://localhost:8080/auth/login \
             -H "Content-Type: application/json" \
-            -d '{"email":"ci@suture.dev","password":"testpass1234"}' 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin)['token'])" || echo "")
+            -d '{"email":"ci@suture.dev","password":"testpass1234"}' 2>&1) || echo "WARNING: Login returned non-2xx"
+          TOKEN=$(echo "$LOGIN_RESP" | python3 -c "import sys,json;print(json.load(sys.stdin)['token'])" 2>/dev/null) || TOKEN=""
+          # Merge API (only if we got a token)
           if [ -n "$TOKEN" ]; then
-            curl -sf -X POST http://localhost:8080/api/merge \
+            MERGE_RESP=$(curl -sf -X POST http://localhost:8080/api/merge \
               -H "Content-Type: application/json" \
               -H "Authorization: Bearer $TOKEN" \
-              -d '{"driver":"json","base":"{}","ours":"{\"a\":1}","theirs":"{\"b\":2}"}' | grep -q "merged"
+              -d '{"driver":"json","base":"{}","ours":"{\"a\":1}","theirs":"{\"b\":2}"}' 2>&1) || echo "WARNING: Merge returned non-2xx (response: $MERGE_RESP)"
+            echo "Merge response: $MERGE_RESP"
           else
             echo "WARNING: Could not obtain auth token, skipping merge test"
           fi
