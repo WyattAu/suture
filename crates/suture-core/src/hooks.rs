@@ -421,9 +421,14 @@ mod tests {
     #[test]
     #[cfg(not(target_os = "windows"))]
     fn test_run_hook_success() {
-        // Retry up to 3 times to avoid CI filesystem contention
-        for _ in 0..3 {
-            let tmp = tempfile::tempdir().unwrap();
+        // Retry up to 5 times with a small delay to avoid CI filesystem contention.
+        // Under heavy parallel test execution, tempfile creation or hook execution
+        // can fail transiently (ETXTBSY, ENOSPC, etc.).
+        for attempt in 0..5 {
+            let tmp = tempfile::Builder::new()
+                .prefix(&format!("suture_hook_test_{attempt}_"))
+                .tempdir()
+                .unwrap();
             let hook_dir = tmp.path().join(".suture").join("hooks");
             fs::create_dir_all(&hook_dir).unwrap();
             make_hook(
@@ -433,13 +438,20 @@ mod tests {
             );
 
             let env = build_env(tmp.path(), "pre-commit", None, None, None, HashMap::new());
-            if let Ok(result) = run_hook(tmp.path(), "pre-commit", &env) {
-                assert!(result.success());
-                assert_eq!(result.stdout.trim(), "hook ran");
-                return;
+            match run_hook(tmp.path(), "pre-commit", &env) {
+                Ok(result) => {
+                    assert!(result.success());
+                    assert_eq!(result.stdout.trim(), "hook ran");
+                    return;
+                }
+                Err(e) if attempt < 4 => {
+                    // Transient failure -- retry after a short backoff
+                    std::thread::sleep(std::time::Duration::from_millis(50 * (attempt as u64 + 1)));
+                    eprintln!("test_run_hook_success attempt {attempt} failed: {e}, retrying...");
+                }
+                Err(e) => panic!("test_run_hook_success failed after 5 retries: {e}"),
             }
         }
-        panic!("test_run_hook_success failed after 3 retries");
     }
 
     #[test]
