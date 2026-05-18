@@ -4,13 +4,27 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
-workflow_dispatch:
+  # Prevents GitHub Actions from creating phantom "failure" entries on push.
+  # The branch name never matches any real branch, so this job is always
+  # skipped, but GitHub records the run as "skipped" instead of "failure".
+  push:
+    branches: [__never_match__]
+
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # No-op job for push events -- GitHub requires at least one job definition
+  # per workflow trigger to avoid marking the run as "failure".
+  noop:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - run: true
+
   semantic-merge:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
