@@ -12,6 +12,7 @@ concurrency:
 
 jobs:
   semantic-merge:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: write
