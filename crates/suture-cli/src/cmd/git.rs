@@ -33,11 +33,14 @@ pub enum DriverAction {
     List,
 }
 
-pub async fn cmd_git(action: GitAction) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_git(
+    repo_path: Option<&std::path::Path>,
+    action: GitAction,
+) -> Result<(), Box<dyn std::error::Error>> {
     match action {
-        GitAction::Import { path } => git_import(path),
+        GitAction::Import { path } => git_import(repo_path, path),
         GitAction::Log { path } => git_log(path),
-        GitAction::Status { path } => git_status(path),
+        GitAction::Status { path } => git_status(repo_path, path),
         GitAction::Driver { action } => match action {
             DriverAction::Install => cmd_driver_install(),
             DriverAction::Uninstall => cmd_driver_uninstall(),
@@ -570,7 +573,10 @@ fn write_blob_to_disk(
     Ok(())
 }
 
-fn git_import(path: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
+fn git_import(
+    repo_path: Option<&std::path::Path>,
+    path: Option<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let git_path = path.as_deref().unwrap_or(".");
     let git_dir = find_git_dir(Path::new(git_path))?;
     let commits = walk_commits(&git_dir);
@@ -579,7 +585,7 @@ fn git_import(path: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+    let mut repo = crate::resolve_repo(repo_path)?;
     let status = repo.status()?;
     let is_empty = status.patch_count <= 1;
 
@@ -799,7 +805,10 @@ fn git_log(path: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn git_status(path: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
+fn git_status(
+    repo_path: Option<&std::path::Path>,
+    path: Option<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let git_path = path.as_deref().unwrap_or(".");
     let git_dir = find_git_dir(Path::new(git_path))?;
     let commits = walk_commits(&git_dir);
@@ -820,7 +829,7 @@ fn git_status(path: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
 
     let suture_path = std::path::Path::new(".suture");
     if suture_path.exists() {
-        match suture_core::repository::Repository::open(std::path::Path::new(".")) {
+        match crate::resolve_repo(repo_path) {
             Ok(repo) => {
                 let s = repo.status()?;
                 if s.patch_count <= 1 {
@@ -1040,10 +1049,8 @@ mod tests {
         assert!(script.contains("exit $?"));
     }
 
-    #[serial_test::serial]
     #[test]
     fn test_install_uninstall_flow() {
-        let _cwd = crate::cwd_guard();
         let dir = std::env::temp_dir().join("suture-test-driver-flow");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -1057,25 +1064,26 @@ mod tests {
 
         cmd_driver_install().unwrap();
 
-        let gitattributes = std::fs::read_to_string(".gitattributes").unwrap();
+        let gitattributes_path = dir.join(".gitattributes");
+        let gitattributes = std::fs::read_to_string(&gitattributes_path).unwrap();
         assert!(gitattributes.contains("*.json merge=suture"));
         assert!(gitattributes.contains("*.sql merge=suture"));
 
-        let script = std::path::Path::new(SUTURE_DRIVER_SCRIPT_PATH);
+        let script = dir.join(SUTURE_DRIVER_SCRIPT_PATH);
         assert!(script.exists());
-        let script_content = std::fs::read_to_string(script).unwrap();
+        let script_content = std::fs::read_to_string(&script).unwrap();
         assert!(script_content.contains("suture merge-file"));
 
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let perms = std::fs::metadata(script).unwrap().permissions();
+            let perms = std::fs::metadata(&script).unwrap().permissions();
             assert_eq!(perms.mode() & 0o111, 0o111);
         }
 
         cmd_driver_install().unwrap();
 
-        let gitattributes2 = std::fs::read_to_string(".gitattributes").unwrap();
+        let gitattributes2 = std::fs::read_to_string(&gitattributes_path).unwrap();
         let suture_count = gitattributes2
             .lines()
             .filter(|l| l.contains("merge=suture"))
@@ -1085,7 +1093,7 @@ mod tests {
         cmd_driver_uninstall().unwrap();
 
         assert!(!script.exists());
-        let gitattributes3 = std::fs::read_to_string(".gitattributes").unwrap_or_default();
+        let gitattributes3 = std::fs::read_to_string(&gitattributes_path).unwrap_or_default();
         assert!(!gitattributes3.contains("merge=suture"));
 
         std::env::set_current_dir(&prev).unwrap();

@@ -296,7 +296,6 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    #[serial_test::serial]
     #[tokio::test]
     async fn test_apply_patch() {
         let dir = tempfile::tempdir().unwrap();
@@ -310,7 +309,7 @@ mod tests {
 @@ -1,3 +1,4 @@
  line one
  line two
-+inserted line
+ +inserted line
  line three
 ";
         std::fs::write(&patch_path, patch_content).unwrap();

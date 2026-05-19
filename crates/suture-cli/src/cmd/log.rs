@@ -51,6 +51,7 @@ fn relative_time(timestamp: u64) -> String {
 
 #[allow(clippy::too_many_arguments)]
 pub async fn cmd_log(
+    repo_path: Option<&std::path::Path>,
     branch: Option<&str>,
     graph: bool,
     first_parent: bool,
@@ -81,7 +82,7 @@ pub async fn cmd_log(
         }
     }
 
-    let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+    let repo = crate::resolve_repo(repo_path)?;
 
     let since_ts = since.map(parse_time_filter).transpose()?;
     let until_ts = until.map(parse_time_filter).transpose()?;

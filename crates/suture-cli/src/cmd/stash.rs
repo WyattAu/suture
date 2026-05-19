@@ -1,9 +1,12 @@
 use crate::StashAction;
 use crate::cmd::user_error;
 
-pub async fn cmd_stash(action: &crate::StashAction) -> Result<(), Box<dyn std::error::Error>> {
-    let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))
-        .map_err(|e| user_error("failed to open repository", e))?;
+pub async fn cmd_stash(
+    repo_path: Option<&std::path::Path>,
+    action: &crate::StashAction,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut repo =
+        crate::resolve_repo(repo_path).map_err(|e| user_error("failed to open repository", e))?;
     match action {
         StashAction::Push { message } => {
             let status = repo

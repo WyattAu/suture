@@ -1449,6 +1449,7 @@ async fn main() {
     }
 
     let cli = Cli::parse();
+    let repo_path = cli.repo_path.as_deref().map(std::path::Path::new);
 
     if let Some(path) = &cli.repo_path
         && let Err(e) = std::env::set_current_dir(path)
@@ -1471,7 +1472,9 @@ async fn main() {
             };
             cmd::ignore::cmd_ignore(&args).await
         }
-        Commands::Add { paths, all, patch } => cmd::add::cmd_add(&paths, all, patch).await,
+        Commands::Add { paths, all, patch } => {
+            cmd::add::cmd_add(repo_path, &paths, all, patch).await
+        }
         Commands::Rm { paths, cached } => cmd::rm::cmd_rm(&paths, cached).await,
         Commands::Commit { message, all } => cmd::commit::cmd_commit(&message, all).await,
         Commands::Branch {
@@ -1511,6 +1514,7 @@ async fn main() {
             limit,
         } => {
             cmd::log::cmd_log(
+                repo_path,
                 branch.as_deref(),
                 graph,
                 first_parent,
@@ -1555,6 +1559,7 @@ async fn main() {
             summary,
         } => {
             cmd::diff::cmd_diff(
+                repo_path,
                 from.as_deref(),
                 to.as_deref(),
                 cached,
@@ -1620,7 +1625,7 @@ async fn main() {
             abort,
         } => cmd::rebase::cmd_rebase(&branch, interactive, resume, abort).await,
         Commands::Blame { path, at, lines } => {
-            cmd::blame::cmd_blame(&path, at.as_deref(), lines.as_deref()).await
+            cmd::blame::cmd_blame(repo_path, &path, at.as_deref(), lines.as_deref()).await
         }
         Commands::Tag {
             name,
@@ -1661,7 +1666,7 @@ async fn main() {
         Commands::LsRemote { remote_or_url } => cmd::ls_remote::cmd_ls_remote(&remote_or_url).await,
         Commands::Reset { target, mode } => cmd::reset::cmd_reset(&target, &mode).await,
         Commands::Key { action } => cmd::key::cmd_key(&action).await,
-        Commands::Stash { action } => cmd::stash::cmd_stash(&action).await,
+        Commands::Stash { action } => cmd::stash::cmd_stash(repo_path, &action).await,
         Commands::Completions { shell } => {
             match shell.as_str() {
                 "bash" => clap_complete::generate(
@@ -1703,8 +1708,8 @@ async fn main() {
             }
             Ok(())
         }
-        Commands::Show { commit, stat } => cmd::show::cmd_show(&commit, stat).await,
-        Commands::Reflog { show } => cmd::reflog::cmd_reflog(show).await,
+        Commands::Show { commit, stat } => cmd::show::cmd_show(repo_path, &commit, stat).await,
+        Commands::Reflog { show } => cmd::reflog::cmd_reflog(repo_path, show).await,
         Commands::Drivers => cmd::drivers::cmd_drivers().await,
         Commands::Shortlog { branch, number } => {
             cmd::shortlog::cmd_shortlog(branch.as_deref(), number).await
@@ -1740,24 +1745,24 @@ async fn main() {
             )
             .await
         }
-        Commands::Fsck { full, fix } => cmd::fsck::cmd_fsck(full, fix).await,
-        Commands::Doctor { fix } => cmd::doctor::cmd_doctor(fix).await,
+        Commands::Fsck { full, fix } => cmd::fsck::cmd_fsck(repo_path, full, fix).await,
+        Commands::Doctor { fix } => cmd::doctor::cmd_doctor(repo_path, fix).await,
         Commands::Audit {
             verify,
             show,
             count,
             tail,
-        } => cmd::audit::cmd_audit(verify, show, count, tail).await,
+        } => cmd::audit::cmd_audit(repo_path, verify, show, count, tail).await,
         Commands::Clean {
             dry_run,
             dirs,
             paths,
-        } => cmd::clean::cmd_clean(dry_run, dirs, &paths).await,
+        } => cmd::clean::cmd_clean(repo_path, dry_run, dirs, &paths).await,
         Commands::Describe {
             commit_ref,
             all,
             tags,
-        } => cmd::describe::cmd_describe(&commit_ref, all, tags).await,
+        } => cmd::describe::cmd_describe(repo_path, &commit_ref, all, tags).await,
         Commands::RevParse {
             refs,
             short,
@@ -1803,7 +1808,7 @@ async fn main() {
             cmd::lfs::cmd_lfs(&lfs_action).await
         }
         Commands::Classification { action } => {
-            cmd::classification::cmd_classification(&action).await
+            cmd::classification::cmd_classification(repo_path, &action).await
         }
         Commands::Git { action } => {
             let git_action = match action {
@@ -1818,7 +1823,7 @@ async fn main() {
                     },
                 },
             };
-            cmd::git::cmd_git(git_action).await
+            cmd::git::cmd_git(repo_path, git_action).await
         }
         Commands::Squash { count, message } => {
             cmd::squash::cmd_squash(count, message.as_deref()).await
@@ -1830,22 +1835,25 @@ async fn main() {
             pull_only,
             message,
         } => match action {
-            Some(SyncAction::Start) => cmd::sync::cmd_sync_start().await,
+            Some(SyncAction::Start) => cmd::sync::cmd_sync_start(repo_path).await,
             Some(SyncAction::Stop) => cmd::sync::cmd_sync_stop(),
-            Some(SyncAction::Status) => cmd::sync::cmd_sync_status(),
-            None => cmd::sync::cmd_sync(&remote, no_push, pull_only, message.as_deref()).await,
+            Some(SyncAction::Status) => cmd::sync::cmd_sync_status(repo_path),
+            None => {
+                cmd::sync::cmd_sync(repo_path, &remote, no_push, pull_only, message.as_deref())
+                    .await
+            }
         },
         Commands::Undo {
             n,
             soft: _,
             hard,
             force,
-        } => cmd::undo::cmd_undo(n, hard, force).await,
+        } => cmd::undo::cmd_undo(repo_path, n, hard, force).await,
         Commands::Rollback { commit } => cmd::rollback::cmd_rollback(&commit).await,
         Commands::Verify {
             commit_ref,
             verbose,
-        } => cmd::verify::cmd_verify(&commit_ref, verbose).await,
+        } => cmd::verify::cmd_verify(repo_path, &commit_ref, verbose).await,
         Commands::Version => cmd::version::cmd_version().await,
         Commands::Tui => cmd::tui::cmd_tui().await,
         Commands::Export {
@@ -1857,6 +1865,7 @@ async fn main() {
             client,
         } => {
             cmd::export::cmd_export(
+                repo_path,
                 &output,
                 at.as_deref(),
                 zip,
@@ -1900,7 +1909,7 @@ async fn main() {
                     at: at.unwrap_or_else(|| "HEAD".to_owned()),
                 },
             };
-            cmd::report::cmd_report(&rt).await
+            cmd::report::cmd_report(repo_path, &rt).await
         }
         Commands::Batch { action } => {
             let ba = match action {
@@ -1912,9 +1921,9 @@ async fn main() {
                     cmd::batch::BatchAction::ExportClients { clients, output }
                 }
             };
-            cmd::batch::cmd_batch(&ba).await
+            cmd::batch::cmd_batch(repo_path, &ba).await
         }
-        Commands::Timeline { action } => cmd::timeline::cmd_timeline(&action).await,
+        Commands::Timeline { action } => cmd::timeline::cmd_timeline(repo_path, &action).await,
         Commands::RepoSize => cmd::repo_size::cmd_repo_size().await,
     };
 
@@ -1993,41 +2002,23 @@ fn error_hint(msg: &str) -> Option<&'static str> {
     }
 }
 
-#[cfg(test)]
-pub(crate) fn cwd_guard() -> CwdGuard {
-    CwdGuard::new()
-}
-
-#[cfg(test)]
-struct CwdGuard(std::path::PathBuf);
-
-#[cfg(test)]
-impl CwdGuard {
-    fn new() -> Self {
-        // SAFETY: `unshare(CLONE_FS)` is called only in tests to isolate
-        // filesystem changes (chdir) to the current thread. It requires
-        // CAP_SYS_ADMIN or the kernel's `unshare` user namespace support.
-        // The CwdGuard::drop reverts via chdir to the saved cwd.
-        #[cfg(target_os = "linux")]
-        unsafe {
-            libc::unshare(libc::CLONE_FS);
-        }
-        Self(std::env::current_dir().expect("failed to get current dir"))
-    }
-}
-
-#[cfg(test)]
-impl Drop for CwdGuard {
-    fn drop(&mut self) {
-        let _ = std::env::set_current_dir(&self.0);
-    }
+/// Resolve repository from an explicit path, falling back to CWD.
+/// Tests pass `Some(tempdir)` to avoid CWD dependency.
+pub(crate) fn resolve_repo(
+    explicit_path: Option<&std::path::Path>,
+) -> Result<suture_core::repository::Repository, Box<dyn std::error::Error>> {
+    let repo_path = match explicit_path {
+        Some(p) => p.to_path_buf(),
+        None => std::env::current_dir().map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?,
+    };
+    suture_core::repository::Repository::open(&repo_path)
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use clap::Parser;
-    use std::path::Path;
 
     fn parse(args: &[&str]) -> Cli {
         Cli::try_parse_from(args).unwrap_or_else(|e| panic!("failed to parse {:?}: {e}", args))
@@ -2781,10 +2772,8 @@ mod tests {
         }
     }
 
-    #[serial_test::serial]
     #[tokio::test]
     async fn test_verify_unsigned_commit() {
-        let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
         let mut repo = suture_core::repository::Repository::init(&dir_path, "testuser").unwrap();
@@ -2794,17 +2783,14 @@ mod tests {
         repo.add("hello.txt").unwrap();
         repo.commit("test commit").unwrap();
 
-        std::env::set_current_dir(&dir_path).unwrap();
-        let result = cmd::verify::cmd_verify("HEAD", false).await;
+        let result = cmd::verify::cmd_verify(Some(dir.path()), "HEAD", false).await;
 
         assert!(result.is_ok());
         drop(dir);
     }
 
-    #[serial_test::serial]
     #[tokio::test]
     async fn test_verify_signed_commit() {
-        let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
         let mut repo = suture_core::repository::Repository::init(&dir_path, "testuser").unwrap();
@@ -2846,8 +2832,7 @@ mod tests {
             .store_signature(&patch.id.to_hex(), &sig.to_bytes())
             .unwrap();
 
-        std::env::set_current_dir(&dir_path).unwrap();
-        let result = cmd::verify::cmd_verify("HEAD", false).await;
+        let result = cmd::verify::cmd_verify(Some(dir.path()), "HEAD", false).await;
 
         assert!(result.is_ok());
         drop(dir);
@@ -2855,10 +2840,8 @@ mod tests {
 
     // ── Defence Workflow Tests ──
 
-    #[serial_test::serial]
     #[tokio::test]
     async fn test_defence_audit_trail_workflow() {
-        let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
 
@@ -2905,10 +2888,24 @@ mod tests {
         repo.commit("Add signed classified document").unwrap();
 
         drop(repo);
-        std::env::set_current_dir(&dir_path).unwrap();
         let result = cmd::log::cmd_log(
-            None, false, false, false, None, None, false, None, None, false, false, true, "text",
-            false, None, 0,
+            Some(dir.path()),
+            None,
+            false,
+            false,
+            false,
+            None,
+            None,
+            false,
+            None,
+            None,
+            false,
+            false,
+            true,
+            "text",
+            false,
+            None,
+            0,
         )
         .await;
         assert!(result.is_ok());
@@ -2916,10 +2913,8 @@ mod tests {
         drop(dir);
     }
 
-    #[serial_test::serial]
     #[tokio::test]
     async fn test_defence_classification_detection() {
-        let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
 
@@ -2946,18 +2941,24 @@ mod tests {
             .unwrap();
 
         drop(repo);
-        std::env::set_current_dir(&dir_path).unwrap();
-        let result =
-            cmd::diff::cmd_diff(Some(&head_hex), None, false, false, false, true, false).await;
+        let result = cmd::diff::cmd_diff(
+            Some(dir.path()),
+            Some(&head_hex),
+            None,
+            false,
+            false,
+            false,
+            true,
+            false,
+        )
+        .await;
         assert!(result.is_ok());
 
         drop(dir);
     }
 
-    #[serial_test::serial]
     #[tokio::test]
     async fn test_defence_signed_commit_verify() {
-        let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
 
@@ -2997,8 +2998,7 @@ mod tests {
             .unwrap();
 
         drop(repo);
-        std::env::set_current_dir(&dir_path).unwrap();
-        let result = cmd::verify::cmd_verify("HEAD", false).await;
+        let result = cmd::verify::cmd_verify(Some(dir.path()), "HEAD", false).await;
         assert!(result.is_ok());
 
         drop(dir);
@@ -3006,10 +3006,8 @@ mod tests {
 
     // ── Film Workflow Tests ──
 
-    #[serial_test::serial]
     #[tokio::test]
     async fn test_film_branching_workflow() {
-        let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
 
@@ -3048,10 +3046,8 @@ mod tests {
         drop(dir);
     }
 
-    #[serial_test::serial]
     #[tokio::test]
     async fn test_film_blame_history() {
-        let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
 
@@ -3068,11 +3064,11 @@ mod tests {
         repo.commit("Revise line 3 - change action").unwrap();
 
         drop(repo);
-        std::env::set_current_dir(&dir_path).unwrap();
-        let result_full = cmd::blame::cmd_blame("script.txt", None, None).await;
+        let result_full = cmd::blame::cmd_blame(Some(dir.path()), "script.txt", None, None).await;
         assert!(result_full.is_ok());
 
-        let result_range = cmd::blame::cmd_blame("script.txt", None, Some("2,4")).await;
+        let result_range =
+            cmd::blame::cmd_blame(Some(dir.path()), "script.txt", None, Some("2,4")).await;
         assert!(result_range.is_ok());
 
         drop(dir);
@@ -3080,10 +3076,8 @@ mod tests {
 
     // ── YouTube/PE Workflow Tests ──
 
-    #[serial_test::serial]
     #[tokio::test]
     async fn test_youtube_export_workflow() {
-        let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
 
@@ -3112,11 +3106,17 @@ mod tests {
         repo.commit("Add video production assets").unwrap();
 
         drop(repo);
-        std::env::set_current_dir(&dir_path).unwrap();
         let export_dir = dir.path().join("client_delivery");
-        let result =
-            cmd::export::cmd_export(export_dir.to_str().unwrap(), None, false, None, false, None)
-                .await;
+        let result = cmd::export::cmd_export(
+            Some(dir.path()),
+            export_dir.to_str().unwrap(),
+            None,
+            false,
+            None,
+            false,
+            None,
+        )
+        .await;
         assert!(result.is_ok());
         assert!(export_dir.join("drafts/thumbnail_ideas.txt").exists());
         assert!(export_dir.join("drafts/script_draft.md").exists());
@@ -3125,10 +3125,8 @@ mod tests {
         drop(dir);
     }
 
-    #[serial_test::serial]
     #[tokio::test]
     async fn test_youtube_sync_workflow() {
-        let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
 
@@ -3139,17 +3137,14 @@ mod tests {
         repo.commit("Add video notes").unwrap();
 
         drop(repo);
-        std::env::set_current_dir(&dir_path).unwrap();
-        let result = cmd::sync::cmd_sync("origin", true, false, None).await;
+        let result = cmd::sync::cmd_sync(Some(dir.path()), "origin", true, false, None).await;
         assert!(result.is_ok());
 
         drop(dir);
     }
 
-    #[serial_test::serial]
     #[tokio::test]
     async fn test_youtube_diff_summary() {
-        let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
 
@@ -3175,8 +3170,8 @@ mod tests {
         repo.commit("Update production files").unwrap();
 
         drop(repo);
-        std::env::set_current_dir(&dir_path).unwrap();
         let result = cmd::diff::cmd_diff(
+            Some(dir.path()),
             Some(&first_hex),
             Some("HEAD"),
             false,
@@ -3193,10 +3188,8 @@ mod tests {
 
     // ── General Workflow Tests ──
 
-    #[serial_test::serial]
     #[tokio::test]
     async fn test_collaboration_workflow() {
-        let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
 
@@ -3224,42 +3217,57 @@ mod tests {
         repo.set_config("tag.v1.0.message", "release 1.0").unwrap();
 
         drop(repo);
-        std::env::set_current_dir(&dir_path).unwrap();
 
-        let _ = cmd::describe::cmd_describe("HEAD", false, false).await;
-        let _ = cmd::verify::cmd_verify("HEAD", false).await;
+        let _ = cmd::describe::cmd_describe(Some(dir.path()), "HEAD", false, false).await;
+        let _ = cmd::verify::cmd_verify(Some(dir.path()), "HEAD", false).await;
         let _ = cmd::log::cmd_log(
-            None, false, false, false, None, None, false, None, None, true, false, false, "text",
-            false, None, 0,
+            Some(dir.path()),
+            None,
+            false,
+            false,
+            false,
+            None,
+            None,
+            false,
+            None,
+            None,
+            true,
+            false,
+            false,
+            "text",
+            false,
+            None,
+            0,
         )
         .await;
-        let _ = cmd::show::cmd_show("HEAD", true).await;
+        let _ = cmd::show::cmd_show(Some(dir.path()), "HEAD", true).await;
 
         std::fs::write(
             dir_path.join("README.md"),
             "# Project\n\nUpdated getting started.",
         )
         .unwrap();
-        cmd::add::cmd_add(&["README.md".to_string()], false, false)
+        cmd::add::cmd_add(Some(dir.path()), &["README.md".to_string()], false, false)
             .await
             .unwrap();
 
-        let _ = cmd::stash::cmd_stash(&StashAction::Push {
-            message: Some("WIP readme update".to_string()),
-        })
+        let _ = cmd::stash::cmd_stash(
+            Some(dir.path()),
+            &StashAction::Push {
+                message: Some("WIP readme update".to_string()),
+            },
+        )
         .await;
-        let _ = cmd::stash::cmd_stash(&StashAction::List).await;
-        let _ = cmd::stash::cmd_stash(&StashAction::Show { index: 0 }).await;
-        let _ = cmd::stash::cmd_stash(&StashAction::Pop).await;
-        let _ = cmd::reflog::cmd_reflog(false).await;
+        let _ = cmd::stash::cmd_stash(Some(dir.path()), &StashAction::List).await;
+        let _ = cmd::stash::cmd_stash(Some(dir.path()), &StashAction::Show { index: 0 }).await;
+        let _ = cmd::stash::cmd_stash(Some(dir.path()), &StashAction::Pop).await;
+        let _ = cmd::reflog::cmd_reflog(Some(dir.path()), false).await;
 
         drop(dir);
     }
 
-    #[serial_test::serial]
     #[tokio::test]
     async fn test_undo_redo_workflow() {
-        let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
 
@@ -3273,21 +3281,18 @@ mod tests {
         }
 
         drop(repo);
-        std::env::set_current_dir(&dir_path).unwrap();
 
-        let result = cmd::undo::cmd_undo(1, false, false).await;
+        let result = cmd::undo::cmd_undo(Some(dir.path()), 1, false, false).await;
         assert!(result.is_ok());
-        let _ = cmd::reflog::cmd_reflog(false).await;
-        let _ = cmd::doctor::cmd_doctor(false).await;
-        let _ = cmd::fsck::cmd_fsck(false, false).await;
+        let _ = cmd::reflog::cmd_reflog(Some(dir.path()), false).await;
+        let _ = cmd::doctor::cmd_doctor(Some(dir.path()), false).await;
+        let _ = cmd::fsck::cmd_fsck(Some(dir.path()), false, false).await;
 
         drop(dir);
     }
 
-    #[serial_test::serial]
     #[tokio::test]
     async fn test_clean_workflow() {
-        let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
 
@@ -3301,14 +3306,13 @@ mod tests {
         std::fs::write(dir_path.join("untracked_b.txt"), "junk b").unwrap();
 
         drop(repo);
-        std::env::set_current_dir(&dir_path).unwrap();
 
-        let dry_run = cmd::clean::cmd_clean(true, false, &[]).await;
+        let dry_run = cmd::clean::cmd_clean(Some(dir.path()), true, false, &[]).await;
         assert!(dry_run.is_ok());
         assert!(dir_path.join("untracked_a.txt").exists());
         assert!(dir_path.join("untracked_b.txt").exists());
 
-        let clean = cmd::clean::cmd_clean(false, false, &[]).await;
+        let clean = cmd::clean::cmd_clean(Some(dir.path()), false, false, &[]).await;
         assert!(clean.is_ok());
         assert!(!dir_path.join("untracked_a.txt").exists());
         assert!(!dir_path.join("untracked_b.txt").exists());
@@ -3317,10 +3321,8 @@ mod tests {
         drop(dir);
     }
 
-    #[serial_test::serial]
     #[tokio::test]
     async fn test_audit_verify_clean_chain() {
-        let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
 
@@ -3346,9 +3348,8 @@ mod tests {
         assert!(audit_path.exists());
 
         drop(repo);
-        std::env::set_current_dir(&dir_path).unwrap();
 
-        let result = cmd::audit::cmd_audit(true, false, false, None).await;
+        let result = cmd::audit::cmd_audit(Some(dir.path()), true, false, false, None).await;
         assert!(result.is_ok());
 
         let audit = suture_core::audit::AuditLog::open(&audit_path).unwrap();
@@ -3359,10 +3360,8 @@ mod tests {
         drop(dir);
     }
 
-    #[serial_test::serial]
     #[tokio::test]
     async fn test_audit_log_commits() {
-        let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
 
@@ -3461,10 +3460,8 @@ mod tests {
         }
     }
 
-    #[serial_test::serial]
     #[tokio::test]
     async fn test_classification_scan() {
-        let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
 
@@ -3503,23 +3500,23 @@ mod tests {
         repo.commit("Remove classification markings").unwrap();
 
         drop(repo);
-        std::env::set_current_dir(&dir_path).unwrap();
 
-        let result = cmd::classification::cmd_classification(&ClassificationAction::Scan {
-            since: None,
-            format: "text".to_string(),
-            filter: None,
-        })
+        let result = cmd::classification::cmd_classification(
+            Some(dir.path()),
+            &ClassificationAction::Scan {
+                since: None,
+                format: "text".to_string(),
+                filter: None,
+            },
+        )
         .await;
         assert!(result.is_ok());
 
         drop(dir);
     }
 
-    #[serial_test::serial]
     #[tokio::test]
     async fn test_classification_report() {
-        let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
 
@@ -3538,12 +3535,14 @@ mod tests {
         repo.commit("Add doc2 as SECRET").unwrap();
 
         drop(repo);
-        std::env::set_current_dir(&dir_path).unwrap();
 
         let output_path = dir.path().join("compliance_report.txt");
-        let result = cmd::classification::cmd_classification(&ClassificationAction::Report {
-            output: Some(output_path.to_str().unwrap().to_string()),
-        })
+        let result = cmd::classification::cmd_classification(
+            Some(dir.path()),
+            &ClassificationAction::Report {
+                output: Some(output_path.to_str().unwrap().to_string()),
+            },
+        )
         .await;
         assert!(result.is_ok());
         assert!(output_path.exists());
@@ -3729,10 +3728,8 @@ mod tests {
         }
     }
 
-    #[serial_test::serial]
     #[tokio::test]
     async fn test_batch_stage_workflow() {
-        let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
 
@@ -3743,15 +3740,17 @@ mod tests {
         std::fs::write(dir_path.join("readme.txt"), "not a video").unwrap();
 
         drop(repo);
-        std::env::set_current_dir(&dir_path).unwrap();
 
-        let result = cmd::batch::cmd_batch(&cmd::batch::BatchAction::Stage {
-            pattern: "*.mp4".to_string(),
-        })
+        let result = cmd::batch::cmd_batch(
+            Some(dir.path()),
+            &cmd::batch::BatchAction::Stage {
+                pattern: "*.mp4".to_string(),
+            },
+        )
         .await;
         assert!(result.is_ok());
 
-        let repo = suture_core::repository::Repository::open(Path::new(".")).unwrap();
+        let repo = suture_core::repository::Repository::open(dir.path()).unwrap();
         let status = repo.status().unwrap();
         let staged_paths: Vec<&str> = status
             .staged_files
@@ -3765,10 +3764,8 @@ mod tests {
         drop(dir);
     }
 
-    #[serial_test::serial]
     #[tokio::test]
     async fn test_timeline_workflow() {
-        let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
 
@@ -3789,17 +3786,18 @@ mod tests {
         repo.commit("Add scene timeline").unwrap();
 
         drop(repo);
-        std::env::set_current_dir(&dir_path).unwrap();
-        let result = cmd::timeline::cmd_timeline(&TimelineAction::List { otio_only: false }).await;
+        let result = cmd::timeline::cmd_timeline(
+            Some(dir.path()),
+            &TimelineAction::List { otio_only: false },
+        )
+        .await;
         assert!(result.is_ok());
 
         drop(dir);
     }
 
-    #[serial_test::serial]
     #[tokio::test]
     async fn test_report_workflow() {
-        let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
 
@@ -3815,20 +3813,20 @@ mod tests {
         repo.commit("Fix data point").unwrap();
 
         drop(repo);
-        std::env::set_current_dir(&dir_path).unwrap();
-        let result = cmd::report::cmd_report(&cmd::report::ReportType::Stats {
-            at: "HEAD".to_string(),
-        })
+        let result = cmd::report::cmd_report(
+            Some(dir.path()),
+            &cmd::report::ReportType::Stats {
+                at: "HEAD".to_string(),
+            },
+        )
         .await;
         assert!(result.is_ok());
 
         drop(dir);
     }
 
-    #[serial_test::serial]
     #[tokio::test]
     async fn test_batch_stage_pattern_workflow() {
-        let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
 
@@ -3843,20 +3841,20 @@ mod tests {
         }
 
         drop(repo);
-        std::env::set_current_dir(&dir_path).unwrap();
-        let result = cmd::batch::cmd_batch(&cmd::batch::BatchAction::Stage {
-            pattern: "file_*.txt".to_string(),
-        })
+        let result = cmd::batch::cmd_batch(
+            Some(dir.path()),
+            &cmd::batch::BatchAction::Stage {
+                pattern: "file_*.txt".to_string(),
+            },
+        )
         .await;
         assert!(result.is_ok());
 
         drop(dir);
     }
 
-    #[serial_test::serial]
     #[tokio::test]
     async fn test_audit_verify_workflow() {
-        let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
 
@@ -3879,17 +3877,14 @@ mod tests {
             .unwrap();
 
         drop(repo);
-        std::env::set_current_dir(&dir_path).unwrap();
-        let result = cmd::audit::cmd_audit(true, false, false, None).await;
+        let result = cmd::audit::cmd_audit(Some(dir.path()), true, false, false, None).await;
         assert!(result.is_ok());
 
         drop(dir);
     }
 
-    #[serial_test::serial]
     #[tokio::test]
     async fn test_clean_dry_run_workflow() {
-        let _cwd = cwd_guard();
         let dir = tempfile::tempdir().unwrap();
         let dir_path = dir.path().to_path_buf();
 
@@ -3903,8 +3898,7 @@ mod tests {
         std::fs::write(dir_path.join("temp.log"), "temporary").unwrap();
 
         drop(repo);
-        std::env::set_current_dir(&dir_path).unwrap();
-        let result = cmd::clean::cmd_clean(true, false, &[]).await;
+        let result = cmd::clean::cmd_clean(Some(dir.path()), true, false, &[]).await;
         assert!(result.is_ok());
 
         assert!(dir_path.join("untracked.txt").exists());

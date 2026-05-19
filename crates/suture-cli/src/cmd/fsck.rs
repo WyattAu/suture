@@ -1,5 +1,9 @@
-pub async fn cmd_fsck(full: bool, fix: bool) -> Result<(), Box<dyn std::error::Error>> {
-    let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+pub async fn cmd_fsck(
+    repo_path: Option<&std::path::Path>,
+    full: bool,
+    fix: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let repo = crate::resolve_repo(repo_path)?;
     let result = repo.fsck(fix)?;
 
     println!("Repository integrity check complete.");

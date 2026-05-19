@@ -1,7 +1,11 @@
 use crate::ref_utils::resolve_ref;
 
-pub async fn cmd_verify(commit_ref: &str, verbose: bool) -> Result<(), Box<dyn std::error::Error>> {
-    let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+pub async fn cmd_verify(
+    repo_path: Option<&std::path::Path>,
+    commit_ref: &str,
+    verbose: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let repo = crate::resolve_repo(repo_path)?;
     let patches = repo.all_patches();
     let patch = resolve_ref(&repo, commit_ref, &patches)?.clone();
 

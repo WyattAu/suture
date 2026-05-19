@@ -13,12 +13,13 @@ const SYNC_PUSH_COOLDOWN_SECS: u64 = 30;
 const SYNC_PULL_INTERVAL_SECS: u64 = 60;
 
 pub async fn cmd_sync(
+    repo_path: Option<&std::path::Path>,
     remote: &str,
     no_push: bool,
     pull_only: bool,
     message: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut repo = suture_core::repository::Repository::open(Path::new("."))?;
+    let mut repo = crate::resolve_repo(repo_path)?;
     let has_remote = has_configured_remote(&repo, remote);
 
     let mut pulled = false;
@@ -52,7 +53,7 @@ pub async fn cmd_sync(
         return Ok(());
     }
 
-    let changed_files = detect_changed_files(&repo);
+    let changed_files = detect_changed_files(&repo, repo_path.unwrap_or(Path::new(".")));
     if changed_files.is_empty() && !pulled {
         println!("Everything up to date.");
         return Ok(());
@@ -126,14 +127,16 @@ fn has_configured_remote(repo: &suture_core::repository::Repository, name: &str)
     remotes.iter().any(|(n, _)| n == name)
 }
 
-fn detect_changed_files(repo: &suture_core::repository::Repository) -> Vec<String> {
+fn detect_changed_files(
+    repo: &suture_core::repository::Repository,
+    repo_dir: &Path,
+) -> Vec<String> {
     let mut changed = Vec::new();
 
     let head_tree = repo
         .snapshot_head()
         .unwrap_or_else(|_| suture_core::engine::tree::FileTree::empty());
 
-    let repo_dir = Path::new(".");
     let disk_files = crate::display::walk_repo_files(repo_dir);
 
     for rel_path in &disk_files {
@@ -391,12 +394,16 @@ async fn cmd_push_inner(
 // File-watching sync daemon (polling-based)
 // ---------------------------------------------------------------------------
 
-pub async fn cmd_sync_start() -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_sync_start(
+    repo_path: Option<&std::path::Path>,
+) -> Result<(), Box<dyn std::error::Error>> {
     if is_daemon_running() {
         return Err("sync daemon is already running (use `suture sync stop` first)".into());
     }
 
-    let repo_dir = std::env::current_dir()?;
+    let repo_dir = repo_path
+        .map(|p| p.to_path_buf())
+        .unwrap_or(std::env::current_dir()?);
     if !repo_dir.join(".suture").exists() {
         return Err("not a suture repository (no .suture directory)".into());
     }
@@ -469,7 +476,9 @@ pub fn cmd_sync_stop() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-pub fn cmd_sync_status() -> Result<(), Box<dyn std::error::Error>> {
+pub fn cmd_sync_status(
+    repo_path: Option<&std::path::Path>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let daemon_alive = if let Some(pid) = read_pid_file()? {
         if is_process_alive(pid) {
             println!("Sync daemon: running (PID {pid})");
@@ -497,7 +506,7 @@ pub fn cmd_sync_status() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let Ok(repo) = suture_core::repository::Repository::open(Path::new(".")) else {
+    let Ok(repo) = crate::resolve_repo(repo_path) else {
         println!();
         println!("Not a suture repository.");
         return Ok(());

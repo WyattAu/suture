@@ -1,9 +1,10 @@
 pub async fn cmd_blame(
+    repo_path: Option<&std::path::Path>,
     path: &str,
     at: Option<&str>,
     lines: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+    let repo = crate::resolve_repo(repo_path)?;
     let entries = repo.blame(path, at)?;
 
     let (start, end) = if let Some(range) = lines {

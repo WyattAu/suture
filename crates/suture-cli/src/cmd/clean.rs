@@ -1,11 +1,12 @@
 use std::path::Path as StdPath;
 
 pub async fn cmd_clean(
+    repo_path: Option<&std::path::Path>,
     dry_run: bool,
     dirs: bool,
     paths: &[String],
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let repo = suture_core::repository::Repository::open(StdPath::new("."))?;
+    let repo = crate::resolve_repo(repo_path)?;
     let status = repo.status()?;
 
     let head_tree = repo
@@ -18,7 +19,8 @@ pub async fn cmd_clean(
         .map(|(p, _)| p.as_str())
         .collect();
 
-    let repo_dir = StdPath::new(".");
+    let cwd = std::env::current_dir().unwrap();
+    let repo_dir = repo_path.unwrap_or(&cwd);
     let disk_files = crate::display::walk_repo_files(repo_dir);
 
     let mut untracked: Vec<String> = Vec::new();

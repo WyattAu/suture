@@ -14,19 +14,28 @@ pub enum BatchAction {
     },
 }
 
-pub async fn cmd_batch(action: &BatchAction) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_batch(
+    repo_path: Option<&std::path::Path>,
+    action: &BatchAction,
+) -> Result<(), Box<dyn std::error::Error>> {
     match action {
-        BatchAction::Stage { pattern } => cmd_batch_stage(pattern).await,
-        BatchAction::Commit { pattern, message } => cmd_batch_commit(pattern, message).await,
+        BatchAction::Stage { pattern } => cmd_batch_stage(repo_path, pattern).await,
+        BatchAction::Commit { pattern, message } => {
+            cmd_batch_commit(repo_path, pattern, message).await
+        }
         BatchAction::ExportClients { clients, output } => {
-            cmd_batch_export_clients(clients, output).await
+            cmd_batch_export_clients(repo_path, clients, output).await
         }
     }
 }
 
-async fn cmd_batch_stage(pattern: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let repo = suture_core::repository::Repository::open(Path::new("."))?;
-    let matched = glob_match_files(".", pattern)?;
+async fn cmd_batch_stage(
+    repo_path: Option<&std::path::Path>,
+    pattern: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let repo = crate::resolve_repo(repo_path)?;
+    let base = repo_path.unwrap_or(std::path::Path::new("."));
+    let matched = glob_match_files(&base.to_string_lossy(), pattern)?;
 
     if matched.is_empty() {
         println!("No files matched pattern '{pattern}'");
@@ -46,9 +55,14 @@ async fn cmd_batch_stage(pattern: &str) -> Result<(), Box<dyn std::error::Error>
     Ok(())
 }
 
-async fn cmd_batch_commit(pattern: &str, message: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let mut repo = suture_core::repository::Repository::open(Path::new("."))?;
-    let matched = glob_match_files(".", pattern)?;
+async fn cmd_batch_commit(
+    repo_path: Option<&std::path::Path>,
+    pattern: &str,
+    message: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut repo = crate::resolve_repo(repo_path)?;
+    let base = repo_path.unwrap_or(std::path::Path::new("."));
+    let matched = glob_match_files(&base.to_string_lossy(), pattern)?;
 
     if matched.is_empty() {
         println!("No files matched pattern '{pattern}'");
@@ -71,6 +85,7 @@ async fn cmd_batch_commit(pattern: &str, message: &str) -> Result<(), Box<dyn st
 }
 
 async fn cmd_batch_export_clients(
+    repo_path: Option<&std::path::Path>,
     clients: &[String],
     output: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -85,7 +100,17 @@ async fn cmd_batch_export_clients(
     let mut fail = 0usize;
     for client in clients {
         let client_output = format!("{output}/{client}");
-        match crate::cmd::export::cmd_export(&client_output, None, false, None, false, None).await {
+        match crate::cmd::export::cmd_export(
+            repo_path,
+            &client_output,
+            None,
+            false,
+            None,
+            false,
+            None,
+        )
+        .await
+        {
             Ok(()) => {
                 println!("  {client:<20} OK");
                 ok += 1;

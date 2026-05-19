@@ -9,6 +9,7 @@ struct ExportContext<'a> {
 }
 
 pub async fn cmd_export(
+    repo_path: Option<&std::path::Path>,
     output: &str,
     at: Option<&str>,
     zip: bool,
@@ -16,7 +17,7 @@ pub async fn cmd_export(
     include_meta: bool,
     client: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let repo = suture_core::repository::Repository::open(Path::new("."))?;
+    let repo = crate::resolve_repo(repo_path)?;
     let patches = repo.all_patches();
 
     let ref_str = at.unwrap_or("HEAD");

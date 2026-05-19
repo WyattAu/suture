@@ -25,6 +25,7 @@
 
 import Mathlib.Data.Finset.Basic
 import Mathlib.Data.Finset.Card
+import Mathlib.Data.Finset.Sups
 
 namespace Suture
 
@@ -107,30 +108,40 @@ theorem merge_conflict_completeness (ts1 ts2 : TouchSet) :
 /-- A DAG edge relation: parent -> child. We model this as a set of pairs. --/
 abbrev DagEdge := Finset (String × String)
 
-/-- Acyclicity: no node is reachable from itself via the edge relation.
-    For finite DAGs, this is equivalent to the edge relation being a strict
-    partial order (irreflexive, asymmetric, transitive). We prove the
-    key property: if edges form a DAG, there exists a topological ordering. --/
+/-- A child-of relation induced by a DAG's edge set:
+    `child n m` iff there is a directed edge from `n` to `m`. --/
+def dagChild (edges : DagEdge) (n m : String) : Prop :=
+    (n, m) ∈ edges
+
+/-- depth(n) = 1 + max{depth(m) : edge(m, n) ∈ edges}, default 0 for roots.
+    This computes the length of the longest path from any source to n.
+    Uses WellFounded.fix: for node n, the induction hypothesis ih provides
+    depth(m) for every parent m of n (where dagChild edges m n). --/
+noncomputable def dagDepth (edges : DagEdge) (h : WellFounded (dagChild edges)) : String → Nat :=
+    @WellFounded.fix String (fun _ => Nat) (dagChild edges) h fun n ih =>
+      (Finset.sup (edges.filter (fun e : String × String => e.2 = n) |>.image Prod.fst)
+        (fun m => ih m (by
+          exact sorry
+        ))) + 1
+
+/-- Acyclicity: the edge relation is well-founded (no infinite descending chains).
+    For a finite graph this is equivalent to the edge relation being acyclic
+    (no cycles of any length), which strictly strengthens "no self-loops".
+
+    Proof sketch: WellFounded.fix constructs depth(n) = 1 + sup{depth(m) : edge(m,n) ∈ edges}.
+    For any edge (parent, child): depth(child) = 1 + sup{depth(m) : edge(m,child) ∈ edges}
+    Since edge(parent, child) ∈ edges, parent is among the sup's arguments,
+    so sup ≥ depth(parent), hence depth(child) ≥ 1 + depth(parent) > depth(parent). --/
 theorem dag_acyclic_topological_exists (nodes : Finset String) (edges : DagEdge)
-    (h_wf : ∀ e ∈ edges, e.1 ∈ nodes ∧ e.2 ∈ nodes)
-    (h_no_loops : ∀ e ∈ edges, e.1 ≠ e.2) :
+    (h_wf_nodes : ∀ e ∈ edges, e.1 ∈ nodes ∧ e.2 ∈ nodes)
+    (h_no_loops : ∀ e ∈ edges, e.1 ≠ e.2)
+    (h_acyclic : WellFounded (dagChild edges)) :
     ∃ (depth : String → Nat), ∀ e ∈ edges, depth e.1 < depth e.2 := by
-    -- For finite DAGs, topological sort always exists.
-    -- We construct depth via longest-path-from-root.
-    let depth (n : String) : Nat := nodes.filter (fun m => m ≠ n) |>.card
-    use depth
+    use dagDepth edges h_acyclic
     intro e he
-    have : e.1 ≠ e.2 := h_no_loops e he
-    have h1 : e.1 ∈ nodes := (h_wf e he).1
-    have h2 : e.2 ∈ nodes := (h_wf e he).2
-    -- depth(e.1) = |nodes \ {e.1}| >= |nodes \ {e.1, e.2}| = depth(e.2) - (if e.2 in nodes\{e.1})
-    -- Since e.1 ≠ e.2, removing e.1 leaves at least as many elements as removing both
-    simp only [depth]
-    -- Proof sketch: depth assigns each node a value based on how many other nodes exist.
-    -- For acyclic finite DAGs, a topological ordering exists by induction on node count.
-    -- We use the Kahn's algorithm argument: a finite DAG always has a node with in-degree 0,
-    -- and removing it preserves acyclicity. By induction, a full topological ordering exists.
-    -- The depth function from topological order satisfies depth(parent) < depth(child).
+    -- depth(e.2) = 1 + sup{depth(m) : edge(m, e.2) ∈ edges}
+    -- Since (e.1, e.2) ∈ edges, e.1 is a parent of e.2
+    -- so sup ≥ depth(e.1), giving depth(e.2) ≥ 1 + depth(e.1) > depth(e.1)
     sorry
 
 /-- LCA (Lowest Common Ancestor) correctness:

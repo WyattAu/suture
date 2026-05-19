@@ -25,11 +25,11 @@ jobs:
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev libsqlite3-dev protobuf-compiler
       - name: Build
-        run: cargo build --workspace --exclude suture-fuzz --exclude suture-py --exclude suture-node --exclude suture-wasm-plugin
+        run: cargo build --workspace --exclude suture-fuzz --exclude suture-py --exclude suture-wasm-plugin
       - name: Test
-        run: cargo test --workspace --exclude suture-fuzz --exclude suture-py --exclude suture-node --exclude suture-e2e --exclude suture-bench --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon --exclude suture-wasm-plugin -- --test-threads=1
+        run: cargo test --workspace --exclude suture-fuzz --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon --exclude suture-wasm-plugin -- --test-threads=1
       - name: Clippy
-        run: cargo clippy --workspace --exclude suture-fuzz --exclude suture-py --exclude suture-node --exclude suture-e2e --exclude suture-bench --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon --exclude suture-wasm-plugin -- -D warnings
+        run: cargo clippy --workspace --exclude suture-fuzz --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon --exclude suture-wasm-plugin -- -D warnings
       - name: Format
         run: cargo fmt --workspace -- --check
 

@@ -1,4 +1,5 @@
 pub async fn cmd_audit(
+    repo_path: Option<&std::path::Path>,
     verify: bool,
     show: bool,
     count: bool,
@@ -7,7 +8,10 @@ pub async fn cmd_audit(
     use std::path::Path;
     use suture_core::audit::AuditLog;
 
-    let root = Path::new(".");
+    let root = match repo_path {
+        Some(p) => p.to_path_buf(),
+        None => Path::new(".").to_path_buf(),
+    };
     let audit_path = root.join(".suture").join("audit").join("chain.log");
     let audit = AuditLog::open(&audit_path)?;
 

@@ -810,28 +810,44 @@ impl Filesystem for RwFilesystem {
     }
 }
 
-// SAFETY: RwFilesystem does not auto-derive Send because `InnerFs.repo` is
-// `Mutex<Repository>`, and `Repository` transitively contains
-// `Rc<BTreeSet<PatchId>>` (via `PatchDag::ancestor_cache`). `Rc` is !Send.
-// The manual impl is sound because:
-// - All access to `Repository` (and thus the `Rc` inside `PatchDag`) is
-//   serialized through `Mutex<Repository>`.
-// - No `Rc` is ever leaked outside the Mutex guard — the FUSE callbacks
-//   only call methods like `add()`, `commit()`, `snapshot_head()`, none of
-//   which return `Rc` values.
-// - Transferring `RwFilesystem` between threads moves the `Arc<InnerFs>`;
-//   the `Rc` inside `PatchDag` is never directly moved across threads.
+// SAFETY (Send): RwFilesystem requires a manual impl because `InnerFs.repo`
+// is `Mutex<Repository>`, and `Repository` is !Send and !Sync:
+//   - !Send:  `PatchDag::ancestor_cache` contains `Rc<BTreeSet<PatchId>>`.
+//             `Rc` is !Send because its reference count is not atomic.
+//   - !Sync:  `PatchDag` also uses `RefCell` for interior mutability,
+//             which is !Sync.
+//
+// Normally `Mutex<T>: Send` requires `T: Send`, but the manual impl is
+// sound because `Mutex<Repository>` is the *sole* access path to the
+// Repository. The Mutex serializes all access — no thread can observe the
+// inner `Rc` or `RefCell` without first acquiring the lock.
+//
+// Key invariant: no `Rc` or `RefCell` ever escapes the `Mutex<Repository>`
+// guard. All FUSE callbacks interact with Repository exclusively through
+// methods like `add()`, `commit()`, `snapshot_head()`, none of which return
+// `Rc` or expose `RefCell` references. Transferring `RwFilesystem` between
+// threads moves the `Arc<InnerFs>`; the non-Send interior of `Repository`
+// is never moved across threads independently.
+//
+// Risk: if any future code path extracts an `Rc` from `Repository` while
+// the Mutex is held and leaks it outside the guard, this impl becomes
+// unsound. Audit any changes to `Repository`'s public API carefully.
 unsafe impl Send for RwFilesystem {}
-// SAFETY: Same root cause as Send — `Repository` contains `Rc` via
-// `PatchDag::ancestor_cache`, preventing auto-derived Sync.
-// The manual impl is sound because:
-// - libfuse3 dispatches callbacks sequentially per mount session
-//   (single-threaded fuse_session_loop_mt creates one worker thread
-//   per session, but callbacks within a session never overlap).
-//   Reference: libfuse/include/fuse_lowlevel.h §Threading.
-// - Even under hypothetical concurrent access, all mutable state in
-//   `InnerFs` is protected by `Mutex`, ensuring the `Rc` inside
-//   `PatchDag` is only ever accessed by one thread at a time.
+
+// SAFETY (Sync): `&RwFilesystem` yields `&Arc<InnerFs>`. The only path to
+// the non-Sync interior of `Repository` (`Rc` in `PatchDag::ancestor_cache`,
+// `RefCell` fields) is through `InnerFs.repo: Mutex<Repository>`. All
+// mutable access to Repository is serialized by this Mutex, so no two
+// threads can simultaneously observe or modify the `RefCell`. The `Rc`
+// reference counts are only mutated while the Mutex is held.
+//
+// The other `InnerFs` fields (`open_files: Mutex<HashMap<...>>`,
+// `next_handle: AtomicU64`, `repo_path: PathBuf`, `branch: Option<String>`)
+// are all naturally Send + Sync.
+//
+// This soundness argument relies solely on Mutex protection — it does NOT
+// depend on any FUSE threading model (e.g., sequential dispatch). Even
+// under fully concurrent access, the Mutex alone guarantees correctness.
 unsafe impl Sync for RwFilesystem {}
 
 pub async fn mount_rw(

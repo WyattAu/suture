@@ -228,7 +228,9 @@ fn parse_item_count_from_semantic(semantic: &str, path: &str) -> Option<String> 
     ))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn cmd_diff(
+    repo_path: Option<&std::path::Path>,
     from: Option<&str>,
     to: Option<&str>,
     cached: bool,
@@ -240,7 +242,7 @@ pub async fn cmd_diff(
     use suture_core::engine::diff::DiffType;
     use suture_core::engine::merge::diff_lines;
 
-    let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+    let repo = crate::resolve_repo(repo_path)?;
 
     let entries = if cached {
         repo.diff_staged()?

@@ -1,7 +1,12 @@
-pub async fn cmd_undo(n: usize, hard: bool, force: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_undo(
+    repo_path: Option<&std::path::Path>,
+    n: usize,
+    hard: bool,
+    force: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     use suture_core::repository::ResetMode;
 
-    let mut repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+    let mut repo = crate::resolve_repo(repo_path)?;
 
     if hard && !force {
         return Err("use --force to discard working tree changes".into());

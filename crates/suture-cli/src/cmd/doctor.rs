@@ -3,11 +3,17 @@
 //! Runs a series of diagnostic checks and reports the overall health
 //! of the repository, similar to `git doctor` or `cargo doctor`.
 
-pub async fn cmd_doctor(fix: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_doctor(
+    repo_path: Option<&std::path::Path>,
+    fix: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     use std::path::Path;
     use suture_common::FileStatus;
 
-    let root = Path::new(".");
+    let root = match repo_path {
+        Some(p) => p.to_path_buf(),
+        None => Path::new(".").to_path_buf(),
+    };
 
     // Check 1: Are we in a Suture repository?
     let suture_dir = root.join(".suture");
@@ -19,7 +25,7 @@ pub async fn cmd_doctor(fix: bool) -> Result<(), Box<dyn std::error::Error>> {
     println!("\u{2713} Suture repository detected");
 
     // Check 2: Can we open the repository?
-    let mut repo = match suture_core::repository::Repository::open(root) {
+    let mut repo = match suture_core::repository::Repository::open(&root) {
         Ok(r) => {
             println!("\u{2713} Repository opened successfully");
             r

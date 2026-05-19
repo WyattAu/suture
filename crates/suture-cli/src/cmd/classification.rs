@@ -284,6 +284,7 @@ fn csv_escape(s: &str) -> String {
 }
 
 pub async fn cmd_classification(
+    repo_path: Option<&std::path::Path>,
     action: &ClassificationAction,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match action {
@@ -291,17 +292,18 @@ pub async fn cmd_classification(
             since,
             format,
             filter,
-        } => cmd_scan(since.as_deref(), format, filter.as_deref()).await,
-        ClassificationAction::Report { output } => cmd_report(output.as_deref()).await,
+        } => cmd_scan(repo_path, since.as_deref(), format, filter.as_deref()).await,
+        ClassificationAction::Report { output } => cmd_report(repo_path, output.as_deref()).await,
     }
 }
 
 async fn cmd_scan(
+    repo_path: Option<&std::path::Path>,
     since: Option<&str>,
     format: &str,
     filter: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+    let repo = crate::resolve_repo(repo_path)?;
 
     let branches = repo.list_branches();
     let mut seen = std::collections::HashSet::new();
@@ -437,8 +439,11 @@ async fn cmd_scan(
     Ok(())
 }
 
-async fn cmd_report(output: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
-    let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+async fn cmd_report(
+    repo_path: Option<&std::path::Path>,
+    output: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let repo = crate::resolve_repo(repo_path)?;
 
     let branches = repo.list_branches();
     let mut seen = std::collections::HashSet::new();
@@ -546,9 +551,8 @@ async fn cmd_report(output: Option<&str>) -> Result<(), Box<dyn std::error::Erro
         .collect();
     above_unclassified.sort();
 
-    let repo_name = std::env::current_dir()
-        .unwrap_or_default()
-        .file_name()
+    let repo_name = repo_path
+        .and_then(|p| p.file_name())
         .map_or_else(|| "unknown".to_owned(), |n| n.to_string_lossy().to_string());
     let scan_time = chrono::Utc::now().to_rfc3339();
 

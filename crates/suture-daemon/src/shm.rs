@@ -81,17 +81,13 @@ impl ShmStatus {
     }
 }
 
-// SAFETY: ShmStatus is #[repr(C)] with only POD fields (u64, u32,
-// [u8; N], [u64; N]). It has no interior mutability, no heap pointers,
-// and no Drop impl. Transferring ownership between threads cannot cause
-// UB because there is no shared mutable state; the struct is `Copy` and
-// bitwise-move is equivalent to a value copy.
+// SAFETY: ShmStatus is trivially Send + Sync: every field is plain old data
+// (u64, u32, fixed-size byte/integer arrays) with no interior mutability,
+// no heap pointers, and no Drop impl. The compiler would auto-derive these
+// traits for a struct of this shape; the unsafe impls are defensive to
+// make the intent explicit. #[repr(C)] guarantees layout stability for
+// cross-process shared-memory mapping but does not affect Send/Sync.
 unsafe impl Send for ShmStatus {}
-// SAFETY: All fields are POD with no interior mutability. `&ShmStatus`
-// provides only read-only access, and the struct is `Copy`, so sharing
-// references across threads is always sound. Note: cross-process writes
-// to the memory-mapped file are handled by the OS page-level visibility
-// model, not by Rust's `Sync` trait.
 unsafe impl Sync for ShmStatus {}
 
 pub fn shm_path_for_pid(pid: u32) -> PathBuf {

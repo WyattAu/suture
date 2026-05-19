@@ -76,11 +76,11 @@
 | ID | Severity | Description | Status | Effort |
 |----|----------|-------------|--------|--------|
 | TD-1 | Critical | CLI CWD mutex forces --test-threads=1 in CI | Open | 3d |
-| TD-2 | Critical | FUSE unsafe impl Send/Sync -- formal soundness audit | Open | 2d |
-| TD-3 | Medium | SHM unsafe impl Send/Sync -- no repr(C) proof | Open | 0.5d |
+| TD-2 | Critical | FUSE unsafe impl Send/Sync -- formal soundness audit. Verified sound. Key invariant documented: no Rc/RefCell escapes Mutex guard. SAFETY comments strengthened. | Closed | -- |
+| TD-3 | Medium | SHM unsafe impl Send/Sync -- verified sound: trivially POD, unsafe impls are redundant but defensive | Closed | -- |
 | TD-4 | Low | WASM plugin diff/format_diff not implemented (graceful error) | Open | 3d |
 | TD-5 | High | suture-py excluded from workspace/CI (PyO3 build issues) | Open | 2d |
-| TD-6 | High | suture-node excluded from CI (ctor proc_macro regression) | Open | 1d |
+| TD-6 | High | suture-node excluded from CI (ctor proc_macro regression) | Closed | -- |
 | TD-7 | High | desktop-app excluded from workspace/CI | Open | 3d |
 | TD-8 | Low | XLSX merge_cells() and rebuild_sheet_xml() are dead code | Open | 1d |
 | TD-9 | Low | No performance regression gating in CI (display-only) | Open | 2d |
@@ -115,7 +115,7 @@
 | Task | Details | Priority | Effort |
 |------|---------|----------|--------|
 | TD-1: CWD mutex removal | Refactor CLI tests to use per-test tempdir. Enable --test-threads=4. | Critical | 3d |
-| TD-2: FUSE soundness proof | Formal proof or documented justification for unsafe impl Send/Sync on RwFilesystem. | Critical | 2d |
+| TD-2: FUSE soundness proof | Verified sound. Key invariant documented: no Rc/RefCell escapes Mutex guard. SAFETY comments strengthened. | Critical | -- |
 | TD-6: suture-node CI fix | Pin ctor to version with proc_macro feature, or fix napi-rs compatibility. | High | 1d |
 | TD-5: suture-py CI | Gate behind feature flag, add Python dev headers to CI. | High | 2d |
 | TD-11: CHANGELOG | Add entries for v5.2.0, v5.3.0, v5.3.1, v5.4.0. | Medium | 1d |
@@ -385,7 +385,6 @@
 | Limitation | Impact | Resolution |
 |------------|--------|------------|
 | suture-py not in CI | Python users cannot install from source | Phase 1: Gate on feature flag |
-| suture-node broken (ctor regression) | npm package may not build | Phase 1: Pin ctor version |
 | Desktop app excluded | No native desktop experience | Phase 8: Tauri v2 integration |
 | WASM plugins experimental | Plugin ecosystem cannot grow | Phase 4: Complete ABI |
 | suture.dev not resolving | Landing page unreachable via custom domain | Phase 2: DNS configuration |

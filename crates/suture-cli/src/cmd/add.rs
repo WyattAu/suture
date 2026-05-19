@@ -4,14 +4,15 @@ use tokio::io::AsyncBufReadExt;
 use crate::cmd::lfs::{compute_sha256, create_lfs_pointer, should_track_as_lfs, store_lfs_object};
 
 /// Expand paths: if a path is a directory, recursively collect all files in it.
-fn expand_paths(paths: &[String]) -> Vec<String> {
+fn expand_paths(base: &Path, paths: &[String]) -> Vec<String> {
     let mut result = Vec::new();
     for path_str in paths {
-        let path = Path::new(path_str);
+        let path = base.join(path_str);
         if path.is_dir() {
-            expand_dir_recursive(path, &mut result);
+            expand_dir_recursive(&path, base, &mut result);
         } else if path.is_file()
-            && let Some(s) = path.to_str()
+            && let Some(rel) = path.strip_prefix(base).ok()
+            && let Some(s) = rel.to_str()
         {
             result.push(s.to_owned());
         }
@@ -20,7 +21,7 @@ fn expand_paths(paths: &[String]) -> Vec<String> {
 }
 
 /// Recursively collect all files under `dir`, skipping .suture directories.
-fn expand_dir_recursive(dir: &Path, result: &mut Vec<String>) {
+fn expand_dir_recursive(dir: &Path, base: &Path, result: &mut Vec<String>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
@@ -37,23 +38,26 @@ fn expand_dir_recursive(dir: &Path, result: &mut Vec<String>) {
         }
 
         if entry_path.is_dir() {
-            expand_dir_recursive(&entry_path, result);
+            expand_dir_recursive(&entry_path, base, result);
         } else if entry_path.is_file()
-            && let Some(s) = entry_path.to_str()
+            && let Some(rel) = entry_path.strip_prefix(base).ok()
+            && let Some(s) = rel.to_str()
         {
             result.push(s.to_owned());
         }
     }
 }
 
-fn maybe_convert_to_lfs_pointer(path: &str) -> Result<bool, Box<dyn std::error::Error>> {
-    let full_path = Path::new(path);
-    let metadata = std::fs::metadata(full_path)?;
+fn maybe_convert_to_lfs_pointer(
+    repo_root: &Path,
+    path: &str,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let full_path = repo_root.join(path);
+    let metadata = std::fs::metadata(&full_path)?;
     let file_size = metadata.len();
 
-    let repo_root = Path::new(".");
     if let Some(_limit) = should_track_as_lfs(repo_root, path, file_size) {
-        let data = std::fs::read(full_path)?;
+        let data = std::fs::read(&full_path)?;
         let hash = compute_sha256(&data);
         let file_name = full_path
             .file_name()
@@ -62,18 +66,19 @@ fn maybe_convert_to_lfs_pointer(path: &str) -> Result<bool, Box<dyn std::error::
             .to_owned();
         store_lfs_object(repo_root, &hash, &data)?;
         let pointer = create_lfs_pointer(&hash, file_size, &file_name);
-        std::fs::write(full_path, pointer)?;
+        std::fs::write(&full_path, pointer)?;
         return Ok(true);
     }
     Ok(false)
 }
 
 pub async fn cmd_add(
+    repo_path: Option<&std::path::Path>,
     paths: &[String],
     all: bool,
     patch: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let repo = suture_core::repository::Repository::open(Path::new("."))?;
+    let repo = crate::resolve_repo(repo_path)?;
 
     if all {
         let count = repo.add_all()?;
@@ -81,7 +86,8 @@ pub async fn cmd_add(
         return Ok(());
     }
 
-    let file_paths = expand_paths(paths);
+    let repo_root = repo.root().to_path_buf();
+    let file_paths = expand_paths(&repo_root, paths);
 
     if file_paths.is_empty() {
         return Err("no files to stage (use --all to stage everything)".into());
@@ -91,13 +97,13 @@ pub async fn cmd_add(
         cmd_add_patch(&repo, &file_paths).await
     } else {
         for path in &file_paths {
-            if maybe_convert_to_lfs_pointer(path)? {
+            if maybe_convert_to_lfs_pointer(&repo_root, path)? {
                 // repo.add() reads the pointer from disk and stores it
                 repo.add(path)?;
                 println!(
                     "Added {} (LFS pointer, {} bytes)",
                     path,
-                    std::fs::metadata(path)?.len()
+                    std::fs::metadata(repo_root.join(path))?.len()
                 );
             } else {
                 repo.add(path)?;

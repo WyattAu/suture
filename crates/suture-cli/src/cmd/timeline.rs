@@ -3,24 +3,26 @@ use std::path::Path as StdPath;
 use crate::ref_utils::resolve_ref;
 
 pub async fn cmd_timeline(
+    repo_path: Option<&std::path::Path>,
     action: &crate::TimelineAction,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match action {
         crate::TimelineAction::Import { file, message } => {
-            timeline_import(file, message.as_deref()).await
+            timeline_import(repo_path, file, message.as_deref()).await
         }
         crate::TimelineAction::Export { output, at } => {
-            timeline_export(output, at.as_deref()).await
+            timeline_export(repo_path, output, at.as_deref()).await
         }
-        crate::TimelineAction::Summary { at } => timeline_summary(at).await,
+        crate::TimelineAction::Summary { at } => timeline_summary(repo_path, at).await,
         crate::TimelineAction::Diff { from, to, detailed } => {
-            timeline_diff(from, to, *detailed).await
+            timeline_diff(repo_path, from, to, *detailed).await
         }
-        crate::TimelineAction::List { otio_only } => timeline_list(*otio_only).await,
+        crate::TimelineAction::List { otio_only } => timeline_list(repo_path, *otio_only).await,
     }
 }
 
 async fn timeline_import(
+    repo_path: Option<&std::path::Path>,
     file: &str,
     message: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -34,7 +36,7 @@ async fn timeline_import(
 
     let parsed = parse_otio_minimal(&content);
     let filename = src_path.file_name().ok_or("cannot determine filename")?;
-    let mut repo = suture_core::repository::Repository::open(StdPath::new("."))?;
+    let mut repo = crate::resolve_repo(repo_path)?;
 
     let dest = StdPath::new(filename);
     if let Some(parent) = dest.parent()
@@ -70,8 +72,12 @@ async fn timeline_import(
     Ok(())
 }
 
-async fn timeline_export(output: &str, at: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
-    let repo = suture_core::repository::Repository::open(StdPath::new("."))?;
+async fn timeline_export(
+    repo_path: Option<&std::path::Path>,
+    output: &str,
+    at: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let repo = crate::resolve_repo(repo_path)?;
     let ref_str = at.unwrap_or("HEAD");
     let patches = repo.all_patches();
     let patch = resolve_ref(&repo, ref_str, &patches)?;
@@ -114,8 +120,11 @@ async fn timeline_export(output: &str, at: Option<&str>) -> Result<(), Box<dyn s
     Ok(())
 }
 
-async fn timeline_summary(at: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let repo = suture_core::repository::Repository::open(StdPath::new("."))?;
+async fn timeline_summary(
+    repo_path: Option<&std::path::Path>,
+    at: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let repo = crate::resolve_repo(repo_path)?;
     let patches = repo.all_patches();
     let patch = resolve_ref(&repo, at, &patches)?;
     let tree = repo.snapshot(&patch.id)?;
@@ -157,11 +166,12 @@ async fn timeline_summary(at: &str) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn timeline_diff(
+    repo_path: Option<&std::path::Path>,
     from: &str,
     to: &str,
     detailed: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let repo = suture_core::repository::Repository::open(StdPath::new("."))?;
+    let repo = crate::resolve_repo(repo_path)?;
     let patches = repo.all_patches();
 
     let from_patch = resolve_ref(&repo, from, &patches)?;
@@ -250,8 +260,11 @@ async fn timeline_diff(
     Ok(())
 }
 
-async fn timeline_list(otio_only: bool) -> Result<(), Box<dyn std::error::Error>> {
-    let repo = suture_core::repository::Repository::open(StdPath::new("."))?;
+async fn timeline_list(
+    repo_path: Option<&std::path::Path>,
+    otio_only: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let repo = crate::resolve_repo(repo_path)?;
     let tree = repo.snapshot_head()?;
 
     let mut files: Vec<&String> = Vec::new();

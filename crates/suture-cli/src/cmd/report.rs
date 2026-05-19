@@ -18,26 +18,41 @@ pub enum ReportType {
     },
 }
 
-pub async fn cmd_report(report_type: &ReportType) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn cmd_report(
+    repo_path: Option<&std::path::Path>,
+    report_type: &ReportType,
+) -> Result<(), Box<dyn std::error::Error>> {
     match report_type {
         ReportType::Change {
             from,
             to,
             format,
             output,
-        } => cmd_report_change(from.as_deref(), to.as_deref(), format, output.as_deref()).await,
-        ReportType::Activity { days, format } => cmd_report_activity(*days, format).await,
-        ReportType::Stats { at } => cmd_report_stats(at.as_str()).await,
+        } => {
+            cmd_report_change(
+                repo_path,
+                from.as_deref(),
+                to.as_deref(),
+                format,
+                output.as_deref(),
+            )
+            .await
+        }
+        ReportType::Activity { days, format } => {
+            cmd_report_activity(repo_path, *days, format).await
+        }
+        ReportType::Stats { at } => cmd_report_stats(repo_path, at.as_str()).await,
     }
 }
 
 async fn cmd_report_change(
+    repo_path: Option<&std::path::Path>,
     from: Option<&str>,
     to: Option<&str>,
     format: &str,
     output: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let repo = suture_core::repository::Repository::open(Path::new("."))?;
+    let repo = crate::resolve_repo(repo_path)?;
     let all_patches = repo.all_patches();
 
     let to_ref = to.unwrap_or("HEAD");
@@ -102,9 +117,8 @@ async fn cmd_report_change(
 
     commit_entries.sort_by_key(|b| std::cmp::Reverse(b.timestamp));
 
-    let repo_name = std::env::current_dir()
-        .unwrap_or_default()
-        .file_name()
+    let repo_name = repo_path
+        .and_then(|p| p.file_name())
         .map_or_else(|| "unknown".to_owned(), |n| n.to_string_lossy().to_string());
 
     let report = match format {
@@ -268,8 +282,12 @@ fn generate_change_html(
     out
 }
 
-async fn cmd_report_activity(days: u64, format: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let repo = suture_core::repository::Repository::open(Path::new("."))?;
+async fn cmd_report_activity(
+    repo_path: Option<&std::path::Path>,
+    days: u64,
+    format: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let repo = crate::resolve_repo(repo_path)?;
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -348,8 +366,11 @@ struct AuthorStats {
     most_recent: u64,
 }
 
-async fn cmd_report_stats(at: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let repo = suture_core::repository::Repository::open(Path::new("."))?;
+async fn cmd_report_stats(
+    repo_path: Option<&std::path::Path>,
+    at: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let repo = crate::resolve_repo(repo_path)?;
     let all_patches = repo.all_patches();
     let patch = resolve_ref(&repo, at, &all_patches)?;
     let tree = repo.snapshot(&patch.id)?;

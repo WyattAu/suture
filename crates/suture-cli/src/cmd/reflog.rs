@@ -1,5 +1,8 @@
-pub async fn cmd_reflog(show: bool) -> Result<(), Box<dyn std::error::Error>> {
-    let repo = suture_core::repository::Repository::open(std::path::Path::new("."))?;
+pub async fn cmd_reflog(
+    repo_path: Option<&std::path::Path>,
+    show: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let repo = crate::resolve_repo(repo_path)?;
     let entries = repo.reflog_entries()?;
     if entries.is_empty() {
         println!("No reflog entries.");
