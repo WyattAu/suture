@@ -35,41 +35,55 @@
         };
 
         packages = {
-          default = pkgs.rustPlatform.buildRustPackage {
-            name = "suture";
+          default = pkgs.rustPlatform.buildRustPackage rec {
+            pname = "suture";
+            version = "5.1.1";
             src = ./.;
-            cargoLock = {
-              lockFile = ./Cargo.lock;
-            };
-            nativeBuildInputs = with pkgs; [
-              pkg-config
-              sqlite
-            ] ++ lib.optional stdenv.isLinux [
-              fuse3
-            ];
-
-            buildFeatures = [];
+            cargoLock = { lockFile = ./Cargo.lock; };
+            nativeBuildInputs = with pkgs; [ pkg-config ];
+            buildInputs = with pkgs; [ sqlite ] ++ lib.optional stdenv.isLinux fuse3;
             cargoBuildFlags = [ "-p suture-cli" ];
-
-            checkFlags = [
-              "--skip e2e"
-            ];
+            checkFlags = [ "--skip e2e" ];
           };
 
-          suture-hub = pkgs.rustPlatform.buildRustPackage {
-            name = "suture-hub";
+          suture-hub = pkgs.rustPlatform.buildRustPackage rec {
+            pname = "suture-hub";
+            version = "5.1.1";
             src = ./.;
-            cargoLock = {
-              lockFile = ./Cargo.lock;
-            };
-            nativeBuildInputs = with pkgs; [
-              pkg-config
-              sqlite
-              openssl
-              protobuf
-            ];
-
+            cargoLock = { lockFile = ./Cargo.lock; };
+            nativeBuildInputs = with pkgs; [ pkg-config protobuf ];
+            buildInputs = with pkgs; [ sqlite openssl ];
             cargoBuildFlags = [ "-p suture-hub" ];
+            checkFlags = [ "--skip e2e" ];
+          };
+
+          suture-daemon = pkgs.rustPlatform.buildRustPackage rec {
+            pname = "suture-daemon";
+            version = "5.1.1";
+            src = ./.;
+            cargoLock = { lockFile = ./Cargo.lock; };
+            nativeBuildInputs = with pkgs; [ pkg-config ];
+            buildInputs = with pkgs; [ sqlite ] ++ lib.optional stdenv.isLinux fuse3;
+            cargoBuildFlags = [ "-p suture-daemon" ];
+            checkFlags = [ "--skip e2e" ];
+          };
+
+          suture-lsp = pkgs.rustPlatform.buildRustPackage rec {
+            pname = "suture-lsp";
+            version = "5.1.0";
+            src = ./.;
+            cargoLock = { lockFile = ./Cargo.lock; };
+            cargoBuildFlags = [ "-p suture-lsp" ];
+            checkFlags = [ "--skip e2e" ];
+          };
+
+          suture-tui = pkgs.rustPlatform.buildRustPackage rec {
+            pname = "suture-tui";
+            version = "5.1.1";
+            src = ./.;
+            cargoLock = { lockFile = ./Cargo.lock; };
+            cargoBuildFlags = [ "-p suture-tui" ];
+            checkFlags = [ "--skip e2e" ];
           };
         };
       });

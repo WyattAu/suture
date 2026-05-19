@@ -64,16 +64,17 @@ PUBLISH_ORDER=(
   suture-driver-ical
   suture-driver-feed
   suture-driver-example
+  suture-driver-properties
   suture-raft
   suture-s3
   suture-plugin-sdk
   suture-wasm-plugin
   suture-merge
   suture-hub
+  suture-vfs
   suture-daemon
   suture-tui
   suture-lsp
-  suture-vfs
   suture-connector-airtable
   suture-connector-gsheets
   suture-connector-notion
@@ -106,12 +107,23 @@ if $GENERATE_MANIFEST; then
 fi
 
 bump_version() {
-  local toml="$1"
-  local part="$2"
-  sed -i -E "s/^(version[[:space:]]*=[[:space:]]*\")([0-9]+)\.([0-9]+)\.([0-9]+)(\")/\1$(echo "\2.\3.\4" | awk -F. -v p="$part" '{
-    if (p == "minor") printf "%d.%d.0", $1, $2+1
-    else if (p == "patch") printf "%d.%d.%d", $1, $2, $3+1
-  }')\4/" "$toml"
+    local toml="$1"
+    local part="$2"
+    local current
+    current=$(grep '^version =' "$toml" | head -1 | sed -E 's/.*"([0-9]+\.[0-9]+\.[0-9]+)".*/\1/')
+    local major minor patch
+    IFS='.' read -r major minor patch <<< "$current"
+    local new_version
+    if [ "$part" = "minor" ]; then
+        new_version="$((major)).$((minor + 1)).0"
+    elif [ "$part" = "patch" ]; then
+        new_version="$((major)).$((minor)).$((patch + 1))"
+    else
+        echo "Unknown bump part: $part" >&2
+        return 1
+    fi
+    sed -i -E "s/^(version[[:space:]]*=[[:space:]]*\")([0-9]+\.[0-9]+\.[0-9]+)(\")/\1${new_version}\3/" "$toml"
+    echo "  $toml: $current -> $new_version"
 }
 
 if [[ -n "$BUMP" ]]; then

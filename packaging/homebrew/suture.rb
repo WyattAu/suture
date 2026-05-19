@@ -3,7 +3,7 @@ class Suture < Formula
   homepage "https://github.com/WyattAu/suture"
   url "https://github.com/WyattAu/suture/archive/refs/tags/v5.3.1.tar.gz"
   sha256 "PLACEHOLDER"
-  license "Apache-2.0"
+  license "AGPL-3.0-or-later"
   head "https://github.com/WyattAu/suture.git", branch: "main"
 
   depends_on "rust" => :build
