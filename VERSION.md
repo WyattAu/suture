@@ -1,29 +1,23 @@
 # Suture Version
 
-- **Current Version:** 5.3.1
-- **Crates.io:** 37 crates published
-- **Current Phase:** Post-audit remediation complete. Production path clear.
-- **Status:** All quality gates passing
-- **Last Updated:** 2026-05-18
-- **Rust Edition:** 2024
-- **Tests:** 1,759 passed, 0 failed, 20 ignored
-- **Security:** 0 unsound, 33 unsafe blocks (all with SAFETY comments), 1 unmaintained dep (paste via rav1e, transitive)
-- **Lean 4 Proofs:** 16 theorems (8 original + 8 new in Phase 8)
+- **Version:** 5.3.1
+- **Crates:** 37 publishable to crates.io, 44 in workspace
+- **Status:** v5.5 hardening complete. Production path clear.
+- **Last Updated:** 2026-05-19
+- **Rust:** 1.94.1 (pinned), Edition 2024
 
-## Quality Gate Status
+## Quality Gates
 
-| Gate | Status |
+| Gate | Result |
 |------|--------|
-| Tests | 1,759 passing, 0 failures |
-| Property-based tests | 21 proptest suites (10K+ cases) |
+| Tests | 1,759 passed, 0 failed, 20 ignored |
+| Property-based tests | 21 proptest suites |
 | Benchmarks | 44 Criterion functions |
-| Clippy | Zero warnings (`-D warnings`) |
-| E2E workflow tests | 16 tests |
-| Semantic drivers | 18 drivers |
-| CLI subcommands | 64 commands |
+| Clippy | 0 warnings (`-D warnings`) |
+| Rustdoc | 0 warnings |
+| CI | 16 jobs, 3-OS matrix, all green |
+| Semantic drivers | 18 |
+| CLI subcommands | 64 |
 | Editor plugins | 3 (Neovim, VS Code, JetBrains) |
-| Language bindings | 2 (Node.js, Python) |
-
-## History
-
-See [CHANGELOG.md](./CHANGELOG.md) for full version history.
+| Lean 4 proofs | 16 theorems (2 focused sorrows remaining) |
+| Unsafe blocks | 33 (all with SAFETY comments) |
