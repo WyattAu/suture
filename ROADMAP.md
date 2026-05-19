@@ -7,7 +7,7 @@
 
 ---
 
-## 0. Current State (Post-Audit 2026-05-16)
+## 0. Current State (Post-Audit 2026-05-19)
 
 ### 0.1 Quantitative Baseline
 
@@ -15,20 +15,21 @@
 |--------|-------|
 | Workspace crates | 44 (37 publishable to crates.io) |
 | Rust LoC | ~108,000 |
-| Test functions | 1,759 (all passing, 0 failures) |
+| Test functions | 1,759 (all passing, 0 failures, 20 ignored) |
 | Clippy warnings | 0 (-D warnings enforced) |
 | Rustdoc warnings | 0 |
 | Semantic drivers | 18 (JSON, YAML, TOML, CSV, XML, Markdown, DOCX, XLSX, PPTX, OTIO, SQL, PDF, Image, SVG, HTML, Feed, iCal, Properties) |
-| CLI subcommands | 58+ |
+| CLI subcommands | 64 |
 | Lean 4 formal proofs | 16 theorems (1 sorry: DAG acyclicity topological ordering, targeted in Phase 1) |
 | Unsafe blocks (production) | 33 (all with SAFETY comments) |
 | CI workflows | 8 (CI, Docker, Pages, Release, Security, Performance, Semantic Merge, Example Merge) |
+| CI jobs per run | 16 (all passing, 3-OS matrix, stable+beta) |
 | Editor plugins | 3 (Neovim, JetBrains, VS Code) |
 | Language bindings | 2 (Node.js via napi-rs, Python via PyO3) |
 | Fuzz targets | 7 (libfuzzer-sys) |
 | Proptest suites | 21 |
 
-### 0.2 Quality Gate Results (2026-05-16)
+### 0.2 Quality Gate Results (2026-05-19)
 
 | Gate | Result |
 |------|--------|
@@ -54,14 +55,14 @@
 
 | Layer | Status | Evidence |
 |-------|--------|----------|
-| Core VCS engine | Production-ready | 355 tests, 21 proptest, 16 Lean 4 proofs |
+| Core VCS engine | Production-ready | 356 tests, 21 proptest, 16 Lean 4 proofs |
 | Semantic merge | Production-ready | 18 drivers, property-based tests, E2E lifecycle tests |
-| CLI | Production-ready | 58+ commands, shell completions, 62 man pages |
+| CLI | Production-ready | 64 commands, shell completions, 62 man pages |
 | Hub (HTTP + gRPC) | Production-ready | 92 tests, auth, webhooks, S3, Raft clustering |
 | Wire protocol | Production-ready | 55 tests, V2 handshake, Zstd, delta encoding |
 | VFS (FUSE3 + WebDAV) | Production-ready | 33 tests, read/write FUSE |
 | TUI | Production-ready | 37 tests, hunk-level conflict resolver |
-| Raft consensus | Production-ready | 52 tests, multi-node TCP cluster |
+| Raft consensus | Production-ready | 53 tests, multi-node TCP cluster |
 | S3 storage | Production-ready | 27 tests, SigV4, MinIO compatible |
 | Desktop App | Scaffold | Tauri v2, excluded from workspace/CI |
 | SaaS Platform | Functional | Stripe billing, OAuth, orgs, merge API |
@@ -91,15 +92,19 @@
 | TD-15 | Low | suture.dev custom domain not resolving | Open | 0.5d |
 | TD-16 | Info | ADR-008 through ADR-011 duplicate ADR-001 through ADR-004 | Open | 0.5d |
 
-### 0.5 Audit Summary (2026-05-16)
+### 0.5 Audit Summary (2026-05-19)
 
-**Code quality:** 0 critical, 0 high, 5 medium, 35 low, 60 info findings across 98 audited items. Fixed: unsafe from_utf8_unchecked in PDF driver, 7 fragile unwrap() calls in rate_limit middleware.
+**Code quality:** 0 critical, 0 high, 5 medium, 35 low, 60 info findings across 98 audited items. No stubs, no unimplemented!() calls. Plugin SDK stubs are documented as compile-time no-ops for non-WASM targets.
 
-**CI/CD:** Fixed 8 critical, 10 high issues. Standardized crate exclusion lists across all workflows. Added missing protobuf-compiler to 4 workflows. Fixed Docker health check exit code. Fixed coverage threshold logic. Fixed redundant test runs.
+**CI/CD:** Fixed 8 critical, 10 high issues (prior audit). This audit: standardized exclusion lists across all 8 workflows (added suture-py, suture-node, suture-wasm-plugin to all jobs). Updated Forgejo CI with caching and concurrency control. All 16 CI jobs pass on 3-OS matrix.
 
-**Documentation:** Fixed license mismatch (Cargo.toml Apache-2.0 to AGPL-3.0-or-later). Fixed CODE_OF_CONDUCT placeholder email. Fixed broken HTML nesting in docs/index.html. Fixed wrong license in template footer (all 36 generated pages). Added missing OTIO to landing page format grid. Fixed stale copyright year.
+**Pre-commit hooks:** Synced scripts/pre-commit and scripts/pre-push with installed hooks. Added suture-wasm-plugin to exclusion lists. Added `just install-hooks` target to justfile.
 
-**Websites:** Landing page (docs-site/) exists at suture.dev (domain not resolving). Docs site deployed to GitHub Pages at wyattau.github.io/suture/. Both functional. No new sites needed.
+**Documentation:** Fixed stale numbers across 7 files: VERSION.md, README.md, ARCHITECTURE.md, CONTRIBUTING.md, docs/architecture.md, docs/quickstart.md, TESTING_GUIDE.md. Standardized: driver count (18), CLI subcommands (64), Rust MSRV (1.94+), per-crate test counts. Fixed ROADMAP.md DAG proof contradiction. Closed TD-11.
+
+**Websites:** Landing page (docs/index.html) deployed to GitHub Pages at wyattau.github.io/suture/. 17 format badges displayed, 64 CLI commands. Copy-to-clipboard works. No emojis. suture.dev domain not resolving (TD-15). docs-site/index.html is dead code (not deployed by pages.yml).
+
+**Remaining known issues:** (1) Subdirectory doc nav links were broken (10 per page), fixed in build.sh. (2) docs/build.sh `---` titles from blog posts not handled. (3) No OG/Twitter meta tags on landing page. (4) No sitemap for subdirectory pages. (5) No light mode.
 
 ---
 
@@ -303,7 +308,7 @@
 
 | Version | Focus | Est. Duration | Start |
 |---------|-------|---------------|-------|
-| v5.5 | Hardening | 2 weeks | 2026-05-19 |
+| v5.5 | Hardening | 2 weeks | 2026-05-20 |
 | v6.0 | Distribution | 3 weeks | 2026-06-02 |
 | v7.0 | Enterprise readiness | 6 weeks | 2026-06-23 |
 | v7.1 | Advanced merge | 4 weeks | 2026-08-04 |
