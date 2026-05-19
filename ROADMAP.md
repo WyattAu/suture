@@ -1,7 +1,7 @@
 # Suture Production Roadmap
 
-**Version:** 5.4.0
-**Date:** 2026-05-16
+**Version:** 5.3.1
+**Date:** 2026-05-18
 **Author:** Full monorepo audit (tests, code quality, CI/CD, docs, security)
 **Status:** Post-audit remediation complete. CI green. Production path clear.
 
@@ -20,7 +20,7 @@
 | Rustdoc warnings | 0 |
 | Semantic drivers | 18 (JSON, YAML, TOML, CSV, XML, Markdown, DOCX, XLSX, PPTX, OTIO, SQL, PDF, Image, SVG, HTML, Feed, iCal, Properties) |
 | CLI subcommands | 58+ |
-| Lean 4 formal proofs | 16 theorems (1 sorry: DAG acyclicity topological ordering) |
+| Lean 4 formal proofs | 16 theorems (1 sorry: DAG acyclicity topological ordering, targeted in Phase 1) |
 | Unsafe blocks (production) | 33 (all with SAFETY comments) |
 | CI workflows | 8 (CI, Docker, Pages, Release, Security, Performance, Semantic Merge, Example Merge) |
 | Editor plugins | 3 (Neovim, JetBrains, VS Code) |
@@ -84,7 +84,7 @@
 | TD-8 | Low | XLSX merge_cells() and rebuild_sheet_xml() are dead code | Open | 1d |
 | TD-9 | Low | No performance regression gating in CI (display-only) | Open | 2d |
 | TD-10 | Low | Dockerfile.build FROM scratch lacks runtime deps | Open | 0.5d |
-| TD-11 | Low | CHANGELOG missing entries for v5.2-v5.4 | Open | 1d |
+| TD-11 | Low | CHANGELOG entries for v5.2-v5.4 | Closed | -- |
 | TD-12 | Low | 2 VFS integration tests ignored (require root) | Open | 2d |
 | TD-13 | Low | Subdirectory docs (blog/, roadmap/, deployment/) not built to HTML | Open | 1d |
 | TD-14 | Low | Landing page missing OG/Twitter Card meta tags | Open | 0.5d |
@@ -216,7 +216,7 @@
 | Diff determinism | Proven | -- |
 | Patch composition associativity | Proven | -- |
 | Reflog append-only | Proven | -- |
-| Patch-DAG acyclicity | Proven (sorry fixed in v5.5) | -- |
+| Patch-DAG acyclicity | Target (sorry, Phase 1) | -- |
 | LCA correctness | Proven | -- |
 | Three-way merge completeness | Proven | -- |
 | CAS injectivity | Proven | -- |

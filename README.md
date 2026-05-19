@@ -1,7 +1,7 @@
 <div align="center">
   <h1>Suture</h1>
   <p><strong>Semantic merge for every format.</strong></p>
-  <p>Automatically resolve merge conflicts in JSON, YAML, TOML, XML, CSV, and 13+ more structured file formats.</p>
+  <p>Automatically resolve merge conflicts in JSON, YAML, TOML, XML, CSV, and 13 more structured file formats.</p>
   
   [Install](#installation) · [Quick Start](#quick-start) · [Docs](docs/user-guide.md) · [API](docs/api-reference.md) · [Pricing](#pricing)
   
@@ -135,7 +135,7 @@ Self-hosted is always free (AGPL-3.0).
 
 ## Platform Features
 
-- **Semantic merge API** — REST endpoint for all 17 format drivers
+- **Semantic merge API** -- REST endpoint for all 18 format drivers
 - **WASM plugin system** — custom merge drivers in any language
 - **OAuth** — Google and GitHub sign-in
 - **Organizations** — teams with role-based access (owner/admin/member/viewer)
@@ -177,16 +177,16 @@ conflict highlighting, one-click auto-merge, status bar integration.
 ```
 suture/
 ├── crates/
-│   ├── suture-core/            # Merge engine (355 tests)
-│   ├── suture-driver-*/        # 17 format drivers
+│   ├── suture-core/            # Merge engine (356 tests)
+│   ├── suture-driver-*/        # 18 format drivers
 │   ├── suture-cli/             # CLI (115 tests)
-│   ├── suture-hub/             # Coordination server (75 tests)
+│   ├── suture-hub/             # Coordination server (92 tests)
 │   ├── suture-platform/        # Hosted SaaS (REST API, billing, auth)
-│   ├── suture-raft/            # Consensus (30 tests)
+│   ├── suture-raft/            # Consensus (53 tests)
 │   ├── suture-vfs/             # FUSE filesystem
 │   ├── suture-wasm-plugin/     # WASM plugin system
-│   ├── suture-tui/             # Terminal UI (37 tests)
-│   └── suture-lsp/             # Language server (25 tests)
+│   ├── suture-tui/             # Terminal UI
+│   └── suture-lsp/             # Language server
 ├── desktop-app/                # Tauri desktop app
 ├── vscode-extension/           # VS Code extension
 ├── templates/                  # .gitattributes templates

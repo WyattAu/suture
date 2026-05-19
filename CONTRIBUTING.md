@@ -4,7 +4,7 @@ Thank you for your interest in contributing to Suture! This guide covers everyth
 
 ## Prerequisites
 
-- **Rust 1.85+** (edition 2024) — managed via `rust-toolchain.toml`
+- **Rust 1.94+** (pinned via `rust-toolchain.toml`, edition 2024) -- managed via `rust-toolchain.toml`
 - **protoc** — for `suture-hub` (protobuf compilation)
 - **SQLite development headers** — for `suture-hub` and `suture-platform`
 - **Git** — for version control
@@ -15,11 +15,17 @@ Thank you for your interest in contributing to Suture! This guide covers everyth
 ### Quick Start
 
 1. Build all crates:
-   ```bash
-   cargo build --release
-   ```
+    ```bash
+    cargo build --release
+    ```
 
-2. Run the hub (coordination server):
+2. Install pre-commit and pre-push hooks (recommended):
+    ```bash
+    just install-hooks
+    ```
+    Or manually: `cp scripts/pre-commit .git/hooks/pre-commit && cp scripts/pre-push .git/hooks/pre-push`
+
+3. Run the hub (coordination server):
    ```bash
    cargo run -p suture-hub -- --addr 127.0.0.1:8080 --db ./hub-data/hub.db
    ```
@@ -46,8 +52,21 @@ Services:
 ### Running Tests
 
 ```bash
-cargo test --workspace --exclude suture-py --exclude suture-e2e --exclude suture-wasm-plugin
+cargo test --workspace --exclude suture-fuzz --exclude suture-py --exclude suture-node --exclude suture-e2e --exclude suture-bench --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon --exclude suture-wasm-plugin -- --test-threads=1
 ```
+
+### Git Hooks
+
+Pre-commit and pre-push hooks enforce fmt + clippy + test before every commit and push.
+
+```bash
+just install-hooks
+# Or manually:
+cp scripts/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+cp scripts/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push
+```
+
+To bypass (emergency only): `SUTURE_SKIP_CHECKS=1 git commit ...`
 
 ### E2E Tests (require compiled binary)
 
@@ -132,7 +151,7 @@ just run       # cargo run --bin suture-cli
 | `suture-bench` | Criterion benchmarks (6 bench suites) |
 | `suture-fuzz` | Fuzz targets (7 targets: patch deserialize, hash parse, merge, etc.) |
 | `suture-e2e` | End-to-end tests (requires compiled binary) |
-| `suture-driver-*` | 17 semantic merge drivers (see table below) |
+| `suture-driver-*` | 18 semantic merge drivers (see table below) |
 | `suture-py` | Python bindings (PyO3, excluded from workspace) |
 
 ### Semantic Merge Drivers
@@ -203,12 +222,12 @@ Drivers are format-specific plugins that implement the `SutureDriver` trait from
    ```toml
    [package]
    name = "suture-driver-<name>"
-     version = "5.4.0"
+     version = "0.1.0"
    edition = "2024"
 
    [dependencies]
-    suture-driver = { path = "../suture-driver", version = "5.4.0" }
-    suture-common = { path = "../suture-common", version = "5.4.0" }
+   suture-driver = { path = "../suture-driver", version = "5.1.0" }
+   suture-common = { path = "../suture-common", version = "5.1.0" }
    serde = { version = "1", features = ["derive"] }
    serde_json = "1"
    thiserror = "2"
@@ -341,7 +360,7 @@ Open a GitHub issue with:
 
 1. **Version bump** — update the version in all `Cargo.toml` files (`workspace.package.version` and individual crate versions)
 2. **Update CHANGELOG.md** — add entries under the new version
-3. **Run full test suite** — `cargo test --workspace --exclude suture-py --exclude suture-e2e --exclude suture-wasm-plugin`
+3. **Run full test suite** — `cargo test --workspace --exclude suture-fuzz --exclude suture-py --exclude suture-node --exclude suture-e2e --exclude suture-bench --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon --exclude suture-wasm-plugin -- --test-threads=1`
 4. **Run quality gates** — `cargo clippy`, `cargo fmt --check`
 5. **Push tag** — pushing a `v*` tag triggers the CI release workflow
 

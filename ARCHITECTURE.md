@@ -7,7 +7,7 @@ Suture is a patch-based version control system with semantic merge capabilities.
 ```
                          ┌─────────────────────┐
                          │     suture-cli      │
-                         │   (58 subcommands)  │
+                         │   (64 subcommands)  │
                          └─────────┬───────────┘
                                    │
               ┌────────────────────┼────────────────────┐
@@ -145,7 +145,7 @@ pub trait SutureDriver: Send + Sync {
 
 ### Driver Registry
 
-`DriverRegistry` (`suture-driver/src/registry.rs`) dispatches to the correct driver by file extension. The CLI builds a `builtin_registry()` in `suture-cli/src/driver_registry.rs` that registers all 17 drivers.
+`DriverRegistry` (`suture-driver/src/registry.rs`) dispatches to the correct driver by file extension. The CLI builds a `builtin_registry()` in `suture-cli/src/driver_registry.rs` that registers all 18 drivers.
 
 ### `SemanticChange` Types
 
@@ -370,4 +370,4 @@ suture-cli → suture-core, suture-common, suture-driver, suture-merge, all driv
 suture-hub → suture-common, suture-core, suture-protocol
 ```
 
-The full dependency graph spans 37 crates with `suture-common` as the sole leaf dependency.
+The full dependency graph spans 44 crates with `suture-common` as the sole leaf dependency.

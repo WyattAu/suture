@@ -19,7 +19,7 @@ Verify it works:
 
 ```
 $ suture --version
-suture 5.0.1
+suture 5.3.1
 ```
 
 ---

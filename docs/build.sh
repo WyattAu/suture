@@ -62,15 +62,23 @@ generate_nav() {
     local -a groups=()
     local -a names=()
     local -a titles=()
+    local -a links=()
 
     for ((i=0; i<${#files[@]}; i++)); do
         local f="${files[$i]}"
         local base="$(basename "$f" .md)"
+        local dir="$(dirname "$f")"
+        if [ "$dir" = "." ]; then
+            local link="${base}.html"
+        else
+            local link="${dir}/${base}.html"
+        fi
         local grp="$(get_nav_group "$base")"
         local ttl="$(get_display_title "$(get_title "$f")" "$base")"
         groups+=("$grp")
         names+=("$base")
         titles+=("$ttl")
+        links+=("$link")
     done
 
     local -a order=("Getting Started" "Core Concepts" "Reference" "Merge Drivers" "Integration" "Guides" "Onboarding" "Platform" "Development" "Other")
@@ -95,7 +103,7 @@ generate_nav() {
                 if [ "${names[$i]}" = "$current" ]; then
                     cls="$cls active"
                 fi
-                local html_name="${names[$i]}.html"
+                local html_name="${links[$i]}"
                 echo "<a href=\"$html_name\" class=\"$cls\">${titles[$i]}</a>"
             fi
         done

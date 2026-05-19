@@ -1,4 +1,4 @@
-# Suture Architecture v5.3.1
+# Suture Architecture v5.3.1 (Post-Audit)
 
 ## System Overview
 
@@ -445,7 +445,7 @@ WASM plugin runtime for loading custom merge drivers at runtime.
 
 Command-line interface using [clap](https://docs.rs/clap) with derive macros.
 
-**58 subcommands** organized in `src/cmd/` (one file per command).
+**64 subcommands** organized in `src/cmd/` (one file per command).
 
 Key commands:
 

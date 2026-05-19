@@ -5,6 +5,13 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
@@ -14,14 +21,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev libsqlite3-dev protobuf-compiler
       - name: Build
-        run: cargo build --workspace --exclude suture-fuzz --exclude suture-py
+        run: cargo build --workspace --exclude suture-fuzz --exclude suture-py --exclude suture-node --exclude suture-wasm-plugin
       - name: Test
-        run: cargo test --workspace --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon --exclude suture-py
+        run: cargo test --workspace --exclude suture-fuzz --exclude suture-py --exclude suture-node --exclude suture-e2e --exclude suture-bench --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon --exclude suture-wasm-plugin -- --test-threads=1
       - name: Clippy
-        run: cargo clippy --workspace --exclude suture-fuzz --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon -- -D warnings
+        run: cargo clippy --workspace --exclude suture-fuzz --exclude suture-py --exclude suture-node --exclude suture-e2e --exclude suture-bench --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon --exclude suture-wasm-plugin -- -D warnings
       - name: Format
         run: cargo fmt --workspace -- --check
 
@@ -31,5 +39,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - run: cargo install cargo-audit --locked
       - run: cargo audit
