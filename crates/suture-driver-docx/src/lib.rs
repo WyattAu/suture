@@ -34,7 +34,14 @@ impl Block {
     fn detect_track_changes(xml: &str) -> TrackChangesStatus {
         let has_ins = xml.contains("<w:ins ") || xml.contains("<w:ins>");
         let has_del = xml.contains("<w:del ") || xml.contains("<w:del>");
-        if has_ins || has_del {
+        let has_rpr_change = xml.contains("<w:rPrChange ") || xml.contains("<w:rPrChange>");
+        let has_move = xml.contains("<w:moveFrom ")
+            || xml.contains("<w:moveFrom>")
+            || xml.contains("<w:moveTo ")
+            || xml.contains("<w:moveTo>");
+        let has_comment =
+            xml.contains("<w:commentRangeStart ") || xml.contains("<w:commentRangeEnd ");
+        if has_ins || has_del || has_rpr_change || has_move || has_comment {
             TrackChangesStatus::HasTrackChanges
         } else {
             TrackChangesStatus::Clean
@@ -1324,6 +1331,62 @@ mod tests {
         assert!(
             result.is_none(),
             "conflicting track changes in same paragraph should flag as conflict"
+        );
+    }
+
+    #[test]
+    fn test_detect_rpr_change() {
+        let xml_with_rpr_change = "<w:p><w:r><w:rPr><w:b/><w:rPrChange w:id=\"1\" w:author=\"Alice\" w:date=\"2025-01-01T00:00:00Z\"><w:rPr/></w:rPrChange></w:rPr><w:t>bold</w:t></w:r></w:p>";
+        assert_eq!(
+            Block::detect_track_changes(xml_with_rpr_change),
+            TrackChangesStatus::HasTrackChanges,
+            "<w:rPrChange> should be detected as HasTrackChanges"
+        );
+
+        let xml_clean = "<w:p><w:r><w:rPr><w:b/></w:rPr><w:t>bold</w:t></w:r></w:p>";
+        assert_eq!(
+            Block::detect_track_changes(xml_clean),
+            TrackChangesStatus::Clean,
+            "clean formatting should be Clean"
+        );
+    }
+
+    #[test]
+    fn test_detect_move_revisions() {
+        let xml_with_move_from = "<w:p><w:moveFrom w:id=\"10\" w:author=\"Alice\"><w:r><w:t>moved</w:t></w:r></w:moveFrom></w:p>";
+        assert_eq!(
+            Block::detect_track_changes(xml_with_move_from),
+            TrackChangesStatus::HasTrackChanges,
+            "<w:moveFrom> should be detected as HasTrackChanges"
+        );
+
+        let xml_with_move_to = "<w:p><w:moveTo w:id=\"11\" w:author=\"Alice\"><w:r><w:t>moved</w:t></w:r></w:moveTo></w:p>";
+        assert_eq!(
+            Block::detect_track_changes(xml_with_move_to),
+            TrackChangesStatus::HasTrackChanges,
+            "<w:moveTo> should be detected as HasTrackChanges"
+        );
+
+        let xml_clean = "<w:p><w:r><w:t>plain text</w:t></w:r></w:p>";
+        assert_eq!(
+            Block::detect_track_changes(xml_clean),
+            TrackChangesStatus::Clean,
+        );
+    }
+
+    #[test]
+    fn test_detect_comment_ranges() {
+        let xml_with_comment_start = "<w:p><w:commentRangeStart w:id=\"1\"/><w:r><w:t>commented</w:t></w:r><w:commentRangeEnd w:id=\"1\"/></w:p>";
+        assert_eq!(
+            Block::detect_track_changes(xml_with_comment_start),
+            TrackChangesStatus::HasTrackChanges,
+            "<w:commentRangeStart>/<w:commentRangeEnd> should be detected as HasTrackChanges"
+        );
+
+        let xml_clean = "<w:p><w:r><w:t>plain text</w:t></w:r></w:p>";
+        assert_eq!(
+            Block::detect_track_changes(xml_clean),
+            TrackChangesStatus::Clean,
         );
     }
 }

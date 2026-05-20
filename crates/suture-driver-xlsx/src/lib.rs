@@ -38,6 +38,7 @@ struct FormulaCell {
     col: usize,
     formula: Option<String>,
     value: String,
+    shared_index: Option<u32>,
 }
 
 pub struct XlsxDriver;
@@ -241,6 +242,7 @@ impl XlsxDriver {
         let mut cell_value = String::new();
         let mut cell_formula = String::new();
         let mut has_formula = false;
+        let mut cell_shared_index: Option<u32> = None;
         let mut in_inline_str = false;
 
         for line in xml.lines() {
@@ -267,6 +269,7 @@ impl XlsxDriver {
                             cell_value.clear();
                             cell_formula.clear();
                             has_formula = false;
+                            cell_shared_index = None;
                             in_inline_str = false;
 
                             let c_tag = &trimmed[pos..];
@@ -296,10 +299,18 @@ impl XlsxDriver {
                             has_formula = true;
                         }
                     } else if let Some(start) = cell_region.find("<f ") {
-                        let after = &cell_region[start + 3..];
-                        if let Some(end) = after.find("</f>") {
-                            cell_formula = after[..end].to_string();
-                            has_formula = true;
+                        let f_tag = &cell_region[start + 3..];
+                        let f_tag_end = f_tag.find('>').unwrap_or(f_tag.len());
+                        let f_tag_only = &cell_region[start + 3..start + 3 + f_tag_end];
+                        if let Some(si) = Self::extract_attr(f_tag_only, "si") {
+                            cell_shared_index = si.parse::<u32>().ok();
+                        }
+                        has_formula = true;
+                        if let Some(end) = f_tag.find("</f>") {
+                            let text_end = f_tag.find('>').unwrap_or(0) + 1;
+                            cell_formula = f_tag[text_end..end].to_string();
+                        } else {
+                            cell_formula.clear();
                         }
                     }
 
@@ -349,6 +360,7 @@ impl XlsxDriver {
                                         None
                                     },
                                     value: display_value,
+                                    shared_index: cell_shared_index,
                                 });
                             }
                         }
@@ -396,7 +408,10 @@ impl XlsxDriver {
                 (None, Some(o), None) => merged.push((*o).clone()),
                 (None, None, Some(t)) => merged.push((*t).clone()),
                 (None, Some(o), Some(t)) => {
-                    if o.formula == t.formula && o.value == t.value {
+                    if Self::formulas_equivalent(o, t)
+                        && o.value == t.value
+                        && o.shared_index == t.shared_index
+                    {
                         merged.push((*o).clone());
                     } else {
                         return None;
@@ -406,17 +421,20 @@ impl XlsxDriver {
                 (Some(_), None, Some(t)) => merged.push((*t).clone()),
                 (Some(_), None, None) => {}
                 (Some(b), Some(o), Some(t)) => {
-                    let ours_changed_formula = o.formula != b.formula;
+                    let ours_changed_formula =
+                        !Self::formulas_equivalent(o, b) || o.shared_index != b.shared_index;
                     let ours_changed_value = o.value != b.value;
-                    let theirs_changed_formula = t.formula != b.formula;
+                    let theirs_changed_formula =
+                        !Self::formulas_equivalent(t, b) || t.shared_index != b.shared_index;
                     let theirs_changed_value = t.value != b.value;
 
-                    // Both changed formula in same cell -> conflict
-                    if ours_changed_formula && theirs_changed_formula && o.formula != t.formula {
+                    if ours_changed_formula
+                        && theirs_changed_formula
+                        && !Self::formulas_equivalent(o, t)
+                    {
                         return None;
                     }
 
-                    // One side changed formula, other changed value -> conflict
                     if ours_changed_formula && !theirs_changed_formula && theirs_changed_value {
                         return None;
                     }
@@ -424,12 +442,20 @@ impl XlsxDriver {
                         return None;
                     }
 
-                    // Clean merge: use standard three-way logic
-                    if o.value == t.value && o.formula == t.formula {
+                    if o.value == t.value
+                        && Self::formulas_equivalent(o, t)
+                        && o.shared_index == t.shared_index
+                    {
                         merged.push((*o).clone());
-                    } else if o.value == b.value && o.formula == b.formula {
+                    } else if o.value == b.value
+                        && Self::formulas_equivalent(o, b)
+                        && o.shared_index == b.shared_index
+                    {
                         merged.push((*t).clone());
-                    } else if t.value == b.value && t.formula == b.formula {
+                    } else if t.value == b.value
+                        && Self::formulas_equivalent(t, b)
+                        && t.shared_index == b.shared_index
+                    {
                         merged.push((*o).clone());
                     } else {
                         return None;
@@ -438,6 +464,16 @@ impl XlsxDriver {
             }
         }
         Some(merged)
+    }
+
+    fn formulas_equivalent(a: &FormulaCell, b: &FormulaCell) -> bool {
+        if a.formula == b.formula {
+            return true;
+        }
+        if a.shared_index.is_some() && a.shared_index == b.shared_index {
+            return true;
+        }
+        false
     }
 
     /// Parse all sheets from an XLSX document.
@@ -864,7 +900,15 @@ impl XlsxDriver {
 
                 let mut cell_xml = format!("<c r=\"{ref_str}\"");
                 if let Some(ref formula) = cell.formula {
-                    let _ = write!(cell_xml, "><f>{formula}</f><v>{}</v></c>", cell.value);
+                    if let Some(si) = cell.shared_index {
+                        let _ = write!(
+                            cell_xml,
+                            "><f t=\"shared\" si=\"{si}\">{formula}</f><v>{}</v></c>",
+                            cell.value
+                        );
+                    } else {
+                        let _ = write!(cell_xml, "><f>{formula}</f><v>{}</v></c>", cell.value);
+                    }
                 } else if cell.value.parse::<f64>().is_ok() {
                     let _ = write!(cell_xml, "><v>{}</v></c>", cell.value);
                 } else if cell.value == "TRUE" || cell.value == "FALSE" {
@@ -1084,6 +1128,7 @@ mod tests {
             col,
             formula: Some(formula.to_string()),
             value: value.to_string(),
+            shared_index: None,
         }
     }
 
@@ -1093,6 +1138,7 @@ mod tests {
             col,
             formula: None,
             value: value.to_string(),
+            shared_index: None,
         }
     }
 
@@ -1185,5 +1231,91 @@ mod tests {
         assert!(rebuilt.contains("<v>100</v>"));
         assert!(rebuilt.contains("Header"));
         assert!(!rebuilt.contains("old"));
+    }
+
+    #[test]
+    fn test_shared_formula_detection() {
+        let xml = r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<sheetData>
+<row r="1"><c r="A1"><f t="shared" si="0">SUM(A1:A10)</f><v>100</v></c></row>
+<row r="2"><c r="A2"><f t="shared" si="0"/><v>200</v></c></row>
+<row r="3"><c r="A3"><f>SUM(B1:B10)</f><v>300</v></c></row>
+</sheetData>
+</worksheet>"#;
+        let cells = XlsxDriver::parse_sheet_xml_with_formulas(xml, &[]);
+        assert_eq!(cells.len(), 3);
+
+        assert_eq!(cells[0].row, 1);
+        assert_eq!(cells[0].col, 1);
+        assert_eq!(cells[0].formula.as_deref(), Some("SUM(A1:A10)"));
+        assert_eq!(cells[0].shared_index, Some(0));
+
+        assert_eq!(cells[1].row, 2);
+        assert_eq!(cells[1].col, 1);
+        assert_eq!(cells[1].formula.as_deref(), Some(""));
+        assert_eq!(cells[1].shared_index, Some(0));
+
+        assert_eq!(cells[2].row, 3);
+        assert_eq!(cells[2].col, 1);
+        assert_eq!(cells[2].formula.as_deref(), Some("SUM(B1:B10)"));
+        assert_eq!(cells[2].shared_index, None);
+    }
+
+    #[test]
+    fn test_shared_formula_merge_propagation() {
+        let base = vec![
+            FormulaCell {
+                row: 1,
+                col: 1,
+                formula: Some("SUM(A1:A10)".into()),
+                value: "100".into(),
+                shared_index: Some(0),
+            },
+            FormulaCell {
+                row: 2,
+                col: 1,
+                formula: Some("".into()),
+                value: "200".into(),
+                shared_index: Some(0),
+            },
+        ];
+        let ours = vec![
+            FormulaCell {
+                row: 1,
+                col: 1,
+                formula: Some("SUM(A1:A20)".into()),
+                value: "300".into(),
+                shared_index: Some(0),
+            },
+            FormulaCell {
+                row: 2,
+                col: 1,
+                formula: Some("".into()),
+                value: "200".into(),
+                shared_index: Some(0),
+            },
+        ];
+        let theirs = vec![
+            FormulaCell {
+                row: 1,
+                col: 1,
+                formula: Some("SUM(A1:A10)".into()),
+                value: "100".into(),
+                shared_index: Some(0),
+            },
+            FormulaCell {
+                row: 2,
+                col: 1,
+                formula: Some("".into()),
+                value: "200".into(),
+                shared_index: Some(0),
+            },
+        ];
+
+        let result = XlsxDriver::merge_cells_formula_aware(&base, &ours, &theirs);
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        let a1 = merged.iter().find(|c| c.row == 1 && c.col == 1).unwrap();
+        assert_eq!(a1.formula.as_deref(), Some("SUM(A1:A20)"));
     }
 }
