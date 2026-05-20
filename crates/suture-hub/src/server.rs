@@ -33,8 +33,10 @@ use axum::{
 };
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use sha2::Digest;
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
+use tokio::sync::Mutex;
 use tokio::sync::RwLock;
 
 use crate::async_storage::block_in_place;
@@ -178,6 +180,7 @@ pub struct SutureHubServer {
     replication_role: Arc<tokio::sync::RwLock<String>>,
     webhook_manager: Arc<WebhookManager>,
     lfs_data_dir: Option<std::path::PathBuf>,
+    push_locks: Arc<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>,
     pub request_metrics: HubMetrics,
     #[cfg(feature = "raft-cluster")]
     raft_node: Arc<tokio::sync::Mutex<suture_raft::RaftNode>>,
@@ -211,6 +214,7 @@ impl SutureHubServer {
             replication_role: Arc::new(tokio::sync::RwLock::new("standalone".to_owned())),
             webhook_manager: Arc::new(WebhookManager::new()),
             lfs_data_dir: None,
+            push_locks: Arc::new(Mutex::new(HashMap::new())),
             request_metrics: HubMetrics::new(),
             #[cfg(feature = "raft-cluster")]
             raft_node: Arc::new(tokio::sync::Mutex::new(suture_raft::RaftNode::new(
@@ -235,6 +239,7 @@ impl SutureHubServer {
             replication_role: Arc::new(tokio::sync::RwLock::new("standalone".to_owned())),
             webhook_manager: Arc::new(WebhookManager::new()),
             lfs_data_dir: None,
+            push_locks: Arc::new(Mutex::new(HashMap::new())),
             request_metrics: HubMetrics::new(),
             #[cfg(feature = "raft-cluster")]
             raft_node: Arc::new(tokio::sync::Mutex::new(suture_raft::RaftNode::new(
@@ -262,6 +267,14 @@ impl SutureHubServer {
 
     pub fn shutdown(&self) {
         tracing::info!("Hub server shutting down");
+    }
+
+    async fn acquire_push_lock(&self, repo_id: &str) -> Arc<tokio::sync::Mutex<()>> {
+        let mut locks = self.push_locks.lock().await;
+        locks
+            .entry(repo_id.to_string())
+            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+            .clone()
     }
 
     /// Check if this node is the Raft leader (or standalone).
@@ -593,6 +606,9 @@ impl SutureHubServer {
                 ));
             }
         }
+
+        let _push_guard = self.acquire_push_lock(&req.repo_id).await;
+        let _guard = _push_guard.lock().await;
 
         let store = self.storage.write().await;
 
@@ -1436,6 +1452,9 @@ impl SutureHubServer {
             }
         }
 
+        let _push_guard = self.acquire_push_lock(&req.repo_id).await;
+        let _guard = _push_guard.lock().await;
+
         let store = self.storage.write().await;
         if let Err(e) = store.ensure_repo(&req.repo_id) {
             return Err((
@@ -1684,6 +1703,9 @@ impl SutureHubServer {
         req: BatchPatchRequest,
     ) -> Result<PushResponse, (StatusCode, PushResponse)> {
         let mut existing_patches = Vec::new();
+
+        let _push_guard = self.acquire_push_lock(&req.repo_id).await;
+        let _guard = _push_guard.lock().await;
 
         let store = self.storage.write().await;
         if let Err(e) = store.ensure_repo(&req.repo_id) {
@@ -7320,5 +7342,77 @@ mod tests {
 
         let body: serde_json::Value = resp.json().await.unwrap();
         assert_eq!(body["status"], "ready");
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_pushes_to_same_repo() {
+        let hub = Arc::new(SutureHubServer::new_in_memory().unwrap());
+
+        let a_hex = "a".repeat(64);
+        let b_hex = "b".repeat(64);
+        let c_hex = "c".repeat(64);
+
+        hub.handle_push(PushRequest {
+            repo_id: "concurrent-repo".to_string(),
+            patches: vec![make_patch(&a_hex, "Create", &[], "alice")],
+            branches: vec![make_branch("main", &a_hex)],
+            blobs: vec![],
+            signature: None,
+            known_branches: None,
+            force: false,
+        })
+        .await
+        .unwrap();
+
+        let a_for_1 = a_hex.clone();
+        let a_for_2 = a_hex.clone();
+        let b_for_1 = b_hex.clone();
+        let c_for_2 = c_hex.clone();
+        let b_for_assert = b_hex.clone();
+        let c_for_assert = c_hex.clone();
+
+        let hub1 = Arc::clone(&hub);
+        let push1 = tokio::spawn(async move {
+            hub1.handle_push(PushRequest {
+                repo_id: "concurrent-repo".to_string(),
+                patches: vec![make_patch(&b_for_1, "Create", &[a_for_1], "alice")],
+                branches: vec![make_branch("main", &b_for_1)],
+                blobs: vec![],
+                signature: None,
+                known_branches: None,
+                force: false,
+            })
+            .await
+        });
+
+        let hub2 = Arc::clone(&hub);
+        let push2 = tokio::spawn(async move {
+            hub2.handle_push(PushRequest {
+                repo_id: "concurrent-repo".to_string(),
+                patches: vec![make_patch(&c_for_2, "Create", &[a_for_2], "bob")],
+                branches: vec![make_branch("dev", &c_for_2)],
+                blobs: vec![],
+                signature: None,
+                known_branches: None,
+                force: false,
+            })
+            .await
+        });
+
+        let result1 = push1.await.unwrap().unwrap();
+        assert!(result1.success);
+
+        let result2 = push2.await.unwrap().unwrap();
+        assert!(result2.success);
+
+        let store = hub.storage.read().await;
+        let patches = store.get_all_patches_unbounded("concurrent-repo").unwrap();
+        assert_eq!(patches.len(), 3);
+
+        let branches = store.get_branches("concurrent-repo").unwrap();
+        let main_branch = branches.iter().find(|b| b.name == "main").unwrap();
+        assert_eq!(main_branch.target_id.value, b_for_assert);
+        let dev_branch = branches.iter().find(|b| b.name == "dev").unwrap();
+        assert_eq!(dev_branch.target_id.value, c_for_assert);
     }
 }

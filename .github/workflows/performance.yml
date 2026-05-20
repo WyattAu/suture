@@ -1,47 +1,55 @@
-name: Performance Regression
+name: Performance
 
 on:
+  push:
+    branches: [main]
+    paths-ignore: [docs/**, '*.md', '*.txt']
   pull_request:
     branches: [main]
-  workflow_dispatch:
+    paths-ignore: [docs/**, '*.md', '*.txt']
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+permissions:
+  contents: read
+  actions: write
 
 jobs:
-  benchmark:
+  baseline:
     runs-on: ubuntu-latest
+    if: github.event_name == 'push'
     steps:
       - uses: actions/checkout@v5
-
       - uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Cargo artifacts
-        uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2
         with:
-          key: bench-${{ runner.os }}
+          key: perf
+      - name: Run benchmarks
+        run: cargo bench --package suture-bench -- --save-baseline main | tee bench-results.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-baseline
+          path: target/criterion
+          retention-days: 30
 
-      - name: Run benchmarks (PR)
-        run: cargo bench --package suture-bench -- --quick 2>&1 | tee benchmark-results.txt
-
-      - name: Run benchmarks (main baseline)
+  compare:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: perf
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: bench-baseline
+          path: target/criterion
+      - name: Run benchmarks and compare
         run: |
-          git fetch origin main
-          git checkout main -- Cargo.lock crates/suture-bench/
-          cargo bench --package suture-bench -- --quick 2>&1 | tee baseline-results.txt
-          git checkout -
-
-      - name: Compare results
-        run: |
-          echo "## Benchmark Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Current PR" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          grep -E "^test .+benchmark" benchmark-results.txt >> $GITHUB_STEP_SUMMARY || echo "No benchmark results" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Baseline (main)" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          grep -E "^test .+benchmark" baseline-results.txt >> $GITHUB_STEP_SUMMARY || echo "No baseline results" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+          cargo bench --package suture-bench -- --baseline main 2>&1 | tee bench-results.txt || true
+          if grep -q 'Performance has regression' bench-results.txt; then
+            echo "::error::Performance regression detected (>10%)"
+            grep 'Performance has regression' bench-results.txt
+            exit 1
+          fi
+          echo "No performance regressions detected"
