@@ -4297,7 +4297,9 @@ pub async fn delete_webhook_handler(
     }
 }
 
-pub async fn health_check(State(hub): State<Arc<SutureHubServer>>) -> Json<serde_json::Value> {
+pub async fn health_check(
+    State(hub): State<Arc<SutureHubServer>>,
+) -> (StatusCode, Json<serde_json::Value>) {
     let version = env!("CARGO_PKG_VERSION");
 
     let db_status = {
@@ -4363,7 +4365,12 @@ pub async fn health_check(State(hub): State<Arc<SutureHubServer>>) -> Json<serde
         "unhealthy"
     };
 
-    Json(serde_json::json!({
+    let status_code = match overall {
+        "ok" => StatusCode::OK,
+        _ => StatusCode::SERVICE_UNAVAILABLE,
+    };
+
+    let body = serde_json::json!({
         "status": overall,
         "version": version,
         "components": {
@@ -4371,7 +4378,28 @@ pub async fn health_check(State(hub): State<Arc<SutureHubServer>>) -> Json<serde
             "blob_storage": blob_status,
             "raft": raft_status,
         }
-    }))
+    });
+
+    (status_code, Json(body))
+}
+
+pub async fn readiness_probe(
+    State(hub): State<Arc<SutureHubServer>>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    let ready = hub.storage.read().await.list_repos().is_ok();
+
+    if ready {
+        (StatusCode::OK, Json(serde_json::json!({"status": "ready"})))
+    } else {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({"status": "not ready"})),
+        )
+    }
+}
+
+pub async fn liveness_probe() -> (StatusCode, Json<serde_json::Value>) {
+    (StatusCode::OK, Json(serde_json::json!({"status": "alive"})))
 }
 
 async fn api_version_middleware(
@@ -4785,6 +4813,8 @@ pub async fn run_server(
     let (set_request_id, propagate_request_id) = request_id_layer();
     let app = axum::Router::new()
         .route("/healthz", get(health_check))
+        .route("/readyz", get(readiness_probe))
+        .route("/livez", get(liveness_probe))
         .route("/metrics", get(crate::metrics::metrics_handler))
         .route("/", axum::routing::get(serve_index))
         .route("/push", axum::routing::post(push_handler))
@@ -5272,6 +5302,9 @@ mod tests {
 
         let app = axum::Router::new()
             .route("/", axum::routing::get(serve_index))
+            .route("/healthz", get(health_check))
+            .route("/readyz", get(readiness_probe))
+            .route("/livez", get(liveness_probe))
             .route("/metrics", get(crate::metrics::metrics_handler))
             .route("/push", axum::routing::post(push_handler))
             .route(
@@ -7243,5 +7276,49 @@ mod tests {
             !requests_count.is_empty(),
             "should have request counters after push"
         );
+    }
+
+    #[tokio::test]
+    async fn test_health_check_returns_200_when_healthy() {
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
+        let client = reqwest::Client::new();
+
+        let resp = client
+            .get(format!("{}/healthz", &base))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+
+        let body: serde_json::Value = resp.json().await.unwrap();
+        assert_eq!(body["status"], "ok");
+    }
+
+    #[tokio::test]
+    async fn test_liveness_probe_returns_200() {
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
+        let client = reqwest::Client::new();
+
+        let resp = client.get(format!("{}/livez", &base)).send().await.unwrap();
+        assert_eq!(resp.status(), 200);
+
+        let body: serde_json::Value = resp.json().await.unwrap();
+        assert_eq!(body["status"], "alive");
+    }
+
+    #[tokio::test]
+    async fn test_readiness_probe_returns_200() {
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
+        let client = reqwest::Client::new();
+
+        let resp = client
+            .get(format!("{}/readyz", &base))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+
+        let body: serde_json::Value = resp.json().await.unwrap();
+        assert_eq!(body["status"], "ready");
     }
 }

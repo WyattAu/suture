@@ -27,6 +27,7 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub rate_limiter: Arc<RateLimiter>,
     pub plugins: Arc<std::sync::Mutex<PluginManager>>,
+    pub start_time: std::time::Instant,
 }
 
 impl FromRequestParts<Arc<AppState>> for Claims {
@@ -71,6 +72,7 @@ pub async fn start(config: Config) -> anyhow::Result<()> {
         config: Arc::new(config),
         rate_limiter: Arc::new(RateLimiter::new()),
         plugins,
+        start_time: std::time::Instant::now(),
     };
 
     let public_routes = Router::new()
@@ -78,6 +80,7 @@ pub async fn start(config: Config) -> anyhow::Result<()> {
         .route("/static/{*path}", get(crate::web_ui::serve_static))
         .route("/health", get(health_check))
         .route("/healthz", get(health_check))
+        .route("/metrics", get(metrics))
         .route("/auth/register", post(crate::auth::register_handler))
         .route("/auth/login", post(crate::auth::login_handler))
         .route("/auth/oauth/start", get(crate::oauth::start_oauth))
@@ -175,8 +178,23 @@ pub async fn start(config: Config) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn health_check() -> &'static str {
-    "ok"
+async fn health_check(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let uptime = state.start_time.elapsed().as_secs();
+    Json(serde_json::json!({
+        "status": "ok",
+        "version": "0.2.0",
+        "uptime_seconds": uptime,
+    }))
+}
+
+async fn metrics(State(state): State<AppState>) -> String {
+    let uptime = state.start_time.elapsed().as_secs();
+    format!(
+        "# TYPE suture_platform_up_seconds gauge\n\
+         suture_platform_up_seconds {uptime}\n\
+         # TYPE suture_platform_info gauge\n\
+         suture_platform_info{{version=\"0.2.0\"}} 1\n"
+    )
 }
 
 async fn shutdown_signal() {

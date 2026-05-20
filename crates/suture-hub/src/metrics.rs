@@ -6,6 +6,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::server::SutureHubServer;
@@ -15,10 +16,17 @@ type RequestCounts = HashMap<RequestKey, u64>;
 
 const MAX_DURATION_SAMPLES: usize = 4096;
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct HubMetrics {
     request_counts: Arc<Mutex<RequestCounts>>,
     request_duration_ms: Arc<Mutex<Vec<u64>>>,
+    start_time_epoch: Arc<AtomicU64>,
+}
+
+impl Default for HubMetrics {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl HubMetrics {
@@ -26,7 +34,23 @@ impl HubMetrics {
         Self {
             request_counts: Arc::new(Mutex::new(HashMap::new())),
             request_duration_ms: Arc::new(Mutex::new(Vec::with_capacity(MAX_DURATION_SAMPLES))),
+            start_time_epoch: Arc::new(AtomicU64::new(0)),
         }
+    }
+
+    fn start_time_epoch(&self) -> u64 {
+        let existing = self.start_time_epoch.load(Ordering::Relaxed);
+        if existing != 0 {
+            return existing;
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let _ =
+            self.start_time_epoch
+                .compare_exchange(0, now, Ordering::Relaxed, Ordering::Relaxed);
+        self.start_time_epoch.load(Ordering::Relaxed)
     }
 
     pub fn record_request(&self, method: &str, path: &str, status: u16) {
@@ -75,6 +99,23 @@ impl HubMetrics {
 
 pub async fn metrics_handler(State(hub): State<Arc<SutureHubServer>>) -> impl IntoResponse {
     let mut lines: Vec<String> = Vec::new();
+
+    let version = env!("CARGO_PKG_VERSION");
+    let rust_version = option_env!("RUSTC_VERSION").unwrap_or("unknown");
+    lines.push("# HELP suture_build_info Build information".to_string());
+    lines.push("# TYPE suture_build_info gauge".to_string());
+    lines.push(format!(
+        "suture_build_info{{version=\"{version}\",rust_version=\"{rust_version}\"}} 1"
+    ));
+    lines.push(String::new());
+
+    let start_epoch = hub.request_metrics.start_time_epoch();
+    lines.push(
+        "# HELP suture_process_start_time_seconds Unix timestamp of process start".to_string(),
+    );
+    lines.push("# TYPE suture_process_start_time_seconds gauge".to_string());
+    lines.push(format!("suture_process_start_time_seconds {start_epoch}"));
+    lines.push(String::new());
 
     let store = hub.storage.read().await;
 

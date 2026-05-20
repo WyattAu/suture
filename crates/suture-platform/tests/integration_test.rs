@@ -79,7 +79,26 @@ async fn test_health_check() {
         .await
         .unwrap();
     assert_eq!(resp.status(), 200);
-    assert_eq!(resp.text().await.unwrap(), "ok");
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["status"].as_str().unwrap(), "ok");
+    assert_eq!(body["version"].as_str().unwrap(), "0.2.0");
+    assert!(body["uptime_seconds"].as_u64().is_some());
+}
+
+#[tokio::test]
+async fn test_metrics() {
+    let (config, _port, _db, _hub_db) = test_config();
+    let port = start_server(config).await;
+
+    let resp = reqwest::get(format!("{}/metrics", base_url(port)))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body = resp.text().await.unwrap();
+    assert!(body.contains("# TYPE suture_platform_up_seconds gauge"));
+    assert!(body.contains("suture_platform_up_seconds "));
+    assert!(body.contains("# TYPE suture_platform_info gauge"));
+    assert!(body.contains("suture_platform_info{version=\"0.2.0\"} 1"));
 }
 
 #[tokio::test]
