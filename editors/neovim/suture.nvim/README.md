@@ -64,6 +64,10 @@ require("suture").setup({
 })
 ```
 
+## Diagnostics
+
+Run `:checkhealth suture` to verify that the suture binary is installed and dependencies are available.
+
 ## License
 
 Apache-2.0

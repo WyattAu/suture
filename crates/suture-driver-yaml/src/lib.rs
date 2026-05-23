@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+use std::collections::HashSet;
+
 use serde_yaml::Value;
 use suture_driver::impl_structured_driver;
 use suture_driver::{DriverError, SemanticChange, SutureDriver};
 
 pub struct YamlDriver;
+struct YamlDriverInner;
 
 impl YamlDriver {
     fn value_to_string(val: &Value) -> String {
@@ -24,10 +27,277 @@ impl YamlDriver {
             format!("{parent}/{key_str}")
         }
     }
+
+    fn is_kubernetes_manifest(content: &str) -> bool {
+        content.contains("apiVersion:")
+            && content.contains("kind:")
+            && content.contains("metadata:")
+    }
+
+    fn is_array_of_named_objects(arr: &serde_yaml::Sequence) -> bool {
+        !arr.is_empty()
+            && arr.iter().all(|v| {
+                matches!(
+                    v,
+                    Value::Mapping(m) if m.contains_key(Value::String("name".into()))
+                )
+            })
+    }
+
+    fn merge_k8s_values(
+        base: &Value,
+        ours: &Value,
+        theirs: &Value,
+    ) -> Result<Option<Value>, DriverError> {
+        match (base, ours, theirs) {
+            (Value::Mapping(_), Value::Mapping(_), Value::Mapping(_)) => {
+                Self::merge_k8s_map(base, ours, theirs)
+            }
+            (Value::Sequence(bs), Value::Sequence(os), Value::Sequence(ts)) => {
+                if Self::is_array_of_named_objects(os) || Self::is_array_of_named_objects(ts) {
+                    Self::merge_k8s_sequence_by_name(bs, os, ts)
+                } else {
+                    YamlDriverInner::merge_values(base, ours, theirs)
+                }
+            }
+            _ => {
+                if ours == theirs {
+                    Ok(Some(ours.clone()))
+                } else if ours == base {
+                    Ok(Some(theirs.clone()))
+                } else if theirs == base {
+                    Ok(Some(ours.clone()))
+                } else {
+                    Ok(None)
+                }
+            }
+        }
+    }
+
+    fn merge_k8s_map(
+        base: &Value,
+        ours: &Value,
+        theirs: &Value,
+    ) -> Result<Option<Value>, DriverError> {
+        let base_map = match base {
+            Value::Mapping(m) => m,
+            _ => unreachable!(),
+        };
+        let ours_map = match ours {
+            Value::Mapping(m) => m,
+            _ => unreachable!(),
+        };
+        let theirs_map = match theirs {
+            Value::Mapping(m) => m,
+            _ => unreachable!(),
+        };
+
+        let base_keys: HashSet<&Value> = base_map.keys().collect();
+        let ours_keys: HashSet<&Value> = ours_map.keys().collect();
+        let theirs_keys: HashSet<&Value> = theirs_map.keys().collect();
+
+        let all_keys: HashSet<&Value> = base_keys
+            .iter()
+            .chain(ours_keys.iter())
+            .chain(theirs_keys.iter())
+            .copied()
+            .collect();
+
+        let mut merged = serde_yaml::Mapping::new();
+
+        for k in &all_keys {
+            let in_base = base_keys.contains(k);
+            let in_ours = ours_keys.contains(k);
+            let in_theirs = theirs_keys.contains(k);
+
+            match (in_base, in_ours, in_theirs) {
+                (true, true, false) => {
+                    merged.insert((*k).clone(), ours_map.get(k).unwrap().clone());
+                }
+                (true, false, true) => {
+                    merged.insert((*k).clone(), theirs_map.get(k).unwrap().clone());
+                }
+                (true, true, true) => {
+                    let bv = base_map.get(k).unwrap();
+                    let ov = ours_map.get(k).unwrap();
+                    let tv = theirs_map.get(k).unwrap();
+
+                    if ov == tv {
+                        merged.insert((*k).clone(), ov.clone());
+                    } else if ov == bv {
+                        merged.insert((*k).clone(), tv.clone());
+                    } else if tv == bv {
+                        merged.insert((*k).clone(), ov.clone());
+                    } else if let Some(m) = Self::merge_k8s_values(bv, ov, tv)? {
+                        merged.insert((*k).clone(), m);
+                    } else {
+                        return Ok(None);
+                    }
+                }
+                (false, true, true) => {
+                    let ov = ours_map.get(k).unwrap();
+                    let tv = theirs_map.get(k).unwrap();
+                    if ov == tv {
+                        merged.insert((*k).clone(), ov.clone());
+                    } else {
+                        return Ok(None);
+                    }
+                }
+                (false, true, false) => {
+                    merged.insert((*k).clone(), ours_map.get(k).unwrap().clone());
+                }
+                (false, false, true) => {
+                    merged.insert((*k).clone(), theirs_map.get(k).unwrap().clone());
+                }
+                (true, false, false) | (false, false, false) => {}
+            }
+        }
+
+        Ok(Some(Value::Mapping(merged)))
+    }
+
+    fn merge_k8s_sequence_by_name(
+        base: &serde_yaml::Sequence,
+        ours: &serde_yaml::Sequence,
+        theirs: &serde_yaml::Sequence,
+    ) -> Result<Option<Value>, DriverError> {
+        fn get_name(v: &Value) -> Option<String> {
+            v.as_mapping()?
+                .get(Value::String("name".into()))?
+                .as_str()
+                .map(|s| s.to_string())
+        }
+
+        let base_entries: std::collections::HashMap<String, &Value> = base
+            .iter()
+            .filter_map(|v| get_name(v).map(|n| (n, v)))
+            .collect();
+        let ours_entries: std::collections::HashMap<String, &Value> = ours
+            .iter()
+            .filter_map(|v| get_name(v).map(|n| (n, v)))
+            .collect();
+        let theirs_entries: std::collections::HashMap<String, &Value> = theirs
+            .iter()
+            .filter_map(|v| get_name(v).map(|n| (n, v)))
+            .collect();
+
+        let ours_order: Vec<String> = ours.iter().filter_map(get_name).collect();
+        let theirs_order: Vec<String> = theirs.iter().filter_map(get_name).collect();
+
+        let mut merged = Vec::new();
+        let mut seen: HashSet<String> = HashSet::new();
+
+        for name in ours_order.iter().chain(theirs_order.iter()) {
+            if seen.contains(name) {
+                continue;
+            }
+            seen.insert(name.clone());
+
+            let bv = base_entries.get(name).copied();
+            let ov = ours_entries.get(name).copied();
+            let tv = theirs_entries.get(name).copied();
+
+            match (bv, ov, tv) {
+                (Some(b), Some(o), Some(t)) => {
+                    if o == t {
+                        merged.push(o.clone());
+                    } else if o == b {
+                        merged.push(t.clone());
+                    } else if t == b {
+                        merged.push(o.clone());
+                    } else if let Some(m) = Self::merge_k8s_values(b, o, t)? {
+                        merged.push(m);
+                    } else {
+                        return Ok(None);
+                    }
+                }
+                (Some(_), Some(o), None) => merged.push(o.clone()),
+                (Some(_), None, Some(t)) => merged.push(t.clone()),
+                (Some(_), None, None) => {}
+                (None, Some(o), None) => merged.push(o.clone()),
+                (None, None, Some(t)) => merged.push(t.clone()),
+                (None, Some(o), Some(t)) => {
+                    if o == t {
+                        merged.push(o.clone());
+                    } else {
+                        return Ok(None);
+                    }
+                }
+                (None, None, None) => {}
+            }
+        }
+
+        Ok(Some(Value::Sequence(merged)))
+    }
+}
+
+impl Default for YamlDriver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl YamlDriver {
+    #[must_use]
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl SutureDriver for YamlDriver {
+    fn name(&self) -> &str {
+        "YAML"
+    }
+
+    fn supported_extensions(&self) -> &[&str] {
+        &[".yaml", ".yml"]
+    }
+
+    fn diff(
+        &self,
+        base_content: Option<&str>,
+        new_content: &str,
+    ) -> Result<Vec<SemanticChange>, DriverError> {
+        YamlDriverInner.diff(base_content, new_content)
+    }
+
+    fn format_diff(
+        &self,
+        base_content: Option<&str>,
+        new_content: &str,
+    ) -> Result<String, DriverError> {
+        YamlDriverInner.format_diff(base_content, new_content)
+    }
+
+    fn merge(&self, base: &str, ours: &str, theirs: &str) -> Result<Option<String>, DriverError> {
+        let base_val: Value =
+            serde_yaml::from_str(base).map_err(|e| DriverError::ParseError(e.to_string()))?;
+        let ours_val: Value =
+            serde_yaml::from_str(ours).map_err(|e| DriverError::ParseError(e.to_string()))?;
+        let theirs_val: Value =
+            serde_yaml::from_str(theirs).map_err(|e| DriverError::ParseError(e.to_string()))?;
+
+        if Self::is_kubernetes_manifest(base)
+            || Self::is_kubernetes_manifest(ours)
+            || Self::is_kubernetes_manifest(theirs)
+        {
+            match Self::merge_k8s_values(&base_val, &ours_val, &theirs_val)? {
+                Some(merged) => {
+                    return Ok(Some(
+                        serde_yaml::to_string(&merged)
+                            .map_err(|e| DriverError::SerializationError(e.to_string()))?,
+                    ));
+                }
+                None => return Ok(None),
+            }
+        }
+
+        YamlDriverInner.merge(base, ours, theirs)
+    }
 }
 
 impl_structured_driver! {
-    driver = YamlDriver,
+    driver = YamlDriverInner,
     name = "YAML",
     extensions = [".yaml", ".yml"],
     value_ty = Value,
@@ -61,6 +331,107 @@ mod tests {
     fn test_yaml_driver_name() {
         let driver = YamlDriver::new();
         assert_eq!(driver.name(), "YAML");
+    }
+
+    #[test]
+    fn test_k8s_manifest_detection() {
+        let k8s = "apiVersion: v1\nkind: Pod\nmetadata:\n  name: test\n";
+        assert!(YamlDriver::is_kubernetes_manifest(k8s));
+
+        let not_k8s = "name: test\nvalue: 123\n";
+        assert!(!YamlDriver::is_kubernetes_manifest(not_k8s));
+
+        let partial = "apiVersion: v1\nkind: Pod\n";
+        assert!(!YamlDriver::is_kubernetes_manifest(partial));
+    }
+
+    #[test]
+    fn test_k8s_container_merge_by_name() {
+        let driver = YamlDriver::new();
+        let base = r#"apiVersion: v1
+kind: Pod
+metadata:
+  name: test
+spec:
+  containers:
+    - name: app
+      image: myapp:1.0
+    - name: sidecar
+      image: logger:1.0
+"#;
+
+        let ours = r#"apiVersion: v1
+kind: Pod
+metadata:
+  name: test
+spec:
+  containers:
+    - name: app
+      image: myapp:2.0
+    - name: sidecar
+      image: logger:1.0
+"#;
+
+        let theirs = r#"apiVersion: v1
+kind: Pod
+metadata:
+  name: test
+spec:
+  containers:
+    - name: app
+      image: myapp:1.0
+    - name: sidecar
+      image: logger:2.0
+"#;
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some(), "K8s container merge should succeed");
+        let merged: Value = serde_yaml::from_str(&result.unwrap()).unwrap();
+        let containers = merged["spec"]["containers"].as_sequence().unwrap();
+        let app = containers.iter().find(|c| c["name"] == "app").unwrap();
+        let sidecar = containers.iter().find(|c| c["name"] == "sidecar").unwrap();
+        assert_eq!(app["image"], Value::String("myapp:2.0".into()));
+        assert_eq!(sidecar["image"], Value::String("logger:2.0".into()));
+    }
+
+    #[test]
+    fn test_k8s_container_conflict_same_name() {
+        let driver = YamlDriver::new();
+        let base = r#"apiVersion: v1
+kind: Pod
+metadata:
+  name: test
+spec:
+  containers:
+    - name: app
+      image: myapp:1.0
+"#;
+
+        let ours = r#"apiVersion: v1
+kind: Pod
+metadata:
+  name: test
+spec:
+  containers:
+    - name: app
+      image: myapp:2.0
+"#;
+
+        let theirs = r#"apiVersion: v1
+kind: Pod
+metadata:
+  name: test
+spec:
+  containers:
+    - name: app
+      image: myapp:3.0
+"#;
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(
+            result.is_none(),
+            "conflicting changes to same container should conflict"
+        );
     }
 
     #[test]
@@ -339,8 +710,6 @@ mod tests {
 
     #[test]
     fn test_yaml_merge_deep_nested_both_modify() {
-        // Reproduces: team-a adds labels to web, team-b adds healthcheck to api
-        // After both merges, the file should contain BOTH changes
         let driver = YamlDriver::new();
         let base = r#"services:
    web:
@@ -400,7 +769,6 @@ mod tests {
         assert!(result.is_some(), "deep nested merge should succeed");
         let merged: Value = serde_yaml::from_str(&result.unwrap()).unwrap();
 
-        // Team-a's changes must be preserved
         assert!(
             merged["services"]["web"].get("labels").is_some(),
             "web.labels from team-a should be preserved"
@@ -410,7 +778,6 @@ mod tests {
             "web.restart from team-a should be preserved"
         );
 
-        // Team-b's changes must be preserved
         assert!(
             merged["services"]["api"].get("healthcheck").is_some(),
             "api.healthcheck from team-b should be preserved"
@@ -421,7 +788,6 @@ mod tests {
             "db password rotation from team-b should be preserved"
         );
 
-        // All original services must still exist
         assert!(
             merged["services"].get("web").is_some(),
             "web service should exist"

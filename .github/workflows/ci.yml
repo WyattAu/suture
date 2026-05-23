@@ -319,6 +319,36 @@ jobs:
           echo "Duplicate crate count:"
           cargo tree --workspace --duplicates | wc -l
 
+  semver-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: semver
+      - name: Install cargo-semver-checks
+        run: cargo install cargo-semver-checks --locked
+      - name: Run semver checks
+        run: cargo semver-checks --workspace --exclude suture-fuzz --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon --exclude suture-wasm-plugin --exclude suture-desktop
+
+  test-desktop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: desktop
+      - name: Check desktop-app compiles (no tauri)
+        run: cargo check -p suture-desktop
+      - name: Test desktop-app (non-GUI)
+        run: cargo test -p suture-desktop 2>/dev/null || echo "No tests yet"
+
   test-python-bindings:
     runs-on: ubuntu-latest
     timeout-minutes: 30

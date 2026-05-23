@@ -2,9 +2,9 @@
 resolver = "2"
 members = [
     "crates/*",
+    "desktop-app",
 ]
 exclude = [
-    "desktop-app",
     "crates/suture-py",
 ]
 

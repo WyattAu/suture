@@ -31,4 +31,3 @@ tauri = ["dep:tauri", "dep:tauri-build", "dep:tauri-plugin-shell", "dep:tauri-pl
 [[bin]]
 name = "suture-desktop"
 path = "src/main.rs"
-required-features = ["tauri"]

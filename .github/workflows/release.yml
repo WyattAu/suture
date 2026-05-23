@@ -93,6 +93,14 @@ jobs:
           cd ../../../
           (Get-FileHash -Path "suture-${{ matrix.asset_suffix }}.zip" -Algorithm SHA256).Hash.ToLower() + "  suture-${{ matrix.asset_suffix }}.zip" | Out-File -Encoding ascii "suture-${{ matrix.asset_suffix }}.zip.sha256"
 
+      - name: Sign artifact
+        if: env.GPG_PRIVATE_KEY != ''
+        run: |
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --import --batch --passphrase "${{ secrets.GPG_PASSPHRASE }}"
+          gpg --batch --yes --passphrase "${{ secrets.GPG_PASSPHRASE }}" --armor --detach-sign suture-${{ matrix.target }}.${{ matrix.archive_ext }}
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:

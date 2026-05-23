@@ -59,6 +59,11 @@
         "command": "suture.diff",
         "title": "Suture: Show Diff",
         "category": "Suture"
+      },
+      {
+        "command": "suture.mergePreview",
+        "title": "Suture: Merge Preview",
+        "category": "Suture"
       }
     ],
     "configuration": {

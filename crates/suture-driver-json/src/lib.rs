@@ -33,6 +33,139 @@ impl JsonDriver {
         Some(entries)
     }
 
+    fn is_tfstate(content: &str) -> bool {
+        content.contains("\"version\":")
+            && content.contains("\"terraform_version\":")
+            && content.contains("\"serial\":")
+    }
+
+    fn tfstate_resource_address(res: &Value) -> Option<String> {
+        let mode = res.get("mode")?.as_str()?;
+        let typ = res.get("type")?.as_str()?;
+        let name = res.get("name")?.as_str()?;
+        Some(format!("{mode}.{typ}.{name}"))
+    }
+
+    fn merge_tfstate(base: &Value, ours: &Value, theirs: &Value) -> Option<Value> {
+        let base_resources = base
+            .get("resources")
+            .and_then(|r| r.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let ours_resources = ours
+            .get("resources")
+            .and_then(|r| r.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let theirs_resources = theirs
+            .get("resources")
+            .and_then(|r| r.as_array())
+            .cloned()
+            .unwrap_or_default();
+
+        let base_map: HashMap<String, &Value> = base_resources
+            .iter()
+            .filter_map(|r| Self::tfstate_resource_address(r).map(|a| (a, r)))
+            .collect();
+        let ours_map: HashMap<String, &Value> = ours_resources
+            .iter()
+            .filter_map(|r| Self::tfstate_resource_address(r).map(|a| (a, r)))
+            .collect();
+        let theirs_map: HashMap<String, &Value> = theirs_resources
+            .iter()
+            .filter_map(|r| Self::tfstate_resource_address(r).map(|a| (a, r)))
+            .collect();
+
+        let ours_order: Vec<String> = ours_resources
+            .iter()
+            .filter_map(Self::tfstate_resource_address)
+            .collect();
+        let theirs_order: Vec<String> = theirs_resources
+            .iter()
+            .filter_map(Self::tfstate_resource_address)
+            .collect();
+
+        let mut merged_resources = Vec::new();
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+        for addr in ours_order.iter().chain(theirs_order.iter()) {
+            if seen.contains(addr) {
+                continue;
+            }
+            seen.insert(addr.clone());
+
+            let br = base_map.get(addr).copied();
+            let or = ours_map.get(addr).copied();
+            let tr = theirs_map.get(addr).copied();
+
+            match (br, or, tr) {
+                (Some(b), Some(o), Some(t)) => {
+                    if o == t {
+                        merged_resources.push(o.clone());
+                    } else if o == b {
+                        merged_resources.push(t.clone());
+                    } else if t == b {
+                        merged_resources.push(o.clone());
+                    } else {
+                        let o_serial = o.get("serial").and_then(|s| s.as_u64()).unwrap_or(0);
+                        let t_serial = t.get("serial").and_then(|s| s.as_u64()).unwrap_or(0);
+                        if o_serial >= t_serial {
+                            merged_resources.push(o.clone());
+                        } else {
+                            merged_resources.push(t.clone());
+                        }
+                    }
+                }
+                (Some(_), Some(o), None) => merged_resources.push(o.clone()),
+                (Some(_), None, Some(t)) => merged_resources.push(t.clone()),
+                (Some(_), None, None) => {}
+                (None, Some(o), None) => merged_resources.push(o.clone()),
+                (None, None, Some(t)) => merged_resources.push(t.clone()),
+                (None, Some(o), Some(t)) => {
+                    if o == t {
+                        merged_resources.push(o.clone());
+                    } else {
+                        return None;
+                    }
+                }
+                (None, None, None) => {}
+            }
+        }
+
+        let mut result = ours.clone();
+        if let Some(obj) = result.as_object_mut() {
+            obj.insert("resources".to_string(), Value::Array(merged_resources));
+
+            let ours_serial = ours.get("serial").and_then(|s| s.as_u64()).unwrap_or(0);
+            let theirs_serial = theirs.get("serial").and_then(|s| s.as_u64()).unwrap_or(0);
+            let base_serial = base.get("serial").and_then(|s| s.as_u64()).unwrap_or(0);
+            let max_serial = ours_serial.max(theirs_serial).max(base_serial);
+            obj.insert("serial".to_string(), Value::Number(max_serial.into()));
+
+            let ours_ver = ours
+                .get("terraform_version")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let theirs_ver = theirs
+                .get("terraform_version")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if theirs_ver > ours_ver {
+                obj.insert(
+                    "terraform_version".to_string(),
+                    Value::String(theirs_ver.to_string()),
+                );
+            } else {
+                obj.insert(
+                    "terraform_version".to_string(),
+                    Value::String(ours_ver.to_string()),
+                );
+            }
+        }
+
+        Some(result)
+    }
+
     fn merge_cargo_lock(base: &Value, ours: &Value, theirs: &Value) -> Option<Value> {
         let base_packages = Self::parse_cargo_lock_packages(base)?;
         let ours_packages = Self::parse_cargo_lock_packages(ours)?;
@@ -212,6 +345,18 @@ impl SutureDriver for JsonDriver {
             || Self::is_cargo_lock(&theirs_val)
         {
             match Self::merge_cargo_lock(&base_val, &ours_val, &theirs_val) {
+                Some(merged) => {
+                    return Ok(Some(
+                        serde_json::to_string_pretty(&merged)
+                            .map_err(|e| DriverError::SerializationError(e.to_string()))?,
+                    ));
+                }
+                None => return Ok(None),
+            }
+        }
+
+        if Self::is_tfstate(base) || Self::is_tfstate(ours) || Self::is_tfstate(theirs) {
+            match Self::merge_tfstate(&base_val, &ours_val, &theirs_val) {
                 Some(merged) => {
                     return Ok(Some(
                         serde_json::to_string_pretty(&merged)
@@ -1158,5 +1303,66 @@ mod tests {
         let serde_pkg = packages.iter().find(|p| p["name"] == "serde").unwrap();
         assert_eq!(serde_pkg["version"], "1.1.0");
         assert_eq!(serde_pkg["checksum"], "xyz");
+    }
+
+    #[test]
+    fn test_is_tfstate_detection() {
+        let tfstate = r#"{"version": 4, "terraform_version": "1.5.0", "serial": 1}"#;
+        assert!(JsonDriver::is_tfstate(tfstate));
+
+        let not_tfstate = r#"{"version": "1.0", "name": "test"}"#;
+        assert!(!JsonDriver::is_tfstate(not_tfstate));
+
+        let partial = r#"{"version": 4, "terraform_version": "1.5.0"}"#;
+        assert!(!JsonDriver::is_tfstate(partial));
+    }
+
+    #[test]
+    fn test_tfstate_merge_different_resources() {
+        let driver = JsonDriver::new();
+        let base = serde_json::to_string_pretty(&serde_json::json!({
+            "version": 4,
+            "terraform_version": "1.5.0",
+            "serial": 1,
+            "resources": [
+                {"mode": "managed", "type": "aws_vpc", "name": "main", "instances": []}
+            ]
+        }))
+        .unwrap();
+
+        let ours = serde_json::to_string_pretty(&serde_json::json!({
+            "version": 4,
+            "terraform_version": "1.5.0",
+            "serial": 2,
+            "resources": [
+                {"mode": "managed", "type": "aws_vpc", "name": "main", "instances": []},
+                {"mode": "managed", "type": "aws_subnet", "name": "public", "instances": []}
+            ]
+        }))
+        .unwrap();
+
+        let theirs = serde_json::to_string_pretty(&serde_json::json!({
+            "version": 4,
+            "terraform_version": "1.5.0",
+            "serial": 3,
+            "resources": [
+                {"mode": "managed", "type": "aws_vpc", "name": "main", "instances": []},
+                {"mode": "managed", "type": "aws_s3_bucket", "name": "logs", "instances": []}
+            ]
+        }))
+        .unwrap();
+
+        let result = driver.merge(&base, &ours, &theirs).unwrap();
+        assert!(
+            result.is_some(),
+            "tfstate merge with different resources should succeed"
+        );
+        let merged: Value = serde_json::from_str(&result.unwrap()).unwrap();
+        let resources = merged["resources"].as_array().unwrap();
+        assert!(resources.iter().any(|r| r["name"] == "main"));
+        assert!(resources.iter().any(|r| r["name"] == "public"));
+        assert!(resources.iter().any(|r| r["name"] == "logs"));
+        assert_eq!(resources.len(), 3);
+        assert_eq!(merged["serial"], 3);
     }
 }

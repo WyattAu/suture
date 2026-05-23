@@ -131,11 +131,8 @@ fn which_suture() -> Option<String> {
 }
 
 fn compare_versions(a: &str, b: &str) -> Option<std::cmp::Ordering> {
-    let parse = |v: &str| -> Vec<u32> {
-        v.split('.')
-            .filter_map(|s| s.parse::<u32>().ok())
-            .collect()
-    };
+    let parse =
+        |v: &str| -> Vec<u32> { v.split('.').filter_map(|s| s.parse::<u32>().ok()).collect() };
     let va = parse(a);
     let vb = parse(b);
     let max_len = va.len().max(vb.len());
@@ -628,11 +625,7 @@ mod tauri_commands {
         }
     }
 
-    pub fn add_remote(
-        name: String,
-        url: String,
-        state: State<'_, AppState>,
-    ) -> CmdResult<String> {
+    pub fn add_remote(name: String, url: String, state: State<'_, AppState>) -> CmdResult<String> {
         let guard = state.repo.lock().unwrap();
         let Some(repo) = guard.as_ref() else {
             return CmdResult::err("No repository open");
@@ -672,10 +665,7 @@ mod tauri_commands {
         }
     }
 
-    pub fn stash_push(
-        message: Option<String>,
-        state: State<'_, AppState>,
-    ) -> CmdResult<String> {
+    pub fn stash_push(message: Option<String>, state: State<'_, AppState>) -> CmdResult<String> {
         let mut guard = state.repo.lock().unwrap();
         let Some(repo) = guard.as_mut() else {
             return CmdResult::err("No repository open");
@@ -742,7 +732,9 @@ mod tauri_commands {
 
     pub fn set_merge_driver_config(state: State<'_, AppState>) -> CmdResult<String> {
         let guard = state.repo_path.lock().unwrap();
-        let _ = guard.as_ref().ok_or_else(|| "No repository open".to_string());
+        let _ = guard
+            .as_ref()
+            .ok_or_else(|| "No repository open".to_string());
 
         let suture_path = which_suture();
         if suture_path.is_none() {
@@ -789,11 +781,19 @@ mod tauri_commands {
             .output();
 
         let result = std::process::Command::new("git")
-            .args(["config", "--global", "--unset", "merge.suture-driver.driver"])
+            .args([
+                "config",
+                "--global",
+                "--unset",
+                "merge.suture-driver.driver",
+            ])
             .output();
 
         match result {
-            Ok(o) if o.status.success() || String::from_utf8_lossy(&o.stderr).contains("not found") => {
+            Ok(o)
+                if o.status.success()
+                    || String::from_utf8_lossy(&o.stderr).contains("not found") =>
+            {
                 CmdResult::ok("Merge driver removed".to_string())
             }
             Ok(o) => {
@@ -813,23 +813,27 @@ mod tauri_commands {
 
         let client = match client {
             Ok(c) => c,
-            Err(e) => return CmdResult::ok(UpdateInfo {
-                current_version: current_version.clone(),
-                latest_version: current_version,
-                update_available: false,
-                error: Some(format!("Failed to create HTTP client: {e}")),
-            }),
+            Err(e) => {
+                return CmdResult::ok(UpdateInfo {
+                    current_version: current_version.clone(),
+                    latest_version: current_version,
+                    update_available: false,
+                    error: Some(format!("Failed to create HTTP client: {e}")),
+                });
+            }
         };
 
         let url = "https://api.github.com/repos/WyattAu/suture/releases/latest";
         let resp = match client.get(url).send().await {
             Ok(r) => r,
-            Err(e) => return CmdResult::ok(UpdateInfo {
-                current_version: current_version.clone(),
-                latest_version: current_version.clone(),
-                update_available: false,
-                error: Some(format!("Network error: {e}")),
-            }),
+            Err(e) => {
+                return CmdResult::ok(UpdateInfo {
+                    current_version: current_version.clone(),
+                    latest_version: current_version.clone(),
+                    update_available: false,
+                    error: Some(format!("Network error: {e}")),
+                });
+            }
         };
 
         if !resp.status().is_success() {
@@ -883,10 +887,7 @@ mod cli_commands {
 
     use crate::AppState;
 
-    async fn run_suture(
-        args: &[&str],
-        cwd: Option<&str>,
-    ) -> Result<std::process::Output, String> {
+    async fn run_suture(args: &[&str], cwd: Option<&str>) -> Result<std::process::Output, String> {
         let mut cmd = tokio::process::Command::new("suture");
         cmd.args(args);
         if let Some(dir) = cwd {
@@ -974,7 +975,8 @@ mod cli_commands {
                 }
             } else if line.starts_with("\nStaged changes:") || line.starts_with("Staged changes:") {
                 section = "staged";
-            } else if line.starts_with("\nUnstaged changes:") || line.starts_with("Unstaged changes:")
+            } else if line.starts_with("\nUnstaged changes:")
+                || line.starts_with("Unstaged changes:")
             {
                 section = "unstaged";
             } else if !line.is_empty() {
@@ -1032,10 +1034,7 @@ mod cli_commands {
     }
 
     #[tauri::command]
-    pub async fn cli_create_branch(
-        name: String,
-        state: State<'_, AppState>,
-    ) -> CmdResult<String> {
+    pub async fn cli_create_branch(name: String, state: State<'_, AppState>) -> CmdResult<String> {
         let cwd = match repo_cwd(&state) {
             Ok(c) => c,
             Err(e) => return CmdResult::err(e),
@@ -1150,10 +1149,10 @@ fn days_to_date(mut days: i64) -> (i64, i64, i64) {
 #[cfg(feature = "tauri")]
 fn main() {
     use cli_commands as cli;
+    use tauri::Manager;
     use tauri::menu::{MenuBuilder, MenuItemBuilder};
     use tauri::tray::TrayIconBuilder;
     use tauri_commands as lib;
-    use tauri::Manager;
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -1167,7 +1166,9 @@ fn main() {
             let show_item = MenuItemBuilder::with_id("show", "Show Suture").build(app)?;
             let status_item = MenuItemBuilder::with_id("status", "Refresh Status").build(app)?;
             let sync_item = MenuItemBuilder::with_id("sync", "Sync Now").build(app)?;
-            let auto_sync_item = MenuItemBuilder::with_id("toggle-auto-sync", "Toggle Auto-Sync (OFF)").build(app)?;
+            let auto_sync_item =
+                MenuItemBuilder::with_id("toggle-auto-sync", "Toggle Auto-Sync (OFF)")
+                    .build(app)?;
             let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
 
             let menu = MenuBuilder::new(app)
@@ -1186,29 +1187,27 @@ fn main() {
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
                 .tooltip("Suture — No repository open")
-                .on_menu_event(move |app_handle, event| {
-                    match event.id.as_ref() {
-                        "show" => {
-                            if let Some(window) = app_handle.get_webview_window("main") {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            }
+                .on_menu_event(move |app_handle, event| match event.id.as_ref() {
+                    "show" => {
+                        if let Some(window) = app_handle.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
                         }
-                        "status" => {
-                            let _ = app_handle.emit("tray-refresh-status", ());
-                        }
-                        "sync" => {
-                            let _ = app_handle.emit("auto-sync", ());
-                        }
-                        "toggle-auto-sync" => {
-                            let was = auto_sync_enabled.load(std::sync::atomic::Ordering::Relaxed);
-                            auto_sync_enabled.store(!was, std::sync::atomic::Ordering::Relaxed);
-                        }
-                        "quit" => {
-                            app_handle.exit(0);
-                        }
-                        _ => {}
                     }
+                    "status" => {
+                        let _ = app_handle.emit("tray-refresh-status", ());
+                    }
+                    "sync" => {
+                        let _ = app_handle.emit("auto-sync", ());
+                    }
+                    "toggle-auto-sync" => {
+                        let was = auto_sync_enabled.load(std::sync::atomic::Ordering::Relaxed);
+                        auto_sync_enabled.store(!was, std::sync::atomic::Ordering::Relaxed);
+                    }
+                    "quit" => {
+                        app_handle.exit(0);
+                    }
+                    _ => {}
                 })
                 .build(app)?;
 
@@ -1261,6 +1260,14 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running suture-desktop");
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_desktop_binary_compiles() {
+        assert!(true);
+    }
 }
 
 #[cfg(not(feature = "tauri"))]

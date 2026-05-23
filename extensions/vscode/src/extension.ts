@@ -299,6 +299,201 @@ export async function activate(context: vscode.ExtensionContext) {
       }
     })
   );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand("suture.mergePreview", async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        vscode.window.showWarningMessage("No active editor.");
+        return;
+      }
+
+      const doc = editor.document;
+      const text = doc.getText();
+      const conflicts = parseConflicts(text);
+
+      if (conflicts.length === 0) {
+        vscode.window.showInformationMessage("No merge conflicts found in this file.");
+        return;
+      }
+
+      const panel = vscode.window.createWebviewPanel(
+        "sutureMergePreview",
+        `Merge Preview — ${path.basename(doc.fileName)}`,
+        vscode.ViewColumn.Beside,
+        { enableScripts: true }
+      );
+
+      panel.webview.html = renderMergePreview(conflicts);
+
+      panel.webview.onDidReceiveMessage(async (msg: { action: string; index: number }) => {
+        const resolved = resolveConflict(conflicts[msg.index], msg.action);
+        if (!resolved) {
+          return;
+        }
+
+        conflicts[msg.index] = { ...conflicts[msg.index], resolved };
+
+        const fullText = doc.getText();
+        const newText = applyResolutions(fullText, conflicts);
+        const edit = new vscode.WorkspaceEdit();
+        const fullRange = new vscode.Range(doc.positionAt(0), doc.positionAt(fullText.length));
+        edit.replace(doc.uri, fullRange, newText);
+        await vscode.workspace.applyEdit(edit);
+
+        panel.webview.html = renderMergePreview(conflicts);
+
+        if (conflicts.every((c) => c.resolved !== undefined)) {
+          vscode.window.showInformationMessage("All conflicts resolved.");
+          panel.dispose();
+        }
+      });
+    })
+  );
+}
+
+interface ConflictBlock {
+  start: number;
+  end: number;
+  ours: string;
+  base: string;
+  theirs: string;
+  resolved?: string;
+}
+
+function parseConflicts(text: string): ConflictBlock[] {
+  const conflicts: ConflictBlock[] = [];
+  const lines = text.split("\n");
+  let i = 0;
+
+  while (i < lines.length) {
+    if (lines[i].startsWith("<<<<<<<")) {
+      const start = i;
+      i++;
+      const oursLines: string[] = [];
+      while (i < lines.length && !lines[i].startsWith("=======")) {
+        oursLines.push(lines[i]);
+        i++;
+      }
+
+      i++; // skip =======
+
+      let baseLines: string[] = [];
+      if (i < lines.length && lines[i].startsWith("|||||||")) {
+        i++;
+        while (i < lines.length && !lines[i].startsWith("=======")) {
+          baseLines.push(lines[i]);
+          i++;
+        }
+        i++; // skip second =======
+      }
+
+      const theirsLines: string[] = [];
+      while (i < lines.length && !lines[i].startsWith(">>>>>>>")) {
+        theirsLines.push(lines[i]);
+        i++;
+      }
+
+      if (i < lines.length) {
+        i++; // skip >>>>>>>
+      }
+
+      conflicts.push({
+        start,
+        end: i,
+        ours: oursLines.join("\n"),
+        base: baseLines.join("\n"),
+        theirs: theirsLines.join("\n"),
+      });
+    } else {
+      i++;
+    }
+  }
+
+  return conflicts;
+}
+
+function resolveConflict(conflict: ConflictBlock, action: string): string | undefined {
+  switch (action) {
+    case "ours":
+      return conflict.ours;
+    case "theirs":
+      return conflict.theirs;
+    case "both":
+      return conflict.ours + (conflict.ours && conflict.theirs ? "\n" : "") + conflict.theirs;
+    default:
+      return undefined;
+  }
+}
+
+function applyResolutions(text: string, conflicts: ConflictBlock[]): string {
+  const lines = text.split("\n");
+  const sorted = [...conflicts].sort((a, b) => b.start - a.start);
+
+  for (const conflict of sorted) {
+    if (conflict.resolved === undefined) {
+      continue;
+    }
+    const replacement = conflict.resolved.split("\n");
+    lines.splice(conflict.start, conflict.end - conflict.start, ...replacement);
+  }
+
+  return lines.join("\n");
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function renderMergePreview(conflicts: ConflictBlock[]): string {
+  const sections = conflicts.map((c, i) => {
+    const status = c.resolved !== undefined
+      ? `<div style="padding:8px;background:#1a4a1a;color:#4f4;color:var(--vscode-editor-foreground);border-radius:4px;margin-bottom:12px;">Resolved</div>`
+      : "";
+
+    const baseSection = c.base
+      ? `<div style="flex:1;"><div style="font-weight:bold;margin-bottom:4px;color:#888;">Base</div>
+         <pre style="background:var(--vscode-textBlockQuote-background, #2a2a2a);padding:8px;border-radius:4px;white-space:pre-wrap;margin:0;min-height:40px;">${escapeHtml(c.base)}</pre></div>`
+      : "";
+
+    return `
+      <div style="margin-bottom:16px;border:1px solid var(--vscode-panel-border, #444);border-radius:6px;padding:12px;">
+        <div style="margin-bottom:8px;font-weight:bold;">Conflict ${i + 1} of ${conflicts.length}</div>
+        ${status}
+        <div style="display:flex;gap:8px;margin-bottom:8px;">
+          <div style="flex:1;"><div style="font-weight:bold;margin-bottom:4px;color:#6a6;">Ours</div>
+            <pre style="background:var(--vscode-diffEditor-insertedTextBackground, rgba(40,80,40,0.4));padding:8px;border-radius:4px;white-space:pre-wrap;margin:0;min-height:40px;">${escapeHtml(c.ours)}</pre></div>
+          ${baseSection}
+          <div style="flex:1;"><div style="font-weight:bold;margin-bottom:4px;color:#66a;">Theirs</div>
+            <pre style="background:var(--vscode-diffEditor-removedTextBackground, rgba(80,40,80,0.4));padding:8px;border-radius:4px;white-space:pre-wrap;margin:0;min-height:40px;">${escapeHtml(c.theirs)}</pre></div>
+        </div>
+        ${c.resolved === undefined ? `
+        <div style="display:flex;gap:8px;">
+          <button onclick="resolve(${i},'ours')" style="flex:1;padding:6px;cursor:pointer;background:var(--vscode-button-background, #0e639c);color:var(--vscode-button-foreground, #fff);border:none;border-radius:3px;">Accept Ours</button>
+          <button onclick="resolve(${i},'theirs')" style="flex:1;padding:6px;cursor:pointer;background:var(--vscode-button-secondaryBackground, #3a3d41);color:var(--vscode-button-secondaryForeground, #fff);border:none;border-radius:3px;">Accept Theirs</button>
+          <button onclick="resolve(${i},'both')" style="flex:1;padding:6px;cursor:pointer;background:var(--vscode-button-background, #0e639c);color:var(--vscode-button-foreground, #fff);border:none;border-radius:3px;">Accept Both</button>
+        </div>` : ""}
+      </div>`;
+  });
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Merge Preview</title>
+</head>
+<body style="font-family:var(--vscode-font-family,sans-serif);padding:16px;color:var(--vscode-editor-foreground,#ccc);background:var(--vscode-editor-background,#1e1e1e);">
+  <h2 style="margin-top:0;">Merge Conflict Preview</h2>
+  ${sections.join("")}
+  <script>
+    const vscode = acquireVsCodeApi();
+    function resolve(index, action) {
+      vscode.postMessage({ action, index });
+    }
+  </script>
+</body>
+</html>`;
 }
 
 export function deactivate() {
