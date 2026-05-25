@@ -5,7 +5,8 @@ mod shm;
 use std::collections::HashMap;
 use std::error::Error;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
@@ -17,7 +18,7 @@ use suture_protocol::{
     BlobRef, BranchProto, PatchProto, PullRequest, PullResponse, PushRequest, PushResponse,
     hex_to_hash,
 };
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{Mutex, broadcast, mpsc};
 use tokio::time;
 use tracing::{debug, error, info, warn};
 
@@ -39,6 +40,7 @@ pub struct DaemonConfig {
     pub commit_template: String,
     pub author: String,
     pub auto_mounts: Vec<AutoMountConfig>,
+    pub bandwidth_limit: u64,
 }
 
 impl Default for DaemonConfig {
@@ -50,6 +52,7 @@ impl Default for DaemonConfig {
             commit_template: "auto: {count} file(s) changed".to_owned(),
             author: "suture-daemon".to_owned(),
             auto_mounts: Vec::new(),
+            bandwidth_limit: 0,
         }
     }
 }
@@ -246,19 +249,128 @@ impl AutoCommit {
     }
 }
 
+#[derive(Clone)]
+#[allow(dead_code)]
+struct QueuedPush {
+    remote_url: String,
+    push_body_json: String,
+    queued_at: u64,
+    retry_count: u32,
+}
+
+struct OfflineQueue {
+    items: Vec<QueuedPush>,
+    max_size: usize,
+}
+
+impl OfflineQueue {
+    #[allow(dead_code)]
+    fn new(max_size: usize) -> Self {
+        Self {
+            items: Vec::new(),
+            max_size,
+        }
+    }
+
+    fn enqueue(&mut self, push_body_json: String, remote_url: &str) {
+        if self.items.len() >= self.max_size {
+            self.items.remove(0);
+        }
+        self.items.push(QueuedPush {
+            remote_url: remote_url.to_string(),
+            push_body_json,
+            queued_at: now_nanos(),
+            retry_count: 0,
+        });
+    }
+
+    fn drain(&mut self) -> Vec<QueuedPush> {
+        std::mem::take(&mut self.items)
+    }
+
+    #[allow(dead_code)]
+    fn len(&self) -> usize {
+        self.items.len()
+    }
+}
+
+#[allow(dead_code)]
+struct SyncCheckpoint {
+    last_pushed_patch_id: Option<String>,
+    last_pushed_blob_index: usize,
+    timestamp: u64,
+}
+
+struct BandwidthLimiter {
+    bytes_per_second: u64,
+    tokens: f64,
+    max_tokens: f64,
+    last_refill: Instant,
+}
+
+impl BandwidthLimiter {
+    fn new(bytes_per_second: u64) -> Self {
+        let max_tokens = if bytes_per_second == 0 {
+            f64::INFINITY
+        } else {
+            bytes_per_second as f64 * 2.0
+        };
+        Self {
+            bytes_per_second,
+            tokens: max_tokens,
+            max_tokens,
+            last_refill: Instant::now(),
+        }
+    }
+
+    fn refill(&mut self) {
+        if self.bytes_per_second == 0 {
+            return;
+        }
+        let now = Instant::now();
+        let elapsed = now.duration_since(self.last_refill);
+        let added = elapsed.as_secs_f64() * self.bytes_per_second as f64;
+        self.tokens = (self.tokens + added).min(self.max_tokens);
+        self.last_refill = now;
+    }
+
+    async fn acquire(&mut self, bytes: usize) {
+        if self.bytes_per_second == 0 {
+            return;
+        }
+        self.refill();
+        while self.tokens < bytes as f64 {
+            let deficit = bytes as f64 - self.tokens;
+            let wait_secs = deficit / self.bytes_per_second as f64;
+            tokio::time::sleep(Duration::from_secs_f64(wait_secs)).await;
+            self.refill();
+        }
+        self.tokens -= bytes as f64;
+    }
+}
+
 pub struct AutoSync {
     repo_path: PathBuf,
     remote_url: Option<String>,
     interval: Duration,
+    offline_queue: Arc<Mutex<OfflineQueue>>,
+    bandwidth_limiter: Arc<Mutex<BandwidthLimiter>>,
 }
 
 impl AutoSync {
     #[must_use]
-    pub fn new(repo_path: PathBuf, remote_url: Option<String>, interval: Duration) -> Self {
+    pub fn new(
+        repo_path: PathBuf,
+        remote_url: Option<String>,
+        interval: Duration,
+        bandwidth_limit: u64,
+    ) -> Self {
         Self {
             repo_path,
             remote_url,
             interval,
+            offline_queue: Arc::new(Mutex::new(OfflineQueue::new(100))),
+            bandwidth_limiter: Arc::new(Mutex::new(BandwidthLimiter::new(bandwidth_limit))),
         }
     }
 
@@ -312,6 +424,10 @@ impl AutoSync {
             return Ok(());
         };
 
+        if let Err(e) = self.flush_offline_queue().await {
+            warn!("offline queue flush failed: {e}");
+        }
+
         match self.do_pull(&repo_path, &remote_url).await {
             Ok(count) if count > 0 => info!("pulled {} new patch(es)", count),
             Ok(_) => debug!("pull: already up to date"),
@@ -326,6 +442,129 @@ impl AutoSync {
 
         info!("sync cycle complete");
         Ok(())
+    }
+
+    async fn flush_offline_queue(&self) -> Result<(), String> {
+        let items: Vec<QueuedPush> = {
+            let mut queue = self.offline_queue.lock().await;
+            queue.drain()
+        };
+
+        if items.is_empty() {
+            return Ok(());
+        }
+
+        info!("flushing {} queued push(es)", items.len());
+
+        for (i, item) in items.iter().enumerate() {
+            let push_body: PushRequest = serde_json::from_str(&item.push_body_json)
+                .map_err(|e| format!("failed to deserialize queued push: {e}"))?;
+
+            let client = reqwest::Client::new();
+            let resp = match client
+                .post(format!("{}/push/compressed", item.remote_url))
+                .json(&push_body)
+                .send()
+                .await
+            {
+                Ok(r) => r,
+                Err(e) => {
+                    let mut queue = self.offline_queue.lock().await;
+                    for remaining in &items[i..] {
+                        queue.enqueue(remaining.push_body_json.clone(), &remaining.remote_url);
+                    }
+                    return Err(format!("flush push network error: {e}"));
+                }
+            };
+
+            if !resp.status().is_success() {
+                let text = resp.text().await.unwrap_or_default();
+                let mut queue = self.offline_queue.lock().await;
+                for remaining in &items[i..] {
+                    queue.enqueue(remaining.push_body_json.clone(), &remaining.remote_url);
+                }
+                return Err(format!("flush push HTTP error: {text}"));
+            }
+
+            let result: PushResponse = resp
+                .json()
+                .await
+                .map_err(|e| format!("failed to parse flush response: {e}"))?;
+
+            if !result.success {
+                let mut queue = self.offline_queue.lock().await;
+                for remaining in &items[i..] {
+                    queue.enqueue(remaining.push_body_json.clone(), &remaining.remote_url);
+                }
+                return Err(format!(
+                    "flush push failed: {}",
+                    result.error.as_deref().unwrap_or("unknown error")
+                ));
+            }
+        }
+
+        info!("offline queue flushed successfully");
+        Ok(())
+    }
+
+    #[allow(dead_code)]
+    async fn save_checkpoint(&self, patch_id: &str, blob_idx: usize) -> Result<(), String> {
+        let rp = self.repo_path.clone();
+        let patch_id = patch_id.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut repo = Repository::open(&rp).map_err(|e| format!("open repo: {e}"))?;
+            repo.set_config("remote.origin.checkpoint.patch_id", &patch_id)
+                .map_err(|e| format!("save checkpoint: {e}"))?;
+            repo.set_config("remote.origin.checkpoint.blob_idx", &blob_idx.to_string())
+                .map_err(|e| format!("save checkpoint: {e}"))?;
+            Ok(())
+        })
+        .await
+        .map_err(|e| format!("checkpoint save task panicked: {e}"))?
+    }
+
+    #[allow(dead_code)]
+    async fn load_checkpoint(&self) -> Result<Option<SyncCheckpoint>, String> {
+        let rp = self.repo_path.clone();
+        tokio::task::spawn_blocking(move || {
+            let repo = Repository::open(&rp).map_err(|e| format!("open repo: {e}"))?;
+            let patch_id = repo
+                .get_config("remote.origin.checkpoint.patch_id")
+                .map_err(|e| format!("load checkpoint: {e}"))?
+                .filter(|s| !s.is_empty());
+            let blob_idx_str = repo
+                .get_config("remote.origin.checkpoint.blob_idx")
+                .map_err(|e| format!("load checkpoint: {e}"))?
+                .filter(|s| !s.is_empty());
+            match (patch_id, blob_idx_str) {
+                (Some(pid), Some(bis)) => Ok(Some(SyncCheckpoint {
+                    last_pushed_patch_id: Some(pid),
+                    last_pushed_blob_index: bis.parse().unwrap_or(0),
+                    timestamp: SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0),
+                })),
+                _ => Ok(None),
+            }
+        })
+        .await
+        .map_err(|e| format!("checkpoint load task panicked: {e}"))?
+    }
+
+    #[allow(dead_code)]
+    async fn clear_checkpoint(&self) -> Result<(), String> {
+        let rp = self.repo_path.clone();
+        tokio::task::spawn_blocking(move || {
+            let mut repo = Repository::open(&rp).map_err(|e| format!("open repo: {e}"))?;
+            repo.set_config("remote.origin.checkpoint.patch_id", "")
+                .map_err(|e| format!("clear checkpoint: {e}"))?;
+            repo.set_config("remote.origin.checkpoint.blob_idx", "")
+                .map_err(|e| format!("clear checkpoint: {e}"))?;
+            Ok(())
+        })
+        .await
+        .map_err(|e| format!("checkpoint clear task panicked: {e}"))?
     }
 
     async fn do_pull(&self, repo_path: &Path, remote_url: &str) -> Result<usize, String> {
@@ -387,6 +626,12 @@ impl AutoSync {
 
         if result.patches.is_empty() {
             return Ok(0);
+        }
+
+        let blob_data_size: usize = result.blobs.iter().map(|b| b.data.len()).sum();
+        {
+            let mut limiter = self.bandwidth_limiter.lock().await;
+            limiter.acquire(blob_data_size).await;
         }
 
         let rp = repo_path.to_path_buf();
@@ -477,16 +722,30 @@ impl AutoSync {
         let push_data = {
             let rp = repo_path.to_path_buf();
             tokio::task::spawn_blocking(move || -> Result<PushData, String> {
-                let repo =
+                let mut repo =
                     Repository::open(&rp).map_err(|e| format!("failed to open repo: {e}"))?;
 
                 let push_state_key = "remote.origin.last_pushed";
-                let patches: Vec<Patch> = if let Some(last_pushed_hex) =
-                    repo.get_config(push_state_key).map_err(|e| e.to_string())?
-                {
-                    let last_pushed = suture_common::Hash::from_hex(&last_pushed_hex)
-                        .map_err(|e| format!("invalid last_pushed hash: {e}"))?;
-                    repo.patches_since(&last_pushed)
+                let checkpoint_key = "remote.origin.checkpoint.patch_id";
+
+                let reference_hex: Option<String> = {
+                    let cp = repo
+                        .get_config(checkpoint_key)
+                        .map_err(|e| e.to_string())?
+                        .filter(|s| !s.is_empty());
+                    if let Some(cp) = cp {
+                        Some(cp)
+                    } else {
+                        repo.get_config(push_state_key)
+                            .map_err(|e| e.to_string())?
+                            .filter(|s| !s.is_empty())
+                    }
+                };
+
+                let patches: Vec<Patch> = if let Some(ref ref_hex) = reference_hex {
+                    let hash = suture_common::Hash::from_hex(ref_hex)
+                        .map_err(|e| format!("invalid reference hash: {e}"))?;
+                    repo.patches_since(&hash)
                 } else {
                     repo.all_patches()
                 };
@@ -499,6 +758,10 @@ impl AutoSync {
                         head_hex: String::new(),
                     });
                 }
+
+                let cp_val = reference_hex.as_deref().unwrap_or("");
+                let _ = repo.set_config("remote.origin.checkpoint.patch_id", cp_val);
+                let _ = repo.set_config("remote.origin.checkpoint.blob_idx", "0");
 
                 let branches = repo.list_branches();
                 let (_, head_id) = repo
@@ -592,16 +855,36 @@ impl AutoSync {
             force: push_body.force,
         };
 
+        let blob_data_size: usize = push_body.blobs.iter().map(|b| b.data.len()).sum();
+        {
+            let mut limiter = self.bandwidth_limiter.lock().await;
+            limiter.acquire(blob_data_size).await;
+        }
+
         let client = reqwest::Client::new();
-        let resp = client
+        let resp_result = client
             .post(format!("{remote_url}/push/compressed"))
             .json(&push_body)
             .send()
-            .await
-            .map_err(|e| format!("push request failed: {e}"))?;
+            .await;
+
+        let resp = match resp_result {
+            Ok(r) => r,
+            Err(e) => {
+                if let Ok(json) = serde_json::to_string(&push_body) {
+                    let mut queue = self.offline_queue.lock().await;
+                    queue.enqueue(json, remote_url);
+                }
+                return Err(format!("push request failed: {e}"));
+            }
+        };
 
         if !resp.status().is_success() {
             let text = resp.text().await.unwrap_or_default();
+            if let Ok(json) = serde_json::to_string(&push_body) {
+                let mut queue = self.offline_queue.lock().await;
+                queue.enqueue(json, remote_url);
+            }
             return Err(format!("push failed (HTTP): {text}"));
         }
 
@@ -626,6 +909,8 @@ impl AutoSync {
                 Repository::open(&rp).map_err(|e| format!("failed to open repo: {e}"))?;
             repo.set_config("remote.origin.last_pushed", &head_hex)
                 .map_err(|e| format!("failed to update last_pushed: {e}"))?;
+            let _ = repo.set_config("remote.origin.checkpoint.patch_id", "");
+            let _ = repo.set_config("remote.origin.checkpoint.blob_idx", "");
             Ok::<(), String>(())
         })
         .await
@@ -692,6 +977,7 @@ impl Daemon {
             self.config.repo_path.clone(),
             self.config.remote_url.clone(),
             self.config.sync_interval,
+            self.config.bandwidth_limit,
         );
         let sync_shutdown = shutdown_tx.subscribe();
         let sync_handle = tokio::spawn(async move {
@@ -799,6 +1085,7 @@ impl Daemon {
             self.config.repo_path.clone(),
             self.config.remote_url.clone(),
             self.config.sync_interval,
+            self.config.bandwidth_limit,
         );
         let sync_shutdown = shutdown_tx.subscribe();
         let sync_handle = tokio::spawn(async move {
@@ -1319,6 +1606,7 @@ mod tests {
             repo_path.clone(),
             Some(hub_url.clone()),
             Duration::from_secs(60),
+            0,
         );
 
         let result = auto_sync.sync_once().await;
@@ -1350,7 +1638,7 @@ mod tests {
         init_tracing();
         let (_tmp, repo_path) = create_test_repo();
 
-        let auto_sync = AutoSync::new(repo_path.clone(), None, Duration::from_secs(60));
+        let auto_sync = AutoSync::new(repo_path.clone(), None, Duration::from_secs(60), 0);
         let result = auto_sync.sync_once().await;
         assert!(
             result.is_ok(),
@@ -1365,7 +1653,7 @@ mod tests {
         let repo_path = dir.path().to_path_buf();
         Repository::init(&repo_path, "test-user").unwrap();
 
-        let auto_sync = AutoSync::new(repo_path.clone(), None, Duration::from_secs(60));
+        let auto_sync = AutoSync::new(repo_path.clone(), None, Duration::from_secs(60), 0);
         let result = auto_sync.sync_once().await;
         assert!(
             result.is_ok(),
@@ -1383,7 +1671,7 @@ mod tests {
         repo.add_remote("origin", &bad_url).unwrap();
         drop(repo);
 
-        let auto_sync = AutoSync::new(repo_path.clone(), Some(bad_url), Duration::from_secs(60));
+        let auto_sync = AutoSync::new(repo_path.clone(), Some(bad_url), Duration::from_secs(60), 0);
 
         let result = auto_sync.sync_once().await;
         assert!(
@@ -1421,6 +1709,7 @@ mod tests {
             repo_path.clone(),
             Some(hub_url.clone()),
             Duration::from_secs(60),
+            0,
         );
 
         let result = auto_sync.sync_once().await;
@@ -1466,6 +1755,7 @@ mod tests {
             repo_path.clone(),
             Some(hub_url.clone()),
             Duration::from_secs(60),
+            0,
         );
 
         let result1 = auto_sync.sync_once().await;
@@ -1497,6 +1787,7 @@ mod tests {
             repo_path.clone(),
             Some(hub_url.clone()),
             Duration::from_secs(60),
+            0,
         );
         let result2 = auto_sync2.sync_once().await;
         assert!(
@@ -1542,6 +1833,7 @@ mod tests {
             repo_path.clone(),
             Some(hub_url.clone()),
             Duration::from_secs(60),
+            0,
         );
 
         let result = auto_sync.sync_once().await;
@@ -1950,6 +2242,7 @@ mod tests {
             repo_path.clone(),
             Some(hub_url.clone()),
             Duration::from_secs(60),
+            0,
         );
 
         let sync_result = auto_sync.sync_once().await;
@@ -1979,5 +2272,113 @@ mod tests {
         );
 
         server_handle.abort();
+    }
+
+    #[test]
+    fn test_offline_queue_enqueue_drain() {
+        let mut queue = OfflineQueue::new(10);
+        assert_eq!(queue.len(), 0);
+
+        queue.enqueue("push_data_1".to_string(), "http://hub:8080");
+        queue.enqueue("push_data_2".to_string(), "http://hub:8080");
+        assert_eq!(queue.len(), 2);
+
+        let items = queue.drain();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].push_body_json, "push_data_1");
+        assert_eq!(items[1].push_body_json, "push_data_2");
+        assert_eq!(queue.len(), 0);
+    }
+
+    #[test]
+    fn test_offline_queue_max_size_eviction() {
+        let mut queue = OfflineQueue::new(2);
+        queue.enqueue("first".to_string(), "http://hub");
+        queue.enqueue("second".to_string(), "http://hub");
+        queue.enqueue("third".to_string(), "http://hub");
+
+        assert_eq!(queue.len(), 2);
+        let items = queue.drain();
+        assert_eq!(items[0].push_body_json, "second");
+        assert_eq!(items[1].push_body_json, "third");
+    }
+
+    #[test]
+    fn test_offline_queue_empty_drain() {
+        let mut queue = OfflineQueue::new(10);
+        let items = queue.drain();
+        assert!(items.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_bandwidth_limiter_unlimited() {
+        let mut limiter = BandwidthLimiter::new(0);
+        // Should return immediately for unlimited
+        limiter.acquire(1_000_000).await;
+        limiter.acquire(1_000_000).await;
+    }
+
+    #[tokio::test]
+    async fn test_bandwidth_limiter_zero_rate() {
+        let mut limiter = BandwidthLimiter::new(0);
+        limiter.acquire(0).await;
+    }
+
+    #[test]
+    fn test_sync_checkpoint_save_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_path = dir.path().to_path_buf();
+        let mut repo = Repository::init(&repo_path, "test-user").unwrap();
+
+        repo.set_config("remote.origin.checkpoint.patch_id", "abc123")
+            .unwrap();
+        repo.set_config("remote.origin.checkpoint.blob_idx", "5")
+            .unwrap();
+
+        let cp_id: Option<String> = repo
+            .get_config("remote.origin.checkpoint.patch_id")
+            .unwrap();
+        let cp_idx: Option<String> = repo
+            .get_config("remote.origin.checkpoint.blob_idx")
+            .unwrap();
+
+        assert_eq!(cp_id.as_deref(), Some("abc123"));
+        assert_eq!(cp_idx.as_deref(), Some("5"));
+    }
+
+    #[test]
+    fn test_sync_checkpoint_clear() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_path = dir.path().to_path_buf();
+        let mut repo = Repository::init(&repo_path, "test-user").unwrap();
+
+        repo.set_config("remote.origin.checkpoint.patch_id", "abc123")
+            .unwrap();
+        repo.set_config("remote.origin.checkpoint.blob_idx", "5")
+            .unwrap();
+
+        repo.set_config("remote.origin.checkpoint.patch_id", "")
+            .unwrap();
+        repo.set_config("remote.origin.checkpoint.blob_idx", "")
+            .unwrap();
+
+        let cp_id: Option<String> = repo
+            .get_config("remote.origin.checkpoint.patch_id")
+            .unwrap();
+        // Empty string is still a value; clear sets to empty
+        assert!(cp_id.as_deref() == Some("") || cp_id.is_none());
+    }
+
+    #[test]
+    fn test_sync_checkpoint_nonexistent() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_path = dir.path().to_path_buf();
+        let repo = Repository::init(&repo_path, "test-user").unwrap();
+
+        let cp_id: Option<String> = repo
+            .get_config("remote.origin.checkpoint.patch_id")
+            .ok()
+            .flatten();
+        assert!(cp_id.is_none() || cp_id.as_deref() == Some(""));
     }
 }

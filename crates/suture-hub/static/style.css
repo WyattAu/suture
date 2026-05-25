@@ -367,6 +367,33 @@ tbody tr:last-child td {
     border: 1px solid var(--error-border);
 }
 
+.issue-status-badge {
+    display: inline-block;
+    padding: 0.1rem 0.5rem;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: capitalize;
+}
+
+.issue-status-badge.status-open {
+    background: rgba(22, 199, 154, 0.15);
+    color: var(--accent-green);
+    border: 1px solid rgba(22, 199, 154, 0.3);
+}
+
+.issue-status-badge.status-closed {
+    background: var(--error-bg);
+    color: var(--error);
+    border: 1px solid var(--error-border);
+}
+
+.issue-status-badge.pr-status-merged {
+    background: rgba(88, 166, 255, 0.15);
+    color: var(--accent-blue);
+    border: 1px solid rgba(88, 166, 255, 0.3);
+}
+
 .protection-badge {
     display: inline-block;
     padding: 0.1rem 0.5rem;

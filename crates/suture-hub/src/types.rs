@@ -196,3 +196,180 @@ pub struct TreeEntry {
     pub path: String,
     pub content_hash: String,
 }
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Issue {
+    pub id: i64,
+    pub repo_id: String,
+    pub title: String,
+    pub body: String,
+    pub status: String,
+    pub author: String,
+    pub assignee: Option<String>,
+    pub labels: Vec<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub closed_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct IssueComment {
+    pub id: i64,
+    pub issue_id: i64,
+    pub author: String,
+    pub body: String,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CreateIssueRequest {
+    pub repo_id: String,
+    pub title: String,
+    pub body: Option<String>,
+    pub labels: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ListIssuesResponse {
+    pub issues: Vec<Issue>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CreateCommentRequest {
+    pub body: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PullRequestRecord {
+    pub id: i64,
+    pub repo_id: String,
+    pub title: String,
+    pub body: String,
+    pub status: String,
+    pub author: String,
+    pub source_branch: String,
+    pub target_branch: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub merged_at: Option<i64>,
+    pub merged_by: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PrReview {
+    pub id: i64,
+    pub pr_id: i64,
+    pub reviewer: String,
+    pub verdict: String,
+    pub body: String,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CreatePullRequestRequest {
+    pub repo_id: String,
+    pub title: String,
+    pub body: Option<String>,
+    pub source_branch: String,
+    pub target_branch: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CreateReviewRequest {
+    pub verdict: String,
+    pub body: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CodeSearchResult {
+    pub blob_hash: String,
+    pub repo_id: String,
+    pub path: Option<String>,
+    pub match_count: usize,
+    pub snippet: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Organization {
+    pub id: i64,
+    pub name: String,
+    pub display_name: String,
+    pub description: String,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Team {
+    pub id: i64,
+    pub org_id: i64,
+    pub name: String,
+    pub permission: String,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CreateOrgRequest {
+    pub name: String,
+    pub display_name: String,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CreateTeamRequest {
+    pub org_id: i64,
+    pub name: String,
+    pub permission: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AddTeamMemberRequest {
+    pub username: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ForkRepoRequest {
+    pub source_repo_id: String,
+    pub target_repo_id: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct UpdateVisibilityRequest {
+    pub visibility: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct WikiPage {
+    pub id: i64,
+    pub repo_id: String,
+    pub title: String,
+    pub content: String,
+    pub author: String,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CreateWikiPageRequest {
+    pub title: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Release {
+    pub id: i64,
+    pub repo_id: String,
+    pub tag: String,
+    pub title: String,
+    pub body: String,
+    pub author: String,
+    pub prerelease: bool,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CreateReleaseRequest {
+    pub repo_id: String,
+    pub tag: String,
+    pub title: String,
+    pub body: Option<String>,
+    pub prerelease: Option<bool>,
+}

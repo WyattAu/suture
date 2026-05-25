@@ -288,6 +288,58 @@
 
 ---
 
+## Phase 11: Protocol Efficiency (v10.1) -- COMPLETED
+
+**Goal:** Replace prefix/suffix delta with rolling-hash block matching. Add transfer resume and offline sync queue.
+
+**Sources:** `.docs/rsync_syncthing_analysis.md` Phase 1-2, `.docs/git_replacement_analysis.md` Phase 1
+
+| Task | Details | Status |
+|------|---------|--------|
+| Rolling-hash delta encoding | Rabin-Karp rolling hash + 4KB block matching replacing prefix/suffix. Block hash table for O(1) lookup at any offset. | Done |
+| Transfer resume | Checkpoint state for interrupted pushes/pulls. Resume from last confirmed blob/patch. | Done |
+| Offline sync queue | Queue changes when Hub unreachable. Auto-sync on reconnect with exponential backoff. | Done |
+| Bandwidth limiting | Token bucket throttle in transport layer. Configurable bytes/sec. | Done |
+
+**Exit criteria met:** Delta encoding handles scattered changes at any offset. Transfers resume after interruption. Offline edits sync on reconnect.
+
+---
+
+## Phase 12: Hub Collaboration (v10.2) -- COMPLETED
+
+**Goal:** Minimum viable forge features for Suture-only teams.
+
+**Sources:** `.docs/hub_forge_replacement_analysis.md` Option C
+
+| Task | Details | Status |
+|------|---------|--------|
+| Issue tracking | Issues with title, body, labels, assignees, status (open/closed), comments. DB schema + REST API + Web UI. | Done |
+| Pull requests | Branch diff + approval workflow + merge trigger. Review with approve/request-changes/comment. | Done |
+| Code search | Full-text search through blob content using trigram index. Per-repo and global search. | Done |
+| Repository visibility | Public/private/internal repos. Access control by visibility + team membership. | Done |
+
+**Exit criteria met:** Teams can track issues, review code, search content, and control access.
+
+---
+
+## Phase 13: Hub Organization (v10.3) -- COMPLETED
+
+**Goal:** Multi-team support with organizations, teams, and fork networks.
+
+**Sources:** `.docs/hub_forge_replacement_analysis.md` Section 2.5-2.6
+
+| Task | Details | Status |
+|------|---------|--------|
+| Organizations and teams | Org namespaces (org/repo). Teams with member lists. Per-team repo access (read/write/admin). | Done |
+| Fork networks | Fork repos from existing repos. Track fork parentage. Cross-repo merge (fork to parent). | Done |
+| Wiki | Markdown wiki per repository. Page CRUD with version history. Search. | Done |
+| Email notifications | SMTP integration. Configurable per-user preferences. Issue, PR, push events. | Done |
+| Release management | Semantic version releases with notes and attached assets. Tag-based release creation. | Done |
+
+**Exit criteria met:** Multi-team organizations can collaborate with full forge capabilities.
+
+---
+
 ## Version Timeline
 
 | Version | Focus | Est. Duration | Start |

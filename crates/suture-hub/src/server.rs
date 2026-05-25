@@ -654,6 +654,14 @@ impl SutureHubServer {
                         },
                     ));
                 }
+                let path = req
+                    .patches
+                    .iter()
+                    .find(|p| p.payload == hex)
+                    .and_then(|p| p.target_path.clone());
+                if let Err(e) = store.index_blob(&hex, &req.repo_id, &data, path.as_deref()) {
+                    tracing::warn!("Failed to index blob: {}", e);
+                }
             }
 
             let existing_indices =
@@ -3526,6 +3534,746 @@ pub async fn delete_mirror_handler(
     }
 }
 
+async fn list_issues_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Path(repo_id): Path<String>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> impl IntoResponse {
+    let status = params.get("status").map(|s| s.as_str());
+    let store = state.storage.read().await;
+    match store.list_issues(&repo_id, status) {
+        Ok(issues) => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "success": true, "issues": issues })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn create_issue_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Json(req): Json<CreateIssueRequest>,
+) -> impl IntoResponse {
+    let author = "anonymous";
+    let labels = req.labels.unwrap_or_default();
+    let store = state.storage.write().await;
+    match store.create_issue(
+        &req.repo_id,
+        &req.title,
+        req.body.as_deref().unwrap_or(""),
+        author,
+        &labels,
+    ) {
+        Ok(issue) => (
+            StatusCode::CREATED,
+            Json(serde_json::json!({ "success": true, "issue": issue })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn get_issue_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Path(issue_id): Path<i64>,
+) -> impl IntoResponse {
+    let store = state.storage.read().await;
+    match store.get_issue(issue_id) {
+        Ok(Some(issue)) => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "success": true, "issue": issue })),
+        )
+            .into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "success": false, "error": "issue not found" })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn update_issue_status_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Path(issue_id): Path<i64>,
+    Json(body): Json<std::collections::HashMap<String, String>>,
+) -> impl IntoResponse {
+    let status = body.get("status").map(|s| s.as_str()).unwrap_or("closed");
+    let store = state.storage.write().await;
+    match store.update_issue_status(issue_id, status) {
+        Ok(()) => (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn list_issue_comments_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Path(issue_id): Path<i64>,
+) -> impl IntoResponse {
+    let store = state.storage.read().await;
+    match store.list_issue_comments(issue_id) {
+        Ok(comments) => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "success": true, "comments": comments })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn create_issue_comment_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Path(issue_id): Path<i64>,
+    Json(req): Json<CreateCommentRequest>,
+) -> impl IntoResponse {
+    let author = "anonymous";
+    let store = state.storage.write().await;
+    match store.add_issue_comment(issue_id, author, &req.body) {
+        Ok(comment) => (
+            StatusCode::CREATED,
+            Json(serde_json::json!({ "success": true, "comment": comment })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn list_pull_requests_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Path(repo_id): Path<String>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> impl IntoResponse {
+    let status = params.get("status").map(|s| s.as_str());
+    let store = state.storage.read().await;
+    match store.list_pull_requests(&repo_id, status) {
+        Ok(pulls) => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "success": true, "pulls": pulls })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn create_pull_request_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Json(req): Json<CreatePullRequestRequest>,
+) -> impl IntoResponse {
+    let author = "anonymous";
+    let target = req.target_branch.as_deref().unwrap_or("main");
+    let store = state.storage.write().await;
+    match store.create_pull_request(
+        &req.repo_id,
+        &req.title,
+        req.body.as_deref().unwrap_or(""),
+        author,
+        &req.source_branch,
+        target,
+    ) {
+        Ok(pr) => (
+            StatusCode::CREATED,
+            Json(serde_json::json!({ "success": true, "pull_request": pr })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn get_pull_request_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Path(pr_id): Path<i64>,
+) -> impl IntoResponse {
+    let store = state.storage.read().await;
+    match store.get_pull_request(pr_id) {
+        Ok(Some(pr)) => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "success": true, "pull_request": pr })),
+        )
+            .into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "success": false, "error": "pull request not found" })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn merge_pull_request_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Path(pr_id): Path<i64>,
+) -> impl IntoResponse {
+    let merged_by = "anonymous";
+    let store = state.storage.write().await;
+    match store.merge_pull_request(pr_id, merged_by) {
+        Ok(()) => (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn close_pull_request_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Path(pr_id): Path<i64>,
+) -> impl IntoResponse {
+    let store = state.storage.write().await;
+    match store.close_pull_request(pr_id) {
+        Ok(()) => (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn list_pr_reviews_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Path(pr_id): Path<i64>,
+) -> impl IntoResponse {
+    let store = state.storage.read().await;
+    match store.list_pr_reviews(pr_id) {
+        Ok(reviews) => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "success": true, "reviews": reviews })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn add_pr_review_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Path(pr_id): Path<i64>,
+    Json(req): Json<CreateReviewRequest>,
+) -> impl IntoResponse {
+    let reviewer = "anonymous";
+    let store = state.storage.write().await;
+    match store.add_pr_review(
+        pr_id,
+        reviewer,
+        &req.verdict,
+        req.body.as_deref().unwrap_or(""),
+    ) {
+        Ok(review) => (
+            StatusCode::CREATED,
+            Json(serde_json::json!({ "success": true, "review": review })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn code_search_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Path(repo_id): Path<String>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> impl IntoResponse {
+    let query = params.get("q").map(|s| s.as_str()).unwrap_or("");
+    let limit: usize = params
+        .get("limit")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(10);
+    let store = state.storage.read().await;
+    match store.search_code(&repo_id, query, limit) {
+        Ok(results) => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "success": true, "results": results })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn create_org_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Json(req): Json<CreateOrgRequest>,
+) -> impl IntoResponse {
+    let store = state.storage.write().await;
+    match store.create_org(
+        &req.name,
+        &req.display_name,
+        req.description.as_deref().unwrap_or(""),
+    ) {
+        Ok(org) => (
+            StatusCode::CREATED,
+            Json(serde_json::json!({ "success": true, "org": org })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn list_orgs_handler(State(state): State<Arc<SutureHubServer>>) -> impl IntoResponse {
+    let store = state.storage.read().await;
+    match store.list_orgs() {
+        Ok(orgs) => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "success": true, "orgs": orgs })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn get_org_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Path(id): Path<i64>,
+) -> impl IntoResponse {
+    let store = state.storage.read().await;
+    match store.get_org(id) {
+        Ok(Some(org)) => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "success": true, "org": org })),
+        )
+            .into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "success": false, "error": "org not found" })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn delete_org_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Path(id): Path<i64>,
+) -> impl IntoResponse {
+    let store = state.storage.write().await;
+    match store.delete_org(id) {
+        Ok(()) => (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn create_team_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Json(req): Json<CreateTeamRequest>,
+) -> impl IntoResponse {
+    let permission = req.permission.as_deref().unwrap_or("read");
+    let store = state.storage.write().await;
+    match store.create_team(req.org_id, &req.name, permission) {
+        Ok(team) => (
+            StatusCode::CREATED,
+            Json(serde_json::json!({ "success": true, "team": team })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn list_teams_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Path(org_id): Path<i64>,
+) -> impl IntoResponse {
+    let store = state.storage.read().await;
+    match store.list_teams(org_id) {
+        Ok(teams) => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "success": true, "teams": teams })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn delete_team_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Path(id): Path<i64>,
+) -> impl IntoResponse {
+    let store = state.storage.write().await;
+    match store.delete_team(id) {
+        Ok(()) => (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn add_team_member_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Path(team_id): Path<i64>,
+    Json(req): Json<AddTeamMemberRequest>,
+) -> impl IntoResponse {
+    let store = state.storage.write().await;
+    match store.add_team_member(team_id, &req.username) {
+        Ok(()) => (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn remove_team_member_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Path((team_id, username)): Path<(i64, String)>,
+) -> impl IntoResponse {
+    let store = state.storage.write().await;
+    match store.remove_team_member(team_id, &username) {
+        Ok(()) => (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn list_team_members_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Path(team_id): Path<i64>,
+) -> impl IntoResponse {
+    let store = state.storage.read().await;
+    match store.list_team_members(team_id) {
+        Ok(members) => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "success": true, "members": members })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn add_team_repo_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Path(team_id): Path<i64>,
+    Json(body): Json<std::collections::HashMap<String, String>>,
+) -> impl IntoResponse {
+    let repo_id = body.get("repo_id").map(|s| s.as_str()).unwrap_or("");
+    let store = state.storage.write().await;
+    match store.add_team_repo(team_id, repo_id) {
+        Ok(()) => (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn remove_team_repo_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Path((team_id, repo_id)): Path<(i64, String)>,
+) -> impl IntoResponse {
+    let store = state.storage.write().await;
+    match store.remove_team_repo(team_id, &repo_id) {
+        Ok(()) => (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn update_visibility_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Path(repo_id): Path<String>,
+    Json(req): Json<UpdateVisibilityRequest>,
+) -> impl IntoResponse {
+    let store = state.storage.write().await;
+    match store.update_repo_visibility(&repo_id, &req.visibility) {
+        Ok(()) => (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn fork_repo_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Path(source_id): Path<String>,
+    Json(req): Json<ForkRepoRequest>,
+) -> impl IntoResponse {
+    let store = state.storage.write().await;
+    let _ = store.ensure_repo(&req.target_repo_id);
+    match store.create_fork(&req.target_repo_id, &source_id) {
+        Ok(()) => (
+            StatusCode::CREATED,
+            Json(serde_json::json!({ "success": true, "fork_repo_id": req.target_repo_id })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn list_wiki_pages_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Path(repo_id): Path<String>,
+) -> impl IntoResponse {
+    let store = state.storage.read().await;
+    match store.list_wiki_pages(&repo_id) {
+        Ok(pages) => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "success": true, "pages": pages })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn create_wiki_page_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Path(repo_id): Path<String>,
+    Json(req): Json<CreateWikiPageRequest>,
+) -> impl IntoResponse {
+    let store = state.storage.write().await;
+    match store.upsert_wiki_page(&repo_id, &req.title, &req.content, "anonymous") {
+        Ok(page) => (
+            StatusCode::CREATED,
+            Json(serde_json::json!({ "success": true, "page": page })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn get_wiki_page_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Path((repo_id, title)): Path<(String, String)>,
+) -> impl IntoResponse {
+    let store = state.storage.read().await;
+    match store.get_wiki_page(&repo_id, &title) {
+        Ok(Some(page)) => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "success": true, "page": page })),
+        )
+            .into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "success": false, "error": "page not found" })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn update_wiki_page_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Path((repo_id, title)): Path<(String, String)>,
+    Json(req): Json<CreateWikiPageRequest>,
+) -> impl IntoResponse {
+    let store = state.storage.write().await;
+    match store.upsert_wiki_page(&repo_id, &title, &req.content, "anonymous") {
+        Ok(page) => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "success": true, "page": page })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn wiki_history_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Path((repo_id, title)): Path<(String, String)>,
+) -> impl IntoResponse {
+    let store = state.storage.read().await;
+    match store.get_wiki_history(&repo_id, &title) {
+        Ok(history) => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "success": true, "history": history })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn list_releases_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Path(repo_id): Path<String>,
+) -> impl IntoResponse {
+    let store = state.storage.read().await;
+    match store.list_releases(&repo_id) {
+        Ok(releases) => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "success": true, "releases": releases })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn create_release_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Json(req): Json<CreateReleaseRequest>,
+) -> impl IntoResponse {
+    let store = state.storage.write().await;
+    match store.create_release(
+        &req.repo_id,
+        &req.tag,
+        &req.title,
+        req.body.as_deref().unwrap_or(""),
+        "anonymous",
+        req.prerelease.unwrap_or(false),
+    ) {
+        Ok(release) => (
+            StatusCode::CREATED,
+            Json(serde_json::json!({ "success": true, "release": release })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn get_release_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Path(id): Path<i64>,
+) -> impl IntoResponse {
+    let store = state.storage.read().await;
+    match store.get_release(id) {
+        Ok(Some(release)) => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "success": true, "release": release })),
+        )
+            .into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "success": false, "error": "release not found" })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn delete_release_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Path(id): Path<i64>,
+) -> impl IntoResponse {
+    let store = state.storage.write().await;
+    match store.delete_release(id) {
+        Ok(()) => (StatusCode::OK, Json(serde_json::json!({ "success": true }))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
 async fn serve_index() -> Html<&'static str> {
     Html(include_str!("../static/index.html"))
 }
@@ -4952,6 +5700,97 @@ pub async fn run_server(
             "/repos/{repo_id}/patches/batch",
             axum::routing::post(batch_push_handler),
         )
+        .route(
+            "/repos/{repo_id}/issues",
+            get(list_issues_handler).post(create_issue_handler),
+        )
+        .route(
+            "/issues/{issue_id}",
+            get(get_issue_handler).patch(update_issue_status_handler),
+        )
+        .route(
+            "/issues/{issue_id}/comments",
+            get(list_issue_comments_handler).post(create_issue_comment_handler),
+        )
+        .route(
+            "/repos/{repo_id}/pulls",
+            get(list_pull_requests_handler).post(create_pull_request_handler),
+        )
+        .route("/pulls/{pr_id}", get(get_pull_request_handler))
+        .route(
+            "/pulls/{pr_id}/merge",
+            axum::routing::post(merge_pull_request_handler),
+        )
+        .route(
+            "/pulls/{pr_id}/close",
+            axum::routing::post(close_pull_request_handler),
+        )
+        .route(
+            "/pulls/{pr_id}/reviews",
+            get(list_pr_reviews_handler).post(add_pr_review_handler),
+        )
+        .route(
+            "/repos/{repo_id}/search/code",
+            axum::routing::get(code_search_handler),
+        )
+        .route("/orgs", axum::routing::post(create_org_handler))
+        .route("/orgs", axum::routing::get(list_orgs_handler))
+        .route("/orgs/{id}", axum::routing::get(get_org_handler))
+        .route("/orgs/{id}", axum::routing::delete(delete_org_handler))
+        .route("/teams", axum::routing::post(create_team_handler))
+        .route(
+            "/orgs/{org_id}/teams",
+            axum::routing::get(list_teams_handler),
+        )
+        .route("/teams/{id}", axum::routing::delete(delete_team_handler))
+        .route(
+            "/teams/{id}/members",
+            axum::routing::get(list_team_members_handler),
+        )
+        .route(
+            "/teams/{id}/members",
+            axum::routing::post(add_team_member_handler),
+        )
+        .route(
+            "/teams/{id}/members/{username}",
+            axum::routing::delete(remove_team_member_handler),
+        )
+        .route(
+            "/teams/{id}/repos",
+            axum::routing::post(add_team_repo_handler),
+        )
+        .route(
+            "/teams/{id}/repos/{repo_id}",
+            axum::routing::delete(remove_team_repo_handler),
+        )
+        .route(
+            "/repos/{repo_id}/visibility",
+            axum::routing::patch(update_visibility_handler),
+        )
+        .route(
+            "/repos/{source_id}/fork",
+            axum::routing::post(fork_repo_handler),
+        )
+        .route(
+            "/repos/{repo_id}/wiki",
+            get(list_wiki_pages_handler).post(create_wiki_page_handler),
+        )
+        .route(
+            "/repos/{repo_id}/wiki/{title}",
+            get(get_wiki_page_handler).put(update_wiki_page_handler),
+        )
+        .route(
+            "/repos/{repo_id}/wiki/{title}/history",
+            axum::routing::get(wiki_history_handler),
+        )
+        .route(
+            "/repos/{repo_id}/releases",
+            get(list_releases_handler).post(create_release_handler),
+        )
+        .route(
+            "/releases/{id}",
+            get(get_release_handler).delete(delete_release_handler),
+        )
         .route("/lfs/batch", axum::routing::post(lfs_batch_handler))
         .route(
             "/lfs/objects/{repo_id}/{oid}",
@@ -5019,6 +5858,103 @@ pub async fn run_server(
         .route(
             "/api/v1/repos/{repo_id}/patches/batch",
             axum::routing::post(batch_push_handler),
+        )
+        .route(
+            "/api/v1/repos/{repo_id}/issues",
+            get(list_issues_handler).post(create_issue_handler),
+        )
+        .route(
+            "/api/v1/issues/{issue_id}",
+            get(get_issue_handler).patch(update_issue_status_handler),
+        )
+        .route(
+            "/api/v1/issues/{issue_id}/comments",
+            get(list_issue_comments_handler).post(create_issue_comment_handler),
+        )
+        .route(
+            "/api/v1/repos/{repo_id}/pulls",
+            get(list_pull_requests_handler).post(create_pull_request_handler),
+        )
+        .route("/api/v1/pulls/{pr_id}", get(get_pull_request_handler))
+        .route(
+            "/api/v1/pulls/{pr_id}/merge",
+            axum::routing::post(merge_pull_request_handler),
+        )
+        .route(
+            "/api/v1/pulls/{pr_id}/close",
+            axum::routing::post(close_pull_request_handler),
+        )
+        .route(
+            "/api/v1/pulls/{pr_id}/reviews",
+            get(list_pr_reviews_handler).post(add_pr_review_handler),
+        )
+        .route(
+            "/api/v1/repos/{repo_id}/search/code",
+            axum::routing::get(code_search_handler),
+        )
+        .route("/api/v1/orgs", axum::routing::post(create_org_handler))
+        .route("/api/v1/orgs", axum::routing::get(list_orgs_handler))
+        .route("/api/v1/orgs/{id}", axum::routing::get(get_org_handler))
+        .route(
+            "/api/v1/orgs/{id}",
+            axum::routing::delete(delete_org_handler),
+        )
+        .route("/api/v1/teams", axum::routing::post(create_team_handler))
+        .route(
+            "/api/v1/orgs/{org_id}/teams",
+            axum::routing::get(list_teams_handler),
+        )
+        .route(
+            "/api/v1/teams/{id}",
+            axum::routing::delete(delete_team_handler),
+        )
+        .route(
+            "/api/v1/teams/{id}/members",
+            axum::routing::get(list_team_members_handler),
+        )
+        .route(
+            "/api/v1/teams/{id}/members",
+            axum::routing::post(add_team_member_handler),
+        )
+        .route(
+            "/api/v1/teams/{id}/members/{username}",
+            axum::routing::delete(remove_team_member_handler),
+        )
+        .route(
+            "/api/v1/teams/{id}/repos",
+            axum::routing::post(add_team_repo_handler),
+        )
+        .route(
+            "/api/v1/teams/{id}/repos/{repo_id}",
+            axum::routing::delete(remove_team_repo_handler),
+        )
+        .route(
+            "/api/v1/repos/{repo_id}/visibility",
+            axum::routing::patch(update_visibility_handler),
+        )
+        .route(
+            "/api/v1/repos/{source_id}/fork",
+            axum::routing::post(fork_repo_handler),
+        )
+        .route(
+            "/api/v1/repos/{repo_id}/wiki",
+            get(list_wiki_pages_handler).post(create_wiki_page_handler),
+        )
+        .route(
+            "/api/v1/repos/{repo_id}/wiki/{title}",
+            get(get_wiki_page_handler).put(update_wiki_page_handler),
+        )
+        .route(
+            "/api/v1/repos/{repo_id}/wiki/{title}/history",
+            axum::routing::get(wiki_history_handler),
+        )
+        .route(
+            "/api/v1/repos/{repo_id}/releases",
+            get(list_releases_handler).post(create_release_handler),
+        )
+        .route(
+            "/api/v1/releases/{id}",
+            get(get_release_handler).delete(delete_release_handler),
         )
         .route(
             "/api/v1/repos/{repo_id}/blobs/{hash}",
@@ -5440,6 +6376,97 @@ mod tests {
             .route(
                 "/repos/{repo_id}/patches/batch",
                 axum::routing::post(batch_push_handler),
+            )
+            .route(
+                "/repos/{repo_id}/issues",
+                get(list_issues_handler).post(create_issue_handler),
+            )
+            .route(
+                "/issues/{issue_id}",
+                get(get_issue_handler).patch(update_issue_status_handler),
+            )
+            .route(
+                "/issues/{issue_id}/comments",
+                get(list_issue_comments_handler).post(create_issue_comment_handler),
+            )
+            .route(
+                "/repos/{repo_id}/pulls",
+                get(list_pull_requests_handler).post(create_pull_request_handler),
+            )
+            .route("/pulls/{pr_id}", get(get_pull_request_handler))
+            .route(
+                "/pulls/{pr_id}/merge",
+                axum::routing::post(merge_pull_request_handler),
+            )
+            .route(
+                "/pulls/{pr_id}/close",
+                axum::routing::post(close_pull_request_handler),
+            )
+            .route(
+                "/pulls/{pr_id}/reviews",
+                get(list_pr_reviews_handler).post(add_pr_review_handler),
+            )
+            .route(
+                "/repos/{repo_id}/search/code",
+                axum::routing::get(code_search_handler),
+            )
+            .route("/orgs", axum::routing::post(create_org_handler))
+            .route("/orgs", axum::routing::get(list_orgs_handler))
+            .route("/orgs/{id}", axum::routing::get(get_org_handler))
+            .route("/orgs/{id}", axum::routing::delete(delete_org_handler))
+            .route("/teams", axum::routing::post(create_team_handler))
+            .route(
+                "/orgs/{org_id}/teams",
+                axum::routing::get(list_teams_handler),
+            )
+            .route("/teams/{id}", axum::routing::delete(delete_team_handler))
+            .route(
+                "/teams/{id}/members",
+                axum::routing::get(list_team_members_handler),
+            )
+            .route(
+                "/teams/{id}/members",
+                axum::routing::post(add_team_member_handler),
+            )
+            .route(
+                "/teams/{id}/members/{username}",
+                axum::routing::delete(remove_team_member_handler),
+            )
+            .route(
+                "/teams/{id}/repos",
+                axum::routing::post(add_team_repo_handler),
+            )
+            .route(
+                "/teams/{id}/repos/{repo_id}",
+                axum::routing::delete(remove_team_repo_handler),
+            )
+            .route(
+                "/repos/{repo_id}/visibility",
+                axum::routing::patch(update_visibility_handler),
+            )
+            .route(
+                "/repos/{source_id}/fork",
+                axum::routing::post(fork_repo_handler),
+            )
+            .route(
+                "/repos/{repo_id}/wiki",
+                get(list_wiki_pages_handler).post(create_wiki_page_handler),
+            )
+            .route(
+                "/repos/{repo_id}/wiki/{title}",
+                get(get_wiki_page_handler).put(update_wiki_page_handler),
+            )
+            .route(
+                "/repos/{repo_id}/wiki/{title}/history",
+                axum::routing::get(wiki_history_handler),
+            )
+            .route(
+                "/repos/{repo_id}/releases",
+                get(list_releases_handler).post(create_release_handler),
+            )
+            .route(
+                "/releases/{id}",
+                get(get_release_handler).delete(delete_release_handler),
             )
             .layer(axum::middleware::from_fn_with_state(
                 Arc::clone(&hub),
@@ -7414,5 +8441,702 @@ mod tests {
         assert_eq!(main_branch.target_id.value, b_for_assert);
         let dev_branch = branches.iter().find(|b| b.name == "dev").unwrap();
         assert_eq!(dev_branch.target_id.value, c_for_assert);
+    }
+
+    #[tokio::test]
+    async fn test_create_and_list_issues() {
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
+        let client = reqwest::Client::new();
+
+        client
+            .post(format!("{}/repos", &base))
+            .json(&serde_json::json!({ "repo_id": "issue-repo" }))
+            .send()
+            .await
+            .unwrap();
+
+        let create_resp = client
+            .post(format!("{}/repos/issue-repo/issues", &base))
+            .json(&serde_json::json!({
+                "repo_id": "issue-repo",
+                "title": "First issue",
+                "body": "Something is wrong",
+                "labels": ["bug"]
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(create_resp.status(), 201);
+        let create_data: serde_json::Value = create_resp.json().await.unwrap();
+        assert!(create_data["success"].as_bool().unwrap());
+        assert_eq!(create_data["issue"]["title"], "First issue");
+        assert_eq!(create_data["issue"]["status"], "open");
+
+        let list_resp = client
+            .get(format!("{}/repos/issue-repo/issues", &base))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(list_resp.status(), 200);
+        let list_data: serde_json::Value = list_resp.json().await.unwrap();
+        assert!(list_data["success"].as_bool().unwrap());
+        let issues = list_data["issues"].as_array().unwrap();
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0]["title"], "First issue");
+
+        let list_open = client
+            .get(format!("{}/repos/issue-repo/issues?status=open", &base))
+            .send()
+            .await
+            .unwrap();
+        let open_data: serde_json::Value = list_open.json().await.unwrap();
+        assert_eq!(open_data["issues"].as_array().unwrap().len(), 1);
+
+        let list_closed = client
+            .get(format!("{}/repos/issue-repo/issues?status=closed", &base))
+            .send()
+            .await
+            .unwrap();
+        let closed_data: serde_json::Value = list_closed.json().await.unwrap();
+        assert_eq!(closed_data["issues"].as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_issue_status_transition() {
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
+        let client = reqwest::Client::new();
+
+        client
+            .post(format!("{}/repos", &base))
+            .json(&serde_json::json!({ "repo_id": "status-repo" }))
+            .send()
+            .await
+            .unwrap();
+
+        let create_resp = client
+            .post(format!("{}/repos/status-repo/issues", &base))
+            .json(&serde_json::json!({
+                "repo_id": "status-repo",
+                "title": "Bug report",
+                "body": "Fix me"
+            }))
+            .send()
+            .await
+            .unwrap();
+        let create_data: serde_json::Value = create_resp.json().await.unwrap();
+        let issue_id = create_data["issue"]["id"].as_i64().unwrap();
+
+        let close_resp = client
+            .patch(format!("{}/issues/{}", &base, issue_id))
+            .json(&serde_json::json!({ "status": "closed" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(close_resp.status(), 200);
+        let close_data: serde_json::Value = close_resp.json().await.unwrap();
+        assert!(close_data["success"].as_bool().unwrap());
+
+        let get_resp = client
+            .get(format!("{}/issues/{}", &base, issue_id))
+            .send()
+            .await
+            .unwrap();
+        let get_data: serde_json::Value = get_resp.json().await.unwrap();
+        assert_eq!(get_data["issue"]["status"], "closed");
+        assert!(get_data["issue"]["closed_at"].is_number());
+
+        let reopen_resp = client
+            .patch(format!("{}/issues/{}", &base, issue_id))
+            .json(&serde_json::json!({ "status": "open" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(reopen_resp.status(), 200);
+
+        let get_resp2 = client
+            .get(format!("{}/issues/{}", &base, issue_id))
+            .send()
+            .await
+            .unwrap();
+        let get_data2: serde_json::Value = get_resp2.json().await.unwrap();
+        assert_eq!(get_data2["issue"]["status"], "open");
+        assert!(get_data2["issue"]["closed_at"].is_null());
+    }
+
+    #[tokio::test]
+    async fn test_issue_comments() {
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
+        let client = reqwest::Client::new();
+
+        client
+            .post(format!("{}/repos", &base))
+            .json(&serde_json::json!({ "repo_id": "comment-repo" }))
+            .send()
+            .await
+            .unwrap();
+
+        let create_resp = client
+            .post(format!("{}/repos/comment-repo/issues", &base))
+            .json(&serde_json::json!({
+                "repo_id": "comment-repo",
+                "title": "Discussion",
+                "body": "Let's talk"
+            }))
+            .send()
+            .await
+            .unwrap();
+        let create_data: serde_json::Value = create_resp.json().await.unwrap();
+        let issue_id = create_data["issue"]["id"].as_i64().unwrap();
+
+        client
+            .post(format!("{}/issues/{}/comments", &base, issue_id))
+            .json(&serde_json::json!({ "body": "First comment" }))
+            .send()
+            .await
+            .unwrap();
+
+        client
+            .post(format!("{}/issues/{}/comments", &base, issue_id))
+            .json(&serde_json::json!({ "body": "Second comment" }))
+            .send()
+            .await
+            .unwrap();
+
+        let comments_resp = client
+            .get(format!("{}/issues/{}/comments", &base, issue_id))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(comments_resp.status(), 200);
+        let comments_data: serde_json::Value = comments_resp.json().await.unwrap();
+        assert!(comments_data["success"].as_bool().unwrap());
+        let comments = comments_data["comments"].as_array().unwrap();
+        assert_eq!(comments.len(), 2);
+        assert_eq!(comments[0]["body"], "First comment");
+        assert_eq!(comments[1]["body"], "Second comment");
+        assert!(comments[0]["created_at"].as_i64() <= comments[1]["created_at"].as_i64());
+    }
+
+    #[tokio::test]
+    async fn test_create_and_list_pull_requests() {
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
+        let client = reqwest::Client::new();
+
+        client
+            .post(format!("{}/repos", &base))
+            .json(&serde_json::json!({ "repo_id": "pr-repo" }))
+            .send()
+            .await
+            .unwrap();
+
+        let create_resp = client
+            .post(format!("{}/repos/pr-repo/pulls", &base))
+            .json(&serde_json::json!({
+                "repo_id": "pr-repo",
+                "title": "Add feature X",
+                "body": "This PR adds feature X",
+                "source_branch": "feature-x",
+                "target_branch": "main"
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(create_resp.status(), 201);
+        let create_data: serde_json::Value = create_resp.json().await.unwrap();
+        assert!(create_data["success"].as_bool().unwrap());
+        assert_eq!(create_data["pull_request"]["title"], "Add feature X");
+        assert_eq!(create_data["pull_request"]["status"], "open");
+        assert_eq!(create_data["pull_request"]["source_branch"], "feature-x");
+        assert_eq!(create_data["pull_request"]["target_branch"], "main");
+
+        let list_resp = client
+            .get(format!("{}/repos/pr-repo/pulls", &base))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(list_resp.status(), 200);
+        let list_data: serde_json::Value = list_resp.json().await.unwrap();
+        assert!(list_data["success"].as_bool().unwrap());
+        let pulls = list_data["pulls"].as_array().unwrap();
+        assert_eq!(pulls.len(), 1);
+        assert_eq!(pulls[0]["title"], "Add feature X");
+        assert_eq!(pulls[0]["author"], "anonymous");
+
+        let list_open = client
+            .get(format!("{}/repos/pr-repo/pulls?status=open", &base))
+            .send()
+            .await
+            .unwrap();
+        let open_data: serde_json::Value = list_open.json().await.unwrap();
+        assert_eq!(open_data["pulls"].as_array().unwrap().len(), 1);
+
+        let list_closed = client
+            .get(format!("{}/repos/pr-repo/pulls?status=closed", &base))
+            .send()
+            .await
+            .unwrap();
+        let closed_data: serde_json::Value = list_closed.json().await.unwrap();
+        assert_eq!(closed_data["pulls"].as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_pr_merge_flow() {
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
+        let client = reqwest::Client::new();
+
+        client
+            .post(format!("{}/repos", &base))
+            .json(&serde_json::json!({ "repo_id": "merge-repo" }))
+            .send()
+            .await
+            .unwrap();
+
+        let create_resp = client
+            .post(format!("{}/repos/merge-repo/pulls", &base))
+            .json(&serde_json::json!({
+                "repo_id": "merge-repo",
+                "title": "Fix bug Y",
+                "body": "Fixes the critical bug",
+                "source_branch": "fix-y",
+                "target_branch": "main"
+            }))
+            .send()
+            .await
+            .unwrap();
+        let create_data: serde_json::Value = create_resp.json().await.unwrap();
+        let pr_id = create_data["pull_request"]["id"].as_i64().unwrap();
+
+        let review_resp = client
+            .post(format!("{}/pulls/{}/reviews", &base, pr_id))
+            .json(&serde_json::json!({
+                "verdict": "approve",
+                "body": "Looks good to me"
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(review_resp.status(), 201);
+        let review_data: serde_json::Value = review_resp.json().await.unwrap();
+        assert!(review_data["success"].as_bool().unwrap());
+        assert_eq!(review_data["review"]["verdict"], "approve");
+
+        let merge_resp = client
+            .post(format!("{}/pulls/{}/merge", &base, pr_id))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(merge_resp.status(), 200);
+        let merge_data: serde_json::Value = merge_resp.json().await.unwrap();
+        assert!(merge_data["success"].as_bool().unwrap());
+
+        let get_resp = client
+            .get(format!("{}/pulls/{}", &base, pr_id))
+            .send()
+            .await
+            .unwrap();
+        let get_data: serde_json::Value = get_resp.json().await.unwrap();
+        assert_eq!(get_data["pull_request"]["status"], "merged");
+        assert!(get_data["pull_request"]["merged_at"].is_number());
+        assert_eq!(get_data["pull_request"]["merged_by"], "anonymous");
+
+        let reviews_resp = client
+            .get(format!("{}/pulls/{}/reviews", &base, pr_id))
+            .send()
+            .await
+            .unwrap();
+        let reviews_data: serde_json::Value = reviews_resp.json().await.unwrap();
+        let reviews = reviews_data["reviews"].as_array().unwrap();
+        assert_eq!(reviews.len(), 1);
+        assert_eq!(reviews[0]["verdict"], "approve");
+        assert_eq!(reviews[0]["reviewer"], "anonymous");
+    }
+
+    #[tokio::test]
+    async fn test_pr_close_and_reopen() {
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
+        let client = reqwest::Client::new();
+
+        client
+            .post(format!("{}/repos", &base))
+            .json(&serde_json::json!({ "repo_id": "close-repo" }))
+            .send()
+            .await
+            .unwrap();
+
+        let create_resp = client
+            .post(format!("{}/repos/close-repo/pulls", &base))
+            .json(&serde_json::json!({
+                "repo_id": "close-repo",
+                "title": "WIP experiment",
+                "source_branch": "experiment",
+                "target_branch": "main"
+            }))
+            .send()
+            .await
+            .unwrap();
+        let create_data: serde_json::Value = create_resp.json().await.unwrap();
+        let pr_id = create_data["pull_request"]["id"].as_i64().unwrap();
+        assert_eq!(create_data["pull_request"]["status"], "open");
+
+        let close_resp = client
+            .post(format!("{}/pulls/{}/close", &base, pr_id))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(close_resp.status(), 200);
+        let close_data: serde_json::Value = close_resp.json().await.unwrap();
+        assert!(close_data["success"].as_bool().unwrap());
+
+        let get_resp = client
+            .get(format!("{}/pulls/{}", &base, pr_id))
+            .send()
+            .await
+            .unwrap();
+        let get_data: serde_json::Value = get_resp.json().await.unwrap();
+        assert_eq!(get_data["pull_request"]["status"], "closed");
+
+        let list_closed = client
+            .get(format!("{}/repos/close-repo/pulls?status=closed", &base))
+            .send()
+            .await
+            .unwrap();
+        let closed_data: serde_json::Value = list_closed.json().await.unwrap();
+        assert_eq!(closed_data["pulls"].as_array().unwrap().len(), 1);
+
+        let list_open = client
+            .get(format!("{}/repos/close-repo/pulls?status=open", &base))
+            .send()
+            .await
+            .unwrap();
+        let open_data: serde_json::Value = list_open.json().await.unwrap();
+        assert_eq!(open_data["pulls"].as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_code_search_trigram() {
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
+        let client = reqwest::Client::new();
+
+        client
+            .post(format!("{}/repos", &base))
+            .json(&serde_json::json!({ "repo_id": "search-repo" }))
+            .send()
+            .await
+            .unwrap();
+
+        let content = b"fn hello_world() { println!(\"hello\"); }";
+        let content_b64 = base64_encode(content);
+        let blob_hash = "aa".repeat(32);
+        let patch_hex = "bb".repeat(32);
+
+        client
+            .post(format!("{}/push", &base))
+            .json(&serde_json::json!({
+                "repo_id": "search-repo",
+                "patches": [{
+                    "id": {"value": patch_hex},
+                    "operation_type": "Create",
+                    "touch_set": ["src/main.rs"],
+                    "target_path": "src/main.rs",
+                    "payload": blob_hash,
+                    "parent_ids": [],
+                    "author": "alice",
+                    "message": "add main",
+                    "timestamp": 100
+                }],
+                "branches": [{"name": "main", "target_id": {"value": patch_hex}}],
+                "blobs": [{"hash": {"value": blob_hash}, "data": content_b64}],
+                "signature": null,
+                "known_branches": null,
+                "force": false
+            }))
+            .send()
+            .await
+            .unwrap();
+
+        let resp = client
+            .get(format!("{}/repos/search-repo/search/code?q=hello", &base))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        let data: serde_json::Value = resp.json().await.unwrap();
+        assert!(data["success"].as_bool().unwrap());
+        let results = data["results"].as_array().unwrap();
+        assert!(!results.is_empty());
+        assert_eq!(results[0]["path"], "src/main.rs");
+    }
+
+    #[tokio::test]
+    async fn test_code_search_no_results() {
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
+        let client = reqwest::Client::new();
+
+        client
+            .post(format!("{}/repos", &base))
+            .json(&serde_json::json!({ "repo_id": "empty-search-repo" }))
+            .send()
+            .await
+            .unwrap();
+
+        let resp = client
+            .get(format!(
+                "{}/repos/empty-search-repo/search/code?q=nonexistent_xyz",
+                &base
+            ))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        let data: serde_json::Value = resp.json().await.unwrap();
+        assert!(data["success"].as_bool().unwrap());
+        let results = data["results"].as_array().unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_org_team_crud() {
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
+        let client = reqwest::Client::new();
+
+        let create_org = client
+            .post(format!("{}/orgs", &base))
+            .json(&serde_json::json!({ "name": "test-org", "display_name": "Test Org", "description": "Test org" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(create_org.status(), 201);
+        let org_data: serde_json::Value = create_org.json().await.unwrap();
+        let org_id = org_data["org"]["id"].as_i64().unwrap();
+
+        let list_orgs = client.get(format!("{}/orgs", &base)).send().await.unwrap();
+        let orgs_list: serde_json::Value = list_orgs.json().await.unwrap();
+        assert_eq!(orgs_list["orgs"].as_array().unwrap().len(), 1);
+
+        let get_org = client
+            .get(format!("{}/orgs/{}", &base, org_id))
+            .send()
+            .await
+            .unwrap();
+        let org_get: serde_json::Value = get_org.json().await.unwrap();
+        assert_eq!(org_get["org"]["name"], "test-org");
+
+        let create_team = client
+            .post(format!("{}/teams", &base))
+            .json(&serde_json::json!({ "org_id": org_id, "name": "core-team", "description": "Core team" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(create_team.status(), 201);
+        let team_data: serde_json::Value = create_team.json().await.unwrap();
+        let team_id = team_data["team"]["id"].as_i64().unwrap();
+
+        let list_teams = client
+            .get(format!("{}/orgs/{}/teams", &base, org_id))
+            .send()
+            .await
+            .unwrap();
+        let teams_list: serde_json::Value = list_teams.json().await.unwrap();
+        assert_eq!(teams_list["teams"].as_array().unwrap().len(), 1);
+
+        let add_member = client
+            .post(format!("{}/teams/{}/members", &base, team_id))
+            .json(&serde_json::json!({ "username": "alice" }))
+            .send()
+            .await
+            .unwrap();
+        assert!(add_member.status().is_success());
+
+        let members = client
+            .get(format!("{}/teams/{}/members", &base, team_id))
+            .send()
+            .await
+            .unwrap();
+        let members_data: serde_json::Value = members.json().await.unwrap();
+        assert!(
+            members_data["members"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|m| m.as_str() == Some("alice"))
+        );
+
+        let _ = client
+            .delete(format!("{}/teams/{}/members/alice", &base, team_id))
+            .send()
+            .await
+            .unwrap();
+
+        let _ = client
+            .delete(format!("{}/teams/{}", &base, team_id))
+            .send()
+            .await
+            .unwrap();
+
+        let _ = client
+            .delete(format!("{}/orgs/{}", &base, org_id))
+            .send()
+            .await
+            .unwrap();
+
+        let list_orgs_after = client.get(format!("{}/orgs", &base)).send().await.unwrap();
+        let orgs_after: serde_json::Value = list_orgs_after.json().await.unwrap();
+        assert_eq!(orgs_after["orgs"].as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_repo_visibility_and_fork() {
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
+        let client = reqwest::Client::new();
+
+        client
+            .post(format!("{}/repos", &base))
+            .json(&serde_json::json!({ "repo_id": "vis-repo" }))
+            .send()
+            .await
+            .unwrap();
+
+        let vis_resp = client
+            .patch(format!("{}/repos/vis-repo/visibility", &base))
+            .json(&serde_json::json!({ "visibility": "private" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(vis_resp.status(), 200);
+        let vis_data: serde_json::Value = vis_resp.json().await.unwrap();
+        assert!(vis_data["success"].as_bool().unwrap());
+
+        client
+            .post(format!("{}/repos", &base))
+            .json(&serde_json::json!({ "repo_id": "fork-target" }))
+            .send()
+            .await
+            .unwrap();
+
+        let fork_resp = client
+            .post(format!("{}/repos/vis-repo/fork", &base))
+            .json(&serde_json::json!({ "source_repo_id": "vis-repo", "target_repo_id": "fork-target" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(fork_resp.status(), 201);
+        let fork_data: serde_json::Value = fork_resp.json().await.unwrap();
+        assert!(fork_data["success"].as_bool().unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_wiki_crud() {
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
+        let client = reqwest::Client::new();
+
+        client
+            .post(format!("{}/repos", &base))
+            .json(&serde_json::json!({ "repo_id": "wiki-repo" }))
+            .send()
+            .await
+            .unwrap();
+
+        let create = client
+            .post(format!("{}/repos/wiki-repo/wiki", &base))
+            .json(&serde_json::json!({ "title": "Home", "content": "Welcome to the wiki" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(create.status(), 201);
+        let create_data: serde_json::Value = create.json().await.unwrap();
+        assert!(create_data["success"].as_bool().unwrap());
+
+        let list = client
+            .get(format!("{}/repos/wiki-repo/wiki", &base))
+            .send()
+            .await
+            .unwrap();
+        let list_data: serde_json::Value = list.json().await.unwrap();
+        assert_eq!(list_data["pages"].as_array().unwrap().len(), 1);
+
+        let get = client
+            .get(format!("{}/repos/wiki-repo/wiki/Home", &base))
+            .send()
+            .await
+            .unwrap();
+        let get_data: serde_json::Value = get.json().await.unwrap();
+        assert_eq!(get_data["page"]["content"], "Welcome to the wiki");
+
+        let update = client
+            .put(format!("{}/repos/wiki-repo/wiki/Home", &base))
+            .json(&serde_json::json!({ "title": "Home", "content": "Updated content" }))
+            .send()
+            .await
+            .unwrap();
+        assert!(update.status().is_success());
+
+        let history = client
+            .get(format!("{}/repos/wiki-repo/wiki/Home/history", &base))
+            .send()
+            .await
+            .unwrap();
+        let hist_data: serde_json::Value = history.json().await.unwrap();
+        assert!(hist_data["history"].as_array().unwrap().len() >= 1);
+    }
+
+    #[tokio::test]
+    async fn test_release_crud() {
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
+        let client = reqwest::Client::new();
+
+        client
+            .post(format!("{}/repos", &base))
+            .json(&serde_json::json!({ "repo_id": "release-repo" }))
+            .send()
+            .await
+            .unwrap();
+
+        let create = client
+            .post(format!("{}/repos/release-repo/releases", &base))
+            .json(&serde_json::json!({
+                "repo_id": "release-repo",
+                "tag": "v1.0.0",
+                "title": "First release",
+                "body": "Initial release",
+                "prerelease": false
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(create.status(), 201);
+        let create_data: serde_json::Value = create.json().await.unwrap();
+        let release_id = create_data["release"]["id"].as_i64().unwrap();
+
+        let list = client
+            .get(format!("{}/repos/release-repo/releases", &base))
+            .send()
+            .await
+            .unwrap();
+        let list_data: serde_json::Value = list.json().await.unwrap();
+        assert_eq!(list_data["releases"].as_array().unwrap().len(), 1);
+
+        let get = client
+            .get(format!("{}/releases/{}", &base, release_id))
+            .send()
+            .await
+            .unwrap();
+        let get_data: serde_json::Value = get.json().await.unwrap();
+        assert_eq!(get_data["release"]["tag"], "v1.0.0");
+        assert_eq!(get_data["release"]["title"], "First release");
+
+        let delete = client
+            .delete(format!("{}/releases/{}", &base, release_id))
+            .send()
+            .await
+            .unwrap();
+        assert!(delete.status().is_success());
+
+        let list_after = client
+            .get(format!("{}/repos/release-repo/releases", &base))
+            .send()
+            .await
+            .unwrap();
+        let list_after_data: serde_json::Value = list_after.json().await.unwrap();
+        assert_eq!(list_after_data["releases"].as_array().unwrap().len(), 0);
     }
 }

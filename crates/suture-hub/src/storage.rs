@@ -9,7 +9,10 @@ use rusqlite::{Connection, params};
 use std::path::Path;
 use thiserror::Error;
 
-use crate::types::{BlobRef, BranchProto, HashProto, PatchProto, UserInfo};
+use crate::types::{
+    BlobRef, BranchProto, CodeSearchResult, HashProto, Issue, IssueComment, Organization,
+    PatchProto, PrReview, PullRequestRecord, Release, Team, UserInfo, WikiPage,
+};
 use crate::webhooks::Webhook;
 
 #[derive(Error, Debug)]
@@ -57,6 +60,24 @@ type MirrorRow = (String, String, String, Option<i64>, String);
 
 /// Mirror list row from DB: (id, repo_name, upstream_url, upstream_repo, last_sync, status)
 type MirrorListRow = (i64, String, String, String, Option<i64>, String);
+
+fn issue_from_row(row: &rusqlite::Row) -> Result<Issue, rusqlite::Error> {
+    let labels_json: String = row.get(7)?;
+    let labels: Vec<String> = serde_json::from_str(&labels_json).unwrap_or_default();
+    Ok(Issue {
+        id: row.get(0)?,
+        repo_id: row.get(1)?,
+        title: row.get(2)?,
+        body: row.get(3)?,
+        status: row.get(4)?,
+        author: row.get(5)?,
+        assignee: row.get(6)?,
+        labels,
+        created_at: row.get(8)?,
+        updated_at: row.get(9)?,
+        closed_at: row.get(10)?,
+    })
+}
 
 impl HubStorage {
     /// Get a reference to the inner connection mutex (for backup/restore).
@@ -262,7 +283,151 @@ impl HubStorage {
                 PRIMARY KEY (provider_name, provider_sub),
                 FOREIGN KEY (username) REFERENCES users(username)
             );
-            ",
+
+            CREATE TABLE IF NOT EXISTS issues (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                repo_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                body TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'open',
+                author TEXT NOT NULL,
+                assignee TEXT,
+                labels TEXT NOT NULL DEFAULT '[]',
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                closed_at INTEGER
+            );
+
+            CREATE TABLE IF NOT EXISTS issue_comments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                issue_id INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+                author TEXT NOT NULL,
+                body TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_issues_repo_id ON issues(repo_id);
+            CREATE INDEX IF NOT EXISTS idx_issues_status ON issues(repo_id, status);
+
+            CREATE TABLE IF NOT EXISTS pull_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                repo_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                body TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'open',
+                author TEXT NOT NULL,
+                source_branch TEXT NOT NULL,
+                target_branch TEXT NOT NULL DEFAULT 'main',
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                merged_at INTEGER,
+                merged_by TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS pr_reviews (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                pr_id INTEGER NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
+                reviewer TEXT NOT NULL,
+                verdict TEXT NOT NULL,
+                body TEXT NOT NULL DEFAULT '',
+                created_at INTEGER NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_pr_repo_id ON pull_requests(repo_id);
+            CREATE INDEX IF NOT EXISTS idx_pr_status ON pull_requests(repo_id, status);
+
+            CREATE TABLE IF NOT EXISTS blob_trigrams (
+                trigram TEXT NOT NULL,
+                blob_hash TEXT NOT NULL,
+                repo_id TEXT NOT NULL,
+                PRIMARY KEY (trigram, blob_hash)
+            );
+
+            CREATE TABLE IF NOT EXISTS blob_metadata (
+                hash TEXT PRIMARY KEY,
+                repo_id TEXT NOT NULL,
+                size INTEGER NOT NULL,
+                is_text INTEGER NOT NULL DEFAULT 0,
+                path TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_trigrams_trigram ON blob_trigrams(trigram);
+
+            CREATE TABLE IF NOT EXISTS organizations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                display_name TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                created_at INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS teams (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                org_id INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+                name TEXT NOT NULL,
+                permission TEXT NOT NULL DEFAULT 'read',
+                created_at INTEGER NOT NULL,
+                UNIQUE(org_id, name)
+            );
+
+            CREATE TABLE IF NOT EXISTS team_members (
+                team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+                username TEXT NOT NULL,
+                PRIMARY KEY (team_id, username)
+            );
+
+            CREATE TABLE IF NOT EXISTS team_repos (
+                team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+                repo_id TEXT NOT NULL,
+                PRIMARY KEY (team_id, repo_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS fork_relationships (
+                fork_repo_id TEXT NOT NULL,
+                parent_repo_id TEXT NOT NULL,
+                forked_at INTEGER NOT NULL,
+                PRIMARY KEY (fork_repo_id, parent_repo_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS wiki_pages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                repo_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL DEFAULT '',
+                author TEXT NOT NULL,
+                updated_at INTEGER NOT NULL,
+                UNIQUE(repo_id, title)
+            );
+
+            CREATE TABLE IF NOT EXISTS wiki_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                page_id INTEGER NOT NULL REFERENCES wiki_pages(id) ON DELETE CASCADE,
+                content TEXT NOT NULL,
+                author TEXT NOT NULL,
+                edited_at INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS releases (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                repo_id TEXT NOT NULL,
+                tag TEXT NOT NULL,
+                title TEXT NOT NULL,
+                body TEXT NOT NULL DEFAULT '',
+                author TEXT NOT NULL,
+                prerelease INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL,
+                UNIQUE(repo_id, tag)
+            );
+
+            CREATE TABLE IF NOT EXISTS release_assets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                release_id INTEGER NOT NULL REFERENCES releases(id) ON DELETE CASCADE,
+                name TEXT NOT NULL,
+                size INTEGER NOT NULL,
+                hash TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            );
+             ",
         )?;
 
         let has_expires: bool = conn.query_row(
@@ -297,6 +462,10 @@ impl HubStorage {
                 "ALTER TABLE tokens ADD COLUMN scopes TEXT NOT NULL DEFAULT 'read,write';",
             )?;
         }
+
+        let _ = conn.execute_batch(
+            "ALTER TABLE repos ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private'",
+        );
 
         Ok(())
     }
@@ -1104,6 +1273,959 @@ impl HubStorage {
             |row| row.get(0),
         )?;
         Ok(count > 0)
+    }
+
+    // === Issues ===
+
+    pub fn create_issue(
+        &self,
+        repo_id: &str,
+        title: &str,
+        body: &str,
+        author: &str,
+        labels: &[String],
+    ) -> Result<Issue, StorageError> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let labels_json = serde_json::to_string(labels).unwrap_or_else(|_| "[]".to_string());
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        conn.execute(
+            "INSERT INTO issues (repo_id, title, body, status, author, labels, created_at, updated_at) VALUES (?1, ?2, ?3, 'open', ?4, ?5, ?6, ?6)",
+            params![repo_id, title, body, author, labels_json, now],
+        )?;
+        let id = conn.last_insert_rowid();
+        Ok(Issue {
+            id,
+            repo_id: repo_id.to_string(),
+            title: title.to_string(),
+            body: body.to_string(),
+            status: "open".to_string(),
+            author: author.to_string(),
+            assignee: None,
+            labels: labels.to_vec(),
+            created_at: now,
+            updated_at: now,
+            closed_at: None,
+        })
+    }
+
+    pub fn list_issues(
+        &self,
+        repo_id: &str,
+        status: Option<&str>,
+    ) -> Result<Vec<Issue>, StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let sql = if status.is_some() {
+            "SELECT id, repo_id, title, body, status, author, assignee, labels, created_at, updated_at, closed_at FROM issues WHERE repo_id = ?1 AND status = ?2 ORDER BY updated_at DESC"
+        } else {
+            "SELECT id, repo_id, title, body, status, author, assignee, labels, created_at, updated_at, closed_at FROM issues WHERE repo_id = ?1 ORDER BY updated_at DESC"
+        };
+        let mut stmt = conn.prepare(sql)?;
+        let rows: Result<Vec<Issue>, rusqlite::Error> = if let Some(s) = status {
+            stmt.query_map(params![repo_id, s], issue_from_row)?
+                .collect()
+        } else {
+            stmt.query_map(params![repo_id], issue_from_row)?.collect()
+        };
+        rows.map_err(StorageError::Database)
+    }
+
+    pub fn get_issue(&self, issue_id: i64) -> Result<Option<Issue>, StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let mut stmt = conn.prepare("SELECT id, repo_id, title, body, status, author, assignee, labels, created_at, updated_at, closed_at FROM issues WHERE id = ?1")?;
+        let mut rows = stmt.query_map(params![issue_id], issue_from_row)?;
+        match rows.next() {
+            Some(row) => Ok(Some(row?)),
+            None => Ok(None),
+        }
+    }
+
+    pub fn update_issue_status(&self, issue_id: i64, status: &str) -> Result<(), StorageError> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let closed_at = if status == "closed" { Some(now) } else { None };
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        conn.execute(
+            "UPDATE issues SET status = ?1, updated_at = ?2, closed_at = ?3 WHERE id = ?4",
+            params![status, now, closed_at, issue_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn add_issue_comment(
+        &self,
+        issue_id: i64,
+        author: &str,
+        body: &str,
+    ) -> Result<IssueComment, StorageError> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        conn.execute(
+            "INSERT INTO issue_comments (issue_id, author, body, created_at) VALUES (?1, ?2, ?3, ?4)",
+            params![issue_id, author, body, now],
+        )?;
+        let id = conn.last_insert_rowid();
+        conn.execute(
+            "UPDATE issues SET updated_at = ?1 WHERE id = ?2",
+            params![now, issue_id],
+        )?;
+        Ok(IssueComment {
+            id,
+            issue_id,
+            author: author.to_string(),
+            body: body.to_string(),
+            created_at: now,
+        })
+    }
+
+    pub fn list_issue_comments(&self, issue_id: i64) -> Result<Vec<IssueComment>, StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let mut stmt = conn.prepare("SELECT id, issue_id, author, body, created_at FROM issue_comments WHERE issue_id = ?1 ORDER BY created_at ASC")?;
+        let rows = stmt.query_map(params![issue_id], |row| {
+            Ok(IssueComment {
+                id: row.get(0)?,
+                issue_id: row.get(1)?,
+                author: row.get(2)?,
+                body: row.get(3)?,
+                created_at: row.get(4)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(StorageError::Database)
+    }
+
+    // === Pull Requests ===
+
+    pub fn create_pull_request(
+        &self,
+        repo_id: &str,
+        title: &str,
+        body: &str,
+        author: &str,
+        source_branch: &str,
+        target_branch: &str,
+    ) -> Result<PullRequestRecord, StorageError> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        conn.execute(
+            "INSERT INTO pull_requests (repo_id, title, body, status, author, source_branch, target_branch, created_at, updated_at) VALUES (?1, ?2, ?3, 'open', ?4, ?5, ?6, ?7, ?7)",
+            params![repo_id, title, body, author, source_branch, target_branch, now],
+        )?;
+        let id = conn.last_insert_rowid();
+        Ok(PullRequestRecord {
+            id,
+            repo_id: repo_id.to_string(),
+            title: title.to_string(),
+            body: body.to_string(),
+            status: "open".to_string(),
+            author: author.to_string(),
+            source_branch: source_branch.to_string(),
+            target_branch: target_branch.to_string(),
+            created_at: now,
+            updated_at: now,
+            merged_at: None,
+            merged_by: None,
+        })
+    }
+
+    pub fn list_pull_requests(
+        &self,
+        repo_id: &str,
+        status: Option<&str>,
+    ) -> Result<Vec<PullRequestRecord>, StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let sql = if status.is_some() {
+            "SELECT id, repo_id, title, body, status, author, source_branch, target_branch, created_at, updated_at, merged_at, merged_by FROM pull_requests WHERE repo_id = ?1 AND status = ?2 ORDER BY updated_at DESC"
+        } else {
+            "SELECT id, repo_id, title, body, status, author, source_branch, target_branch, created_at, updated_at, merged_at, merged_by FROM pull_requests WHERE repo_id = ?1 ORDER BY updated_at DESC"
+        };
+        let mut stmt = conn.prepare(sql)?;
+        let rows: Result<Vec<PullRequestRecord>, rusqlite::Error> = if let Some(s) = status {
+            stmt.query_map(params![repo_id, s], |row| {
+                Ok(PullRequestRecord {
+                    id: row.get(0)?,
+                    repo_id: row.get(1)?,
+                    title: row.get(2)?,
+                    body: row.get(3)?,
+                    status: row.get(4)?,
+                    author: row.get(5)?,
+                    source_branch: row.get(6)?,
+                    target_branch: row.get(7)?,
+                    created_at: row.get(8)?,
+                    updated_at: row.get(9)?,
+                    merged_at: row.get(10)?,
+                    merged_by: row.get(11)?,
+                })
+            })?
+            .collect()
+        } else {
+            stmt.query_map(params![repo_id], |row| {
+                Ok(PullRequestRecord {
+                    id: row.get(0)?,
+                    repo_id: row.get(1)?,
+                    title: row.get(2)?,
+                    body: row.get(3)?,
+                    status: row.get(4)?,
+                    author: row.get(5)?,
+                    source_branch: row.get(6)?,
+                    target_branch: row.get(7)?,
+                    created_at: row.get(8)?,
+                    updated_at: row.get(9)?,
+                    merged_at: row.get(10)?,
+                    merged_by: row.get(11)?,
+                })
+            })?
+            .collect()
+        };
+        rows.map_err(StorageError::Database)
+    }
+
+    pub fn get_pull_request(&self, pr_id: i64) -> Result<Option<PullRequestRecord>, StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let mut stmt = conn.prepare("SELECT id, repo_id, title, body, status, author, source_branch, target_branch, created_at, updated_at, merged_at, merged_by FROM pull_requests WHERE id = ?1")?;
+        let mut rows = stmt.query_map(params![pr_id], |row| {
+            Ok(PullRequestRecord {
+                id: row.get(0)?,
+                repo_id: row.get(1)?,
+                title: row.get(2)?,
+                body: row.get(3)?,
+                status: row.get(4)?,
+                author: row.get(5)?,
+                source_branch: row.get(6)?,
+                target_branch: row.get(7)?,
+                created_at: row.get(8)?,
+                updated_at: row.get(9)?,
+                merged_at: row.get(10)?,
+                merged_by: row.get(11)?,
+            })
+        })?;
+        match rows.next() {
+            Some(row) => Ok(Some(row?)),
+            None => Ok(None),
+        }
+    }
+
+    pub fn merge_pull_request(&self, pr_id: i64, merged_by: &str) -> Result<(), StorageError> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        conn.execute(
+            "UPDATE pull_requests SET status = 'merged', merged_at = ?1, merged_by = ?2, updated_at = ?1 WHERE id = ?3",
+            params![now, merged_by, pr_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn close_pull_request(&self, pr_id: i64) -> Result<(), StorageError> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        conn.execute(
+            "UPDATE pull_requests SET status = 'closed', updated_at = ?1 WHERE id = ?2",
+            params![now, pr_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn add_pr_review(
+        &self,
+        pr_id: i64,
+        reviewer: &str,
+        verdict: &str,
+        body: &str,
+    ) -> Result<PrReview, StorageError> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        conn.execute(
+            "INSERT INTO pr_reviews (pr_id, reviewer, verdict, body, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![pr_id, reviewer, verdict, body, now],
+        )?;
+        let id = conn.last_insert_rowid();
+        conn.execute(
+            "UPDATE pull_requests SET updated_at = ?1 WHERE id = ?2",
+            params![now, pr_id],
+        )?;
+        Ok(PrReview {
+            id,
+            pr_id,
+            reviewer: reviewer.to_string(),
+            verdict: verdict.to_string(),
+            body: body.to_string(),
+            created_at: now,
+        })
+    }
+
+    pub fn list_pr_reviews(&self, pr_id: i64) -> Result<Vec<PrReview>, StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let mut stmt = conn.prepare("SELECT id, pr_id, reviewer, verdict, body, created_at FROM pr_reviews WHERE pr_id = ?1 ORDER BY created_at ASC")?;
+        let rows = stmt.query_map(params![pr_id], |row| {
+            Ok(PrReview {
+                id: row.get(0)?,
+                pr_id: row.get(1)?,
+                reviewer: row.get(2)?,
+                verdict: row.get(3)?,
+                body: row.get(4)?,
+                created_at: row.get(5)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(StorageError::Database)
+    }
+
+    // === Code Search (Trigram Index) ===
+
+    pub fn index_blob(
+        &self,
+        hash: &str,
+        repo_id: &str,
+        data: &[u8],
+        path: Option<&str>,
+    ) -> Result<(), StorageError> {
+        let is_text = data.iter().all(|&b| b < 128);
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        conn.execute(
+            "INSERT OR REPLACE INTO blob_metadata (hash, repo_id, size, is_text, path) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![hash, repo_id, data.len() as i64, is_text as i32, path],
+        )?;
+        if is_text && data.len() >= 3 {
+            let mut seen = std::collections::HashSet::new();
+            for window in data.windows(3) {
+                let tg = std::str::from_utf8(window).unwrap_or("");
+                if !tg.is_empty() && seen.insert(tg.to_string()) {
+                    conn.execute(
+                        "INSERT OR IGNORE INTO blob_trigrams (trigram, blob_hash, repo_id) VALUES (?1, ?2, ?3)",
+                        params![tg, hash, repo_id],
+                    )?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub fn search_code(
+        &self,
+        repo_id: &str,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<CodeSearchResult>, StorageError> {
+        if query.len() < 3 {
+            return Ok(vec![]);
+        }
+        let trigrams: Vec<String> = query
+            .as_bytes()
+            .windows(3)
+            .filter_map(|w| std::str::from_utf8(w).ok())
+            .map(|s| s.to_string())
+            .collect();
+        if trigrams.is_empty() {
+            return Ok(vec![]);
+        }
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let placeholders: Vec<String> = trigrams
+            .iter()
+            .enumerate()
+            .map(|(i, _)| format!("?{}", i + 2))
+            .collect();
+        let sql = format!(
+            "SELECT blob_hash, repo_id, COUNT(DISTINCT trigram) as match_count \
+             FROM blob_trigrams WHERE repo_id = ?1 AND trigram IN ({}) \
+             GROUP BY blob_hash ORDER BY match_count DESC LIMIT {}",
+            placeholders.join(","),
+            limit
+        );
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(repo_id.to_string())];
+        for tg in &trigrams {
+            params.push(Box::new(tg.clone()));
+        }
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params.iter().map(|p| p.as_ref()).collect();
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(param_refs.as_slice(), |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)? as usize,
+            ))
+        })?;
+        let mut results = Vec::new();
+        for row in rows {
+            let (blob_hash, rid, match_count) = row?;
+            let path: Option<String> = conn
+                .query_row(
+                    "SELECT path FROM blob_metadata WHERE hash = ?1",
+                    params![blob_hash],
+                    |r| r.get(0),
+                )
+                .unwrap_or(None);
+            let snippet: String = conn
+                .query_row(
+                    "SELECT substr(data, 1, 200) FROM blobs WHERE blob_hash = ?1 AND repo_id = ?2",
+                    params![blob_hash, rid],
+                    |r| {
+                        let d: Vec<u8> = r.get(0)?;
+                        Ok(String::from_utf8_lossy(&d).to_string())
+                    },
+                )
+                .unwrap_or_default();
+            results.push(CodeSearchResult {
+                blob_hash,
+                repo_id: rid,
+                path,
+                match_count,
+                snippet,
+            });
+        }
+        Ok(results)
+    }
+
+    // === Organizations ===
+
+    pub fn create_org(
+        &self,
+        name: &str,
+        display_name: &str,
+        description: &str,
+    ) -> Result<Organization, StorageError> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        conn.execute("INSERT INTO organizations (name, display_name, description, created_at) VALUES (?1, ?2, ?3, ?4)", params![name, display_name, description, now])?;
+        let id = conn.last_insert_rowid();
+        Ok(Organization {
+            id,
+            name: name.to_string(),
+            display_name: display_name.to_string(),
+            description: description.to_string(),
+            created_at: now,
+        })
+    }
+
+    pub fn list_orgs(&self) -> Result<Vec<Organization>, StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let mut stmt = conn.prepare("SELECT id, name, display_name, description, created_at FROM organizations ORDER BY name")?;
+        let rows = stmt.query_map([], |row| {
+            Ok(Organization {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                display_name: row.get(2)?,
+                description: row.get(3)?,
+                created_at: row.get(4)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(StorageError::Database)
+    }
+
+    pub fn get_org(&self, id: i64) -> Result<Option<Organization>, StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let result = conn.query_row("SELECT id, name, display_name, description, created_at FROM organizations WHERE id = ?1", params![id], |row| {
+            Ok(Organization { id: row.get(0)?, name: row.get(1)?, display_name: row.get(2)?, description: row.get(3)?, created_at: row.get(4)? })
+        });
+        match result {
+            Ok(org) => Ok(Some(org)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(StorageError::Database(e)),
+        }
+    }
+
+    pub fn delete_org(&self, id: i64) -> Result<(), StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        conn.execute("DELETE FROM organizations WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    // === Teams ===
+
+    pub fn create_team(
+        &self,
+        org_id: i64,
+        name: &str,
+        permission: &str,
+    ) -> Result<Team, StorageError> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        conn.execute(
+            "INSERT INTO teams (org_id, name, permission, created_at) VALUES (?1, ?2, ?3, ?4)",
+            params![org_id, name, permission, now],
+        )?;
+        let id = conn.last_insert_rowid();
+        Ok(Team {
+            id,
+            org_id,
+            name: name.to_string(),
+            permission: permission.to_string(),
+            created_at: now,
+        })
+    }
+
+    pub fn list_teams(&self, org_id: i64) -> Result<Vec<Team>, StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let mut stmt = conn.prepare("SELECT id, org_id, name, permission, created_at FROM teams WHERE org_id = ?1 ORDER BY name")?;
+        let rows = stmt.query_map(params![org_id], |row| {
+            Ok(Team {
+                id: row.get(0)?,
+                org_id: row.get(1)?,
+                name: row.get(2)?,
+                permission: row.get(3)?,
+                created_at: row.get(4)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(StorageError::Database)
+    }
+
+    pub fn delete_team(&self, id: i64) -> Result<(), StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        conn.execute("DELETE FROM teams WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn add_team_member(&self, team_id: i64, username: &str) -> Result<(), StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        conn.execute(
+            "INSERT OR IGNORE INTO team_members (team_id, username) VALUES (?1, ?2)",
+            params![team_id, username],
+        )?;
+        Ok(())
+    }
+
+    pub fn remove_team_member(&self, team_id: i64, username: &str) -> Result<(), StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        conn.execute(
+            "DELETE FROM team_members WHERE team_id = ?1 AND username = ?2",
+            params![team_id, username],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_team_members(&self, team_id: i64) -> Result<Vec<String>, StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let mut stmt = conn.prepare("SELECT username FROM team_members WHERE team_id = ?1")?;
+        let rows = stmt.query_map(params![team_id], |row| row.get::<_, String>(0))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(StorageError::Database)
+    }
+
+    pub fn add_team_repo(&self, team_id: i64, repo_id: &str) -> Result<(), StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        conn.execute(
+            "INSERT OR IGNORE INTO team_repos (team_id, repo_id) VALUES (?1, ?2)",
+            params![team_id, repo_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn remove_team_repo(&self, team_id: i64, repo_id: &str) -> Result<(), StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        conn.execute(
+            "DELETE FROM team_repos WHERE team_id = ?1 AND repo_id = ?2",
+            params![team_id, repo_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_team_repos(&self, team_id: i64) -> Result<Vec<String>, StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let mut stmt = conn.prepare("SELECT repo_id FROM team_repos WHERE team_id = ?1")?;
+        let rows = stmt.query_map(params![team_id], |row| row.get::<_, String>(0))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(StorageError::Database)
+    }
+
+    // === Repo Visibility ===
+
+    pub fn update_repo_visibility(
+        &self,
+        repo_id: &str,
+        visibility: &str,
+    ) -> Result<(), StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        conn.execute(
+            "UPDATE repos SET visibility = ?1 WHERE repo_id = ?2",
+            params![visibility, repo_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_repo_visibility(&self, repo_id: &str) -> Result<String, StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let result = conn.query_row(
+            "SELECT visibility FROM repos WHERE repo_id = ?1",
+            params![repo_id],
+            |row| row.get::<_, String>(0),
+        );
+        match result {
+            Ok(v) => Ok(v),
+            Err(_) => Ok("private".to_string()),
+        }
+    }
+
+    // === Forks ===
+
+    pub fn create_fork(
+        &self,
+        fork_repo_id: &str,
+        parent_repo_id: &str,
+    ) -> Result<(), StorageError> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        conn.execute("INSERT OR IGNORE INTO fork_relationships (fork_repo_id, parent_repo_id, forked_at) VALUES (?1, ?2, ?3)", params![fork_repo_id, parent_repo_id, now])?;
+        Ok(())
+    }
+
+    pub fn get_fork_parent(&self, repo_id: &str) -> Result<Option<String>, StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let result = conn.query_row(
+            "SELECT parent_repo_id FROM fork_relationships WHERE fork_repo_id = ?1",
+            params![repo_id],
+            |row| row.get::<_, String>(0),
+        );
+        match result {
+            Ok(p) => Ok(Some(p)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(StorageError::Database(e)),
+        }
+    }
+
+    pub fn list_forks(&self, parent_repo_id: &str) -> Result<Vec<String>, StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let mut stmt =
+            conn.prepare("SELECT fork_repo_id FROM fork_relationships WHERE parent_repo_id = ?1")?;
+        let rows = stmt.query_map(params![parent_repo_id], |row| row.get::<_, String>(0))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(StorageError::Database)
+    }
+
+    // === Wiki ===
+
+    pub fn upsert_wiki_page(
+        &self,
+        repo_id: &str,
+        title: &str,
+        content: &str,
+        author: &str,
+    ) -> Result<WikiPage, StorageError> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let existing_id: Option<i64> = conn
+            .query_row(
+                "SELECT id FROM wiki_pages WHERE repo_id = ?1 AND title = ?2",
+                params![repo_id, title],
+                |row| row.get(0),
+            )
+            .ok();
+        if let Some(page_id) = existing_id {
+            conn.execute("INSERT INTO wiki_history (page_id, content, author, edited_at) VALUES (?1, ?2, ?3, ?4)",
+                params![page_id, content, author, now])?;
+            conn.execute(
+                "UPDATE wiki_pages SET content = ?1, author = ?2, updated_at = ?3 WHERE id = ?4",
+                params![content, author, now, page_id],
+            )?;
+            Ok(WikiPage {
+                id: page_id,
+                repo_id: repo_id.to_string(),
+                title: title.to_string(),
+                content: content.to_string(),
+                author: author.to_string(),
+                updated_at: now,
+            })
+        } else {
+            conn.execute("INSERT INTO wiki_pages (repo_id, title, content, author, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![repo_id, title, content, author, now])?;
+            let id = conn.last_insert_rowid();
+            Ok(WikiPage {
+                id,
+                repo_id: repo_id.to_string(),
+                title: title.to_string(),
+                content: content.to_string(),
+                author: author.to_string(),
+                updated_at: now,
+            })
+        }
+    }
+
+    pub fn get_wiki_page(
+        &self,
+        repo_id: &str,
+        title: &str,
+    ) -> Result<Option<WikiPage>, StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let result = conn.query_row(
+            "SELECT id, repo_id, title, content, author, updated_at FROM wiki_pages WHERE repo_id = ?1 AND title = ?2",
+            params![repo_id, title],
+            |row| Ok(WikiPage { id: row.get(0)?, repo_id: row.get(1)?, title: row.get(2)?, content: row.get(3)?, author: row.get(4)?, updated_at: row.get(5)? }),
+        );
+        match result {
+            Ok(page) => Ok(Some(page)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(StorageError::Database(e)),
+        }
+    }
+
+    pub fn list_wiki_pages(&self, repo_id: &str) -> Result<Vec<WikiPage>, StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let mut stmt = conn.prepare("SELECT id, repo_id, title, content, author, updated_at FROM wiki_pages WHERE repo_id = ?1 ORDER BY title")?;
+        let rows = stmt.query_map(params![repo_id], |row| {
+            Ok(WikiPage {
+                id: row.get(0)?,
+                repo_id: row.get(1)?,
+                title: row.get(2)?,
+                content: row.get(3)?,
+                author: row.get(4)?,
+                updated_at: row.get(5)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(StorageError::Database)
+    }
+
+    pub fn get_wiki_history(
+        &self,
+        repo_id: &str,
+        title: &str,
+    ) -> Result<Vec<(i64, String, String, i64)>, StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let page_id: Option<i64> = conn
+            .query_row(
+                "SELECT id FROM wiki_pages WHERE repo_id = ?1 AND title = ?2",
+                params![repo_id, title],
+                |row| row.get(0),
+            )
+            .ok();
+        let page_id = match page_id {
+            Some(id) => id,
+            None => return Ok(vec![]),
+        };
+        let mut stmt = conn.prepare("SELECT id, content, author, edited_at FROM wiki_history WHERE page_id = ?1 ORDER BY edited_at DESC")?;
+        let rows = stmt.query_map(params![page_id], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, i64>(3)?,
+            ))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(StorageError::Database)
+    }
+
+    // === Releases ===
+
+    pub fn create_release(
+        &self,
+        repo_id: &str,
+        tag: &str,
+        title: &str,
+        body: &str,
+        author: &str,
+        prerelease: bool,
+    ) -> Result<Release, StorageError> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        conn.execute("INSERT INTO releases (repo_id, tag, title, body, author, prerelease, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![repo_id, tag, title, body, author, prerelease as i32, now])?;
+        let id = conn.last_insert_rowid();
+        Ok(Release {
+            id,
+            repo_id: repo_id.to_string(),
+            tag: tag.to_string(),
+            title: title.to_string(),
+            body: body.to_string(),
+            author: author.to_string(),
+            prerelease,
+            created_at: now,
+        })
+    }
+
+    pub fn list_releases(&self, repo_id: &str) -> Result<Vec<Release>, StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let mut stmt = conn.prepare("SELECT id, repo_id, tag, title, body, author, prerelease, created_at FROM releases WHERE repo_id = ?1 ORDER BY created_at DESC")?;
+        let rows = stmt.query_map(params![repo_id], |row| {
+            Ok(Release {
+                id: row.get(0)?,
+                repo_id: row.get(1)?,
+                tag: row.get(2)?,
+                title: row.get(3)?,
+                body: row.get(4)?,
+                author: row.get(5)?,
+                prerelease: row.get::<_, i32>(6)? != 0,
+                created_at: row.get(7)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(StorageError::Database)
+    }
+
+    pub fn get_release(&self, id: i64) -> Result<Option<Release>, StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let result = conn.query_row("SELECT id, repo_id, tag, title, body, author, prerelease, created_at FROM releases WHERE id = ?1", params![id], |row| {
+            Ok(Release { id: row.get(0)?, repo_id: row.get(1)?, tag: row.get(2)?, title: row.get(3)?, body: row.get(4)?, author: row.get(5)?, prerelease: row.get::<_, i32>(6)? != 0, created_at: row.get(7)? })
+        });
+        match result {
+            Ok(r) => Ok(Some(r)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(StorageError::Database(e)),
+        }
+    }
+
+    pub fn delete_release(&self, id: i64) -> Result<(), StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        conn.execute("DELETE FROM releases WHERE id = ?1", params![id])?;
+        Ok(())
     }
 
     // === Authorized Keys ===

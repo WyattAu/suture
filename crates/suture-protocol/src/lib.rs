@@ -6,6 +6,7 @@
 //! All types are serializable via `serde` for JSON transport.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const PROTOCOL_VERSION_V2: u32 = 2;
@@ -340,8 +341,194 @@ pub enum LfsAction {
     Error,
 }
 
+const BLOCK_SIZE: usize = 4096;
+const RABIN_BASE: u64 = 257;
+const MERSENNE61: u64 = (1u64 << 61) - 1;
+
+#[inline]
+fn mersenne_reduce(x: u128) -> u64 {
+    let mut r = (x & MERSENNE61 as u128) + (x >> 61);
+    if r >= MERSENNE61 as u128 {
+        r -= MERSENNE61 as u128;
+    }
+    r as u64
+}
+
+#[inline]
+fn mod_sub(a: u64, b: u64) -> u64 {
+    mersenne_reduce(a as u128 + MERSENNE61 as u128 - b as u128)
+}
+
+fn mod_pow(mut base: u64, mut exp: usize) -> u64 {
+    let mut result: u64 = 1;
+    while exp > 0 {
+        if exp & 1 == 1 {
+            result = mersenne_reduce(result as u128 * base as u128);
+        }
+        base = mersenne_reduce(base as u128 * base as u128);
+        exp >>= 1;
+    }
+    result
+}
+
+fn rabin_hash(data: &[u8]) -> u64 {
+    let mut h: u64 = 0;
+    for &b in data {
+        h = mersenne_reduce(h as u128 * RABIN_BASE as u128 + b as u128);
+    }
+    h
+}
+
+fn rabin_roll(h: u64, old_byte: u8, new_byte: u8, base_power: u64) -> u64 {
+    let old_contrib = mersenne_reduce(old_byte as u128 * base_power as u128);
+    let h2 = mod_sub(h, old_contrib);
+    mersenne_reduce(h2 as u128 * RABIN_BASE as u128 + new_byte as u128)
+}
+
+fn strong_hash(data: &[u8]) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for &b in data {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    h ^= h >> 33;
+    h = h.wrapping_mul(0xff51afd7ed558ccd);
+    h ^= h >> 33;
+    h = h.wrapping_mul(0xc4ceb9fe1a85ec53);
+    h ^= h >> 33;
+    h
+}
+
+enum DeltaInstr {
+    Copy { base_offset: u64, length: u32 },
+    Insert { data: Vec<u8> },
+}
+
+fn compute_rolling_delta(base: &[u8], target: &[u8]) -> Option<Vec<u8>> {
+    if base.len() < BLOCK_SIZE || target.len() < BLOCK_SIZE {
+        return None;
+    }
+
+    let num_blocks = base.len() / BLOCK_SIZE;
+    if num_blocks == 0 {
+        return None;
+    }
+
+    let mut hash_table: HashMap<u64, Vec<(usize, u64)>> = HashMap::new();
+    for i in 0..num_blocks {
+        let block = &base[i * BLOCK_SIZE..(i + 1) * BLOCK_SIZE];
+        let rh = rabin_hash(block);
+        let sh = strong_hash(block);
+        hash_table.entry(rh).or_default().push((i, sh));
+    }
+
+    let base_power = mod_pow(RABIN_BASE, BLOCK_SIZE - 1);
+    let mut instructions: Vec<DeltaInstr> = Vec::new();
+    let mut pending_insert_start: usize = 0;
+    let mut pos: usize = 0;
+    let mut prev_rabin: Option<u64> = None;
+
+    while pos + BLOCK_SIZE <= target.len() {
+        let rh = match prev_rabin {
+            Some(pr) if pos > 0 => rabin_roll(
+                pr,
+                target[pos - 1],
+                target[pos + BLOCK_SIZE - 1],
+                base_power,
+            ),
+            _ => rabin_hash(&target[pos..pos + BLOCK_SIZE]),
+        };
+        prev_rabin = Some(rh);
+
+        let mut matched = false;
+        if let Some(candidates) = hash_table.get(&rh) {
+            let sh = strong_hash(&target[pos..pos + BLOCK_SIZE]);
+            for &(block_idx, ref_sh) in candidates {
+                if sh == ref_sh {
+                    let base_offset = block_idx * BLOCK_SIZE;
+                    let mut match_len = BLOCK_SIZE;
+
+                    while pos + match_len < target.len()
+                        && base_offset + match_len < base.len()
+                        && target[pos + match_len] == base[base_offset + match_len]
+                    {
+                        match_len += 1;
+                    }
+
+                    match_len = match_len.min(u32::MAX as usize);
+
+                    if pending_insert_start < pos {
+                        instructions.push(DeltaInstr::Insert {
+                            data: target[pending_insert_start..pos].to_vec(),
+                        });
+                    }
+
+                    instructions.push(DeltaInstr::Copy {
+                        base_offset: base_offset as u64,
+                        length: match_len as u32,
+                    });
+
+                    pos += match_len;
+                    pending_insert_start = pos;
+                    prev_rabin = None;
+                    matched = true;
+                    break;
+                }
+            }
+        }
+
+        if !matched {
+            pos += 1;
+        }
+    }
+
+    if pending_insert_start < target.len() {
+        instructions.push(DeltaInstr::Insert {
+            data: target[pending_insert_start..].to_vec(),
+        });
+    }
+
+    let mut delta = Vec::new();
+    delta.push(0x02);
+    delta.extend_from_slice(&(target.len() as u64).to_le_bytes());
+    delta.extend_from_slice(&(instructions.len() as u32).to_le_bytes());
+
+    for instr in &instructions {
+        match instr {
+            DeltaInstr::Copy {
+                base_offset,
+                length,
+            } => {
+                delta.push(0x01);
+                delta.extend_from_slice(&base_offset.to_le_bytes());
+                delta.extend_from_slice(&length.to_le_bytes());
+            }
+            DeltaInstr::Insert { data } => {
+                delta.push(0x02);
+                delta.extend_from_slice(&(data.len() as u32).to_le_bytes());
+                delta.extend_from_slice(data);
+            }
+        }
+    }
+
+    if delta.len() < target.len() {
+        Some(delta)
+    } else {
+        None
+    }
+}
+
 #[must_use]
 pub fn compute_delta(base: &[u8], target: &[u8]) -> (Vec<u8>, Vec<u8>) {
+    if base.len() >= BLOCK_SIZE && target.len() >= BLOCK_SIZE {
+        if let Some(delta) = compute_rolling_delta(base, target) {
+            return (base.to_vec(), delta);
+        }
+        let mut full = vec![0x00];
+        full.extend_from_slice(target);
+        return (base.to_vec(), full);
+    }
+
     let prefix_len = base
         .iter()
         .zip(target.iter())
@@ -398,6 +585,55 @@ pub fn apply_delta(base: &[u8], delta: &[u8]) -> Vec<u8> {
             result.extend_from_slice(&base[..prefix_len.min(base.len())]);
             result.extend_from_slice(changed);
             result.extend_from_slice(&base[base.len().saturating_sub(suffix_len)..]);
+            result
+        }
+        0x02 => {
+            if delta.len() < 13 {
+                return delta.to_vec();
+            }
+            let target_len = u64::from_le_bytes(delta[1..9].try_into().unwrap_or([0; 8])) as usize;
+            let num_instr = u32::from_le_bytes(delta[9..13].try_into().unwrap_or([0; 4])) as usize;
+            let mut result = Vec::with_capacity(target_len);
+            let mut offset = 13;
+
+            for _ in 0..num_instr {
+                if offset >= delta.len() {
+                    break;
+                }
+                match delta[offset] {
+                    0x01 => {
+                        if offset + 13 > delta.len() {
+                            break;
+                        }
+                        let base_offset = u64::from_le_bytes(
+                            delta[offset + 1..offset + 9].try_into().unwrap_or([0; 8]),
+                        ) as usize;
+                        let length = u32::from_le_bytes(
+                            delta[offset + 9..offset + 13].try_into().unwrap_or([0; 4]),
+                        ) as usize;
+                        let end = base_offset.saturating_add(length);
+                        if end <= base.len() {
+                            result.extend_from_slice(&base[base_offset..end]);
+                        }
+                        offset += 13;
+                    }
+                    0x02 => {
+                        if offset + 5 > delta.len() {
+                            break;
+                        }
+                        let length = u32::from_le_bytes(
+                            delta[offset + 1..offset + 5].try_into().unwrap_or([0; 4]),
+                        ) as usize;
+                        let data_end = offset + 5 + length;
+                        if data_end <= delta.len() {
+                            result.extend_from_slice(&delta[offset + 5..data_end]);
+                        }
+                        offset = data_end;
+                    }
+                    _ => break,
+                }
+            }
+
             result
         }
         _ => delta.to_vec(),
@@ -1175,5 +1411,63 @@ mod tests {
             AuthMethod::Token(t) => assert_eq!(t, "secret"),
             _ => panic!("expected Token auth method"),
         }
+    }
+
+    #[test]
+    fn test_rolling_delta_middle_change() {
+        let base = vec![0xAA; 16384];
+        let mut target = base.clone();
+        target[8000..8010].copy_from_slice(&[0xBB; 10]);
+        let (base_out, delta) = compute_delta(&base, &target);
+        assert_eq!(apply_delta(&base_out, &delta), target);
+        assert!(
+            delta.len() < target.len() / 2,
+            "delta should be compact for small middle change, got {} vs {}",
+            delta.len(),
+            target.len()
+        );
+    }
+
+    #[test]
+    fn test_rolling_delta_scattered_changes() {
+        let base: Vec<u8> = (0..=255).cycle().take(32768).collect();
+        let mut target = base.clone();
+        for i in (0..target.len()).step_by(256) {
+            target[i] = target[i].wrapping_add(1);
+        }
+        let (base_out, delta) = compute_delta(&base, &target);
+        assert_eq!(apply_delta(&base_out, &delta), target);
+    }
+
+    #[test]
+    fn test_rolling_delta_block_shift() {
+        let base = vec![0xAA; 16384];
+        let mut target = vec![0xBB; 4096];
+        target.extend_from_slice(&base);
+        let (base_out, delta) = compute_delta(&base, &target);
+        assert_eq!(apply_delta(&base_out, &delta), target);
+        assert!(
+            delta.len() < target.len(),
+            "delta should be smaller than full transfer"
+        );
+    }
+
+    #[test]
+    fn test_rolling_delta_backward_compat_0x00() {
+        let target = b"hello world".to_vec();
+        let mut delta = vec![0x00];
+        delta.extend_from_slice(&target);
+        assert_eq!(apply_delta(b"base", &delta), target);
+    }
+
+    #[test]
+    fn test_rolling_delta_backward_compat_0x01() {
+        let base = b"hello world".to_vec();
+        let target = b"hello Suture world".to_vec();
+        let delta = {
+            let (_, d) = compute_delta(&base, &target);
+            d
+        };
+        assert_eq!(apply_delta(&base, &delta), target);
     }
 }

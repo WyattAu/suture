@@ -163,6 +163,24 @@ function parseRoute() {
         return { view: 'patches', repoId: decodeURIComponent(m[1]), offset: params.offset || 0 };
     }
 
+    m = hash.match(/^\/repo\/([^/]+)\/issues$/);
+    if (m) return { view: 'issues', repoId: decodeURIComponent(m[1]) };
+
+    m = hash.match(/^\/issue\/(\d+)$/);
+    if (m) return { view: 'issue-detail', issueId: parseInt(m[1]) };
+
+    m = hash.match(/^\/repo\/([^/]+)\/pulls$/);
+    if (m) return { view: 'pulls', repoId: decodeURIComponent(m[1]) };
+
+    m = hash.match(/^\/repo\/([^/]+)\/wiki(?:\/([^?]+))?(?:\?(.*))?$/);
+    if (m) return { view: 'wiki', repoId: decodeURIComponent(m[1]), pageTitle: m[2] ? decodeURIComponent(m[2]) : null };
+
+    m = hash.match(/^\/repo\/([^/]+)\/releases$/);
+    if (m) return { view: 'releases', repoId: decodeURIComponent(m[1]) };
+
+    m = hash.match(/^\/pull\/(\d+)$/);
+    if (m) return { view: 'pull-detail', pullId: parseInt(m[1]) };
+
     m = hash.match(/^\/search\?(.*)$/);
     if (m) {
         var q = '';
@@ -179,7 +197,7 @@ function parseRoute() {
 function getActiveTab(route) {
     var v = route.view;
     if (v === 'dashboard') return 'dashboard';
-    if (v === 'repos' || v === 'repo-detail' || v === 'file-tree' || v === 'blob' || v === 'patches') return 'repos';
+    if (v === 'repos' || v === 'repo-detail' || v === 'file-tree' || v === 'blob' || v === 'patches' || v === 'issues' || v === 'issue-detail' || v === 'pulls' || v === 'pull-detail' || v === 'wiki' || v === 'releases') return 'repos';
     if (v === 'users') return 'users';
     if (v === 'mirrors') return 'mirrors';
     if (v === 'replication') return 'replication';
@@ -215,6 +233,12 @@ function router() {
         case 'file-tree': renderFileTree(mainEl, route.repoId, route.branch, route.path); break;
         case 'blob': renderBlob(mainEl, route.repoId, route.contentHash); break;
         case 'patches': renderPatches(mainEl, route.repoId, route.offset); break;
+        case 'issues': renderIssues(mainEl, route.repoId); break;
+        case 'issue-detail': renderIssueDetail(mainEl, route.issueId); break;
+        case 'pulls': renderPulls(mainEl, route.repoId); break;
+        case 'pull-detail': renderPullDetail(mainEl, route.pullId); break;
+        case 'wiki': renderWiki(mainEl, route.repoId, route.pageTitle); break;
+        case 'releases': renderReleases(mainEl, route.repoId); break;
         case 'search': renderSearch(mainEl, route.query); break;
         case 'users': renderUsers(mainEl); break;
         case 'mirrors': renderMirrors(mainEl); break;
@@ -231,6 +255,12 @@ function router() {
         'file-tree': 'Files',
         'blob': 'File',
         'patches': 'Patches',
+        'issues': 'Issues',
+        'issue-detail': 'Issue',
+        'pulls': 'Pull Requests',
+        'pull-detail': 'Pull Request',
+        'wiki': 'Wiki',
+        'releases': 'Releases',
         'search': 'Search',
         'users': 'Users',
         'mirrors': 'Mirrors',
@@ -549,9 +579,214 @@ async function renderRepoDetail(container, repoId) {
             '<div class="repo-section">' +
             '<h3>Recent Patches <a href="#/repo/' + encodeURIComponent(repoId) + '/patches" class="btn btn-secondary btn-sm">View all</a></h3>' +
             patchesHtml +
+            '</div>' +
+
+            '<div class="repo-section">' +
+            '<h3>Issues <a href="#/repo/' + encodeURIComponent(repoId) + '/issues" class="btn btn-secondary btn-sm">View all</a></h3>' +
+            '<div id="repo-issues-loading" class="loading">Loading issues&hellip;</div>' +
+            '<div id="repo-issues-content" class="hidden"></div>' +
+            '</div>' +
+
+            '<div class="repo-section">' +
+            '<h3>Pull Requests <a href="#/repo/' + encodeURIComponent(repoId) + '/pulls" class="btn btn-secondary btn-sm">View all</a></h3>' +
+            '<div id="repo-pulls-loading" class="loading">Loading pull requests&hellip;</div>' +
+            '<div id="repo-pulls-content" class="hidden"></div>' +
+            '</div>' +
+
+            '<div class="repo-section">' +
+            '<h3>Visibility</h3>' +
+            '<div id="repo-visibility-row" style="display:flex;align-items:center;gap:0.5rem">' +
+            '<span id="repo-visibility-label" style="color:var(--text-secondary)">Loading&hellip;</span>' +
+            '<button class="btn btn-secondary btn-sm" id="btn-toggle-visibility">Toggle</button>' +
+            '</div></div>' +
+
+            '<div class="repo-section">' +
+            '<h3>Fork</h3>' +
+            '<form id="form-fork" style="display:flex;gap:0.5rem;align-items:end">' +
+            '<div><label for="fork-target">Target Repo ID</label><input type="text" id="fork-target" placeholder="new-repo-name" required autocomplete="off"></div>' +
+            '<button type="submit" class="btn btn-primary">Fork</button></form>' +
+            '</div>' +
+
+            '<div class="repo-section">' +
+            '<h3>Wiki <a href="#/repo/' + encodeURIComponent(repoId) + '/wiki" class="btn btn-secondary btn-sm">View all</a></h3>' +
+            '<div id="repo-wiki-loading" class="loading">Loading wiki&hellip;</div>' +
+            '<div id="repo-wiki-content" class="hidden"></div>' +
+            '</div>' +
+
+            '<div class="repo-section">' +
+            '<h3>Releases <a href="#/repo/' + encodeURIComponent(repoId) + '/releases" class="btn btn-secondary btn-sm">View all</a></h3>' +
+            '<div id="repo-releases-loading" class="loading">Loading releases&hellip;</div>' +
+            '<div id="repo-releases-content" class="hidden"></div>' +
             '</div>';
 
         show('repo-detail-content');
+
+        (async function () {
+            try {
+                var issuesData = await fetchJSON(API_BASE + '/repos/' + encodeURIComponent(repoId) + '/issues');
+                var issues = issuesData.issues || [];
+                var el = document.getElementById('repo-issues-content');
+                hide('repo-issues-loading');
+                if (issues.length === 0) {
+                    el.innerHTML = '<span style="color:var(--text-secondary)">No issues</span>';
+                } else {
+                    var html = '<div class="table-wrap"><table><thead><tr><th>#</th><th>Title</th><th>Status</th><th>Author</th><th>Updated</th></tr></thead><tbody>';
+                    issues.slice(0, 5).forEach(function (issue) {
+                        var statusClass = issue.status === 'open' ? 'status-open' : 'status-closed';
+                        html += '<tr>' +
+                            '<td><a href="#/issue/' + issue.id + '" class="file-link">' + issue.id + '</a></td>' +
+                            '<td><a href="#/issue/' + issue.id + '">' + escapeHtml(issue.title) + '</a></td>' +
+                            '<td><span class="issue-status-badge ' + statusClass + '">' + escapeHtml(issue.status) + '</span></td>' +
+                            '<td>' + escapeHtml(issue.author) + '</td>' +
+                            '<td>' + formatTimestamp(issue.updated_at) + '</td>' +
+                            '</tr>';
+                    });
+                    html += '</tbody></table></div>';
+                    el.innerHTML = html;
+                }
+                show('repo-issues-content');
+            } catch (e) {
+                var el = document.getElementById('repo-issues-content');
+                if (el) el.innerHTML = '<span style="color:var(--text-secondary)">Could not load issues</span>';
+                hide('repo-issues-loading');
+                show('repo-issues-content');
+            }
+        })();
+
+        (async function () {
+            try {
+                var pullsData = await fetchJSON(API_BASE + '/repos/' + encodeURIComponent(repoId) + '/pulls');
+                var pulls = pullsData.pulls || [];
+                var el = document.getElementById('repo-pulls-content');
+                hide('repo-pulls-loading');
+                if (pulls.length === 0) {
+                    el.innerHTML = '<span style="color:var(--text-secondary)">No pull requests</span>';
+                } else {
+                    var html = '<div class="table-wrap"><table><thead><tr><th>#</th><th>Title</th><th>Status</th><th>Branch</th><th>Author</th></tr></thead><tbody>';
+                    pulls.slice(0, 5).forEach(function (pr) {
+                        var sc = pr.status === 'open' ? 'status-open' : pr.status === 'merged' ? 'pr-status-merged' : 'status-closed';
+                        html += '<tr>' +
+                            '<td><a href="#/pull/' + pr.id + '" class="file-link">' + pr.id + '</a></td>' +
+                            '<td><a href="#/pull/' + pr.id + '">' + escapeHtml(pr.title) + '</a></td>' +
+                            '<td><span class="issue-status-badge ' + sc + '">' + escapeHtml(pr.status) + '</span></td>' +
+                            '<td class="mono">' + escapeHtml(pr.source_branch) + ' &rarr; ' + escapeHtml(pr.target_branch) + '</td>' +
+                            '<td>' + escapeHtml(pr.author) + '</td>' +
+                            '</tr>';
+                    });
+                    html += '</tbody></table></div>';
+                    el.innerHTML = html;
+                }
+                show('repo-pulls-content');
+            } catch (e) {
+                var el = document.getElementById('repo-pulls-content');
+                if (el) el.innerHTML = '<span style="color:var(--text-secondary)">Could not load pull requests</span>';
+                hide('repo-pulls-loading');
+                show('repo-pulls-content');
+            }
+        })();
+
+        (async function () {
+            try {
+                var visData = await fetchJSON(API_BASE + '/repos/' + encodeURIComponent(repoId) + '/visibility');
+                var visLabel = document.getElementById('repo-visibility-label');
+                if (visLabel) visLabel.textContent = visData.visibility || 'public';
+            } catch (e) {
+                var visLabel = document.getElementById('repo-visibility-label');
+                if (visLabel) visLabel.textContent = 'public';
+            }
+        })();
+
+        contentEl.querySelector('#btn-toggle-visibility').addEventListener('click', async function () {
+            var visLabel = document.getElementById('repo-visibility-label');
+            var current = (visLabel.textContent || 'public').trim();
+            var next = current === 'public' ? 'private' : 'public';
+            try {
+                await fetchJSON(API_BASE + '/repos/' + encodeURIComponent(repoId) + '/visibility', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ visibility: next }),
+                });
+                visLabel.textContent = next;
+                toast('Visibility set to ' + next, 'success');
+            } catch (err) {
+                toast('Failed to change visibility: ' + err.message, 'error');
+            }
+        });
+
+        contentEl.querySelector('#form-fork').addEventListener('submit', async function (e) {
+            e.preventDefault();
+            var target = document.getElementById('fork-target').value.trim();
+            if (!target) return;
+            try {
+                await fetchJSON(API_BASE + '/repos/' + encodeURIComponent(repoId) + '/fork', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ source_repo_id: repoId, target_repo_id: target }),
+                });
+                toast('Forked to ' + target, 'success');
+                document.getElementById('fork-target').value = '';
+            } catch (err) {
+                toast('Failed to fork: ' + err.message, 'error');
+            }
+        });
+
+        (async function () {
+            try {
+                var wikiData = await fetchJSON(API_BASE + '/repos/' + encodeURIComponent(repoId) + '/wiki');
+                var pages = wikiData.pages || [];
+                var el = document.getElementById('repo-wiki-content');
+                hide('repo-wiki-loading');
+                if (pages.length === 0) {
+                    el.innerHTML = '<span style="color:var(--text-secondary)">No wiki pages</span>';
+                } else {
+                    var html = '<div class="table-wrap"><table><thead><tr><th>Title</th><th>Author</th><th>Updated</th></tr></thead><tbody>';
+                    pages.slice(0, 5).forEach(function (p) {
+                        html += '<tr>' +
+                            '<td><a href="#/repo/' + encodeURIComponent(repoId) + '/wiki/' + encodeURIComponent(p.title) + '">' + escapeHtml(p.title) + '</a></td>' +
+                            '<td>' + escapeHtml(p.author) + '</td>' +
+                            '<td>' + formatTimestamp(p.updated_at) + '</td></tr>';
+                    });
+                    html += '</tbody></table></div>';
+                    el.innerHTML = html;
+                }
+                show('repo-wiki-content');
+            } catch (e) {
+                var el = document.getElementById('repo-wiki-content');
+                if (el) el.innerHTML = '<span style="color:var(--text-secondary)">Could not load wiki</span>';
+                hide('repo-wiki-loading');
+                show('repo-wiki-content');
+            }
+        })();
+
+        (async function () {
+            try {
+                var relData = await fetchJSON(API_BASE + '/repos/' + encodeURIComponent(repoId) + '/releases');
+                var releases = relData.releases || [];
+                var el = document.getElementById('repo-releases-content');
+                hide('repo-releases-loading');
+                if (releases.length === 0) {
+                    el.innerHTML = '<span style="color:var(--text-secondary)">No releases</span>';
+                } else {
+                    var html = '<div class="table-wrap"><table><thead><tr><th>Tag</th><th>Title</th><th>Author</th><th>Pre-release</th><th>Created</th></tr></thead><tbody>';
+                    releases.slice(0, 5).forEach(function (r) {
+                        html += '<tr>' +
+                            '<td class="mono">' + escapeHtml(r.tag) + '</td>' +
+                            '<td>' + escapeHtml(r.title) + '</td>' +
+                            '<td>' + escapeHtml(r.author) + '</td>' +
+                            '<td>' + (r.prerelease ? 'Yes' : 'No') + '</td>' +
+                            '<td>' + formatTimestamp(r.created_at) + '</td></tr>';
+                    });
+                    html += '</tbody></table></div>';
+                    el.innerHTML = html;
+                }
+                show('repo-releases-content');
+            } catch (e) {
+                var el = document.getElementById('repo-releases-content');
+                if (el) el.innerHTML = '<span style="color:var(--text-secondary)">Could not load releases</span>';
+                hide('repo-releases-loading');
+                show('repo-releases-content');
+            }
+        })();
 
         contentEl.querySelector('#btn-delete-repo').addEventListener('click', async function () {
             var ok = await confirmDialog('Delete Repository', 'Are you sure you want to delete "' + repoId + '"? This cannot be undone.');
@@ -908,6 +1143,38 @@ async function renderSearch(container, query) {
         errEl.textContent = 'Search failed: ' + err.message;
         show('search-error');
     }
+
+    (async function () {
+        try {
+            var allRepos = await fetchJSON(API_BASE + '/repos');
+            var repoList = (allRepos.repos || []);
+            var codeResults = [];
+            for (var i = 0; i < repoList.length && codeResults.length < 20; i++) {
+                var rid = repoList[i].repo_id || repoList[i].name || '';
+                try {
+                    var cs = await fetchJSON(API_BASE + '/repos/' + encodeURIComponent(rid) + '/search/code?q=' + encodeURIComponent(query));
+                    (cs.results || []).forEach(function (r) { r._repoId = rid; codeResults.push(r); });
+                } catch (e) { }
+            }
+            if (codeResults.length > 0) {
+                var codeHtml = '<h3>Code Results</h3>';
+                codeResults.forEach(function (r) {
+                    codeHtml += '<div class="search-item">' +
+                        '<a href="#/repo/' + encodeURIComponent(r._repoId) + '">' + escapeHtml(r.path || r.blob_hash) + '</a>' +
+                        '<div class="search-item-meta">' +
+                        (r.path ? escapeHtml(r.path) + ' \u2014 ' : '') +
+                        escapeHtml(r._repoId) +
+                        ' (' + r.match_count + ' matches)</div>' +
+                        '<pre style="margin:0.25rem 0 0;padding:0.5rem;background:var(--bg-secondary);border-radius:4px;font-size:0.85em;overflow:auto;max-height:120px">' + escapeHtml(r.snippet) + '</pre>' +
+                        '</div>';
+                });
+                var container = document.getElementById('search-results');
+                if (container) {
+                    container.innerHTML += codeHtml;
+                }
+            }
+        } catch (e) { }
+    })();
 }
 
 async function renderUsers(container) {
@@ -1297,6 +1564,14 @@ async function renderSettings(container) {
         '<div class="settings-row"><div class="settings-key">Hub Version</div><div class="settings-value" id="setting-version">\u2014</div></div>' +
         '<div class="settings-row"><div class="settings-key">Replication Role</div><div class="settings-value" id="setting-replication-role">\u2014</div></div>' +
         '<div class="settings-row"><div class="settings-key">Auth Mode</div><div class="settings-value" id="setting-auth-mode">\u2014</div></div>' +
+        '</div>' +
+        '<div class="settings-panel hidden" id="settings-orgs">' +
+        '<h3 style="margin-bottom:0.5rem">Organizations</h3>' +
+        '<div id="settings-orgs-list" style="margin-bottom:1rem"></div>' +
+        '<form id="form-create-org" style="display:flex;gap:0.5rem;align-items:end;flex-wrap:wrap">' +
+        '<div><label for="org-name">Name</label><input type="text" id="org-name" required autocomplete="off"></div>' +
+        '<div><label for="org-display-name">Display Name</label><input type="text" id="org-display-name" autocomplete="off"></div>' +
+        '<button type="submit" class="btn btn-primary">Create Org</button></form>' +
         '</div>';
 
     try {
@@ -1318,6 +1593,67 @@ async function renderSettings(container) {
             ? (handshake.auth_required ? 'enabled' : 'disabled')
             : 'unknown';
         show('settings-content');
+
+        (async function () {
+            try {
+                var orgsData = await fetchJSON(API_BASE + '/orgs');
+                var orgs = orgsData.orgs || [];
+                var el = document.getElementById('settings-orgs-list');
+                if (orgs.length === 0) {
+                    el.innerHTML = '<span style="color:var(--text-secondary)">No organizations</span>';
+                } else {
+                    var html = '<div class="table-wrap"><table><thead><tr><th>Name</th><th>Display Name</th><th>Description</th><th></th></tr></thead><tbody>';
+                    orgs.forEach(function (o) {
+                        html += '<tr>' +
+                            '<td>' + escapeHtml(o.name) + '</td>' +
+                            '<td>' + escapeHtml(o.display_name) + '</td>' +
+                            '<td>' + escapeHtml(o.description) + '</td>' +
+                            '<td><button class="btn btn-danger btn-sm btn-delete-org" data-org-id="' + o.id + '">Delete</button></td></tr>';
+                    });
+                    html += '</tbody></table></div>';
+                    el.innerHTML = html;
+                }
+                show('settings-orgs');
+            } catch (e) {
+                document.getElementById('settings-orgs-list').innerHTML = '<span style="color:var(--text-secondary)">Could not load organizations</span>';
+                show('settings-orgs');
+            }
+        })();
+
+        container.querySelector('#form-create-org').addEventListener('submit', async function (e) {
+            e.preventDefault();
+            var name = document.getElementById('org-name').value.trim();
+            var displayName = document.getElementById('org-display-name').value.trim();
+            if (!name) return;
+            try {
+                await fetchJSON(API_BASE + '/orgs', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: name, display_name: displayName || name, description: '' }),
+                });
+                toast('Organization "' + name + '" created', 'success');
+                document.getElementById('org-name').value = '';
+                document.getElementById('org-display-name').value = '';
+                router();
+            } catch (err) {
+                toast('Failed to create org: ' + err.message, 'error');
+            }
+        });
+
+        container.addEventListener('click', async function (e) {
+            var btn = e.target.closest('.btn-delete-org');
+            if (!btn) return;
+            var orgId = btn.dataset.orgId;
+            var ok = await confirmDialog('Delete Organization', 'Delete this organization?');
+            if (!ok) return;
+            try {
+                await fetchJSON(API_BASE + '/orgs/' + orgId, { method: 'DELETE' });
+                toast('Organization deleted', 'success');
+                router();
+            } catch (err) {
+                toast('Failed to delete org: ' + err.message, 'error');
+            }
+        });
     } catch (err) {
         hide('settings-loading');
         document.getElementById('setting-version').textContent = 'error';
@@ -1380,6 +1716,659 @@ async function renderLogin(container) {
     });
 }
 
+async function renderIssues(container, repoId) {
+    container.innerHTML =
+        '<div class="breadcrumb">' +
+        '<a href="#/repos">Repos</a> <span class="separator">/</span> ' +
+        '<a href="#/repo/' + encodeURIComponent(repoId) + '">' + escapeHtml(repoId) + '</a> <span class="separator">/</span> ' +
+        '<span class="current">Issues</span></div>' +
+        '<div class="section-header"><h2>Issues</h2>' +
+        '<button class="btn btn-primary" id="btn-new-issue">+ New Issue</button></div>' +
+        '<div class="form-panel hidden" id="new-issue-form">' +
+        '<h3>Create Issue</h3>' +
+        '<form id="form-new-issue">' +
+        '<label for="issue-title">Title</label>' +
+        '<input type="text" id="issue-title" placeholder="Issue title" required autocomplete="off">' +
+        '<label for="issue-body">Body</label>' +
+        '<textarea id="issue-body" rows="4" placeholder="Describe the issue..."></textarea>' +
+        '<label for="issue-labels">Labels (comma-separated)</label>' +
+        '<input type="text" id="issue-labels" placeholder="bug, enhancement" autocomplete="off">' +
+        '<div class="form-actions">' +
+        '<button type="submit" class="btn btn-primary">Create</button>' +
+        '<button type="button" class="btn btn-secondary" id="cancel-new-issue">Cancel</button>' +
+        '</div></form></div>' +
+        '<div id="issues-loading" class="loading">Loading issues&hellip;</div>' +
+        '<div id="issues-error" class="error-banner hidden"></div>' +
+        '<div id="issues-content" class="hidden"></div>' +
+        '<div id="issues-empty" class="empty-state hidden">No issues found.</div>';
+
+    container.querySelector('#btn-new-issue').addEventListener('click', function () { togglePanel('new-issue-form'); });
+    container.querySelector('#cancel-new-issue').addEventListener('click', function () { hide('new-issue-form'); });
+    container.querySelector('#form-new-issue').addEventListener('submit', async function (e) {
+        e.preventDefault();
+        var title = document.getElementById('issue-title').value.trim();
+        var body = document.getElementById('issue-body').value.trim();
+        var labelsStr = document.getElementById('issue-labels').value.trim();
+        var labels = labelsStr ? labelsStr.split(',').map(function (l) { return l.trim(); }).filter(Boolean) : [];
+        if (!title) return;
+        try {
+            await fetchJSON(API_BASE + '/repos/' + encodeURIComponent(repoId) + '/issues', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ repo_id: repoId, title: title, body: body, labels: labels }),
+            });
+            toast('Issue created', 'success');
+            document.getElementById('form-new-issue').reset();
+            hide('new-issue-form');
+            loadIssuesData();
+        } catch (err) {
+            toast('Failed to create issue: ' + err.message, 'error');
+        }
+    });
+
+    await loadIssuesData();
+}
+
+async function loadIssuesData() {
+    hide('issues-error');
+    hide('issues-content');
+    hide('issues-empty');
+    show('issues-loading');
+
+    var repoId = window.location.hash.match(/^#\/repo\/([^/]+)\/issues$/);
+    if (!repoId) return;
+    repoId = decodeURIComponent(repoId[1]);
+
+    try {
+        var data = await fetchJSON(API_BASE + '/repos/' + encodeURIComponent(repoId) + '/issues');
+        var issues = data.issues || [];
+
+        hide('issues-loading');
+
+        if (issues.length === 0) {
+            show('issues-empty');
+            return;
+        }
+
+        var html = '<div class="table-wrap"><table><thead><tr>' +
+            '<th>#</th><th>Title</th><th>Status</th><th>Author</th><th>Labels</th><th>Updated</th>' +
+            '</tr></thead><tbody>';
+
+        issues.forEach(function (issue) {
+            var statusClass = issue.status === 'open' ? 'status-open' : 'status-closed';
+            var labelBadges = (issue.labels || []).map(function (l) {
+                return '<span class="label-badge">' + escapeHtml(l) + '</span>';
+            }).join(' ');
+            html += '<tr>' +
+                '<td><a href="#/issue/' + issue.id + '" class="file-link">' + issue.id + '</a></td>' +
+                '<td><a href="#/issue/' + issue.id + '">' + escapeHtml(issue.title) + '</a></td>' +
+                '<td><span class="issue-status-badge ' + statusClass + '">' + escapeHtml(issue.status) + '</span></td>' +
+                '<td>' + escapeHtml(issue.author) + '</td>' +
+                '<td>' + labelBadges + '</td>' +
+                '<td>' + formatTimestamp(issue.updated_at) + '</td>' +
+                '</tr>';
+        });
+
+        html += '</tbody></table></div>';
+
+        document.getElementById('issues-content').innerHTML = html;
+        show('issues-content');
+    } catch (err) {
+        hide('issues-loading');
+        var banner = document.getElementById('issues-error');
+        banner.textContent = 'Failed to load issues: ' + err.message;
+        show('issues-error');
+    }
+}
+
+async function renderIssueDetail(container, issueId) {
+    container.innerHTML =
+        '<div class="breadcrumb" id="issue-breadcrumb"></div>' +
+        '<div id="issue-loading" class="loading">Loading issue&hellip;</div>' +
+        '<div id="issue-error" class="error-banner hidden"></div>' +
+        '<div id="issue-content" class="hidden"></div>';
+
+    try {
+        var data = await fetchJSON(API_BASE + '/issues/' + issueId);
+        if (!data.success || !data.issue) throw new Error('Issue not found');
+        var issue = data.issue;
+
+        hide('issue-loading');
+
+        var bc = document.getElementById('issue-breadcrumb');
+        bc.innerHTML =
+            '<a href="#/repos">Repos</a> <span class="separator">/</span> ' +
+            '<a href="#/repo/' + encodeURIComponent(issue.repo_id) + '">' + escapeHtml(issue.repo_id) + '</a> <span class="separator">/</span> ' +
+            '<a href="#/repo/' + encodeURIComponent(issue.repo_id) + '/issues">Issues</a> <span class="separator">/</span> ' +
+            '<span class="current">#' + issue.id + '</span>';
+
+        var statusClass = issue.status === 'open' ? 'status-open' : 'status-closed';
+        var labelBadges = (issue.labels || []).map(function (l) {
+            return '<span class="label-badge">' + escapeHtml(l) + '</span>';
+        }).join(' ');
+        var toggleBtnLabel = issue.status === 'open' ? 'Close Issue' : 'Reopen Issue';
+        var toggleBtnClass = issue.status === 'open' ? 'btn-danger' : 'btn-primary';
+        var toggleStatus = issue.status === 'open' ? 'closed' : 'open';
+
+        var el = document.getElementById('issue-content');
+        el.innerHTML =
+            '<div class="issue-header">' +
+            '<h2><span class="issue-status-badge ' + statusClass + '">' + escapeHtml(issue.status) + '</span> #' + issue.id + ': ' + escapeHtml(issue.title) + '</h2>' +
+            '<div class="issue-meta">' +
+            '<span>Author: ' + escapeHtml(issue.author) + '</span>' +
+            '<span>Created: ' + formatTimestamp(issue.created_at) + '</span>' +
+            '<span>Updated: ' + formatTimestamp(issue.updated_at) + '</span>' +
+            (issue.closed_at ? '<span>Closed: ' + formatTimestamp(issue.closed_at) + '</span>' : '') +
+            '</div>' +
+            '<div class="issue-labels">' + labelBadges + '</div>' +
+            '</div>' +
+            '<div class="issue-body"><pre>' + escapeHtml(issue.body || '') + '</pre></div>' +
+            '<div class="issue-actions">' +
+            '<button class="btn ' + toggleBtnClass + '" id="btn-toggle-issue" data-status="' + toggleStatus + '">' + escapeHtml(toggleBtnLabel) + '</button>' +
+            '</div>' +
+            '<div class="issue-comments-section">' +
+            '<h3>Comments</h3>' +
+            '<div id="comments-loading" class="loading">Loading comments&hellip;</div>' +
+            '<div id="comments-list" class="hidden"></div>' +
+            '<div class="comment-form">' +
+            '<form id="form-comment">' +
+            '<textarea id="comment-body" rows="3" placeholder="Write a comment..." required></textarea>' +
+            '<div class="form-actions">' +
+            '<button type="submit" class="btn btn-primary">Comment</button>' +
+            '</div></form></div>' +
+            '</div>';
+
+        show('issue-content');
+
+        el.querySelector('#btn-toggle-issue').addEventListener('click', async function () {
+            var btn = el.querySelector('#btn-toggle-issue');
+            var newStatus = btn.dataset.status;
+            try {
+                await fetchJSON(API_BASE + '/issues/' + issueId, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: newStatus }),
+                });
+                toast('Issue ' + newStatus, 'success');
+                router();
+            } catch (err) {
+                toast('Failed to update issue: ' + err.message, 'error');
+            }
+        });
+
+        el.querySelector('#form-comment').addEventListener('submit', async function (e) {
+            e.preventDefault();
+            var body = document.getElementById('comment-body').value.trim();
+            if (!body) return;
+            try {
+                await fetchJSON(API_BASE + '/issues/' + issueId + '/comments', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ body: body }),
+                });
+                toast('Comment added', 'success');
+                document.getElementById('comment-body').value = '';
+                loadComments();
+            } catch (err) {
+                toast('Failed to add comment: ' + err.message, 'error');
+            }
+        });
+
+        async function loadComments() {
+            try {
+                var cData = await fetchJSON(API_BASE + '/issues/' + issueId + '/comments');
+                var comments = cData.comments || [];
+                hide('comments-loading');
+                var cList = document.getElementById('comments-list');
+                if (comments.length === 0) {
+                    cList.innerHTML = '<p style="color:var(--text-secondary)">No comments yet.</p>';
+                } else {
+                    var cHtml = '';
+                    comments.forEach(function (c) {
+                        cHtml += '<div class="comment-item">' +
+                            '<div class="comment-header">' +
+                            '<span class="comment-author">' + escapeHtml(c.author) + '</span>' +
+                            '<span class="comment-time">' + formatTimestamp(c.created_at) + '</span>' +
+                            '</div>' +
+                            '<div class="comment-body"><pre>' + escapeHtml(c.body) + '</pre></div>' +
+                            '</div>';
+                    });
+                    cList.innerHTML = cHtml;
+                }
+                show('comments-list');
+            } catch (err) {
+                hide('comments-loading');
+                document.getElementById('comments-list').innerHTML = '<p style="color:var(--text-secondary)">Could not load comments.</p>';
+                show('comments-list');
+            }
+        }
+
+        loadComments();
+    } catch (err) {
+        hide('issue-loading');
+        var errEl = document.getElementById('issue-error');
+        errEl.textContent = 'Failed to load issue: ' + err.message;
+        show('issue-error');
+    }
+}
+
 checkConnection();
 setInterval(checkConnection, 30000);
 router();
+
+async function renderPulls(container, repoId) {
+    container.innerHTML =
+        '<div class="breadcrumb">' +
+        '<a href="#/repos">Repos</a> <span class="separator">/</span> ' +
+        '<a href="#/repo/' + encodeURIComponent(repoId) + '">' + escapeHtml(repoId) + '</a> <span class="separator">/</span> ' +
+        '<span class="current">Pull Requests</span></div>' +
+        '<div class="section-header"><h2>Pull Requests</h2>' +
+        '<button class="btn btn-primary" id="btn-new-pr">+ New Pull Request</button></div>' +
+        '<div class="form-panel hidden" id="new-pr-form">' +
+        '<h3>Create Pull Request</h3>' +
+        '<form id="form-new-pr">' +
+        '<label for="pr-title">Title</label>' +
+        '<input type="text" id="pr-title" placeholder="PR title" required autocomplete="off">' +
+        '<label for="pr-body">Body</label>' +
+        '<textarea id="pr-body" rows="4" placeholder="Describe the changes..."></textarea>' +
+        '<label for="pr-source">Source Branch</label>' +
+        '<input type="text" id="pr-source" placeholder="feature-branch" required autocomplete="off">' +
+        '<label for="pr-target">Target Branch</label>' +
+        '<input type="text" id="pr-target" placeholder="main" autocomplete="off">' +
+        '<div class="form-actions">' +
+        '<button type="submit" class="btn btn-primary">Create</button>' +
+        '<button type="button" class="btn btn-secondary" id="cancel-new-pr">Cancel</button>' +
+        '</div></form></div>' +
+        '<div id="pulls-loading" class="loading">Loading pull requests&hellip;</div>' +
+        '<div id="pulls-error" class="error-banner hidden"></div>' +
+        '<div id="pulls-content" class="hidden"></div>' +
+        '<div id="pulls-empty" class="empty-state hidden">No pull requests found.</div>';
+
+    container.querySelector('#btn-new-pr').addEventListener('click', function () { togglePanel('new-pr-form'); });
+    container.querySelector('#cancel-new-pr').addEventListener('click', function () { hide('new-pr-form'); });
+    container.querySelector('#form-new-pr').addEventListener('submit', async function (e) {
+        e.preventDefault();
+        var title = document.getElementById('pr-title').value.trim();
+        var body = document.getElementById('pr-body').value.trim();
+        var source = document.getElementById('pr-source').value.trim();
+        var target = document.getElementById('pr-target').value.trim();
+        if (!title || !source) return;
+        try {
+            await fetchJSON(API_BASE + '/repos/' + encodeURIComponent(repoId) + '/pulls', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ repo_id: repoId, title: title, body: body, source_branch: source, target_branch: target || undefined }),
+            });
+            toast('Pull request created', 'success');
+            document.getElementById('form-new-pr').reset();
+            hide('new-pr-form');
+            loadPullsData();
+        } catch (err) {
+            toast('Failed to create pull request: ' + err.message, 'error');
+        }
+    });
+
+    await loadPullsData();
+}
+
+async function loadPullsData() {
+    hide('pulls-error');
+    hide('pulls-content');
+    hide('pulls-empty');
+    show('pulls-loading');
+
+    var repoId = window.location.hash.match(/^#\/repo\/([^/]+)\/pulls$/);
+    if (!repoId) return;
+    repoId = decodeURIComponent(repoId[1]);
+
+    try {
+        var data = await fetchJSON(API_BASE + '/repos/' + encodeURIComponent(repoId) + '/pulls');
+        var pulls = data.pulls || [];
+
+        hide('pulls-loading');
+
+        if (pulls.length === 0) {
+            show('pulls-empty');
+            return;
+        }
+
+        var html = '<div class="table-wrap"><table><thead><tr>' +
+            '<th>#</th><th>Title</th><th>Status</th><th>Branch</th><th>Author</th><th>Updated</th>' +
+            '</tr></thead><tbody>';
+
+        pulls.forEach(function (pr) {
+            var sc = pr.status === 'open' ? 'status-open' : pr.status === 'merged' ? 'pr-status-merged' : 'status-closed';
+            html += '<tr>' +
+                '<td><a href="#/pull/' + pr.id + '" class="file-link">' + pr.id + '</a></td>' +
+                '<td><a href="#/pull/' + pr.id + '">' + escapeHtml(pr.title) + '</a></td>' +
+                '<td><span class="issue-status-badge ' + sc + '">' + escapeHtml(pr.status) + '</span></td>' +
+                '<td class="mono">' + escapeHtml(pr.source_branch) + ' &rarr; ' + escapeHtml(pr.target_branch) + '</td>' +
+                '<td>' + escapeHtml(pr.author) + '</td>' +
+                '<td>' + formatTimestamp(pr.updated_at) + '</td>' +
+                '</tr>';
+        });
+
+        html += '</tbody></table></div>';
+
+        document.getElementById('pulls-content').innerHTML = html;
+        show('pulls-content');
+    } catch (err) {
+        hide('pulls-loading');
+        var banner = document.getElementById('pulls-error');
+        banner.textContent = 'Failed to load pull requests: ' + err.message;
+        show('pulls-error');
+    }
+}
+
+async function renderPullDetail(container, pullId) {
+    container.innerHTML =
+        '<div class="breadcrumb" id="pull-breadcrumb"></div>' +
+        '<div id="pull-loading" class="loading">Loading pull request&hellip;</div>' +
+        '<div id="pull-error" class="error-banner hidden"></div>' +
+        '<div id="pull-content" class="hidden"></div>';
+
+    try {
+        var data = await fetchJSON(API_BASE + '/pulls/' + pullId);
+        if (!data.success || !data.pull_request) throw new Error('Pull request not found');
+        var pr = data.pull_request;
+
+        hide('pull-loading');
+
+        var bc = document.getElementById('pull-breadcrumb');
+        bc.innerHTML =
+            '<a href="#/repos">Repos</a> <span class="separator">/</span> ' +
+            '<a href="#/repo/' + encodeURIComponent(pr.repo_id) + '">' + escapeHtml(pr.repo_id) + '</a> <span class="separator">/</span> ' +
+            '<a href="#/repo/' + encodeURIComponent(pr.repo_id) + '/pulls">Pull Requests</a> <span class="separator">/</span> ' +
+            '<span class="current">#' + pr.id + '</span>';
+
+        var sc = pr.status === 'open' ? 'status-open' : pr.status === 'merged' ? 'pr-status-merged' : 'status-closed';
+        var actionsHtml = '';
+        if (pr.status === 'open') {
+            actionsHtml =
+                '<button class="btn btn-primary" id="btn-merge-pr">Merge</button> ' +
+                '<button class="btn btn-danger" id="btn-close-pr">Close</button>';
+        }
+
+        var el = document.getElementById('pull-content');
+        el.innerHTML =
+            '<div class="issue-header">' +
+            '<h2><span class="issue-status-badge ' + sc + '">' + escapeHtml(pr.status) + '</span> #' + pr.id + ': ' + escapeHtml(pr.title) + '</h2>' +
+            '<div class="issue-meta">' +
+            '<span>Author: ' + escapeHtml(pr.author) + '</span>' +
+            '<span>Branch: ' + escapeHtml(pr.source_branch) + ' &rarr; ' + escapeHtml(pr.target_branch) + '</span>' +
+            '<span>Created: ' + formatTimestamp(pr.created_at) + '</span>' +
+            '<span>Updated: ' + formatTimestamp(pr.updated_at) + '</span>' +
+            (pr.merged_at ? '<span>Merged: ' + formatTimestamp(pr.merged_at) + '</span>' : '') +
+            (pr.merged_by ? '<span>Merged by: ' + escapeHtml(pr.merged_by) + '</span>' : '') +
+            '</div></div>' +
+            '<div class="issue-body"><pre>' + escapeHtml(pr.body || '') + '</pre></div>' +
+            '<div class="issue-actions" id="pr-actions">' + actionsHtml + '</div>' +
+            '<div class="issue-comments-section">' +
+            '<h3>Reviews</h3>' +
+            '<div id="reviews-loading" class="loading">Loading reviews&hellip;</div>' +
+            '<div id="reviews-list" class="hidden"></div>' +
+            (pr.status === 'open' ?
+            '<div class="comment-form">' +
+            '<form id="form-review">' +
+            '<label for="review-verdict">Verdict</label>' +
+            '<select id="review-verdict">' +
+            '<option value="approve">Approve</option>' +
+            '<option value="request_changes">Request Changes</option>' +
+            '<option value="comment">Comment</option>' +
+            '</select>' +
+            '<textarea id="review-body" rows="3" placeholder="Write a review comment..."></textarea>' +
+            '<div class="form-actions">' +
+            '<button type="submit" class="btn btn-primary">Submit Review</button>' +
+            '</div></form></div>' : '') +
+            '</div>';
+
+        show('pull-content');
+
+        if (pr.status === 'open') {
+            var mergeBtn = document.getElementById('btn-merge-pr');
+            if (mergeBtn) {
+                mergeBtn.addEventListener('click', async function () {
+                    try {
+                        await fetchJSON(API_BASE + '/pulls/' + pullId + '/merge', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+                        toast('Pull request merged', 'success');
+                        router();
+                    } catch (err) {
+                        toast('Failed to merge: ' + err.message, 'error');
+                    }
+                });
+            }
+            var closeBtn = document.getElementById('btn-close-pr');
+            if (closeBtn) {
+                closeBtn.addEventListener('click', async function () {
+                    try {
+                        await fetchJSON(API_BASE + '/pulls/' + pullId + '/close', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+                        toast('Pull request closed', 'success');
+                        router();
+                    } catch (err) {
+                        toast('Failed to close: ' + err.message, 'error');
+                    }
+                });
+            }
+        }
+
+        var reviewForm = document.getElementById('form-review');
+        if (reviewForm) {
+            reviewForm.addEventListener('submit', async function (e) {
+                e.preventDefault();
+                var verdict = document.getElementById('review-verdict').value;
+                var body = document.getElementById('review-body').value.trim();
+                try {
+                    await fetchJSON(API_BASE + '/pulls/' + pullId + '/reviews', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ verdict: verdict, body: body }),
+                    });
+                    toast('Review submitted', 'success');
+                    document.getElementById('review-body').value = '';
+                    loadReviews();
+                } catch (err) {
+                    toast('Failed to submit review: ' + err.message, 'error');
+                }
+            });
+        }
+
+        async function loadReviews() {
+            try {
+                var rData = await fetchJSON(API_BASE + '/pulls/' + pullId + '/reviews');
+                var reviews = rData.reviews || [];
+                hide('reviews-loading');
+                var rList = document.getElementById('reviews-list');
+                if (reviews.length === 0) {
+                    rList.innerHTML = '<p style="color:var(--text-secondary)">No reviews yet.</p>';
+                } else {
+                    var rHtml = '';
+                    reviews.forEach(function (r) {
+                        var verdictClass = r.verdict === 'approve' ? 'status-open' : r.verdict === 'request_changes' ? 'status-closed' : 'pr-status-merged';
+                        rHtml += '<div class="comment-item">' +
+                            '<div class="comment-header">' +
+                            '<span class="comment-author">' + escapeHtml(r.reviewer) + '</span>' +
+                            '<span class="issue-status-badge ' + verdictClass + '" style="margin-left:0.5rem">' + escapeHtml(r.verdict) + '</span>' +
+                            '<span class="comment-time">' + formatTimestamp(r.created_at) + '</span>' +
+                            '</div>' +
+                            '<div class="comment-body"><pre>' + escapeHtml(r.body) + '</pre></div>' +
+                            '</div>';
+                    });
+                    rList.innerHTML = rHtml;
+                }
+                show('reviews-list');
+            } catch (err) {
+                hide('reviews-loading');
+                document.getElementById('reviews-list').innerHTML = '<p style="color:var(--text-secondary)">Could not load reviews.</p>';
+                show('reviews-list');
+            }
+        }
+
+        loadReviews();
+    } catch (err) {
+        hide('pull-loading');
+        var errEl = document.getElementById('pull-error');
+        errEl.textContent = 'Failed to load pull request: ' + err.message;
+        show('pull-error');
+    }
+}
+
+async function renderWiki(container, repoId, pageTitle) {
+    container.innerHTML =
+        '<div class="breadcrumb">' +
+        '<a href="#/repos">Repos</a> <span class="separator">/</span> ' +
+        '<a href="#/repo/' + encodeURIComponent(repoId) + '">' + escapeHtml(repoId) + '</a> <span class="separator">/</span> ' +
+        '<span class="current">Wiki</span></div>' +
+        '<div class="section-header"><h2>Wiki — ' + escapeHtml(repoId) + '</h2>' +
+        '<button class="btn btn-primary btn-sm" id="btn-new-wiki-page">+ New Page</button></div>' +
+        '<div id="wiki-new-form" class="form-panel hidden" style="margin-bottom:1rem">' +
+        '<form id="form-create-wiki">' +
+        '<label for="wiki-new-title">Title</label><input type="text" id="wiki-new-title" required autocomplete="off">' +
+        '<label for="wiki-new-content">Content</label><textarea id="wiki-new-content" rows="6" style="width:100%;box-sizing:border-box"></textarea>' +
+        '<div class="form-actions"><button type="submit" class="btn btn-primary">Create</button>' +
+        '<button type="button" class="btn btn-secondary" id="cancel-new-wiki">Cancel</button></div></form></div>' +
+        '<div id="wiki-page-list"></div>' +
+        '<div id="wiki-page-view" class="hidden"></div>';
+
+    container.querySelector('#btn-new-wiki-page').addEventListener('click', function () { togglePanel('wiki-new-form'); });
+    container.querySelector('#cancel-new-wiki').addEventListener('click', function () { hide('wiki-new-form'); });
+    container.querySelector('#form-create-wiki').addEventListener('submit', async function (e) {
+        e.preventDefault();
+        var title = document.getElementById('wiki-new-title').value.trim();
+        var content = document.getElementById('wiki-new-content').value;
+        if (!title) return;
+        try {
+            await fetchJSON(API_BASE + '/repos/' + encodeURIComponent(repoId) + '/wiki', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title: title, content: content }),
+            });
+            toast('Wiki page "' + title + '" created', 'success');
+            router();
+        } catch (err) {
+            toast('Failed to create wiki page: ' + err.message, 'error');
+        }
+    });
+
+    if (pageTitle) {
+        hide('wiki-page-list');
+        try {
+            var data = await fetchJSON(API_BASE + '/repos/' + encodeURIComponent(repoId) + '/wiki/' + encodeURIComponent(pageTitle));
+            var page = data.page;
+            show('wiki-page-view');
+            document.getElementById('wiki-page-view').innerHTML =
+                '<div class="repo-header"><h3>' + escapeHtml(page.title) + '</h3>' +
+                '<div><span style="color:var(--text-secondary)">by ' + escapeHtml(page.author) + ' \u2014 ' + formatTimestamp(page.updated_at) + '</span></div></div>' +
+                '<div style="margin-top:1rem"><pre style="white-space:pre-wrap;word-break:break-word">' + escapeHtml(page.content) + '</pre></div>' +
+                '<div style="margin-top:1rem"><form id="form-edit-wiki">' +
+                '<label>Edit Content</label><textarea id="wiki-edit-content" rows="8" style="width:100%;box-sizing:border-box">' + escapeHtml(page.content) + '</textarea>' +
+                '<div class="form-actions" style="margin-top:0.5rem"><button type="submit" class="btn btn-primary">Save</button></div></form></div>';
+            document.getElementById('form-edit-wiki').addEventListener('submit', async function (e) {
+                e.preventDefault();
+                var newContent = document.getElementById('wiki-edit-content').value;
+                try {
+                    await fetchJSON(API_BASE + '/repos/' + encodeURIComponent(repoId) + '/wiki/' + encodeURIComponent(pageTitle), {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ title: pageTitle, content: newContent }),
+                    });
+                    toast('Wiki page updated', 'success');
+                    router();
+                } catch (err) {
+                    toast('Failed to update wiki: ' + err.message, 'error');
+                }
+            });
+        } catch (err) {
+            document.getElementById('wiki-page-view').innerHTML = '<div class="error-banner">Page not found</div>';
+            show('wiki-page-view');
+        }
+    } else {
+        try {
+            var data = await fetchJSON(API_BASE + '/repos/' + encodeURIComponent(repoId) + '/wiki');
+            var pages = data.pages || [];
+            var el = document.getElementById('wiki-page-list');
+            if (pages.length === 0) {
+                el.innerHTML = '<span style="color:var(--text-secondary)">No wiki pages yet. Click "+ New Page" to create one.</span>';
+            } else {
+                var html = '<div class="table-wrap"><table><thead><tr><th>Title</th><th>Author</th><th>Updated</th></tr></thead><tbody>';
+                pages.forEach(function (p) {
+                    html += '<tr>' +
+                        '<td><a href="#/repo/' + encodeURIComponent(repoId) + '/wiki/' + encodeURIComponent(p.title) + '">' + escapeHtml(p.title) + '</a></td>' +
+                        '<td>' + escapeHtml(p.author) + '</td>' +
+                        '<td>' + formatTimestamp(p.updated_at) + '</td></tr>';
+                });
+                html += '</tbody></table></div>';
+                el.innerHTML = html;
+            }
+        } catch (err) {
+            document.getElementById('wiki-page-list').innerHTML = '<span style="color:var(--text-secondary)">Could not load wiki</span>';
+        }
+    }
+}
+
+async function renderReleases(container, repoId) {
+    container.innerHTML =
+        '<div class="breadcrumb">' +
+        '<a href="#/repos">Repos</a> <span class="separator">/</span> ' +
+        '<a href="#/repo/' + encodeURIComponent(repoId) + '">' + escapeHtml(repoId) + '</a> <span class="separator">/</span> ' +
+        '<span class="current">Releases</span></div>' +
+        '<div class="section-header"><h2>Releases — ' + escapeHtml(repoId) + '</h2>' +
+        '<button class="btn btn-primary btn-sm" id="btn-new-release">+ New Release</button></div>' +
+        '<div id="release-new-form" class="form-panel hidden" style="margin-bottom:1rem">' +
+        '<form id="form-create-release">' +
+        '<label for="rel-tag">Tag</label><input type="text" id="rel-tag" placeholder="v1.0.0" required autocomplete="off">' +
+        '<label for="rel-title">Title</label><input type="text" id="rel-title" required autocomplete="off">' +
+        '<label for="rel-body">Description</label><textarea id="rel-body" rows="4" style="width:100%;box-sizing:border-box"></textarea>' +
+        '<div style="margin:0.5rem 0"><label><input type="checkbox" id="rel-prerelease"> Pre-release</label></div>' +
+        '<div class="form-actions"><button type="submit" class="btn btn-primary">Create</button>' +
+        '<button type="button" class="btn btn-secondary" id="cancel-new-release">Cancel</button></div></form></div>' +
+        '<div id="releases-loading" class="loading">Loading releases&hellip;</div>' +
+        '<div id="releases-list"></div>';
+
+    container.querySelector('#btn-new-release').addEventListener('click', function () { togglePanel('release-new-form'); });
+    container.querySelector('#cancel-new-release').addEventListener('click', function () { hide('release-new-form'); });
+    container.querySelector('#form-create-release').addEventListener('submit', async function (e) {
+        e.preventDefault();
+        var tag = document.getElementById('rel-tag').value.trim();
+        var title = document.getElementById('rel-title').value.trim();
+        var body = document.getElementById('rel-body').value;
+        var prerelease = document.getElementById('rel-prerelease').checked;
+        if (!tag || !title) return;
+        try {
+            await fetchJSON(API_BASE + '/repos/' + encodeURIComponent(repoId) + '/releases', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ repo_id: repoId, tag: tag, title: title, body: body, prerelease: prerelease }),
+            });
+            toast('Release "' + tag + '" created', 'success');
+            router();
+        } catch (err) {
+            toast('Failed to create release: ' + err.message, 'error');
+        }
+    });
+
+    try {
+        var data = await fetchJSON(API_BASE + '/repos/' + encodeURIComponent(repoId) + '/releases');
+        hide('releases-loading');
+        var releases = data.releases || [];
+        var el = document.getElementById('releases-list');
+        if (releases.length === 0) {
+            el.innerHTML = '<span style="color:var(--text-secondary)">No releases yet. Click "+ New Release" to create one.</span>';
+        } else {
+            var html = '';
+            releases.forEach(function (r) {
+                var preBadge = r.prerelease ? '<span class="issue-status-badge status-closed" style="margin-left:0.5rem">pre-release</span>' : '';
+                html += '<div class="search-item" style="flex-direction:column;align-items:start">' +
+                    '<div style="display:flex;align-items:center;gap:0.5rem">' +
+                    '<span class="mono" style="font-weight:bold">' + escapeHtml(r.tag) + '</span>' +
+                    '<span>' + escapeHtml(r.title) + '</span>' + preBadge + '</div>' +
+                    '<div class="search-item-meta">' + escapeHtml(r.author) + ' \u2014 ' + formatTimestamp(r.created_at) + '</div>' +
+                    (r.body ? '<p style="margin:0.25rem 0 0;color:var(--text-secondary)">' + escapeHtml(r.body) + '</p>' : '') +
+                    '</div>';
+            });
+            el.innerHTML = html;
+        }
+    } catch (err) {
+        hide('releases-loading');
+        document.getElementById('releases-list').innerHTML = '<span style="color:var(--text-secondary)">Could not load releases</span>';
+    }
+}
