@@ -26,7 +26,7 @@ Suture is a patch-based version control system with semantic merge capabilities.
           ┌─────────────────────┼──────────┐         │
           │         │           │          │         │
      ┌────▼──┐ ┌────▼──┐ ┌─────▼──┐ ┌─────▼──┐     │
-     │ JSON  │ │ YAML  │ │ OOXML  │ │ ...17  │     │
+      │ JSON  │ │ YAML  │ │ OOXML  │ │ ...18  │     │
      │ driver│ │ driver│ │ drivers│ │ drivers│     │
      └───────┘ └───────┘ └────────┘ └────────┘     │
                                                       │
@@ -233,7 +233,7 @@ Key command modules:
 
 | Module | Description |
 |--------|-------------|
-| `driver_registry.rs` | Builds `DriverRegistry` with all 17 builtin drivers |
+| `driver_registry.rs` | Builds `DriverRegistry` with all 18 builtin drivers |
 | `display.rs` | Terminal output formatting and colors |
 | `fuzzy.rs` | Fuzzy matching for branch/tag/patch selection |
 | `remote_proto.rs` | HTTP-based remote protocol implementation |

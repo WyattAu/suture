@@ -30,13 +30,13 @@ Thank you for your interest in contributing to Suture! This guide covers everyth
    cargo run -p suture-hub -- --addr 127.0.0.1:8080 --db ./hub-data/hub.db
    ```
 
-3. Run the platform (hosted SaaS):
+4. Run the platform (hosted SaaS):
    ```bash
    export SUTURE_JWT_SECRET=dev-secret
    cargo run -p suture-platform -- --addr 127.0.0.1:3000 --jwt-secret "$SUTURE_JWT_SECRET"
    ```
 
-4. Open http://localhost:3000
+5. Open http://localhost:3000
 
 ### Docker Compose
 
@@ -139,7 +139,7 @@ just run       # cargo run --bin suture-cli
 | `suture-driver` | `SutureDriver` trait, `DriverRegistry`, plugin system (Wasmtime) |
 | `suture-ooxml` | OOXML parsing shared by DOCX/XLSX/PPTX drivers |
 | `suture-merge` | Standalone semantic merge library (feature-gated per format) |
-| `suture-cli` | CLI binary (`suture` command) — 58 subcommands via clap |
+| `suture-cli` | CLI binary (`suture` command) -- 64 subcommands via clap |
 | `suture-tui` | Terminal UI (ratatui + crossterm) |
 | `suture-hub` | Central server: HTTP + gRPC + SQLite, auth, replication, webhooks |
 | `suture-daemon` | Background daemon: file watcher, SHM, mount manager, auto-sync |
@@ -220,10 +220,10 @@ Drivers are format-specific plugins that implement the `SutureDriver` trait from
 
    `Cargo.toml`:
    ```toml
-   [package]
-   name = "suture-driver-<name>"
-     version = "0.1.0"
-   edition = "2024"
+    [package]
+    name = "suture-driver-<name>"
+    version = "0.1.0"
+    edition = "2024"
 
    [dependencies]
    suture-driver = { path = "../suture-driver", version = "5.1.0" }
