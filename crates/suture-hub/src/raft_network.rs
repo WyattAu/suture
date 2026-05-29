@@ -114,8 +114,7 @@ impl RaftTcpTransport {
                 self.connected.lock().await.remove(&target);
                 info!(
                     node = self.node_id,
-                    target,
-                    "raft: send failed, retrying once"
+                    target, "raft: send failed, retrying once"
                 );
                 match send_wire(&addr, &frame).await {
                     Ok(()) => {
@@ -123,9 +122,7 @@ impl RaftTcpTransport {
                         Ok(())
                     }
                     Err(_) => {
-                        let msg = format!(
-                            "send to peer {target} failed after retry: {first_err}"
-                        );
+                        let msg = format!("send to peer {target} failed after retry: {first_err}");
                         Err(RaftError::Transport(msg))
                     }
                 }
@@ -168,7 +165,11 @@ impl RaftTcpTransport {
             Ok(stream) => {
                 drop(stream);
                 self.connected.lock().await.insert(node_id);
-                debug!(node = self.node_id, target = node_id, "raft: reconnected to peer");
+                debug!(
+                    node = self.node_id,
+                    target = node_id,
+                    "raft: reconnected to peer"
+                );
                 Ok(())
             }
             Err(e) => {

@@ -25,7 +25,8 @@ fn create_repo_with_files(file_count: usize) -> (TempDir, Repository) {
             let file_name = format!("{}/file_{:06}.txt", dir_name, i);
             repo.add(&file_name).unwrap();
         }
-        repo.commit(&format!("batch {}-{}", created, batch_end - 1)).unwrap();
+        repo.commit(&format!("batch {}-{}", created, batch_end - 1))
+            .unwrap();
         created = batch_end;
     }
 

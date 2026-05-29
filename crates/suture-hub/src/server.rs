@@ -2486,7 +2486,9 @@ pub async fn list_repos_handler(
             let (repos, next_cursor, has_more) = apply_pagination(repos, cursor, limit);
             (
                 StatusCode::OK,
-                Json(json!({"success": true, "repo_ids": repos, "next_cursor": next_cursor, "has_more": has_more})),
+                Json(
+                    json!({"success": true, "repo_ids": repos, "next_cursor": next_cursor, "has_more": has_more}),
+                ),
             )
         }
         Err(e) => (
@@ -3476,7 +3478,9 @@ fn base32_encode(data: &[u8]) -> String {
         let idx = ((buffer << (5 - bits)) & 0x1F) as usize;
         result.push(ALPHABET[idx] as char);
     }
-    while !result.len().is_multiple_of(8) { result.push('='); }
+    while !result.len().is_multiple_of(8) {
+        result.push('=');
+    }
     result
 }
 
@@ -3487,7 +3491,9 @@ fn base32_decode(input: &str) -> Result<Vec<u8>, String> {
     let mut buffer: u64 = 0;
     let mut bits = 0u32;
     for ch in input.chars() {
-        let val = ALPHABET.iter().position(|&c| c as char == ch.to_ascii_uppercase())
+        let val = ALPHABET
+            .iter()
+            .position(|&c| c as char == ch.to_ascii_uppercase())
             .ok_or_else(|| format!("invalid base32 char: {}", ch))?;
         buffer = (buffer << 5) | val as u64;
         bits += 5;
@@ -3542,10 +3548,12 @@ fn verify_totp(secret: &str, code: &str) -> bool {
         ) {
             return true;
         }
-        if offset > 0 && matches!(
-            generate_totp_code(secret, counter - offset),
-            Ok(ref expected) if *expected == code
-        ) {
+        if offset > 0
+            && matches!(
+                generate_totp_code(secret, counter - offset),
+                Ok(ref expected) if *expected == code
+            )
+        {
             return true;
         }
     }
@@ -3562,7 +3570,11 @@ fn parse_pagination(params: &HashMap<String, String>) -> (Option<u64>, usize) {
     (cursor, limit)
 }
 
-fn apply_pagination<T: Clone>(items: Vec<T>, offset: Option<u64>, limit: usize) -> (Vec<T>, Option<String>, bool) {
+fn apply_pagination<T: Clone>(
+    items: Vec<T>,
+    offset: Option<u64>,
+    limit: usize,
+) -> (Vec<T>, Option<String>, bool) {
     let offset = offset.unwrap_or(0) as usize;
     let sliced: Vec<T> = items.into_iter().skip(offset).take(limit + 1).collect();
     let has_more = sliced.len() > limit;
@@ -3584,7 +3596,10 @@ async fn register_ssh_key_handler(
         Ok(()) => {
             let keys = store.list_ssh_keys(&req.username).unwrap_or_default();
             let key = keys.into_iter().last();
-            (StatusCode::CREATED, Json(json!({"success": true, "key": key})))
+            (
+                StatusCode::CREATED,
+                Json(json!({"success": true, "key": key})),
+            )
         }
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -3682,7 +3697,10 @@ async fn password_login_handler(
             drop(store);
             let store = hub.storage.write().await;
             let _ = store.create_user(&req.username, &req.username, "user", &token);
-            (StatusCode::OK, Json(json!({"success": true, "token": token})))
+            (
+                StatusCode::OK,
+                Json(json!({"success": true, "token": token})),
+            )
         }
         Ok(false) => (
             StatusCode::UNAUTHORIZED,
@@ -3706,11 +3724,14 @@ async fn setup_2fa_handler(
     );
     let mut recovery_codes = Vec::new();
     for i in 0..8 {
-        let code = format!("{:08x}", (std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos() as u64)
-            .wrapping_add(i as u64 * 123456789));
+        let code = format!(
+            "{:08x}",
+            (std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos() as u64)
+                .wrapping_add(i as u64 * 123456789)
+        );
         recovery_codes.push(code);
     }
     let store = hub.storage.write().await;
@@ -3823,30 +3844,30 @@ pub async fn delete_mirror_handler(
     }
 }
 
- async fn list_issues_handler(
-     State(state): State<Arc<SutureHubServer>>,
-     Path(repo_id): Path<String>,
-     Query(params): Query<std::collections::HashMap<String, String>>,
- ) -> impl IntoResponse {
-     let status = params.get("status").map(|s| s.as_str());
-     let (cursor, limit) = parse_pagination(&params);
-     let store = state.storage.read().await;
-     match store.list_issues(&repo_id, status) {
-         Ok(issues) => {
-             let (issues, next_cursor, has_more) = apply_pagination(issues, cursor, limit);
-             (
+async fn list_issues_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Path(repo_id): Path<String>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> impl IntoResponse {
+    let status = params.get("status").map(|s| s.as_str());
+    let (cursor, limit) = parse_pagination(&params);
+    let store = state.storage.read().await;
+    match store.list_issues(&repo_id, status) {
+        Ok(issues) => {
+            let (issues, next_cursor, has_more) = apply_pagination(issues, cursor, limit);
+            (
                  StatusCode::OK,
                  Json(serde_json::json!({ "success": true, "issues": issues, "next_cursor": next_cursor, "has_more": has_more })),
              )
                  .into_response()
-         }
-         Err(e) => (
-             StatusCode::INTERNAL_SERVER_ERROR,
-             Json(serde_json::json!({ "success": false, "error": e.to_string() })),
-         )
-             .into_response(),
-     }
- }
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
 
 async fn create_issue_handler(
     State(state): State<Arc<SutureHubServer>>,
@@ -3956,30 +3977,30 @@ async fn create_issue_comment_handler(
     }
 }
 
- async fn list_pull_requests_handler(
-     State(state): State<Arc<SutureHubServer>>,
-     Path(repo_id): Path<String>,
-     Query(params): Query<std::collections::HashMap<String, String>>,
- ) -> impl IntoResponse {
-     let status = params.get("status").map(|s| s.as_str());
-     let (cursor, limit) = parse_pagination(&params);
-     let store = state.storage.read().await;
-     match store.list_pull_requests(&repo_id, status) {
-         Ok(pulls) => {
-             let (pulls, next_cursor, has_more) = apply_pagination(pulls, cursor, limit);
-             (
+async fn list_pull_requests_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Path(repo_id): Path<String>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> impl IntoResponse {
+    let status = params.get("status").map(|s| s.as_str());
+    let (cursor, limit) = parse_pagination(&params);
+    let store = state.storage.read().await;
+    match store.list_pull_requests(&repo_id, status) {
+        Ok(pulls) => {
+            let (pulls, next_cursor, has_more) = apply_pagination(pulls, cursor, limit);
+            (
                  StatusCode::OK,
                  Json(serde_json::json!({ "success": true, "pulls": pulls, "next_cursor": next_cursor, "has_more": has_more })),
              )
                  .into_response()
-         }
-         Err(e) => (
-             StatusCode::INTERNAL_SERVER_ERROR,
-             Json(serde_json::json!({ "success": false, "error": e.to_string() })),
-         )
-             .into_response(),
-     }
- }
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
 
 async fn create_pull_request_handler(
     State(state): State<Arc<SutureHubServer>>,
@@ -6433,21 +6454,39 @@ pub async fn run_server(
             axum::routing::get(repo_tree_handler),
         )
         .route("/auth/login", axum::routing::post(login_handler))
-            .route("/auth/password-login", axum::routing::post(password_login_handler))
-            .route("/auth/set-password", axum::routing::post(set_password_handler))
-            .route("/auth/ssh-keys", axum::routing::post(register_ssh_key_handler))
-            .route("/auth/ssh-keys/list/{username}", axum::routing::get(list_ssh_keys_handler))
-            .route("/auth/ssh-keys/{key_id}", axum::routing::delete(delete_ssh_key_handler))
-            .route("/auth/2fa/{username}", axum::routing::post(setup_2fa_handler))
-            .route("/search", axum::routing::get(search_handler))
-            .route("/activity", axum::routing::get(activity_handler))
-            .route(
-                "/mirrors/{id}",
-                axum::routing::delete(delete_mirror_handler),
-            )
-            .route(
-                "/webhooks/{repo_id}",
-                axum::routing::post(create_webhook_handler),
+        .route(
+            "/auth/password-login",
+            axum::routing::post(password_login_handler),
+        )
+        .route(
+            "/auth/set-password",
+            axum::routing::post(set_password_handler),
+        )
+        .route(
+            "/auth/ssh-keys",
+            axum::routing::post(register_ssh_key_handler),
+        )
+        .route(
+            "/auth/ssh-keys/list/{username}",
+            axum::routing::get(list_ssh_keys_handler),
+        )
+        .route(
+            "/auth/ssh-keys/{key_id}",
+            axum::routing::delete(delete_ssh_key_handler),
+        )
+        .route(
+            "/auth/2fa/{username}",
+            axum::routing::post(setup_2fa_handler),
+        )
+        .route("/search", axum::routing::get(search_handler))
+        .route("/activity", axum::routing::get(activity_handler))
+        .route(
+            "/mirrors/{id}",
+            axum::routing::delete(delete_mirror_handler),
+        )
+        .route(
+            "/webhooks/{repo_id}",
+            axum::routing::post(create_webhook_handler),
         )
         .route(
             "/webhooks/{repo_id}",
@@ -6783,12 +6822,30 @@ pub async fn run_server(
             axum::routing::post(register_handler),
         )
         .route("/api/v1/auth/login", axum::routing::post(login_handler))
-        .route("/api/v1/auth/password-login", axum::routing::post(password_login_handler))
-        .route("/api/v1/auth/set-password", axum::routing::post(set_password_handler))
-        .route("/api/v1/auth/ssh-keys", axum::routing::post(register_ssh_key_handler))
-        .route("/api/v1/auth/ssh-keys/list/{username}", axum::routing::get(list_ssh_keys_handler))
-        .route("/api/v1/auth/ssh-keys/{key_id}", axum::routing::delete(delete_ssh_key_handler))
-        .route("/api/v1/auth/2fa/{username}", axum::routing::post(setup_2fa_handler))
+        .route(
+            "/api/v1/auth/password-login",
+            axum::routing::post(password_login_handler),
+        )
+        .route(
+            "/api/v1/auth/set-password",
+            axum::routing::post(set_password_handler),
+        )
+        .route(
+            "/api/v1/auth/ssh-keys",
+            axum::routing::post(register_ssh_key_handler),
+        )
+        .route(
+            "/api/v1/auth/ssh-keys/list/{username}",
+            axum::routing::get(list_ssh_keys_handler),
+        )
+        .route(
+            "/api/v1/auth/ssh-keys/{key_id}",
+            axum::routing::delete(delete_ssh_key_handler),
+        )
+        .route(
+            "/api/v1/auth/2fa/{username}",
+            axum::routing::post(setup_2fa_handler),
+        )
         .route("/api/v1/users", axum::routing::get(list_users_handler))
         .route(
             "/api/v1/users/{username}",
@@ -7169,12 +7226,30 @@ mod tests {
                 axum::routing::get(repo_tree_handler),
             )
             .route("/auth/login", axum::routing::post(login_handler))
-            .route("/auth/password-login", axum::routing::post(password_login_handler))
-            .route("/auth/set-password", axum::routing::post(set_password_handler))
-            .route("/auth/ssh-keys", axum::routing::post(register_ssh_key_handler))
-            .route("/auth/ssh-keys/list/{username}", axum::routing::get(list_ssh_keys_handler))
-            .route("/auth/ssh-keys/{key_id}", axum::routing::delete(delete_ssh_key_handler))
-            .route("/auth/2fa/{username}", axum::routing::post(setup_2fa_handler))
+            .route(
+                "/auth/password-login",
+                axum::routing::post(password_login_handler),
+            )
+            .route(
+                "/auth/set-password",
+                axum::routing::post(set_password_handler),
+            )
+            .route(
+                "/auth/ssh-keys",
+                axum::routing::post(register_ssh_key_handler),
+            )
+            .route(
+                "/auth/ssh-keys/list/{username}",
+                axum::routing::get(list_ssh_keys_handler),
+            )
+            .route(
+                "/auth/ssh-keys/{key_id}",
+                axum::routing::delete(delete_ssh_key_handler),
+            )
+            .route(
+                "/auth/2fa/{username}",
+                axum::routing::post(setup_2fa_handler),
+            )
             .route("/search", axum::routing::get(search_handler))
             .route("/activity", axum::routing::get(activity_handler))
             .route(
@@ -7439,12 +7514,30 @@ mod tests {
                 axum::routing::get(repo_tree_handler),
             )
             .route("/auth/login", axum::routing::post(login_handler))
-            .route("/auth/password-login", axum::routing::post(password_login_handler))
-            .route("/auth/set-password", axum::routing::post(set_password_handler))
-            .route("/auth/ssh-keys", axum::routing::post(register_ssh_key_handler))
-            .route("/auth/ssh-keys/list/{username}", axum::routing::get(list_ssh_keys_handler))
-            .route("/auth/ssh-keys/{key_id}", axum::routing::delete(delete_ssh_key_handler))
-            .route("/auth/2fa/{username}", axum::routing::post(setup_2fa_handler))
+            .route(
+                "/auth/password-login",
+                axum::routing::post(password_login_handler),
+            )
+            .route(
+                "/auth/set-password",
+                axum::routing::post(set_password_handler),
+            )
+            .route(
+                "/auth/ssh-keys",
+                axum::routing::post(register_ssh_key_handler),
+            )
+            .route(
+                "/auth/ssh-keys/list/{username}",
+                axum::routing::get(list_ssh_keys_handler),
+            )
+            .route(
+                "/auth/ssh-keys/{key_id}",
+                axum::routing::delete(delete_ssh_key_handler),
+            )
+            .route(
+                "/auth/2fa/{username}",
+                axum::routing::post(setup_2fa_handler),
+            )
             .route("/search", axum::routing::get(search_handler))
             .route("/activity", axum::routing::get(activity_handler))
             .route(

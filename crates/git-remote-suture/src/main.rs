@@ -1,5 +1,5 @@
-use std::io::{self, BufRead, Write};
 use base64::Engine;
+use std::io::{self, BufRead, Write};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -188,11 +188,7 @@ fn handle_fetch(base_url: &str, repo_id: &str, stdout: &mut dyn Write) {
 }
 
 fn handle_push(base_url: &str, repo_id: &str, cmd: &str, stdout: &mut dyn Write) {
-    let parts: Vec<&str> = cmd
-        .strip_prefix("push ")
-        .unwrap_or("")
-        .split(':')
-        .collect();
+    let parts: Vec<&str> = cmd.strip_prefix("push ").unwrap_or("").split(':').collect();
     if parts.len() != 2 {
         writeln!(stdout, "error invalid push refspec").unwrap();
         writeln!(stdout).unwrap();

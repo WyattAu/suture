@@ -236,7 +236,11 @@ impl RaftRuntime {
         self.cmd_tx.clone()
     }
 
-    pub async fn add_node(&mut self, node_id: u64, addr: std::net::SocketAddr) -> Result<(), suture_raft::RaftError> {
+    pub async fn add_node(
+        &mut self,
+        node_id: u64,
+        addr: std::net::SocketAddr,
+    ) -> Result<(), suture_raft::RaftError> {
         {
             let mut hub = self.hub.lock().unwrap_or_else(|e| e.into_inner());
             hub.propose_membership_change(vec![node_id])?;
@@ -272,14 +276,21 @@ impl RaftRuntime {
 
     pub fn node_status(&self) -> Vec<(u64, String, NodeState)> {
         let hub = self.hub.lock().unwrap_or_else(|e| e.into_inner());
-        let mut result = vec![(hub.node_id(), format!("node-{}", hub.node_id()), *hub.state())];
+        let mut result = vec![(
+            hub.node_id(),
+            format!("node-{}", hub.node_id()),
+            *hub.state(),
+        )];
         for peer_id in hub.peers() {
             result.push((peer_id, format!("node-{peer_id}"), NodeState::Follower));
         }
         result
     }
 
-    pub async fn wait_for_consensus(&self, timeout: Duration) -> Result<(), suture_raft::RaftError> {
+    pub async fn wait_for_consensus(
+        &self,
+        timeout: Duration,
+    ) -> Result<(), suture_raft::RaftError> {
         let deadline = tokio::time::Instant::now() + timeout;
         loop {
             let indices = {
@@ -550,7 +561,10 @@ mod tests {
         tokio::time::sleep(Duration::from_secs(2)).await;
 
         let applied = leader.try_apply_committed();
-        assert!(!applied.is_empty(), "leader should have committed after add");
+        assert!(
+            !applied.is_empty(),
+            "leader should have committed after add"
+        );
 
         rt1.shutdown();
         rt2.shutdown();

@@ -2316,7 +2316,10 @@ impl HubStorage {
     }
 
     pub fn list_ssh_keys(&self, username: &str) -> Result<Vec<SshKeyInfo>, StorageError> {
-        let conn = self.conn.lock().map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
         let mut stmt = conn.prepare(
             "SELECT rowid, author, public_key, added_at FROM authorized_keys WHERE author = ?1 ORDER BY added_at DESC"
         )?;
@@ -2334,20 +2337,33 @@ impl HubStorage {
                 created_at,
             })
         })?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(StorageError::Database)
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(StorageError::Database)
     }
 
     pub fn delete_ssh_key(&self, key_id: i64) -> Result<(), StorageError> {
-        let conn = self.conn.lock().map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
-        conn.execute("DELETE FROM authorized_keys WHERE rowid = ?1", params![key_id])?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        conn.execute(
+            "DELETE FROM authorized_keys WHERE rowid = ?1",
+            params![key_id],
+        )?;
         Ok(())
     }
 
     pub fn set_password(&self, username: &str, password: &str) -> Result<(), StorageError> {
         let salt = format!("suture-hub-{}", username);
         let hash = format!("{:x}", sha2::Sha256::digest(format!("{password}{salt}")));
-        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
-        let conn = self.conn.lock().map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
         conn.execute(
             "INSERT OR REPLACE INTO user_passwords (username, password_hash, updated_at) VALUES (?1, ?2, ?3)",
             params![username, hash, now],
@@ -2356,8 +2372,12 @@ impl HubStorage {
     }
 
     pub fn verify_password(&self, username: &str, password: &str) -> Result<bool, StorageError> {
-        let conn = self.conn.lock().map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
-        let mut stmt = conn.prepare("SELECT password_hash FROM user_passwords WHERE username = ?1")?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let mut stmt =
+            conn.prepare("SELECT password_hash FROM user_passwords WHERE username = ?1")?;
         let result: Option<String> = stmt.query_row(params![username], |row| row.get(0)).ok();
         let stored_hash = match result {
             Some(h) => h,
@@ -2368,9 +2388,17 @@ impl HubStorage {
         Ok(hash == stored_hash)
     }
 
-    pub fn enable_2fa(&self, username: &str, secret: &str, recovery_codes: &[String]) -> Result<(), StorageError> {
+    pub fn enable_2fa(
+        &self,
+        username: &str,
+        secret: &str,
+        recovery_codes: &[String],
+    ) -> Result<(), StorageError> {
         let codes_json = serde_json::to_string(recovery_codes).unwrap_or_else(|_| "[]".to_string());
-        let conn = self.conn.lock().map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
         conn.execute(
             "INSERT OR REPLACE INTO user_2fa (username, totp_secret, enabled, recovery_codes) VALUES (?1, ?2, 1, ?3)",
             params![username, secret, codes_json],
@@ -2379,8 +2407,12 @@ impl HubStorage {
     }
 
     pub fn get_2fa_secret(&self, username: &str) -> Result<Option<String>, StorageError> {
-        let conn = self.conn.lock().map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
-        let mut stmt = conn.prepare("SELECT totp_secret FROM user_2fa WHERE username = ?1 AND enabled = 1")?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let mut stmt =
+            conn.prepare("SELECT totp_secret FROM user_2fa WHERE username = ?1 AND enabled = 1")?;
         let result: Option<String> = stmt.query_row(params![username], |row| row.get(0)).ok();
         Ok(result)
     }
@@ -3702,7 +3734,10 @@ fn compute_ssh_fingerprint(public_key: &str) -> String {
     if parts.len() >= 2 {
         if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(parts[1]) {
             let hash = sha2::Sha256::digest(bytes);
-            return format!("SHA256:{}", base64::engine::general_purpose::STANDARD.encode(hash));
+            return format!(
+                "SHA256:{}",
+                base64::engine::general_purpose::STANDARD.encode(hash)
+            );
         }
     }
     "unknown".to_string()

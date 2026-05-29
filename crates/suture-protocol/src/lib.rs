@@ -682,8 +682,7 @@ pub fn apply_delta(base: &[u8], delta: &[u8]) -> Vec<u8> {
             if delta.len() < 41 {
                 return delta.to_vec();
             }
-            let target_len =
-                u64::from_le_bytes(delta[1..9].try_into().unwrap_or([0; 8])) as usize;
+            let target_len = u64::from_le_bytes(delta[1..9].try_into().unwrap_or([0; 8])) as usize;
             let base_checksum = &delta[9..25];
             let target_checksum = &delta[25..41];
             let compressed = &delta[41..];
@@ -1610,7 +1609,10 @@ mod tests {
         let delta = compute_binary_delta(&base, &target).expect("should produce delta");
         let wrong_base: Vec<u8> = (0..1000).map(|i| ((i * 11) % 251) as u8).collect();
         let result = apply_delta(&wrong_base, &delta);
-        assert_ne!(result, target, "wrong base should not produce correct target");
+        assert_ne!(
+            result, target,
+            "wrong base should not produce correct target"
+        );
     }
 
     #[test]
@@ -1649,6 +1651,9 @@ mod tests {
             })
             .collect();
         let (_, delta_result) = compute_delta(&base, &target);
-        assert_eq!(delta_result[0], 0x00, "should fall back to full when binary delta not beneficial");
+        assert_eq!(
+            delta_result[0], 0x00,
+            "should fall back to full when binary delta not beneficial"
+        );
     }
 }

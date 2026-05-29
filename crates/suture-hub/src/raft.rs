@@ -110,7 +110,10 @@ impl RaftHub {
         self.node.peers().to_vec()
     }
 
-    pub fn propose_membership_change(&mut self, new_nodes: Vec<u64>) -> Result<(), suture_raft::RaftError> {
+    pub fn propose_membership_change(
+        &mut self,
+        new_nodes: Vec<u64>,
+    ) -> Result<(), suture_raft::RaftError> {
         self.node.propose_membership_change(new_nodes)
     }
 
