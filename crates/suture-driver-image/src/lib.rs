@@ -26,6 +26,72 @@ impl ImageDriver {
             color_type: format!("{:?}", img.color()),
         })
     }
+
+    pub fn compute_image_similarity(base: &[u8], target: &[u8]) -> Option<f64> {
+        let base_img = image::load_from_memory(base).ok()?;
+        let target_img = image::load_from_memory(target).ok()?;
+
+        if base_img.width() != target_img.width() || base_img.height() != target_img.height() {
+            return None;
+        }
+
+        let width = base_img.width() as usize;
+        let height = base_img.height() as usize;
+
+        let base_gray = base_img.to_luma8();
+        let target_gray = target_img.to_luma8();
+
+        let img1: Vec<f64> = base_gray.iter().map(|&v| v as f64 / 255.0).collect();
+        let img2: Vec<f64> = target_gray.iter().map(|&v| v as f64 / 255.0).collect();
+
+        Some(compute_ssim(&img1, &img2, width, height))
+    }
+
+    pub fn visual_diff(
+        base_content: Option<&[u8]>,
+        new_content: &[u8],
+    ) -> Result<VisualDiffResult, DriverError> {
+        let new_meta = Self::extract_metadata(new_content)?;
+
+        match base_content {
+            None => Ok(VisualDiffResult {
+                similarity: None,
+                metadata_changes: vec![
+                    SemanticChange::Added {
+                        path: "/width".to_owned(),
+                        value: new_meta.width.to_string(),
+                    },
+                    SemanticChange::Added {
+                        path: "/height".to_owned(),
+                        value: new_meta.height.to_string(),
+                    },
+                    SemanticChange::Added {
+                        path: "/color_type".to_owned(),
+                        value: new_meta.color_type,
+                    },
+                ],
+                description: "New image added".to_owned(),
+            }),
+            Some(base) => {
+                let base_meta = Self::extract_metadata(base)?;
+                let metadata_changes = base_meta.diff_fields(&new_meta);
+
+                let similarity = Self::compute_image_similarity(base, new_content);
+                let description = match similarity {
+                    Some(s) if s >= 0.999 => "Images are visually identical".to_owned(),
+                    Some(s) => format!("Images are {:.1}% similar", s * 100.0),
+                    None => "Images have different dimensions, pixel comparison not available"
+                        .to_owned(),
+                };
+
+                Ok(VisualDiffResult {
+                    similarity,
+                    metadata_changes,
+                    description,
+                })
+            }
+        }
+    }
 }
 
 impl Default for ImageDriver {
@@ -73,6 +139,71 @@ impl ImageMetadata {
     }
 }
 
+pub struct VisualDiffResult {
+    pub similarity: Option<f64>,
+    pub metadata_changes: Vec<SemanticChange>,
+    pub description: String,
+}
+
+fn compute_ssim(img1: &[f64], img2: &[f64], width: usize, height: usize) -> f64 {
+    let c1: f64 = (0.01 * 255.0) * (0.01 * 255.0);
+    let c2: f64 = (0.03 * 255.0) * (0.03 * 255.0);
+
+    let window_size = 8;
+    let mut ssim_sum = 0.0;
+    let mut count = 0;
+
+    for y in (0..height).step_by(window_size / 2) {
+        for x in (0..width).step_by(window_size / 2) {
+            let mut mu1 = 0.0;
+            let mut mu2 = 0.0;
+            let mut sigma1_sq = 0.0;
+            let mut sigma2_sq = 0.0;
+            let mut sigma12 = 0.0;
+            let mut n = 0.0;
+
+            for dy in 0..window_size {
+                for dx in 0..window_size {
+                    let px = x + dx;
+                    let py = y + dy;
+                    if px < width && py < height {
+                        let idx = py * width + px;
+                        let v1 = img1[idx];
+                        let v2 = img2[idx];
+                        mu1 += v1;
+                        mu2 += v2;
+                        sigma1_sq += v1 * v1;
+                        sigma2_sq += v2 * v2;
+                        sigma12 += v1 * v2;
+                        n += 1.0;
+                    }
+                }
+            }
+
+            if n == 0.0 {
+                continue;
+            }
+
+            mu1 /= n;
+            mu2 /= n;
+            sigma1_sq = sigma1_sq / n - mu1 * mu1;
+            sigma2_sq = sigma2_sq / n - mu2 * mu2;
+            sigma12 = sigma12 / n - mu1 * mu2;
+
+            let ssim = ((2.0 * mu1 * mu2 + c1) * (2.0 * sigma12 + c2))
+                / ((mu1 * mu1 + mu2 * mu2 + c1) * (sigma1_sq + sigma2_sq + c2));
+
+            ssim_sum += ssim;
+            count += 1;
+        }
+    }
+
+    if count == 0 {
+        return 1.0;
+    }
+    ssim_sum / count as f64
+}
+
 impl SutureDriver for ImageDriver {
     fn name(&self) -> &'static str {
         "Image"
@@ -109,7 +240,19 @@ impl SutureDriver for ImageDriver {
             }
             Some(base) => {
                 let base_meta = Self::extract_metadata(base.as_bytes())?;
-                Ok(base_meta.diff_fields(&new_meta))
+                let mut changes = base_meta.diff_fields(&new_meta);
+
+                if let Some(similarity) =
+                    Self::compute_image_similarity(base.as_bytes(), new_content.as_bytes())
+                {
+                    changes.push(SemanticChange::Modified {
+                        path: "/similarity".to_owned(),
+                        old_value: "1.0".to_owned(),
+                        new_value: format!("{:.4}", similarity),
+                    });
+                }
+
+                Ok(changes)
             }
         }
     }
@@ -220,7 +363,17 @@ impl SutureDriver for ImageDriver {
             }
             Some(b) => {
                 let base_meta = Self::extract_metadata(b)?;
-                Ok(base_meta.diff_fields(&new_meta))
+                let mut changes = base_meta.diff_fields(&new_meta);
+
+                if let Some(similarity) = Self::compute_image_similarity(b, new_content) {
+                    changes.push(SemanticChange::Modified {
+                        path: "/similarity".to_owned(),
+                        old_value: "1.0".to_owned(),
+                        new_value: format!("{:.4}", similarity),
+                    });
+                }
+
+                Ok(changes)
             }
         }
     }
@@ -306,7 +459,13 @@ mod tests {
         let bytes = create_test_png(50, 50, [128, 128, 128]);
 
         let changes = image_diff(&driver, Some(&bytes), &bytes);
-        assert!(changes.is_empty());
+        let non_sim_changes: Vec<_> = changes
+            .iter()
+            .filter(
+                |c| !matches!(c, SemanticChange::Modified { path, .. } if path == "/similarity"),
+            )
+            .collect();
+        assert!(non_sim_changes.is_empty());
     }
 
     #[test]
@@ -315,7 +474,13 @@ mod tests {
         let bytes = create_test_png(10, 10, [0, 0, 0]);
 
         let changes = image_diff(&driver, Some(&bytes), &bytes);
-        assert!(changes.is_empty());
+        let non_sim_changes: Vec<_> = changes
+            .iter()
+            .filter(
+                |c| !matches!(c, SemanticChange::Modified { path, .. } if path == "/similarity"),
+            )
+            .collect();
+        assert!(non_sim_changes.is_empty());
     }
 
     #[test]
@@ -454,5 +619,65 @@ mod tests {
             .iter()
             .find(|c| matches!(c, SemanticChange::Modified { path, .. } if path == "/color_type"));
         assert!(color_change.is_some());
+    }
+
+    #[test]
+    fn test_ssim_identical_images() {
+        let bytes = create_test_png(32, 32, [128, 64, 200]);
+        let similarity = ImageDriver::compute_image_similarity(&bytes, &bytes);
+        assert!(similarity.is_some());
+        let score = similarity.unwrap();
+        assert!(
+            (score - 1.0).abs() < 0.01,
+            "Expected ~1.0 for identical images, got {}",
+            score
+        );
+    }
+
+    #[test]
+    fn test_ssim_different_sizes() {
+        let small = create_test_png(16, 16, [0, 0, 0]);
+        let large = create_test_png(32, 32, [0, 0, 0]);
+        let similarity = ImageDriver::compute_image_similarity(&small, &large);
+        assert!(similarity.is_none());
+    }
+
+    #[test]
+    fn test_ssim_completely_different() {
+        let base = create_test_png(32, 32, [0, 0, 0]);
+        let target = create_test_png(32, 32, [255, 255, 255]);
+        let similarity = ImageDriver::compute_image_similarity(&base, &target);
+        assert!(similarity.is_some());
+        let score = similarity.unwrap();
+        assert!(
+            score < 0.95,
+            "Expected significantly lower SSIM for opposite images, got {}",
+            score
+        );
+    }
+
+    #[test]
+    fn test_image_diff_includes_similarity() {
+        let driver = ImageDriver::new();
+        let base_bytes = create_test_png(16, 16, [0, 0, 0]);
+        let new_bytes = create_test_png(16, 16, [100, 100, 100]);
+
+        let changes = image_diff(&driver, Some(&base_bytes), &new_bytes);
+        let sim_change = changes
+            .iter()
+            .find(|c| matches!(c, SemanticChange::Modified { path, .. } if path == "/similarity"));
+        assert!(
+            sim_change.is_some(),
+            "diff should include /similarity change"
+        );
+
+        if let Some(SemanticChange::Modified { new_value, .. }) = sim_change {
+            let score: f64 = new_value.parse().expect("similarity should be a number");
+            assert!(
+                (0.0..=1.0).contains(&score),
+                "similarity should be between 0 and 1, got {}",
+                score
+            );
+        }
     }
 }

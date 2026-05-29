@@ -37,6 +37,63 @@ function escapeHtml(str) {
     return el.innerHTML;
 }
 
+function renderMarkdown(text) {
+    if (!text) return '';
+    var html = text
+        .replace(/```(\w*)\n([\s\S]*?)```/g, function(_, lang, code) {
+            return '<pre class="code-block"><code class="lang-' + (lang || 'text') + '">' + escapeHtml(code.trim()) + '</code></pre>';
+        })
+        .replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
+        .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+        .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+        .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+        .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
+        .replace(/^[*-] (.+)$/gm, '<li>$1</li>')
+        .replace(/^\d+\. (.+)$/gm, '<li>$1</li>')
+        .replace(/^---$/gm, '<hr>')
+        .replace(/\n\n/g, '</p><p>')
+        .replace(/\n/g, '<br>');
+    return '<p>' + html + '</p>';
+}
+
+function highlightCode(element) {
+    if (!element) return;
+    var code = element.textContent;
+    var lang = element.className.replace('lang-', '');
+
+    var highlighted = escapeHtml(code);
+
+    if (['rust', 'rs'].indexOf(lang) !== -1) {
+        highlighted = highlighted
+            .replace(/\b(fn|let|mut|pub|struct|enum|impl|use|mod|if|else|match|return|async|await|for|in|while|break|continue|self|Self|super|crate|where|type|trait|const|static|ref|move|as|dyn|Box|Vec|String|Option|Result|Ok|Err|Some|None|true|false)\b/g, '<span class="kw">$1</span>')
+            .replace(/(\/\/.*$)/gm, '<span class="cmt">$1</span>')
+            .replace(/(".*?")/g, '<span class="str">$1</span>');
+    } else if (['json', 'yaml', 'yml', 'toml'].indexOf(lang) !== -1) {
+        highlighted = highlighted
+            .replace(/("(?:[^"\\]|\\.)*")\s*:/g, '<span class="key">$1</span>:')
+            .replace(/:\s*("(?:[^"\\]|\\.)*")/g, ': <span class="str">$1</span>')
+            .replace(/\b(true|false|null)\b/g, '<span class="kw">$1</span>')
+            .replace(/(\b\d+\.?\d*\b)/g, '<span class="num">$1</span>');
+    } else if (['bash', 'sh', 'zsh'].indexOf(lang) !== -1) {
+        highlighted = highlighted
+            .replace(/(#.*$)/gm, '<span class="cmt">$1</span>')
+            .replace(/(\$\{?[\w]+\}?)/g, '<span class="var">$1</span>')
+            .replace(/\b(if|then|else|fi|for|do|done|case|esac|echo|export|source|cd|rm|cp|mv|mkdir|chmod|sudo|apt|cargo|rustup|git)\b/g, '<span class="kw">$1</span>');
+    }
+
+    element.innerHTML = highlighted;
+}
+
+function renderAndHighlight(text) {
+    var container = document.createElement('div');
+    container.innerHTML = renderMarkdown(text);
+    container.querySelectorAll('.code-block code').forEach(highlightCode);
+    return container.innerHTML;
+}
+
 function formatTimestamp(ts) {
     if (!ts) return '\u2014';
     var d = new Date(Number(ts) * 1000);
@@ -1862,7 +1919,7 @@ async function renderIssueDetail(container, issueId) {
             '</div>' +
             '<div class="issue-labels">' + labelBadges + '</div>' +
             '</div>' +
-            '<div class="issue-body"><pre>' + escapeHtml(issue.body || '') + '</pre></div>' +
+            '<div class="issue-body markdown-body">' + renderAndHighlight(issue.body || '') + '</div>' +
             '<div class="issue-actions">' +
             '<button class="btn ' + toggleBtnClass + '" id="btn-toggle-issue" data-status="' + toggleStatus + '">' + escapeHtml(toggleBtnLabel) + '</button>' +
             '</div>' +
@@ -2101,7 +2158,7 @@ async function renderPullDetail(container, pullId) {
             (pr.merged_at ? '<span>Merged: ' + formatTimestamp(pr.merged_at) + '</span>' : '') +
             (pr.merged_by ? '<span>Merged by: ' + escapeHtml(pr.merged_by) + '</span>' : '') +
             '</div></div>' +
-            '<div class="issue-body"><pre>' + escapeHtml(pr.body || '') + '</pre></div>' +
+            '<div class="issue-body markdown-body">' + renderAndHighlight(pr.body || '') + '</div>' +
             '<div class="issue-actions" id="pr-actions">' + actionsHtml + '</div>' +
             '<div class="issue-comments-section">' +
             '<h3>Reviews</h3>' +
@@ -2258,7 +2315,7 @@ async function renderWiki(container, repoId, pageTitle) {
             document.getElementById('wiki-page-view').innerHTML =
                 '<div class="repo-header"><h3>' + escapeHtml(page.title) + '</h3>' +
                 '<div><span style="color:var(--text-secondary)">by ' + escapeHtml(page.author) + ' \u2014 ' + formatTimestamp(page.updated_at) + '</span></div></div>' +
-                '<div style="margin-top:1rem"><pre style="white-space:pre-wrap;word-break:break-word">' + escapeHtml(page.content) + '</pre></div>' +
+                '<div style="margin-top:1rem" class="markdown-body">' + renderAndHighlight(page.content) + '</div>' +
                 '<div style="margin-top:1rem"><form id="form-edit-wiki">' +
                 '<label>Edit Content</label><textarea id="wiki-edit-content" rows="8" style="width:100%;box-sizing:border-box">' + escapeHtml(page.content) + '</textarea>' +
                 '<div class="form-actions" style="margin-top:0.5rem"><button type="submit" class="btn btn-primary">Save</button></div></form></div>';
@@ -2362,7 +2419,7 @@ async function renderReleases(container, repoId) {
                     '<span class="mono" style="font-weight:bold">' + escapeHtml(r.tag) + '</span>' +
                     '<span>' + escapeHtml(r.title) + '</span>' + preBadge + '</div>' +
                     '<div class="search-item-meta">' + escapeHtml(r.author) + ' \u2014 ' + formatTimestamp(r.created_at) + '</div>' +
-                    (r.body ? '<p style="margin:0.25rem 0 0;color:var(--text-secondary)">' + escapeHtml(r.body) + '</p>' : '') +
+                    (r.body ? '<div style="margin:0.25rem 0 0" class="markdown-body">' + renderAndHighlight(r.body) + '</div>' : '') +
                     '</div>';
             });
             el.innerHTML = html;

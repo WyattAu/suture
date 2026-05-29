@@ -49,6 +49,8 @@ blake3 = "1"
 tempfile = "3"
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
 criterion = { version = "0.5", features = ["async_tokio"] }
+suture-protocol = { path = "../suture-protocol" }
+suture-common = { path = "../suture-common" }
 
 [[bench]]
 name = "scale_bench"

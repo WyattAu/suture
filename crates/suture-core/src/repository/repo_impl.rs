@@ -353,6 +353,33 @@ pub struct ReflogEntry {
     pub timestamp: i64,
 }
 
+fn glob_match(pattern: &str, path: &str) -> bool {
+    if pattern == "*" || pattern == "**" {
+        return true;
+    }
+    let parts: Vec<&str> = pattern.split('*').collect();
+    if parts.len() == 1 {
+        return path == pattern || path.starts_with(&format!("{}/", pattern));
+    }
+    let mut idx = 0;
+    for (i, part) in parts.iter().enumerate() {
+        if part.is_empty() {
+            continue;
+        }
+        if i == 0 {
+            if !path.starts_with(part) {
+                return false;
+            }
+            idx = part.len();
+        } else if let Some(pos) = path[idx..].find(part) {
+            idx += pos + part.len();
+        } else {
+            return false;
+        }
+    }
+    true
+}
+
 impl Repository {
     // =========================================================================
     // Ref Resolution
@@ -3896,6 +3923,62 @@ impl Repository {
     }
 
     // =========================================================================
+    // Sparse Checkout
+    // =========================================================================
+
+    pub fn set_sparse_patterns(&self, patterns: &[String]) -> Result<(), RepoError> {
+        let patterns_json =
+            serde_json::to_string(patterns).map_err(|e| RepoError::Custom(e.to_string()))?;
+        self.meta
+            .set_config("core.sparse_patterns", &patterns_json)?;
+        let tree = self.snapshot_head()?;
+        self.sync_working_tree_with_sparse(&tree, patterns)?;
+        Ok(())
+    }
+
+    pub fn get_sparse_patterns(&self) -> Result<Vec<String>, RepoError> {
+        match self.meta.get_config("core.sparse_patterns")? {
+            Some(json) => {
+                let patterns: Vec<String> = serde_json::from_str(&json).unwrap_or_default();
+                Ok(patterns)
+            }
+            None => Ok(Vec::new()),
+        }
+    }
+
+    fn matches_sparse_pattern(path: &str, patterns: &[String]) -> bool {
+        if patterns.is_empty() {
+            return true;
+        }
+        for pattern in patterns {
+            if glob_match(pattern, path) {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn sync_working_tree_with_sparse(
+        &self,
+        new_tree: &FileTree,
+        patterns: &[String],
+    ) -> Result<(), RepoError> {
+        for (path, hash) in new_tree.iter() {
+            if !Self::matches_sparse_pattern(path, patterns) {
+                continue;
+            }
+            if let Ok(data) = self.cas.get_blob(hash) {
+                let file_path = self.root.join(path);
+                if let Some(parent) = file_path.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                fs::write(&file_path, &data)?;
+            }
+        }
+        Ok(())
+    }
+
+    // =========================================================================
     // Remote Operations
     // =========================================================================
 
@@ -6297,6 +6380,49 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    #[test]
+    fn test_sparse_patterns_set_and_get() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempfile::tempdir()?;
+        let repo = Repository::init(dir.path(), "test")?;
+
+        let patterns: Vec<String> = vec!["src/**".to_owned(), "*.md".to_owned()];
+        repo.set_sparse_patterns(&patterns)?;
+
+        let got = repo.get_sparse_patterns()?;
+        assert_eq!(got, patterns);
+        Ok(())
+    }
+
+    #[test]
+    fn test_sparse_patterns_empty_means_full() {
+        assert!(Repository::matches_sparse_pattern("anything.txt", &[]));
+        assert!(Repository::matches_sparse_pattern(
+            "deep/nested/path.rs",
+            &[]
+        ));
+    }
+
+    #[test]
+    fn test_glob_match_star_star() {
+        assert!(glob_match("**", "foo.txt"));
+        assert!(glob_match("**", "src/main.rs"));
+        assert!(glob_match("*", "anything"));
+    }
+
+    #[test]
+    fn test_glob_match_prefix() {
+        assert!(glob_match("src/**", "src/main.rs"));
+        assert!(glob_match("src/**", "src/deep/nested/file.rs"));
+        assert!(!glob_match("src/**", "lib/main.rs"));
+    }
+
+    #[test]
+    fn test_glob_match_suffix() {
+        assert!(glob_match("**/*.rs", "src/main.rs"));
+        assert!(glob_match("**/*.rs", "deep/nested/main.rs"));
+        assert!(!glob_match("**/*.rs", "src/main.go"));
     }
 
     mod proptests {

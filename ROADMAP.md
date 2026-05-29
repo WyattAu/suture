@@ -340,6 +340,41 @@
 
 ---
 
+## Phase 14: Git Interop & Merge Service (v11.0) -- COMPLETED
+
+**Goal:** Git remote compatibility and merge-as-a-service API.
+
+**Sources:** `.docs/git_replacement_analysis.md` Phase 2, Direction A+C hybrid
+
+| Task | Details | Status |
+|------|---------|--------|
+| Git remote helper | `git-remote-suture` binary. `git clone suture://hub/repo` works. Capabilities, list, fetch, push protocol. | Done |
+| Merge-as-a-service | `POST /merge` endpoint. Accepts base+ours+theirs (base64), detects format, returns merged. JSON/YAML/TOML semantic + line-based fallback. | Done |
+| Streaming blob transfer | `PUT/GET /repos/{id}/blobs/{hash}/upload|download`. Raw binary blob transfer bypassing JSON encoding. | Done |
+| PR diff view | `GET /pulls/{id}/diff`. File-level diff between source and target branches of a PR. | Done |
+| Email notifications | SMTP integration. Configurable per-user preferences. Email queue with flush endpoint. | Done |
+| Performance benchmarks | 4 benchmarks: 1000 patches, 500 blobs, 100 branches x1000 listing, 500 issues. All <5s. | Done |
+
+**Exit criteria met:** Users can `git clone suture://` and use standalone merge API.
+
+---
+
+## Phase 15: Advanced Features (v11.1) -- COMPLETED
+
+**Goal:** Image diff, sparse checkout, Web UI polish, plugin SDK.
+
+| Task | Details | Status |
+|------|---------|--------|
+| Image diff (SSIM) | Pixel-level SSIM comparison for PNG images. Sliding 8x8 window. Returns similarity score 0.0-1.0. | Done |
+| Partial clone / sparse checkout | `suture sparse-checkout set/list/disable`. Glob patterns. Only matching files materialized. | Done |
+| Web UI polish | Markdown rendering for wiki, issues, PRs, releases. Syntax highlighting (Rust, JSON/YAML, Bash). Code blocks with language support. | Done |
+| Plugin SDK | `PluginDriver` trait, `PluginRegistry` with Arc-based multi-extension mapping, `PluginManifest`, typed errors. | Done |
+| Tech debt cleanup | TD-4 (WASM plugin -- SDK now complete), TD-7 (desktop CI verified), TD-8 (XLSX -- test-only, not dead), TD-13 (docs verified). | Done |
+
+**Exit criteria met:** Image comparison is pixel-level. Sparse checkout works. UI renders Markdown.
+
+---
+
 ## Version Timeline
 
 | Version | Focus | Est. Duration | Start |

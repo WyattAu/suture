@@ -10,8 +10,8 @@ use std::path::Path;
 use thiserror::Error;
 
 use crate::types::{
-    BlobRef, BranchProto, CodeSearchResult, HashProto, Issue, IssueComment, Organization,
-    PatchProto, PrReview, PullRequestRecord, Release, Team, UserInfo, WikiPage,
+    BlobRef, BranchProto, CodeSearchResult, HashProto, Issue, IssueComment, NotificationPreference,
+    Organization, PatchProto, PrReview, PullRequestRecord, Release, Team, UserInfo, WikiPage,
 };
 use crate::webhooks::Webhook;
 
@@ -426,6 +426,29 @@ impl HubStorage {
                 size INTEGER NOT NULL,
                 hash TEXT NOT NULL,
                 created_at INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS notification_preferences (
+                username TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                PRIMARY KEY (username, event_type)
+            );
+
+            CREATE TABLE IF NOT EXISTS email_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                recipient TEXT NOT NULL,
+                subject TEXT NOT NULL,
+                body TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                sent_at INTEGER,
+                status TEXT NOT NULL DEFAULT 'pending'
+            );
+
+            CREATE TABLE IF NOT EXISTS smtp_config (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
             );
              ",
         )?;
@@ -3379,6 +3402,166 @@ impl HubStorage {
             entries.push(row?);
         }
         Ok(entries)
+    }
+
+    // === SMTP / Email Notifications ===
+
+    pub fn set_smtp_config(&self, config: &crate::email::SmtpConfig) -> Result<(), StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let items = [
+            ("host", config.host.as_str()),
+            ("port", &config.port.to_string()),
+            ("username", config.username.as_str()),
+            ("password", config.password.as_str()),
+            ("from_address", config.from_address.as_str()),
+            ("tls", if config.tls { "1" } else { "0" }),
+        ];
+        for (key, value) in &items {
+            conn.execute(
+                "INSERT OR REPLACE INTO smtp_config (key, value) VALUES (?1, ?2)",
+                rusqlite::params![key, value],
+            )?;
+        }
+        Ok(())
+    }
+
+    pub fn get_smtp_config(&self) -> Result<Option<crate::email::SmtpConfig>, StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let get = |key: &str| -> Result<Option<String>, rusqlite::Error> {
+            let mut stmt = conn.prepare("SELECT value FROM smtp_config WHERE key = ?1")?;
+            let mut rows = stmt.query_map(rusqlite::params![key], |row| row.get::<_, String>(0))?;
+            match rows.next() {
+                Some(r) => Ok(Some(r?)),
+                None => Ok(None),
+            }
+        };
+
+        let host = match get("host")? {
+            Some(h) => h,
+            None => return Ok(None),
+        };
+        let port: u16 = get("port")?.and_then(|p| p.parse().ok()).unwrap_or(587);
+        let username = get("username")?.unwrap_or_default();
+        let password = get("password")?.unwrap_or_default();
+        let from_address = get("from_address")?.unwrap_or_default();
+        let tls = get("tls")?.map(|v| v == "1").unwrap_or(true);
+
+        Ok(Some(crate::email::SmtpConfig {
+            host,
+            port,
+            username,
+            password,
+            from_address,
+            tls,
+        }))
+    }
+
+    pub fn set_notification_preference(
+        &self,
+        username: &str,
+        event_type: &str,
+        enabled: bool,
+    ) -> Result<(), StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        conn.execute(
+            "INSERT OR REPLACE INTO notification_preferences (username, event_type, enabled) VALUES (?1, ?2, ?3)",
+            rusqlite::params![username, event_type, enabled as i32],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_notification_preferences(
+        &self,
+        username: &str,
+    ) -> Result<Vec<NotificationPreference>, StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let mut stmt = conn.prepare(
+            "SELECT username, event_type, enabled FROM notification_preferences WHERE username = ?1",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![username], |row| {
+            Ok(NotificationPreference {
+                username: row.get(0)?,
+                event_type: row.get(1)?,
+                enabled: row.get::<_, i32>(2)? != 0,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(StorageError::Database)
+    }
+
+    pub fn enqueue_email(
+        &self,
+        recipient: &str,
+        subject: &str,
+        body: &str,
+        event_type: &str,
+    ) -> Result<i64, StorageError> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        conn.execute(
+            "INSERT INTO email_queue (recipient, subject, body, event_type, created_at, status) VALUES (?1, ?2, ?3, ?4, ?5, 'pending')",
+            rusqlite::params![recipient, subject, body, event_type, now],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    #[allow(clippy::type_complexity)]
+    pub fn get_pending_emails(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<(i64, String, String, String, String)>, StorageError> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, recipient, subject, body, event_type FROM email_queue WHERE status = 'pending' ORDER BY created_at ASC LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![limit as i64], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+            ))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(StorageError::Database)
+    }
+
+    pub fn mark_email_sent(&self, id: i64) -> Result<(), StorageError> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        conn.execute(
+            "UPDATE email_queue SET status = 'sent', sent_at = ?1 WHERE id = ?2",
+            rusqlite::params![now, id],
+        )?;
+        Ok(())
     }
 }
 

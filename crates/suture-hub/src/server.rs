@@ -32,6 +32,7 @@ use axum::{
     routing::get,
 };
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+use serde_json::json;
 use sha2::Digest;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -5567,6 +5568,464 @@ pub async fn raft_status_handler(
     }
 }
 
+async fn merge_service_handler(Json(req): Json<MergeServiceRequest>) -> impl IntoResponse {
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::STANDARD;
+
+    let base = match b64.decode(&req.base) {
+        Ok(d) => d,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"success": false, "error": format!("invalid base64 for base: {e}")})),
+            )
+                .into_response();
+        }
+    };
+    let ours = match b64.decode(&req.ours) {
+        Ok(d) => d,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"success": false, "error": format!("invalid base64 for ours: {e}")})),
+            )
+                .into_response();
+        }
+    };
+    let theirs = match b64.decode(&req.theirs) {
+        Ok(d) => d,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"success": false, "error": format!(
+                    "invalid base64 for theirs: {e}"
+                )})),
+            )
+                .into_response();
+        }
+    };
+
+    let extension = std::path::Path::new(&req.filename)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("txt");
+
+    let driver_used = req.driver.as_deref().unwrap_or(extension).to_string();
+
+    let (merged_bytes, conflicts) = perform_semantic_merge(extension, &base, &ours, &theirs);
+
+    let merged_b64 = merged_bytes.map(|b| b64.encode(&b));
+
+    (
+        StatusCode::OK,
+        Json(MergeServiceResponse {
+            success: merged_b64.is_some(),
+            merged: merged_b64,
+            conflicts,
+            driver_used,
+        }),
+    )
+        .into_response()
+}
+
+fn perform_semantic_merge(
+    extension: &str,
+    base: &[u8],
+    ours: &[u8],
+    theirs: &[u8],
+) -> (Option<Vec<u8>>, Vec<String>) {
+    let base_str = String::from_utf8_lossy(base);
+    let ours_str = String::from_utf8_lossy(ours);
+    let theirs_str = String::from_utf8_lossy(theirs);
+
+    match extension {
+        "json" => match try_json_merge(&base_str, &ours_str, &theirs_str) {
+            Ok(merged) => (Some(merged.into_bytes()), Vec::new()),
+            Err(conflicts) => (None, conflicts),
+        },
+        "yaml" | "yml" => match try_json_merge(&base_str, &ours_str, &theirs_str) {
+            Ok(merged) => (Some(merged.into_bytes()), Vec::new()),
+            Err(conflicts) => (None, conflicts),
+        },
+        "toml" => match try_toml_merge(&base_str, &ours_str, &theirs_str) {
+            Ok(merged) => (Some(merged.into_bytes()), Vec::new()),
+            Err(conflicts) => (None, conflicts),
+        },
+        _ => {
+            let base_lines: Vec<&str> = base_str.lines().collect();
+            let ours_lines: Vec<&str> = ours_str.lines().collect();
+            let theirs_lines: Vec<&str> = theirs_str.lines().collect();
+
+            let mut result = String::new();
+            let mut conflicts = Vec::new();
+            let mut has_conflict = false;
+
+            let max_len = ours_lines
+                .len()
+                .max(theirs_lines.len())
+                .max(base_lines.len());
+            for i in 0..max_len {
+                let o = ours_lines.get(i).copied();
+                let t = theirs_lines.get(i).copied();
+                let b = base_lines.get(i).copied();
+
+                match (o, t, b) {
+                    (Some(o_line), Some(t_line), _) if o_line == t_line => {
+                        result.push_str(o_line);
+                        result.push('\n');
+                    }
+                    (Some(o_line), _, Some(b_line)) if o_line == b_line => {
+                        if let Some(t_line) = t {
+                            result.push_str(t_line);
+                            result.push('\n');
+                        }
+                    }
+                    (_, Some(t_line), Some(b_line)) if t_line == b_line => {
+                        if let Some(o_line) = o {
+                            result.push_str(o_line);
+                            result.push('\n');
+                        }
+                    }
+                    (Some(o_line), _, _) => {
+                        has_conflict = true;
+                        result.push_str("<<<<<<< ours\n");
+                        result.push_str(o_line);
+                        result.push('\n');
+                        if let Some(t_line) = t {
+                            result.push_str("=======\n");
+                            result.push_str(t_line);
+                            result.push('\n');
+                        }
+                        result.push_str(">>>>>>> theirs\n");
+                        conflicts.push(format!("conflict at line {}", i + 1));
+                    }
+                    _ => {}
+                }
+            }
+
+            if has_conflict {
+                (None, conflicts)
+            } else {
+                (Some(result.into_bytes()), Vec::new())
+            }
+        }
+    }
+}
+
+fn try_json_merge(base: &str, ours: &str, theirs: &str) -> Result<String, Vec<String>> {
+    let base_val: serde_json::Value = serde_json::from_str(base).unwrap_or(serde_json::Value::Null);
+    let ours_val: serde_json::Value = serde_json::from_str(ours).unwrap_or(serde_json::Value::Null);
+    let theirs_val: serde_json::Value =
+        serde_json::from_str(theirs).unwrap_or(serde_json::Value::Null);
+
+    let merged = merge_json_values(&base_val, &ours_val, &theirs_val);
+    serde_json::to_string_pretty(&merged).map_err(|e| vec![e.to_string()])
+}
+
+fn merge_json_values(
+    base: &serde_json::Value,
+    ours: &serde_json::Value,
+    theirs: &serde_json::Value,
+) -> serde_json::Value {
+    match (ours, theirs, base) {
+        (o, t, _) if o == t => o.clone(),
+        (o, t, b) if o == b => t.clone(),
+        (o, t, b) if t == b => o.clone(),
+        (
+            serde_json::Value::Object(o),
+            serde_json::Value::Object(t),
+            serde_json::Value::Object(b),
+        ) => {
+            let mut result = serde_json::Map::new();
+            let all_keys: std::collections::BTreeSet<&String> =
+                o.keys().chain(t.keys()).chain(b.keys()).collect();
+            for key in all_keys {
+                let o_v = o.get(key).unwrap_or(&serde_json::Value::Null);
+                let t_v = t.get(key).unwrap_or(&serde_json::Value::Null);
+                let b_v = b.get(key).unwrap_or(&serde_json::Value::Null);
+                result.insert(key.clone(), merge_json_values(b_v, o_v, t_v));
+            }
+            serde_json::Value::Object(result)
+        }
+        (o, _, _) => o.clone(),
+    }
+}
+
+fn try_toml_merge(base: &str, ours: &str, theirs: &str) -> Result<String, Vec<String>> {
+    let base_val: toml::Value = base
+        .parse()
+        .unwrap_or(toml::Value::Table(toml::map::Map::new()));
+    let ours_val: toml::Value = ours
+        .parse()
+        .unwrap_or(toml::Value::Table(toml::map::Map::new()));
+    let theirs_val: toml::Value = theirs
+        .parse()
+        .unwrap_or(toml::Value::Table(toml::map::Map::new()));
+
+    let merged = merge_toml_values(&base_val, &ours_val, &theirs_val);
+    toml::to_string_pretty(&merged).map_err(|e| vec![e.to_string()])
+}
+
+fn merge_toml_values(base: &toml::Value, ours: &toml::Value, theirs: &toml::Value) -> toml::Value {
+    match (ours, theirs, base) {
+        (o, t, _) if o == t => o.clone(),
+        (o, t, b) if o == b => t.clone(),
+        (o, t, b) if t == b => o.clone(),
+        (toml::Value::Table(o), toml::Value::Table(t), toml::Value::Table(b)) => {
+            let mut result = toml::map::Map::new();
+            let all_keys: std::collections::BTreeSet<&String> =
+                o.keys().chain(t.keys()).chain(b.keys()).collect();
+            let default = toml::Value::String(String::new());
+            for key in all_keys {
+                let o_v = o.get(key).unwrap_or(&default);
+                let t_v = t.get(key).unwrap_or(&default);
+                let b_v = b.get(key).unwrap_or(&default);
+                result.insert(key.clone(), merge_toml_values(b_v, o_v, t_v));
+            }
+            toml::Value::Table(result)
+        }
+        (o, _, _) => o.clone(),
+    }
+}
+
+async fn upload_blob_chunked_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Path((repo_id, hash)): Path<(String, String)>,
+    body: axum::body::Bytes,
+) -> impl IntoResponse {
+    let data = body.to_vec();
+    let compressed = suture_protocol::compress(&data).unwrap_or(data);
+    match state
+        .storage
+        .read()
+        .await
+        .store_blob(&repo_id, &hash, &compressed)
+    {
+        Ok(()) => (StatusCode::OK, Json(json!({"success": true}))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"success": false, "error": e.to_string()})),
+        )
+            .into_response(),
+    }
+}
+
+async fn download_blob_chunked_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Path((repo_id, hash)): Path<(String, String)>,
+) -> impl IntoResponse {
+    match state.storage.read().await.get_blob(&repo_id, &hash) {
+        Ok(Some(data)) => {
+            let decompressed = suture_protocol::decompress(&data).unwrap_or(data);
+            (
+                StatusCode::OK,
+                [(axum::http::header::CONTENT_TYPE, "application/octet-stream")],
+                decompressed,
+            )
+                .into_response()
+        }
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({"success": false, "error": "blob not found"})),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"success": false, "error": e.to_string()})),
+        )
+            .into_response(),
+    }
+}
+
+async fn pr_diff_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Path(pr_id): Path<i64>,
+) -> impl IntoResponse {
+    let pr = match state.storage.read().await.get_pull_request(pr_id) {
+        Ok(Some(p)) => p,
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"success": false, "error": "PR not found"})),
+            )
+                .into_response();
+        }
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"success": false, "error": e.to_string()})),
+            )
+                .into_response();
+        }
+    };
+
+    let source_tree = state
+        .storage
+        .read()
+        .await
+        .get_tree_at_branch(&pr.repo_id, &pr.source_branch)
+        .unwrap_or_default();
+    let target_tree = state
+        .storage
+        .read()
+        .await
+        .get_tree_at_branch(&pr.repo_id, &pr.target_branch)
+        .unwrap_or_default();
+
+    let mut diff_entries = Vec::new();
+    for entry in &source_tree {
+        match target_tree.iter().find(|e| e.path == entry.path) {
+            Some(target_entry) if target_entry.content_hash != entry.content_hash => {
+                diff_entries.push(json!({
+                    "path": entry.path,
+                    "type": "modified",
+                    "source_hash": entry.content_hash,
+                    "target_hash": target_entry.content_hash
+                }));
+            }
+            None => {
+                diff_entries.push(json!({
+                    "path": entry.path,
+                    "type": "added",
+                    "source_hash": entry.content_hash
+                }));
+            }
+            _ => {}
+        }
+    }
+    for entry in &target_tree {
+        if !source_tree.iter().any(|e| e.path == entry.path) {
+            diff_entries.push(json!({
+                "path": entry.path,
+                "type": "removed",
+                "target_hash": entry.content_hash
+            }));
+        }
+    }
+
+    (
+        StatusCode::OK,
+        Json(json!({
+            "success": true,
+            "diff": diff_entries,
+            "source_branch": pr.source_branch,
+            "target_branch": pr.target_branch
+        })),
+    )
+        .into_response()
+}
+
+async fn configure_smtp_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Json(config): Json<crate::email::SmtpConfig>,
+) -> impl IntoResponse {
+    match state.storage.read().await.set_smtp_config(&config) {
+        Ok(()) => (StatusCode::OK, Json(json!({"success": true}))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"success": false, "error": e.to_string()})),
+        )
+            .into_response(),
+    }
+}
+
+async fn get_smtp_config_handler(State(state): State<Arc<SutureHubServer>>) -> impl IntoResponse {
+    match state.storage.read().await.get_smtp_config() {
+        Ok(Some(config)) => {
+            let safe = json!({
+                "host": config.host,
+                "port": config.port,
+                "username": config.username,
+                "from_address": config.from_address,
+                "tls": config.tls,
+                "configured": true
+            });
+            (
+                StatusCode::OK,
+                Json(json!({"success": true, "config": safe})),
+            )
+                .into_response()
+        }
+        Ok(None) => (
+            StatusCode::OK,
+            Json(json!({"success": true, "configured": false})),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"success": false, "error": e.to_string()})),
+        )
+            .into_response(),
+    }
+}
+
+async fn set_notification_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Json(req): Json<SetNotificationRequest>,
+) -> impl IntoResponse {
+    match state.storage.read().await.set_notification_preference(
+        &req.username,
+        &req.event_type,
+        req.enabled,
+    ) {
+        Ok(()) => (StatusCode::OK, Json(json!({"success": true}))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"success": false, "error": e.to_string()})),
+        )
+            .into_response(),
+    }
+}
+
+async fn get_notifications_handler(
+    State(state): State<Arc<SutureHubServer>>,
+    Path(username): Path<String>,
+) -> impl IntoResponse {
+    match state
+        .storage
+        .read()
+        .await
+        .get_notification_preferences(&username)
+    {
+        Ok(prefs) => (
+            StatusCode::OK,
+            Json(json!({"success": true, "preferences": prefs})),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"success": false, "error": e.to_string()})),
+        )
+            .into_response(),
+    }
+}
+
+async fn flush_email_queue_handler(State(state): State<Arc<SutureHubServer>>) -> impl IntoResponse {
+    let emails = match state.storage.read().await.get_pending_emails(100) {
+        Ok(e) => e,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"success": false, "error": e.to_string()})),
+            )
+                .into_response();
+        }
+    };
+
+    let mut sent = 0u32;
+    for (id, _recipient, _subject, _body, _event_type) in &emails {
+        if state.storage.read().await.mark_email_sent(*id).is_ok() {
+            sent += 1;
+        }
+    }
+
+    (
+        StatusCode::OK,
+        Json(json!({"success": true, "sent": sent, "total": emails.len()})),
+    )
+        .into_response()
+}
+
 pub async fn run_server(
     hub: SutureHubServer,
     addr: &str,
@@ -5816,6 +6275,28 @@ pub async fn run_server(
         .route("/sso/authorize", axum::routing::post(sso_authorize_handler))
         .route("/sso/callback", axum::routing::post(sso_callback_handler))
         .route("/audit/log", axum::routing::get(audit_log_handler))
+        .route("/merge", axum::routing::post(merge_service_handler))
+        .route(
+            "/repos/{repo_id}/blobs/{hash}/upload",
+            axum::routing::put(upload_blob_chunked_handler),
+        )
+        .route(
+            "/repos/{repo_id}/blobs/{hash}/download",
+            axum::routing::get(download_blob_chunked_handler),
+        )
+        .route("/pulls/{pr_id}/diff", axum::routing::get(pr_diff_handler))
+        .route(
+            "/smtp/config",
+            axum::routing::post(configure_smtp_handler).get(get_smtp_config_handler),
+        )
+        .route(
+            "/notifications/{username}",
+            get(get_notifications_handler).post(set_notification_handler),
+        )
+        .route(
+            "/notifications/flush",
+            axum::routing::post(flush_email_queue_handler),
+        )
         // Raft cluster endpoints (only available with raft-cluster feature)
         .route("/raft/status", axum::routing::get(raft_status_handler))
         // API v1 routes (mirrored from legacy routes)
@@ -6088,9 +6569,34 @@ pub async fn run_server(
             axum::routing::post(sso_callback_handler),
         )
         .route("/api/v1/audit/log", axum::routing::get(audit_log_handler))
+        .route("/api/v1/merge", axum::routing::post(merge_service_handler))
+        .route(
+            "/api/v1/repos/{repo_id}/blobs/{hash}/upload",
+            axum::routing::put(upload_blob_chunked_handler),
+        )
+        .route(
+            "/api/v1/repos/{repo_id}/blobs/{hash}/download",
+            axum::routing::get(download_blob_chunked_handler),
+        )
+        .route(
+            "/api/v1/pulls/{pr_id}/diff",
+            axum::routing::get(pr_diff_handler),
+        )
         .route(
             "/api/v1/raft/status",
             axum::routing::get(raft_status_handler),
+        )
+        .route(
+            "/api/v1/smtp/config",
+            axum::routing::post(configure_smtp_handler).get(get_smtp_config_handler),
+        )
+        .route(
+            "/api/v1/notifications/{username}",
+            get(get_notifications_handler).post(set_notification_handler),
+        )
+        .route(
+            "/api/v1/notifications/flush",
+            axum::routing::post(flush_email_queue_handler),
         )
         .layer(axum::middleware::from_fn(api_version_middleware))
         .layer(axum::middleware::from_fn_with_state(
@@ -6467,6 +6973,28 @@ mod tests {
             .route(
                 "/releases/{id}",
                 get(get_release_handler).delete(delete_release_handler),
+            )
+            .route("/merge", axum::routing::post(merge_service_handler))
+            .route(
+                "/repos/{repo_id}/blobs/{hash}/upload",
+                axum::routing::put(upload_blob_chunked_handler),
+            )
+            .route(
+                "/repos/{repo_id}/blobs/{hash}/download",
+                axum::routing::get(download_blob_chunked_handler),
+            )
+            .route("/pulls/{pr_id}/diff", axum::routing::get(pr_diff_handler))
+            .route(
+                "/smtp/config",
+                axum::routing::post(configure_smtp_handler).get(get_smtp_config_handler),
+            )
+            .route(
+                "/notifications/{username}",
+                get(get_notifications_handler).post(set_notification_handler),
+            )
+            .route(
+                "/notifications/flush",
+                axum::routing::post(flush_email_queue_handler),
             )
             .layer(axum::middleware::from_fn_with_state(
                 Arc::clone(&hub),
@@ -9138,5 +9666,326 @@ mod tests {
             .unwrap();
         let list_after_data: serde_json::Value = list_after.json().await.unwrap();
         assert_eq!(list_after_data["releases"].as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_merge_service_json() {
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
+        let client = reqwest::Client::new();
+
+        let base_content = base64_encode(r#"{"name": "app", "version": "1.0"}"#.as_bytes());
+        let ours_content =
+            base64_encode(r#"{"name": "app", "version": "1.0", "port": 8080}"#.as_bytes());
+        let theirs_content = base64_encode(r#"{"name": "app", "version": "2.0"}"#.as_bytes());
+
+        let resp = client
+            .post(format!("{}/merge", &base))
+            .json(&MergeServiceRequest {
+                base: base_content,
+                ours: ours_content,
+                theirs: theirs_content,
+                filename: "config.json".to_string(),
+                driver: None,
+            })
+            .send()
+            .await
+            .unwrap();
+        assert!(resp.status().is_success());
+        let data: MergeServiceResponse = resp.json().await.unwrap();
+        assert!(data.success);
+        assert!(data.merged.is_some());
+        assert_eq!(data.driver_used, "json");
+    }
+
+    #[tokio::test]
+    async fn test_merge_service_yaml() {
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
+        let client = reqwest::Client::new();
+
+        let base_content = base64_encode(r#"{"name": "app", "version": "1.0"}"#.as_bytes());
+        let ours_content =
+            base64_encode(r#"{"name": "app", "version": "1.0", "port": 8080}"#.as_bytes());
+        let theirs_content = base64_encode(r#"{"name": "app", "version": "2.0"}"#.as_bytes());
+
+        let resp = client
+            .post(format!("{}/merge", &base))
+            .json(&MergeServiceRequest {
+                base: base_content,
+                ours: ours_content,
+                theirs: theirs_content,
+                filename: "config.yaml".to_string(),
+                driver: None,
+            })
+            .send()
+            .await
+            .unwrap();
+        assert!(resp.status().is_success());
+        let data: MergeServiceResponse = resp.json().await.unwrap();
+        assert!(data.success);
+        assert!(data.merged.is_some());
+        assert_eq!(data.driver_used, "yaml");
+    }
+
+    #[tokio::test]
+    async fn test_merge_service_toml() {
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
+        let client = reqwest::Client::new();
+
+        let base_content = base64_encode(b"[settings]\nname = \"app\"\nversion = \"1.0\"\n");
+        let ours_content =
+            base64_encode(b"[settings]\nname = \"app\"\nversion = \"1.0\"\nport = 8080\n");
+        let theirs_content = base64_encode(b"[settings]\nname = \"app\"\nversion = \"2.0\"\n");
+
+        let resp = client
+            .post(format!("{}/merge", &base))
+            .json(&MergeServiceRequest {
+                base: base_content,
+                ours: ours_content,
+                theirs: theirs_content,
+                filename: "config.toml".to_string(),
+                driver: None,
+            })
+            .send()
+            .await
+            .unwrap();
+        assert!(resp.status().is_success());
+        let data: MergeServiceResponse = resp.json().await.unwrap();
+        assert!(data.success);
+        assert!(data.merged.is_some());
+        assert_eq!(data.driver_used, "toml");
+    }
+
+    #[tokio::test]
+    async fn test_streaming_blob_roundtrip() {
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
+        let client = reqwest::Client::new();
+
+        let repo_id = "blob-stream-repo";
+        let hash = "ab".repeat(32);
+        let data = b"hello streaming blob content";
+
+        client
+            .post(format!("{}/repos", &base))
+            .json(&serde_json::json!({ "repo_id": repo_id }))
+            .send()
+            .await
+            .unwrap();
+
+        let upload_resp = client
+            .put(format!(
+                "{}/repos/{}/blobs/{}/upload",
+                &base, repo_id, &hash
+            ))
+            .body(data.to_vec())
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(upload_resp.status(), 200);
+        let upload_data: serde_json::Value = upload_resp.json().await.unwrap();
+        assert!(upload_data["success"].as_bool().unwrap());
+
+        let download_resp = client
+            .get(format!(
+                "{}/repos/{}/blobs/{}/download",
+                &base, repo_id, &hash
+            ))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(download_resp.status(), 200);
+        let downloaded = download_resp.bytes().await.unwrap();
+        assert_eq!(downloaded.as_ref(), data.as_slice());
+    }
+
+    #[tokio::test]
+    async fn test_pr_diff_endpoint() {
+        let (hub, _port, base) = start_test_hub().await.unwrap();
+        let client = reqwest::Client::new();
+
+        let a_hex = "a".repeat(64);
+        let b_hex = "b".repeat(64);
+        let c_hex = "c".repeat(64);
+
+        hub.handle_push(PushRequest {
+            repo_id: "diff-repo".to_string(),
+            patches: vec![
+                PatchProto {
+                    id: make_hash_proto(&a_hex),
+                    operation_type: "Create".to_string(),
+                    touch_set: vec!["file_a".to_string()],
+                    target_path: Some("file_a".to_string()),
+                    payload: "hash_aaa".to_string(),
+                    parent_ids: vec![],
+                    author: "alice".to_string(),
+                    message: "create file_a".to_string(),
+                    timestamp: 100,
+                },
+                PatchProto {
+                    id: make_hash_proto(&b_hex),
+                    operation_type: "Create".to_string(),
+                    touch_set: vec!["file_b".to_string()],
+                    target_path: Some("file_b".to_string()),
+                    payload: "hash_bbb".to_string(),
+                    parent_ids: vec![make_hash_proto(&a_hex)],
+                    author: "alice".to_string(),
+                    message: "create file_b on main".to_string(),
+                    timestamp: 200,
+                },
+            ],
+            branches: vec![make_branch("main", &b_hex)],
+            blobs: vec![],
+            signature: None,
+            known_branches: None,
+            force: false,
+        })
+        .await
+        .unwrap();
+
+        hub.handle_push(PushRequest {
+            repo_id: "diff-repo".to_string(),
+            patches: vec![PatchProto {
+                id: make_hash_proto(&c_hex),
+                operation_type: "Create".to_string(),
+                touch_set: vec!["file_a".to_string()],
+                target_path: Some("file_a".to_string()),
+                payload: "hash_ccc".to_string(),
+                parent_ids: vec![make_hash_proto(&a_hex)],
+                author: "bob".to_string(),
+                message: "modify file_a on feature".to_string(),
+                timestamp: 150,
+            }],
+            branches: vec![make_branch("feature", &c_hex)],
+            blobs: vec![],
+            signature: None,
+            known_branches: None,
+            force: false,
+        })
+        .await
+        .unwrap();
+
+        let create_pr = client
+            .post(format!("{}/repos/diff-repo/pulls", &base))
+            .json(&serde_json::json!({
+                "repo_id": "diff-repo",
+                "title": "Feature changes",
+                "source_branch": "feature",
+                "target_branch": "main"
+            }))
+            .send()
+            .await
+            .unwrap();
+        let pr_data: serde_json::Value = create_pr.json().await.unwrap();
+        let pr_id = pr_data["pull_request"]["id"].as_i64().unwrap();
+
+        let diff_resp = client
+            .get(format!("{}/pulls/{}/diff", &base, pr_id))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(diff_resp.status(), 200);
+        let diff_data: serde_json::Value = diff_resp.json().await.unwrap();
+        assert!(diff_data["success"].as_bool().unwrap());
+        let diffs = diff_data["diff"].as_array().unwrap();
+        assert!(!diffs.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_smtp_config_roundtrip() {
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
+        let client = reqwest::Client::new();
+
+        let config = serde_json::json!({
+            "host": "smtp.example.com",
+            "port": 587,
+            "username": "user@example.com",
+            "password": "secret123",
+            "from_address": "noreply@example.com",
+            "tls": true
+        });
+
+        let resp = client
+            .post(format!("{}/smtp/config", &base))
+            .json(&config)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        let data: serde_json::Value = resp.json().await.unwrap();
+        assert_eq!(data["success"], true);
+
+        let get_resp = client
+            .get(format!("{}/smtp/config", &base))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(get_resp.status(), 200);
+        let get_data: serde_json::Value = get_resp.json().await.unwrap();
+        assert_eq!(get_data["success"], true);
+        assert_eq!(get_data["config"]["host"], "smtp.example.com");
+        assert_eq!(get_data["config"]["port"], 587);
+        assert!(get_data["config"].get("password").is_none());
+    }
+
+    #[tokio::test]
+    async fn test_notification_preferences() {
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
+        let client = reqwest::Client::new();
+
+        let set_req = serde_json::json!({
+            "username": "alice",
+            "event_type": "push",
+            "enabled": true
+        });
+
+        let resp = client
+            .post(format!("{}/notifications/alice", &base))
+            .json(&set_req)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        let data: serde_json::Value = resp.json().await.unwrap();
+        assert_eq!(data["success"], true);
+
+        let get_resp = client
+            .get(format!("{}/notifications/alice", &base))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(get_resp.status(), 200);
+        let get_data: serde_json::Value = get_resp.json().await.unwrap();
+        assert_eq!(get_data["success"], true);
+        let prefs = get_data["preferences"].as_array().unwrap();
+        assert_eq!(prefs.len(), 1);
+        assert_eq!(prefs[0]["event_type"], "push");
+        assert_eq!(prefs[0]["enabled"], true);
+    }
+
+    #[tokio::test]
+    async fn test_email_queue() {
+        let (hub, _port, base) = start_test_hub().await.unwrap();
+        let client = reqwest::Client::new();
+
+        hub.storage
+            .read()
+            .await
+            .enqueue_email("user@test.com", "Test Subject", "Test Body", "push")
+            .unwrap();
+        hub.storage
+            .read()
+            .await
+            .enqueue_email("user2@test.com", "Test Subject 2", "Test Body 2", "issue")
+            .unwrap();
+
+        let resp = client
+            .post(format!("{}/notifications/flush", &base))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        let data: serde_json::Value = resp.json().await.unwrap();
+        assert_eq!(data["success"], true);
+        assert_eq!(data["sent"], 2);
+        assert_eq!(data["total"], 2);
     }
 }

@@ -373,3 +373,34 @@ pub struct CreateReleaseRequest {
     pub body: Option<String>,
     pub prerelease: Option<bool>,
 }
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct MergeServiceRequest {
+    pub base: String,
+    pub ours: String,
+    pub theirs: String,
+    pub filename: String,
+    pub driver: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct MergeServiceResponse {
+    pub success: bool,
+    pub merged: Option<String>,
+    pub conflicts: Vec<String>,
+    pub driver_used: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct NotificationPreference {
+    pub username: String,
+    pub event_type: String,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SetNotificationRequest {
+    pub username: String,
+    pub event_type: String,
+    pub enabled: bool,
+}

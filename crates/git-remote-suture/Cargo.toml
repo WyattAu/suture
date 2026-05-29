@@ -1,0 +1,19 @@
+[package]
+name = "git-remote-suture"
+version = "0.1.0"
+edition = "2024"
+description = "Git remote helper for Suture repositories"
+
+[[bin]]
+name = "git-remote-suture"
+path = "src/main.rs"
+
+[dependencies]
+suture-protocol = { path = "../suture-protocol" }
+suture-common = { path = "../suture-common" }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "blocking"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "io-util", "process"] }
+tracing = "0.1"
+base64 = "0.22"

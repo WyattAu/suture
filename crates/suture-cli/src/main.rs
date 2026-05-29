@@ -962,6 +962,30 @@ EXAMPLES:
         #[arg(long)]
         prefix: Option<String>,
     },
+    /// Manage sparse checkout patterns
+    #[command(after_long_help = "\
+EXAMPLES:
+    suture sparse-checkout set 'src/**' '*.md'  # Only checkout src/ and markdown files
+    suture sparse-checkout list                  # Show current patterns
+    suture sparse-checkout disable               # Restore full checkout")]
+    SparseCheckout {
+        #[command(subcommand)]
+        command: SparseCheckoutCmd,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub(crate) enum SparseCheckoutCmd {
+    /// Set sparse checkout patterns.
+    Set {
+        /// Glob patterns for files to include.
+        #[arg(required = true)]
+        patterns: Vec<String>,
+    },
+    /// List current sparse checkout patterns.
+    List,
+    /// Disable sparse checkout (checkout all files).
+    Disable,
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -1433,6 +1457,34 @@ pub(crate) enum SyncAction {
     Stop,
     /// Show sync daemon status
     Status,
+}
+
+fn sparse_checkout(
+    repo_path: Option<&std::path::Path>,
+    command: SparseCheckoutCmd,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let repo = resolve_repo(repo_path)?;
+    match command {
+        SparseCheckoutCmd::Set { patterns } => {
+            repo.set_sparse_patterns(&patterns)?;
+            println!("Sparse checkout patterns set: {:?}", patterns);
+        }
+        SparseCheckoutCmd::List => {
+            let patterns = repo.get_sparse_patterns()?;
+            if patterns.is_empty() {
+                println!("No sparse patterns set (full checkout)");
+            } else {
+                for p in &patterns {
+                    println!("{}", p);
+                }
+            }
+        }
+        SparseCheckoutCmd::Disable => {
+            repo.set_sparse_patterns(&[])?;
+            println!("Sparse checkout disabled (full checkout restored)");
+        }
+    }
+    Ok(())
 }
 
 #[tokio::main]
@@ -1924,6 +1976,7 @@ async fn main() {
             cmd::batch::cmd_batch(repo_path, &ba).await
         }
         Commands::Timeline { action } => cmd::timeline::cmd_timeline(repo_path, &action).await,
+        Commands::SparseCheckout { command } => sparse_checkout(repo_path, command),
         Commands::RepoSize => cmd::repo_size::cmd_repo_size().await,
     };
 

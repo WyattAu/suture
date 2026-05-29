@@ -302,6 +302,113 @@ pub mod prelude {
     pub use crate::{log, read_input, set_error, write_output, LogLevel, MergeInput};
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PluginManifest {
+    pub name: String,
+    pub version: String,
+    pub description: String,
+    pub extensions: Vec<String>,
+    pub author: String,
+}
+
+pub trait PluginDriver: Send + Sync {
+    fn manifest(&self) -> PluginManifest;
+    fn diff(
+        &self,
+        base: &[u8],
+        ours: &[u8],
+        theirs: &[u8],
+    ) -> Result<PluginDiffResult, PluginError>;
+    fn merge(
+        &self,
+        base: &[u8],
+        ours: &[u8],
+        theirs: &[u8],
+    ) -> Result<PluginMergeResult, PluginError>;
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PluginDiffResult {
+    pub changes: Vec<PluginChange>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PluginChange {
+    pub path: String,
+    pub description: String,
+    pub severity: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PluginMergeResult {
+    pub merged: Vec<u8>,
+    pub conflicts: Vec<String>,
+    pub clean: bool,
+}
+
+#[derive(Debug, Clone)]
+pub enum PluginError {
+    Runtime(String),
+    UnsupportedFormat(String),
+    Conflict(String),
+}
+
+impl std::fmt::Display for PluginError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PluginError::Runtime(msg) => write!(f, "plugin error: {msg}"),
+            PluginError::UnsupportedFormat(fmt) => write!(f, "unsupported format: {fmt}"),
+            PluginError::Conflict(msg) => write!(f, "merge conflict: {msg}"),
+        }
+    }
+}
+
+impl std::error::Error for PluginError {}
+
+use std::sync::Arc;
+
+pub struct PluginRegistry {
+    drivers: std::collections::HashMap<String, Arc<dyn PluginDriver>>,
+}
+
+impl PluginRegistry {
+    pub fn new() -> Self {
+        Self {
+            drivers: std::collections::HashMap::new(),
+        }
+    }
+
+    pub fn register(&mut self, driver: impl PluginDriver + 'static) {
+        let driver: Arc<dyn PluginDriver> = Arc::new(driver);
+        let manifest = driver.manifest();
+        for ext in &manifest.extensions {
+            self.drivers.insert(ext.clone(), Arc::clone(&driver));
+        }
+    }
+
+    pub fn get_driver(&self, extension: &str) -> Option<&dyn PluginDriver> {
+        self.drivers.get(extension).map(|d| d.as_ref())
+    }
+
+    pub fn list_plugins(&self) -> Vec<PluginManifest> {
+        let mut seen = std::collections::HashSet::new();
+        let mut manifests = Vec::new();
+        for driver in self.drivers.values() {
+            let m = driver.manifest();
+            if seen.insert(m.name.clone()) {
+                manifests.push(m);
+            }
+        }
+        manifests
+    }
+}
+
+impl Default for PluginRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tests (these run on the host, not in WASM)
 // ---------------------------------------------------------------------------
@@ -337,6 +444,142 @@ mod tests {
     fn test_error_msg_accessors() {
         set_error("hello");
         assert_eq!(error_msg_len(), 5);
-        // Can't dereference the pointer in host tests, but we can check the length
+    }
+
+    #[test]
+    fn test_plugin_registry_register_and_get() {
+        struct MockDriver;
+        impl PluginDriver for MockDriver {
+            fn manifest(&self) -> PluginManifest {
+                PluginManifest {
+                    name: "test-plugin".to_string(),
+                    version: "1.0.0".to_string(),
+                    description: "test".to_string(),
+                    extensions: vec!["json".to_string(), "yaml".to_string()],
+                    author: "test".to_string(),
+                }
+            }
+            fn diff(
+                &self,
+                _base: &[u8],
+                _ours: &[u8],
+                _theirs: &[u8],
+            ) -> Result<PluginDiffResult, PluginError> {
+                Ok(PluginDiffResult { changes: vec![] })
+            }
+            fn merge(
+                &self,
+                base: &[u8],
+                ours: &[u8],
+                theirs: &[u8],
+            ) -> Result<PluginMergeResult, PluginError> {
+                Ok(PluginMergeResult {
+                    merged: base.to_vec(),
+                    conflicts: vec![],
+                    clean: ours == theirs,
+                })
+            }
+        }
+
+        let mut registry = PluginRegistry::new();
+        registry.register(MockDriver);
+        assert!(registry.get_driver("json").is_some());
+        assert!(registry.get_driver("yaml").is_some());
+        assert!(registry.get_driver("toml").is_none());
+    }
+
+    #[test]
+    fn test_plugin_registry_list() {
+        struct DriverA;
+        impl PluginDriver for DriverA {
+            fn manifest(&self) -> PluginManifest {
+                PluginManifest {
+                    name: "plugin-a".to_string(),
+                    version: "1.0.0".to_string(),
+                    description: "a".to_string(),
+                    extensions: vec!["a".to_string()],
+                    author: "test".to_string(),
+                }
+            }
+            fn diff(
+                &self,
+                _base: &[u8],
+                _ours: &[u8],
+                _theirs: &[u8],
+            ) -> Result<PluginDiffResult, PluginError> {
+                Ok(PluginDiffResult { changes: vec![] })
+            }
+            fn merge(
+                &self,
+                _base: &[u8],
+                _ours: &[u8],
+                _theirs: &[u8],
+            ) -> Result<PluginMergeResult, PluginError> {
+                Ok(PluginMergeResult {
+                    merged: vec![],
+                    conflicts: vec![],
+                    clean: true,
+                })
+            }
+        }
+        struct DriverB;
+        impl PluginDriver for DriverB {
+            fn manifest(&self) -> PluginManifest {
+                PluginManifest {
+                    name: "plugin-b".to_string(),
+                    version: "2.0.0".to_string(),
+                    description: "b".to_string(),
+                    extensions: vec!["b".to_string()],
+                    author: "test".to_string(),
+                }
+            }
+            fn diff(
+                &self,
+                _base: &[u8],
+                _ours: &[u8],
+                _theirs: &[u8],
+            ) -> Result<PluginDiffResult, PluginError> {
+                Ok(PluginDiffResult { changes: vec![] })
+            }
+            fn merge(
+                &self,
+                _base: &[u8],
+                _ours: &[u8],
+                _theirs: &[u8],
+            ) -> Result<PluginMergeResult, PluginError> {
+                Ok(PluginMergeResult {
+                    merged: vec![],
+                    conflicts: vec![],
+                    clean: true,
+                })
+            }
+        }
+
+        let mut registry = PluginRegistry::new();
+        registry.register(DriverA);
+        registry.register(DriverB);
+        let plugins = registry.list_plugins();
+        assert_eq!(plugins.len(), 2);
+        let names: std::collections::HashSet<&str> =
+            plugins.iter().map(|p| p.name.as_str()).collect();
+        assert!(names.contains("plugin-a"));
+        assert!(names.contains("plugin-b"));
+    }
+
+    #[test]
+    fn test_plugin_manifest_serialization() {
+        let manifest = PluginManifest {
+            name: "serde-test".to_string(),
+            version: "0.1.0".to_string(),
+            description: "serialization test".to_string(),
+            extensions: vec!["json".to_string(), "yaml".to_string()],
+            author: "tester".to_string(),
+        };
+        let json = serde_json::to_string(&manifest).unwrap();
+        let deserialized: PluginManifest = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.name, "serde-test");
+        assert_eq!(deserialized.version, "0.1.0");
+        assert_eq!(deserialized.extensions, vec!["json", "yaml"]);
+        assert_eq!(deserialized.author, "tester");
     }
 }
