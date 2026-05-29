@@ -2117,6 +2117,32 @@ async function loadPullsData() {
     }
 }
 
+function renderDiff(diffText) {
+    if (!diffText) return '<p style="color:var(--text-secondary)">No diff available.</p>';
+    var lines = diffText.split('\n');
+    var html = '<div class="diff-view"><table class="diff-table">';
+    var oldLine = 0, newLine = 0;
+    for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        if (line.startsWith('@@')) {
+            var m = line.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+            if (m) { oldLine = parseInt(m[1]) - 1; newLine = parseInt(m[2]) - 1; }
+            html += '<tr class="diff-hunk"><td class="diff-line-num"></td><td class="diff-line-num"></td><td class="diff-marker">' + escapeHtml(line) + '</td></tr>';
+        } else if (line.startsWith('+')) {
+            newLine++;
+            html += '<tr class="diff-add"><td class="diff-line-num"></td><td class="diff-line-num">' + newLine + '</td><td class="diff-marker">+</td><td class="diff-text">' + escapeHtml(line.substring(1)) + '</td></tr>';
+        } else if (line.startsWith('-')) {
+            oldLine++;
+            html += '<tr class="diff-del"><td class="diff-line-num">' + oldLine + '</td><td class="diff-line-num"></td><td class="diff-marker">-</td><td class="diff-text">' + escapeHtml(line.substring(1)) + '</td></tr>';
+        } else {
+            oldLine++; newLine++;
+            html += '<tr class="diff-ctx"><td class="diff-line-num">' + oldLine + '</td><td class="diff-line-num">' + newLine + '</td><td class="diff-marker">&nbsp;</td><td class="diff-text">' + escapeHtml(line) + '</td></tr>';
+        }
+    }
+    html += '</table></div>';
+    return html;
+}
+
 async function renderPullDetail(container, pullId) {
     container.innerHTML =
         '<div class="breadcrumb" id="pull-breadcrumb"></div>' +
@@ -2160,6 +2186,11 @@ async function renderPullDetail(container, pullId) {
             '</div></div>' +
             '<div class="issue-body markdown-body">' + renderAndHighlight(pr.body || '') + '</div>' +
             '<div class="issue-actions" id="pr-actions">' + actionsHtml + '</div>' +
+            '<div class="issue-comments-section">' +
+            '<h3>Diff</h3>' +
+            '<div id="diff-loading" class="loading">Loading diff&hellip;</div>' +
+            '<div id="diff-content" class="hidden"></div>' +
+            '</div>' +
             '<div class="issue-comments-section">' +
             '<h3>Reviews</h3>' +
             '<div id="reviews-loading" class="loading">Loading reviews&hellip;</div>' +
@@ -2261,6 +2292,19 @@ async function renderPullDetail(container, pullId) {
         }
 
         loadReviews();
+
+        try {
+            var diffData = await fetchJSON(API_BASE + '/pulls/' + pullId + '/diff');
+            hide('diff-loading');
+            var diffEl = document.getElementById('diff-content');
+            diffEl.innerHTML = renderDiff(diffData.diff || '');
+            show('diff-content');
+        } catch (err) {
+            hide('diff-loading');
+            var diffEl = document.getElementById('diff-content');
+            diffEl.innerHTML = '<p style="color:var(--text-secondary)">Could not load diff.</p>';
+            show('diff-content');
+        }
     } catch (err) {
         hide('pull-loading');
         var errEl = document.getElementById('pull-error');

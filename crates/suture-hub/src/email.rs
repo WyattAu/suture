@@ -207,6 +207,42 @@ impl EmailService {
     }
 }
 
+pub fn flush_email_queue(storage: &crate::storage::HubStorage) -> Result<u32, String> {
+    let smtp_config = storage
+        .get_smtp_config()
+        .map_err(|e| format!("SMTP config read failed: {e}"))?;
+
+    let config = match smtp_config {
+        Some(c) => c,
+        None => return Err("SMTP not configured".to_string()),
+    };
+
+    let pending = storage
+        .get_pending_emails(100)
+        .map_err(|e| format!("Email queue read failed: {e}"))?;
+
+    let service = EmailService::new(Some(config));
+
+    let mut sent = 0u32;
+    for (id, recipient, subject, body, _event_type) in &pending {
+        match service.send(&EmailNotification {
+            to: recipient.clone(),
+            subject: subject.clone(),
+            body: body.clone(),
+        }) {
+            Ok(()) => {
+                let _ = storage.mark_email_sent(*id);
+                sent += 1;
+            }
+            Err(e) => {
+                eprintln!("Failed to send email {}: {}", id, e);
+            }
+        }
+    }
+
+    Ok(sent)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -264,5 +300,23 @@ mod tests {
     fn test_notify_push() {
         let service = EmailService::new(None);
         service.notify_push("myrepo", 5, "alice", &["bob@example.com".to_string()]);
+    }
+
+    #[test]
+    fn test_email_message_format() {
+        let from = "noreply@suture.dev";
+        let to = "user@example.com";
+        let subject = "Test Subject";
+        let body = "Hello, World!";
+
+        let message = format!(
+            "From: {from}\r\nTo: {to}\r\nSubject: {subject}\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n{body}\r\n.\r\n"
+        );
+
+        assert!(message.starts_with("From: "));
+        assert!(message.contains("To: "));
+        assert!(message.contains("Subject: "));
+        assert!(message.contains("Content-Type: text/plain"));
+        assert!(message.ends_with("\r\n.\r\n"));
     }
 }

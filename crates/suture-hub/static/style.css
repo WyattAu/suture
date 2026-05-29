@@ -1309,3 +1309,19 @@ footer {
 .num { color: #bd93f9; }
 .key { color: #8be9fd; }
 .var { color: #50fa7b; }
+
+.diff-view { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin: 0.8em 0; background: #0d1117; }
+.diff-table { width: 100%; border-collapse: collapse; font-size: 0.85em; }
+.diff-line-num { width: 50px; min-width: 50px; color: #6e7681; text-align: right; padding: 0 8px; user-select: none; background: #161b22; border-right: 1px solid var(--border); font-family: 'Fira Code', monospace; font-size: 0.9em; }
+.diff-marker { width: 20px; min-width: 20px; text-align: center; font-weight: bold; font-family: 'Fira Code', monospace; }
+.diff-text { padding: 0 12px; white-space: pre; font-family: 'Fira Code', 'Cascadia Code', monospace; overflow-x: auto; }
+.diff-hunk { background: #1f2937; }
+.diff-hunk .diff-marker { color: #58a6ff; }
+.diff-add { background: rgba(46, 160, 67, 0.15); }
+.diff-add .diff-marker { color: #3fb950; }
+.diff-add .diff-line-num { background: rgba(46, 160, 67, 0.1); }
+.diff-del { background: rgba(248, 81, 73, 0.15); }
+.diff-del .diff-marker { color: #f85149; }
+.diff-del .diff-line-num { background: rgba(248, 81, 73, 0.1); }
+.diff-ctx { background: #0d1117; }
+.diff-ctx .diff-marker { color: #6e7681; }

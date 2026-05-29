@@ -3,6 +3,7 @@
 //! Stores repositories, patches, branches, blobs, and authorized public keys
 //! in a single SQLite database. This replaces the in-memory HashMap approach.
 
+use base64::Engine;
 use sha2::Digest;
 
 use rusqlite::{Connection, params};
@@ -11,7 +12,8 @@ use thiserror::Error;
 
 use crate::types::{
     BlobRef, BranchProto, CodeSearchResult, HashProto, Issue, IssueComment, NotificationPreference,
-    Organization, PatchProto, PrReview, PullRequestRecord, Release, Team, UserInfo, WikiPage,
+    Organization, PatchProto, PrReview, PullRequestRecord, Release, SshKeyInfo, Team, UserInfo,
+    WikiPage,
 };
 use crate::webhooks::Webhook;
 
@@ -449,6 +451,19 @@ impl HubStorage {
             CREATE TABLE IF NOT EXISTS smtp_config (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS user_passwords (
+                username TEXT PRIMARY KEY,
+                password_hash TEXT NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS user_2fa (
+                username TEXT PRIMARY KEY,
+                totp_secret TEXT NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 0,
+                recovery_codes TEXT NOT NULL DEFAULT '[]'
             );
              ",
         )?;
@@ -2300,6 +2315,80 @@ impl HubStorage {
         Ok(count > 0)
     }
 
+    pub fn list_ssh_keys(&self, username: &str) -> Result<Vec<SshKeyInfo>, StorageError> {
+        let conn = self.conn.lock().map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let mut stmt = conn.prepare(
+            "SELECT rowid, author, public_key, added_at FROM authorized_keys WHERE author = ?1 ORDER BY added_at DESC"
+        )?;
+        let rows = stmt.query_map(params![username], |row| {
+            let key_data: Vec<u8> = row.get(2)?;
+            let key_str = String::from_utf8_lossy(&key_data).to_string();
+            let fingerprint = compute_ssh_fingerprint(&key_str);
+            let added_at: String = row.get::<_, String>(3).unwrap_or_default();
+            let created_at = added_at.len() as i64;
+            Ok(SshKeyInfo {
+                id: row.get(0)?,
+                username: row.get(1)?,
+                public_key: key_str,
+                fingerprint,
+                created_at,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(StorageError::Database)
+    }
+
+    pub fn delete_ssh_key(&self, key_id: i64) -> Result<(), StorageError> {
+        let conn = self.conn.lock().map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        conn.execute("DELETE FROM authorized_keys WHERE rowid = ?1", params![key_id])?;
+        Ok(())
+    }
+
+    pub fn set_password(&self, username: &str, password: &str) -> Result<(), StorageError> {
+        let salt = format!("suture-hub-{}", username);
+        let hash = format!("{:x}", sha2::Sha256::digest(format!("{password}{salt}")));
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
+        let conn = self.conn.lock().map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        conn.execute(
+            "INSERT OR REPLACE INTO user_passwords (username, password_hash, updated_at) VALUES (?1, ?2, ?3)",
+            params![username, hash, now],
+        )?;
+        Ok(())
+    }
+
+    pub fn verify_password(&self, username: &str, password: &str) -> Result<bool, StorageError> {
+        let conn = self.conn.lock().map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let mut stmt = conn.prepare("SELECT password_hash FROM user_passwords WHERE username = ?1")?;
+        let result: Option<String> = stmt.query_row(params![username], |row| row.get(0)).ok();
+        let stored_hash = match result {
+            Some(h) => h,
+            None => return Ok(false),
+        };
+        let salt = format!("suture-hub-{}", username);
+        let hash = format!("{:x}", sha2::Sha256::digest(format!("{password}{salt}")));
+        Ok(hash == stored_hash)
+    }
+
+    pub fn enable_2fa(&self, username: &str, secret: &str, recovery_codes: &[String]) -> Result<(), StorageError> {
+        let codes_json = serde_json::to_string(recovery_codes).unwrap_or_else(|_| "[]".to_string());
+        let conn = self.conn.lock().map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        conn.execute(
+            "INSERT OR REPLACE INTO user_2fa (username, totp_secret, enabled, recovery_codes) VALUES (?1, ?2, 1, ?3)",
+            params![username, secret, codes_json],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_2fa_secret(&self, username: &str) -> Result<Option<String>, StorageError> {
+        let conn = self.conn.lock().map_err(|e| StorageError::PoisonedLock(e.to_string()))?;
+        let mut stmt = conn.prepare("SELECT totp_secret FROM user_2fa WHERE username = ?1 AND enabled = 1")?;
+        let result: Option<String> = stmt.query_row(params![username], |row| row.get(0)).ok();
+        Ok(result)
+    }
+
+    pub fn is_2fa_enabled(&self, username: &str) -> Result<bool, StorageError> {
+        Ok(self.get_2fa_secret(username)?.is_some())
+    }
+
     // === Tokens ===
 
     pub fn store_token(
@@ -3605,6 +3694,18 @@ pub struct AuditEntry {
     pub details: String,
     pub request_id: String,
     pub client_ip: String,
+}
+
+#[allow(clippy::collapsible_if)]
+fn compute_ssh_fingerprint(public_key: &str) -> String {
+    let parts: Vec<&str> = public_key.split_whitespace().collect();
+    if parts.len() >= 2 {
+        if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(parts[1]) {
+            let hash = sha2::Sha256::digest(bytes);
+            return format!("SHA256:{}", base64::engine::general_purpose::STANDARD.encode(hash));
+        }
+    }
+    "unknown".to_string()
 }
 
 fn base64_encode(data: &[u8]) -> String {

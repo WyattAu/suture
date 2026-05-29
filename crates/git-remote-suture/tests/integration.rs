@@ -26,3 +26,18 @@ fn test_parse_suture_url_nested_path() {
     assert_eq!(base, "http://hub.example.com");
     assert_eq!(repo, "org/repo");
 }
+
+#[test]
+fn test_handle_fetch_empty_repo() {
+    let (_base, repo) = parse_suture_url_helper("suture://localhost:9999/empty");
+    assert_eq!(repo, "empty");
+}
+
+#[test]
+fn test_push_refspec_parsing() {
+    let cmd = "push refs/heads/main:refs/heads/main";
+    let parts: Vec<&str> = cmd.strip_prefix("push ").unwrap().split(':').collect();
+    assert_eq!(parts.len(), 2);
+    assert_eq!(parts[0], "refs/heads/main");
+    assert_eq!(parts[1], "refs/heads/main");
+}

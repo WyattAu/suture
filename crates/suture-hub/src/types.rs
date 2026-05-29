@@ -404,3 +404,44 @@ pub struct SetNotificationRequest {
     pub event_type: String,
     pub enabled: bool,
 }
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RegisterSshKeyRequest {
+    pub username: String,
+    pub public_key: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SshKeyInfo {
+    pub id: i64,
+    pub username: String,
+    pub public_key: String,
+    pub fingerprint: String,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PasswordLoginRequest {
+    pub username: String,
+    pub password: String,
+    pub totp_code: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SetPasswordRequest {
+    pub username: String,
+    pub password: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Enable2faResponse {
+    pub secret: String,
+    pub qr_code_url: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct TotpSetupResponse {
+    pub secret: String,
+    pub qr_code_url: String,
+    pub recovery_codes: Vec<String>,
+}

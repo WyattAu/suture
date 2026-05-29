@@ -2477,8 +2477,23 @@ pub async fn pull_handler(
 
 pub async fn list_repos_handler(
     State(hub): State<Arc<SutureHubServer>>,
-) -> Json<ListReposResponse> {
-    Json(hub.handle_list_repos().await)
+    Query(params): Query<std::collections::HashMap<String, String>>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    let (cursor, limit) = parse_pagination(&params);
+    let store = hub.storage.read().await;
+    match store.list_repos() {
+        Ok(repos) => {
+            let (repos, next_cursor, has_more) = apply_pagination(repos, cursor, limit);
+            (
+                StatusCode::OK,
+                Json(json!({"success": true, "repo_ids": repos, "next_cursor": next_cursor, "has_more": has_more})),
+            )
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"success": false, "error": e.to_string()})),
+        ),
+    }
 }
 
 pub async fn repo_info_handler(
@@ -3443,6 +3458,279 @@ pub async fn login_handler(
     }
 }
 
+fn base32_encode(data: &[u8]) -> String {
+    const ALPHABET: &[u8; 32] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+    let mut result = String::new();
+    let mut buffer: u64 = 0;
+    let mut bits = 0u32;
+    for &byte in data {
+        buffer = (buffer << 8) | byte as u64;
+        bits += 8;
+        while bits >= 5 {
+            bits -= 5;
+            let idx = ((buffer >> bits) & 0x1F) as usize;
+            result.push(ALPHABET[idx] as char);
+        }
+    }
+    if bits > 0 {
+        let idx = ((buffer << (5 - bits)) & 0x1F) as usize;
+        result.push(ALPHABET[idx] as char);
+    }
+    while !result.len().is_multiple_of(8) { result.push('='); }
+    result
+}
+
+fn base32_decode(input: &str) -> Result<Vec<u8>, String> {
+    const ALPHABET: &[u8; 32] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+    let input = input.trim_end_matches('=');
+    let mut result = Vec::new();
+    let mut buffer: u64 = 0;
+    let mut bits = 0u32;
+    for ch in input.chars() {
+        let val = ALPHABET.iter().position(|&c| c as char == ch.to_ascii_uppercase())
+            .ok_or_else(|| format!("invalid base32 char: {}", ch))?;
+        buffer = (buffer << 5) | val as u64;
+        bits += 5;
+        if bits >= 8 {
+            bits -= 8;
+            result.push((buffer >> bits) as u8);
+        }
+    }
+    Ok(result)
+}
+
+fn generate_totp_secret() -> String {
+    let secret: Vec<u8> = (0..20)
+        .enumerate()
+        .map(|(i, _)| {
+            let now: u128 = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos();
+            ((now.wrapping_mul(i as u128).wrapping_add(13)) % 256) as u8
+        })
+        .collect();
+    base32_encode(&secret)
+}
+
+fn generate_totp_code(secret: &str, time_counter: u64) -> Result<String, String> {
+    let key = base32_decode(secret)?;
+    let time_bytes = time_counter.to_be_bytes();
+    let mut hasher = sha2::Sha256::new();
+    sha2::Digest::update(&mut hasher, key);
+    sha2::Digest::update(&mut hasher, time_bytes);
+    let mac: [u8; 32] = sha2::Digest::finalize(hasher).into();
+    let offset = (mac[19] & 0x0F) as usize;
+    let binary = ((mac[offset] as u32 & 0x7F) << 24)
+        | ((mac[offset + 1] as u32) << 16)
+        | ((mac[offset + 2] as u32) << 8)
+        | (mac[offset + 3] as u32);
+    let code = binary % 1_000_000;
+    Ok(format!("{:06}", code))
+}
+
+fn verify_totp(secret: &str, code: &str) -> bool {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let counter = now / 30;
+    for offset in 0..=1u64 {
+        if matches!(
+            generate_totp_code(secret, counter + offset),
+            Ok(ref expected) if *expected == code
+        ) {
+            return true;
+        }
+        if offset > 0 && matches!(
+            generate_totp_code(secret, counter - offset),
+            Ok(ref expected) if *expected == code
+        ) {
+            return true;
+        }
+    }
+    false
+}
+
+fn parse_pagination(params: &HashMap<String, String>) -> (Option<u64>, usize) {
+    let cursor = params.get("cursor").and_then(|c| decode_cursor(c));
+    let limit = params
+        .get("limit")
+        .and_then(|l| l.parse::<usize>().ok())
+        .unwrap_or(50)
+        .min(200);
+    (cursor, limit)
+}
+
+fn apply_pagination<T: Clone>(items: Vec<T>, offset: Option<u64>, limit: usize) -> (Vec<T>, Option<String>, bool) {
+    let offset = offset.unwrap_or(0) as usize;
+    let sliced: Vec<T> = items.into_iter().skip(offset).take(limit + 1).collect();
+    let has_more = sliced.len() > limit;
+    let result: Vec<T> = sliced.into_iter().take(limit).collect();
+    let next_cursor = if has_more {
+        Some(encode_cursor((offset + limit) as u64))
+    } else {
+        None
+    };
+    (result, next_cursor, has_more)
+}
+
+async fn register_ssh_key_handler(
+    State(hub): State<Arc<SutureHubServer>>,
+    Json(req): Json<crate::types::RegisterSshKeyRequest>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    let store = hub.storage.write().await;
+    match store.add_authorized_key(&req.username, req.public_key.as_bytes()) {
+        Ok(()) => {
+            let keys = store.list_ssh_keys(&req.username).unwrap_or_default();
+            let key = keys.into_iter().last();
+            (StatusCode::CREATED, Json(json!({"success": true, "key": key})))
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"success": false, "error": e.to_string()})),
+        ),
+    }
+}
+
+async fn list_ssh_keys_handler(
+    State(hub): State<Arc<SutureHubServer>>,
+    Path(username): Path<String>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    let store = hub.storage.read().await;
+    match store.list_ssh_keys(&username) {
+        Ok(keys) => (StatusCode::OK, Json(json!({"success": true, "keys": keys}))),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"success": false, "error": e.to_string()})),
+        ),
+    }
+}
+
+async fn delete_ssh_key_handler(
+    State(hub): State<Arc<SutureHubServer>>,
+    Path(key_id): Path<i64>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    let store = hub.storage.write().await;
+    match store.delete_ssh_key(key_id) {
+        Ok(()) => (StatusCode::OK, Json(json!({"success": true}))),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"success": false, "error": e.to_string()})),
+        ),
+    }
+}
+
+async fn set_password_handler(
+    State(hub): State<Arc<SutureHubServer>>,
+    Json(req): Json<crate::types::SetPasswordRequest>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    let store = hub.storage.write().await;
+    match store.set_password(&req.username, &req.password) {
+        Ok(()) => (StatusCode::OK, Json(json!({"success": true}))),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"success": false, "error": e.to_string()})),
+        ),
+    }
+}
+
+async fn password_login_handler(
+    State(hub): State<Arc<SutureHubServer>>,
+    Json(req): Json<crate::types::PasswordLoginRequest>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    let store = hub.storage.read().await;
+    match store.is_2fa_enabled(&req.username) {
+        Ok(true) => {
+            let code = match &req.totp_code {
+                Some(c) => c.clone(),
+                None => {
+                    return (
+                        StatusCode::UNAUTHORIZED,
+                        Json(json!({"success": false, "error": "2FA code required"})),
+                    );
+                }
+            };
+            match store.get_2fa_secret(&req.username) {
+                Ok(Some(secret)) => {
+                    if !verify_totp(&secret, &code) {
+                        return (
+                            StatusCode::UNAUTHORIZED,
+                            Json(json!({"success": false, "error": "invalid 2FA code"})),
+                        );
+                    }
+                }
+                _ => {
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(json!({"success": false, "error": "2FA secret not found"})),
+                    );
+                }
+            }
+        }
+        Ok(false) => {}
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"success": false, "error": e.to_string()})),
+            );
+        }
+    }
+    match store.verify_password(&req.username, &req.password) {
+        Ok(true) => {
+            let token = generate_api_token();
+            drop(store);
+            let store = hub.storage.write().await;
+            let _ = store.create_user(&req.username, &req.username, "user", &token);
+            (StatusCode::OK, Json(json!({"success": true, "token": token})))
+        }
+        Ok(false) => (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"success": false, "error": "invalid credentials"})),
+        ),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"success": false, "error": e.to_string()})),
+        ),
+    }
+}
+
+async fn setup_2fa_handler(
+    State(hub): State<Arc<SutureHubServer>>,
+    Path(username): Path<String>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    let secret = generate_totp_secret();
+    let qr_code_url = format!(
+        "otpauth://totp/SutureHub:{}?secret={}&issuer=SutureHub",
+        username, secret
+    );
+    let mut recovery_codes = Vec::new();
+    for i in 0..8 {
+        let code = format!("{:08x}", (std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos() as u64)
+            .wrapping_add(i as u64 * 123456789));
+        recovery_codes.push(code);
+    }
+    let store = hub.storage.write().await;
+    match store.enable_2fa(&username, &secret, &recovery_codes) {
+        Ok(()) => (
+            StatusCode::OK,
+            Json(json!({
+                "success": true,
+                "secret": secret,
+                "qr_code_url": qr_code_url,
+                "recovery_codes": recovery_codes
+            })),
+        ),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"success": false, "error": e.to_string()})),
+        ),
+    }
+}
+
 pub async fn search_handler(
     State(hub): State<Arc<SutureHubServer>>,
     Query(params): Query<crate::types::SearchParams>,
@@ -3535,26 +3823,30 @@ pub async fn delete_mirror_handler(
     }
 }
 
-async fn list_issues_handler(
-    State(state): State<Arc<SutureHubServer>>,
-    Path(repo_id): Path<String>,
-    Query(params): Query<std::collections::HashMap<String, String>>,
-) -> impl IntoResponse {
-    let status = params.get("status").map(|s| s.as_str());
-    let store = state.storage.read().await;
-    match store.list_issues(&repo_id, status) {
-        Ok(issues) => (
-            StatusCode::OK,
-            Json(serde_json::json!({ "success": true, "issues": issues })),
-        )
-            .into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
-        )
-            .into_response(),
-    }
-}
+ async fn list_issues_handler(
+     State(state): State<Arc<SutureHubServer>>,
+     Path(repo_id): Path<String>,
+     Query(params): Query<std::collections::HashMap<String, String>>,
+ ) -> impl IntoResponse {
+     let status = params.get("status").map(|s| s.as_str());
+     let (cursor, limit) = parse_pagination(&params);
+     let store = state.storage.read().await;
+     match store.list_issues(&repo_id, status) {
+         Ok(issues) => {
+             let (issues, next_cursor, has_more) = apply_pagination(issues, cursor, limit);
+             (
+                 StatusCode::OK,
+                 Json(serde_json::json!({ "success": true, "issues": issues, "next_cursor": next_cursor, "has_more": has_more })),
+             )
+                 .into_response()
+         }
+         Err(e) => (
+             StatusCode::INTERNAL_SERVER_ERROR,
+             Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+         )
+             .into_response(),
+     }
+ }
 
 async fn create_issue_handler(
     State(state): State<Arc<SutureHubServer>>,
@@ -3664,26 +3956,30 @@ async fn create_issue_comment_handler(
     }
 }
 
-async fn list_pull_requests_handler(
-    State(state): State<Arc<SutureHubServer>>,
-    Path(repo_id): Path<String>,
-    Query(params): Query<std::collections::HashMap<String, String>>,
-) -> impl IntoResponse {
-    let status = params.get("status").map(|s| s.as_str());
-    let store = state.storage.read().await;
-    match store.list_pull_requests(&repo_id, status) {
-        Ok(pulls) => (
-            StatusCode::OK,
-            Json(serde_json::json!({ "success": true, "pulls": pulls })),
-        )
-            .into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({ "success": false, "error": e.to_string() })),
-        )
-            .into_response(),
-    }
-}
+ async fn list_pull_requests_handler(
+     State(state): State<Arc<SutureHubServer>>,
+     Path(repo_id): Path<String>,
+     Query(params): Query<std::collections::HashMap<String, String>>,
+ ) -> impl IntoResponse {
+     let status = params.get("status").map(|s| s.as_str());
+     let (cursor, limit) = parse_pagination(&params);
+     let store = state.storage.read().await;
+     match store.list_pull_requests(&repo_id, status) {
+         Ok(pulls) => {
+             let (pulls, next_cursor, has_more) = apply_pagination(pulls, cursor, limit);
+             (
+                 StatusCode::OK,
+                 Json(serde_json::json!({ "success": true, "pulls": pulls, "next_cursor": next_cursor, "has_more": has_more })),
+             )
+                 .into_response()
+         }
+         Err(e) => (
+             StatusCode::INTERNAL_SERVER_ERROR,
+             Json(serde_json::json!({ "success": false, "error": e.to_string() })),
+         )
+             .into_response(),
+     }
+ }
 
 async fn create_pull_request_handler(
     State(state): State<Arc<SutureHubServer>>,
@@ -6137,15 +6433,21 @@ pub async fn run_server(
             axum::routing::get(repo_tree_handler),
         )
         .route("/auth/login", axum::routing::post(login_handler))
-        .route("/search", axum::routing::get(search_handler))
-        .route("/activity", axum::routing::get(activity_handler))
-        .route(
-            "/mirrors/{id}",
-            axum::routing::delete(delete_mirror_handler),
-        )
-        .route(
-            "/webhooks/{repo_id}",
-            axum::routing::post(create_webhook_handler),
+            .route("/auth/password-login", axum::routing::post(password_login_handler))
+            .route("/auth/set-password", axum::routing::post(set_password_handler))
+            .route("/auth/ssh-keys", axum::routing::post(register_ssh_key_handler))
+            .route("/auth/ssh-keys/list/{username}", axum::routing::get(list_ssh_keys_handler))
+            .route("/auth/ssh-keys/{key_id}", axum::routing::delete(delete_ssh_key_handler))
+            .route("/auth/2fa/{username}", axum::routing::post(setup_2fa_handler))
+            .route("/search", axum::routing::get(search_handler))
+            .route("/activity", axum::routing::get(activity_handler))
+            .route(
+                "/mirrors/{id}",
+                axum::routing::delete(delete_mirror_handler),
+            )
+            .route(
+                "/webhooks/{repo_id}",
+                axum::routing::post(create_webhook_handler),
         )
         .route(
             "/webhooks/{repo_id}",
@@ -6481,6 +6783,12 @@ pub async fn run_server(
             axum::routing::post(register_handler),
         )
         .route("/api/v1/auth/login", axum::routing::post(login_handler))
+        .route("/api/v1/auth/password-login", axum::routing::post(password_login_handler))
+        .route("/api/v1/auth/set-password", axum::routing::post(set_password_handler))
+        .route("/api/v1/auth/ssh-keys", axum::routing::post(register_ssh_key_handler))
+        .route("/api/v1/auth/ssh-keys/list/{username}", axum::routing::get(list_ssh_keys_handler))
+        .route("/api/v1/auth/ssh-keys/{key_id}", axum::routing::delete(delete_ssh_key_handler))
+        .route("/api/v1/auth/2fa/{username}", axum::routing::post(setup_2fa_handler))
         .route("/api/v1/users", axum::routing::get(list_users_handler))
         .route(
             "/api/v1/users/{username}",
@@ -6861,6 +7169,12 @@ mod tests {
                 axum::routing::get(repo_tree_handler),
             )
             .route("/auth/login", axum::routing::post(login_handler))
+            .route("/auth/password-login", axum::routing::post(password_login_handler))
+            .route("/auth/set-password", axum::routing::post(set_password_handler))
+            .route("/auth/ssh-keys", axum::routing::post(register_ssh_key_handler))
+            .route("/auth/ssh-keys/list/{username}", axum::routing::get(list_ssh_keys_handler))
+            .route("/auth/ssh-keys/{key_id}", axum::routing::delete(delete_ssh_key_handler))
+            .route("/auth/2fa/{username}", axum::routing::post(setup_2fa_handler))
             .route("/search", axum::routing::get(search_handler))
             .route("/activity", axum::routing::get(activity_handler))
             .route(
@@ -7125,6 +7439,12 @@ mod tests {
                 axum::routing::get(repo_tree_handler),
             )
             .route("/auth/login", axum::routing::post(login_handler))
+            .route("/auth/password-login", axum::routing::post(password_login_handler))
+            .route("/auth/set-password", axum::routing::post(set_password_handler))
+            .route("/auth/ssh-keys", axum::routing::post(register_ssh_key_handler))
+            .route("/auth/ssh-keys/list/{username}", axum::routing::get(list_ssh_keys_handler))
+            .route("/auth/ssh-keys/{key_id}", axum::routing::delete(delete_ssh_key_handler))
+            .route("/auth/2fa/{username}", axum::routing::post(setup_2fa_handler))
             .route("/search", axum::routing::get(search_handler))
             .route("/activity", axum::routing::get(activity_handler))
             .route(
@@ -9987,5 +10307,201 @@ mod tests {
         assert_eq!(data["success"], true);
         assert_eq!(data["sent"], 2);
         assert_eq!(data["total"], 2);
+    }
+
+    #[tokio::test]
+    async fn test_ssh_key_crud() {
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
+        let client = reqwest::Client::new();
+
+        let register_resp = client
+            .post(format!("{}/auth/ssh-keys", &base))
+            .json(&serde_json::json!({
+                "username": "alice",
+                "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAItestkey alice@host"
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(register_resp.status(), 201);
+        let reg_data: serde_json::Value = register_resp.json().await.unwrap();
+        assert_eq!(reg_data["success"], true);
+        assert!(reg_data["key"].is_object());
+
+        let list_resp = client
+            .get(format!("{}/auth/ssh-keys/list/alice", &base))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(list_resp.status(), 200);
+        let list_data: serde_json::Value = list_resp.json().await.unwrap();
+        assert_eq!(list_data["success"], true);
+        let keys = list_data["keys"].as_array().unwrap();
+        assert_eq!(keys.len(), 1);
+
+        let key_id = keys[0]["id"].as_i64().unwrap();
+        let del_resp = client
+            .delete(format!("{}/auth/ssh-keys/{}", &base, key_id))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(del_resp.status(), 200);
+        let del_data: serde_json::Value = del_resp.json().await.unwrap();
+        assert_eq!(del_data["success"], true);
+
+        let list_resp2 = client
+            .get(format!("{}/auth/ssh-keys/list/alice", &base))
+            .send()
+            .await
+            .unwrap();
+        let list_data2: serde_json::Value = list_resp2.json().await.unwrap();
+        assert_eq!(list_data2["keys"].as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_password_set_and_login() {
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
+        let client = reqwest::Client::new();
+
+        let set_resp = client
+            .post(format!("{}/auth/set-password", &base))
+            .json(&serde_json::json!({
+                "username": "bob",
+                "password": "secret123"
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(set_resp.status(), 200);
+        let set_data: serde_json::Value = set_resp.json().await.unwrap();
+        assert_eq!(set_data["success"], true);
+
+        let login_resp = client
+            .post(format!("{}/auth/password-login", &base))
+            .json(&serde_json::json!({
+                "username": "bob",
+                "password": "secret123"
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(login_resp.status(), 200);
+        let login_data: serde_json::Value = login_resp.json().await.unwrap();
+        assert_eq!(login_data["success"], true);
+        assert!(login_data["token"].is_string());
+    }
+
+    #[tokio::test]
+    async fn test_password_login_wrong_password() {
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
+        let client = reqwest::Client::new();
+
+        let _ = client
+            .post(format!("{}/auth/set-password", &base))
+            .json(&serde_json::json!({
+                "username": "carol",
+                "password": "rightpass"
+            }))
+            .send()
+            .await
+            .unwrap();
+
+        let login_resp = client
+            .post(format!("{}/auth/password-login", &base))
+            .json(&serde_json::json!({
+                "username": "carol",
+                "password": "wrongpass"
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(login_resp.status(), 401);
+        let login_data: serde_json::Value = login_resp.json().await.unwrap();
+        assert_eq!(login_data["success"], false);
+        assert!(login_data["error"].as_str().unwrap().contains("invalid"));
+    }
+
+    #[tokio::test]
+    async fn test_2fa_setup_and_verify() {
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
+        let client = reqwest::Client::new();
+
+        let setup_resp = client
+            .post(format!("{}/auth/2fa/dave", &base))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(setup_resp.status(), 200);
+        let setup_data: serde_json::Value = setup_resp.json().await.unwrap();
+        assert_eq!(setup_data["success"], true);
+        assert!(setup_data["secret"].is_string());
+        assert!(setup_data["qr_code_url"].is_string());
+        assert!(setup_data["recovery_codes"].is_array());
+    }
+
+    #[tokio::test]
+    async fn test_pagination_cursor() {
+        let (hub, _port, base) = start_test_hub().await.unwrap();
+        let client = reqwest::Client::new();
+        let a_hex = "a".repeat(64);
+
+        for i in 0..5 {
+            let push_body = serde_json::json!({
+                "repo_id": format!("pag-repo-{}", i),
+                "patches": [{
+                    "id": {"value": format!("{}{}", "a".repeat(62), format!("{:02x}", i))},
+                    "operation_type": "Create",
+                    "touch_set": ["f"],
+                    "target_path": "f",
+                    "payload": "",
+                    "parent_ids": [],
+                    "author": "alice",
+                    "message": "p",
+                    "timestamp": 0
+                }],
+                "branches": [],
+                "blobs": []
+            });
+            client
+                .post(format!("{}/push", &base))
+                .json(&push_body)
+                .send()
+                .await
+                .unwrap();
+        }
+
+        let resp = client
+            .get(format!("{}/repos?limit=2", &base))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        let data: serde_json::Value = resp.json().await.unwrap();
+        assert_eq!(data["success"], true);
+        let repos = data["repo_ids"].as_array().unwrap();
+        assert_eq!(repos.len(), 2);
+        assert_eq!(data["has_more"], true);
+        let cursor = data["next_cursor"].as_str().unwrap();
+
+        let resp2 = client
+            .get(format!("{}/repos?limit=2&cursor={}", &base, cursor))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp2.status(), 200);
+        let data2: serde_json::Value = resp2.json().await.unwrap();
+        let repos2 = data2["repo_ids"].as_array().unwrap();
+        assert_eq!(repos2.len(), 2);
+
+        let cursor2 = data2["next_cursor"].as_str().unwrap();
+        let resp3 = client
+            .get(format!("{}/repos?limit=2&cursor={}", &base, cursor2))
+            .send()
+            .await
+            .unwrap();
+        let data3: serde_json::Value = resp3.json().await.unwrap();
+        let repos3 = data3["repo_ids"].as_array().unwrap();
+        assert_eq!(repos3.len(), 1);
+        assert_eq!(data3["has_more"], false);
     }
 }
