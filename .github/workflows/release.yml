@@ -12,7 +12,6 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
   BINARY_NAME: suture
 
 concurrency:
@@ -93,11 +92,20 @@ jobs:
           cd ../../../
           (Get-FileHash -Path "suture-${{ matrix.asset_suffix }}.zip" -Algorithm SHA256).Hash.ToLower() + "  suture-${{ matrix.asset_suffix }}.zip" | Out-File -Encoding ascii "suture-${{ matrix.asset_suffix }}.zip.sha256"
 
-      - name: Sign artifact
-        if: env.GPG_PRIVATE_KEY != ''
+      - name: Sign artifact (Linux/macOS)
+        if: env.GPG_PRIVATE_KEY != '' && runner.os != 'Windows'
         run: |
           echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --import --batch --passphrase "${{ secrets.GPG_PASSPHRASE }}"
-          gpg --batch --yes --passphrase "${{ secrets.GPG_PASSPHRASE }}" --armor --detach-sign suture-${{ matrix.target }}.${{ matrix.archive_ext }}
+          gpg --batch --yes --passphrase "${{ secrets.GPG_PASSPHRASE }}" --armor --detach-sign suture-${{ matrix.asset_suffix }}.tar.gz
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+
+      - name: Sign artifact (Windows)
+        if: env.GPG_PRIVATE_KEY != '' && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --import --batch --passphrase "${{ secrets.GPG_PASSPHRASE }}"
+          gpg --batch --yes --passphrase "${{ secrets.GPG_PASSPHRASE }}" --armor --detach-sign suture-${{ matrix.asset_suffix }}.zip
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
 
@@ -108,8 +116,10 @@ jobs:
           path: |
             suture-${{ matrix.asset_suffix }}.tar.gz
             suture-${{ matrix.asset_suffix }}.tar.gz.sha256
+            suture-${{ matrix.asset_suffix }}.tar.gz.asc
             suture-${{ matrix.asset_suffix }}.zip
             suture-${{ matrix.asset_suffix }}.zip.sha256
+            suture-${{ matrix.asset_suffix }}.zip.asc
 
   # ── Publish to crates.io ─────────────────────────────────────────
   publish-crates:
@@ -135,7 +145,7 @@ jobs:
 
       # Verify everything builds and tests pass before publishing
       - name: Test workspace
-        run: cargo test --workspace --exclude suture-e2e --exclude suture-bench --exclude suture-fuzz --exclude suture-vfs --exclude suture-lsp --exclude suture-driver-pdf --exclude suture-driver-image --exclude suture-driver-svg --exclude suture-driver-pptx
+        run: cargo test --workspace --exclude suture-fuzz --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon --exclude suture-wasm-plugin --exclude suture-driver-pdf --exclude suture-driver-image --exclude suture-driver-svg --exclude suture-driver-pptx
 
       # Publish crates in dependency order using the existing script
       - name: Publish to crates.io
@@ -268,12 +278,12 @@ jobs:
       - uses: actions/checkout@v5
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v4
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile

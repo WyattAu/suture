@@ -12,6 +12,10 @@ permissions:
   contents: read
   actions: write
 
+concurrency:
+  group: performance-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   baseline:
     runs-on: ubuntu-latest
