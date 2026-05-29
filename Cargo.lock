@@ -5142,9 +5142,9 @@ dependencies = [
 
 [[package]]
 name = "quick-xml"
-version = "0.40.0"
+version = "0.40.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b7315c86b26aaef0321fba33c9dcc160da659c6a9d278f0f6a5656d6561c03b"
+checksum = "2474bd2e5029e7ccb6abb2ba48cf2383a333851dedf495901544281590c7da7f"
 dependencies = [
  "memchr",
  "serde",
@@ -6689,7 +6689,7 @@ name = "suture-driver-docx"
 version = "5.1.0"
 dependencies = [
  "proptest",
- "quick-xml 0.40.0",
+ "quick-xml 0.40.1",
  "serde",
  "serde_json",
  "suture-driver",
@@ -6785,7 +6785,7 @@ name = "suture-driver-pptx"
 version = "5.1.0"
 dependencies = [
  "proptest",
- "quick-xml 0.40.0",
+ "quick-xml 0.40.1",
  "serde",
  "suture-driver",
  "suture-ooxml",
@@ -6834,7 +6834,7 @@ name = "suture-driver-xlsx"
 version = "5.1.0"
 dependencies = [
  "proptest",
- "quick-xml 0.40.0",
+ "quick-xml 0.40.1",
  "serde",
  "suture-driver",
  "suture-ooxml",
@@ -6999,7 +6999,7 @@ dependencies = [
 name = "suture-ooxml"
 version = "5.1.0"
 dependencies = [
- "quick-xml 0.40.0",
+ "quick-xml 0.40.1",
  "serde",
  "serde_json",
  "suture-driver",
@@ -7579,7 +7579,7 @@ dependencies = [
  "serde_with",
  "swift-rs",
  "thiserror 2.0.18",
- "toml 0.9.12+spec-1.1.0",
+ "toml 1.1.2+spec-1.1.0",
  "url",
  "urlpattern",
  "uuid",
