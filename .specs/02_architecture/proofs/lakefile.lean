@@ -9,4 +9,4 @@ require mathlib from git
 
 @[default_target]
 lean_lib Suture where
-  roots := #[`proof_suture_core]
+  roots := #[`proof_suture_core, `proof_raft_safety]

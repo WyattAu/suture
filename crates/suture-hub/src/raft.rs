@@ -97,6 +97,26 @@ impl RaftHub {
     pub fn term(&self) -> u64 {
         self.node.term()
     }
+
+    pub fn commit_index(&self) -> u64 {
+        self.node.commit_index()
+    }
+
+    pub fn last_log_index(&self) -> u64 {
+        self.node.last_log_index()
+    }
+
+    pub fn peers(&self) -> Vec<u64> {
+        self.node.peers().to_vec()
+    }
+
+    pub fn propose_membership_change(&mut self, new_nodes: Vec<u64>) -> Result<(), suture_raft::RaftError> {
+        self.node.propose_membership_change(new_nodes)
+    }
+
+    pub fn finalize_membership_change(&mut self) -> Result<(), suture_raft::RaftError> {
+        self.node.finalize_membership_change()
+    }
 }
 
 #[cfg(test)]

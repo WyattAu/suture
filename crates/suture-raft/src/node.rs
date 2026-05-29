@@ -292,6 +292,21 @@ impl RaftNode {
         self.id
     }
 
+    #[must_use]
+    pub fn commit_index(&self) -> u64 {
+        self.commit_index
+    }
+
+    #[must_use]
+    pub fn last_log_index(&self) -> u64 {
+        self.log.last_index()
+    }
+
+    #[must_use]
+    pub fn peers(&self) -> &[NodeId] {
+        &self.peers
+    }
+
     pub fn propose(&mut self, command: Vec<u8>) -> Result<(), RaftError> {
         if self.state != NodeState::Leader {
             return Err(RaftError::NotLeader);

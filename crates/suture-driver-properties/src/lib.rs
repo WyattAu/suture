@@ -321,3 +321,32 @@ mod tests {
         assert!(merged.contains("port=8080"));
     }
 }
+
+#[cfg(test)]
+mod fuzz {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn proptest_crash_resistance(input in proptest::string::string_regex("[a-zA-Z0-9 \\t\\n.,;:!\\-\\+\\*\\/\\(\\)\\[\\]\\{\\}<>\"'=&#~_@]{0,1000}").unwrap()) {
+            let driver = PropertiesDriver::new();
+            let _ = driver.diff(None, &input);
+        }
+
+        #[test]
+        fn proptest_arbitrary_bytes_dont_panic(input in proptest::collection::vec(proptest::arbitrary::any::<u8>(), 0..5000)) {
+            let driver = PropertiesDriver::new();
+            let s = String::from_utf8_lossy(&input);
+            let _ = driver.diff(None, &s);
+        }
+
+        #[test]
+        fn proptest_deterministic(input in proptest::string::string_regex("[a-zA-Z0-9 \\t\\n]{0,500}").unwrap()) {
+            let driver = PropertiesDriver::new();
+            let r1 = driver.diff(None, &input);
+            let r2 = driver.diff(None, &input);
+            assert_eq!(format!("{:?}", r1), format!("{:?}", r2))
+        }
+    }
+}

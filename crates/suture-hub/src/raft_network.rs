@@ -3,7 +3,7 @@
 //! Wire format: 4-byte big-endian length prefix + JSON [`WireFrame`].
 //! Each frame includes the sender's node ID and the Raft message payload.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 
 use serde::{Deserialize, Serialize};
@@ -11,7 +11,7 @@ use suture_raft::{RaftError, RaftMessage};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 /// Wire frame: sender node ID + Raft message.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,31 +27,24 @@ struct WireFrame {
 /// construction time.
 pub struct RaftTcpTransport {
     node_id: u64,
-    peers: HashMap<u64, SocketAddr>,
+    peers: tokio::sync::Mutex<HashMap<u64, SocketAddr>>,
     recv_rx: tokio::sync::Mutex<mpsc::Receiver<(u64, RaftMessage)>>,
     recv_tx: mpsc::Sender<(u64, RaftMessage)>,
+    connected: tokio::sync::Mutex<HashSet<u64>>,
 }
 
 impl RaftTcpTransport {
-    /// Create a new TCP transport.
-    ///
-    /// `node_id` is this node's Raft ID (included in outgoing frames).
-    /// `peers` maps peer node IDs to their TCP addresses.
     pub fn new(node_id: u64, peers: HashMap<u64, SocketAddr>) -> Self {
         let (recv_tx, recv_rx) = mpsc::channel(256);
         Self {
             node_id,
-            peers,
+            peers: tokio::sync::Mutex::new(peers),
             recv_rx: tokio::sync::Mutex::new(recv_rx),
             recv_tx,
+            connected: tokio::sync::Mutex::new(HashSet::new()),
         }
     }
 
-    /// Start listening for incoming Raft messages.
-    ///
-    /// Spawns a background task that accepts TCP connections and feeds
-    /// received messages into the internal channel. Returns the local
-    /// address actually bound.
     pub async fn listen(&self, addr: SocketAddr) -> Result<SocketAddr, RaftError> {
         let listener = match TcpListener::bind(addr).await {
             Ok(l) => l,
@@ -96,13 +89,15 @@ impl RaftTcpTransport {
         Ok(local_addr)
     }
 
-    /// Send a Raft message to a specific peer.
     pub async fn send_to_peer(&self, target: u64, message: RaftMessage) -> Result<(), RaftError> {
-        let addr = match self.peers.get(&target) {
-            Some(a) => *a,
-            None => {
-                let msg = format!("no address registered for raft peer {target}");
-                return Err(RaftError::Transport(msg));
+        let addr = {
+            let peers = self.peers.lock().await;
+            match peers.get(&target) {
+                Some(a) => *a,
+                None => {
+                    let msg = format!("no address registered for raft peer {target}");
+                    return Err(RaftError::Transport(msg));
+                }
             }
         };
 
@@ -110,12 +105,34 @@ impl RaftTcpTransport {
             from: self.node_id,
             message,
         };
-        send_wire(&addr, &frame).await
+        match send_wire(&addr, &frame).await {
+            Ok(()) => {
+                self.connected.lock().await.insert(target);
+                Ok(())
+            }
+            Err(first_err) => {
+                self.connected.lock().await.remove(&target);
+                info!(
+                    node = self.node_id,
+                    target,
+                    "raft: send failed, retrying once"
+                );
+                match send_wire(&addr, &frame).await {
+                    Ok(()) => {
+                        self.connected.lock().await.insert(target);
+                        Ok(())
+                    }
+                    Err(_) => {
+                        let msg = format!(
+                            "send to peer {target} failed after retry: {first_err}"
+                        );
+                        Err(RaftError::Transport(msg))
+                    }
+                }
+            }
+        }
     }
 
-    /// Receive the next incoming Raft message.
-    ///
-    /// Returns the sender's node ID and the message.
     pub async fn receive(&self) -> Result<(u64, RaftMessage), RaftError> {
         let mut rx = self.recv_rx.lock().await;
         rx.recv()
@@ -123,14 +140,52 @@ impl RaftTcpTransport {
             .ok_or_else(|| RaftError::Transport("receive channel closed".to_string()))
     }
 
-    /// Get this node's ID.
     pub fn node_id(&self) -> u64 {
         self.node_id
     }
 
-    /// Get the number of registered peers.
-    pub fn peer_count(&self) -> usize {
-        self.peers.len()
+    pub async fn peer_count(&self) -> usize {
+        self.peers.lock().await.len()
+    }
+
+    pub fn is_connected(&self, node_id: u64) -> bool {
+        self.connected.blocking_lock().contains(&node_id)
+    }
+
+    pub async fn reconnect(&self, node_id: u64) -> Result<(), RaftError> {
+        let addr = {
+            let peers = self.peers.lock().await;
+            match peers.get(&node_id) {
+                Some(a) => *a,
+                None => {
+                    let msg = format!("no address registered for raft peer {node_id}");
+                    return Err(RaftError::Transport(msg));
+                }
+            }
+        };
+
+        match TcpStream::connect(addr).await {
+            Ok(stream) => {
+                drop(stream);
+                self.connected.lock().await.insert(node_id);
+                debug!(node = self.node_id, target = node_id, "raft: reconnected to peer");
+                Ok(())
+            }
+            Err(e) => {
+                self.connected.lock().await.remove(&node_id);
+                let msg = format!("reconnect to peer {node_id} at {addr} failed: {e}");
+                Err(RaftError::Transport(msg))
+            }
+        }
+    }
+
+    pub async fn add_peer(&self, node_id: u64, addr: SocketAddr) {
+        self.peers.lock().await.insert(node_id, addr);
+    }
+
+    pub async fn remove_peer(&self, node_id: u64) {
+        self.peers.lock().await.remove(&node_id);
+        self.connected.lock().await.remove(&node_id);
     }
 }
 
@@ -293,7 +348,6 @@ mod tests {
 
         let transport = RaftTcpTransport::new(1, peers);
         assert_eq!(transport.node_id(), 1);
-        assert_eq!(transport.peer_count(), 2);
     }
 
     #[tokio::test]

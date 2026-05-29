@@ -85,7 +85,9 @@ fn normalize_ws(s: &str) -> String {
 }
 
 fn starts_with_ignore_case(s: &str, prefix: &str) -> bool {
-    s.len() >= prefix.len() && s[..prefix.len()].eq_ignore_ascii_case(prefix)
+    s.len() >= prefix.len()
+        && s.is_char_boundary(prefix.len())
+        && s[..prefix.len()].eq_ignore_ascii_case(prefix)
 }
 
 fn strip_prefix_ignore_case<'a>(s: &'a str, prefix: &str) -> Option<&'a str> {
@@ -1254,6 +1256,35 @@ mod tests {
             let result = driver.merge(&base, &ours, &theirs);
             prop_assert!(result.is_ok());
             prop_assert!(result.unwrap().is_some());
+        }
+    }
+}
+
+#[cfg(test)]
+mod fuzz {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn proptest_crash_resistance(input in proptest::string::string_regex("[a-zA-Z0-9 \\t\\n.,;:!\\-\\+\\*\\/\\(\\)\\[\\]\\{\\}<>\"'=&#~_@]{0,1000}").unwrap()) {
+            let driver = SqlDriver::new();
+            let _ = driver.diff(None, &input);
+        }
+
+        #[test]
+        fn proptest_arbitrary_bytes_dont_panic(input in proptest::collection::vec(proptest::arbitrary::any::<u8>(), 0..5000)) {
+            let driver = SqlDriver::new();
+            let s = String::from_utf8_lossy(&input);
+            let _ = driver.diff(None, &s);
+        }
+
+        #[test]
+        fn proptest_deterministic(input in proptest::string::string_regex("[a-zA-Z0-9 \\t\\n]{0,500}").unwrap()) {
+            let driver = SqlDriver::new();
+            let r1 = driver.diff(None, &input);
+            let r2 = driver.diff(None, &input);
+            assert_eq!(format!("{:?}", r1), format!("{:?}", r2))
         }
     }
 }

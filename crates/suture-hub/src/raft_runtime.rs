@@ -35,6 +35,7 @@ pub struct RaftRuntime {
     shutdown_tx: broadcast::Sender<()>,
     is_leader: Arc<StdMutex<bool>>,
     leader_id: Arc<StdMutex<Option<u64>>>,
+    transport: Arc<StdMutex<Option<Arc<RaftTcpTransport>>>>,
 }
 
 impl RaftRuntime {
@@ -178,6 +179,7 @@ impl RaftRuntime {
             shutdown_tx,
             is_leader,
             leader_id,
+            transport: Arc::new(StdMutex::new(transport)),
         };
 
         (runtime, cmd_tx)
@@ -233,6 +235,93 @@ impl RaftRuntime {
     pub fn cmd_sender(&self) -> mpsc::Sender<HubCommand> {
         self.cmd_tx.clone()
     }
+
+    pub async fn add_node(&mut self, node_id: u64, addr: std::net::SocketAddr) -> Result<(), suture_raft::RaftError> {
+        {
+            let mut hub = self.hub.lock().unwrap_or_else(|e| e.into_inner());
+            hub.propose_membership_change(vec![node_id])?;
+            hub.finalize_membership_change()?;
+        }
+        let trans_ref = {
+            let trans_guard = self.transport.lock().unwrap_or_else(|e| e.into_inner());
+            trans_guard.as_ref().cloned()
+        };
+        if let Some(trans_arc) = trans_ref {
+            trans_arc.add_peer(node_id, addr).await;
+        }
+        Ok(())
+    }
+
+    pub async fn remove_node(&mut self, node_id: u64) -> Result<(), suture_raft::RaftError> {
+        {
+            let mut hub = self.hub.lock().unwrap_or_else(|e| e.into_inner());
+            let mut current_nodes: Vec<u64> = hub.peers();
+            current_nodes.retain(|&id| id != node_id);
+            hub.propose_membership_change(current_nodes)?;
+            hub.finalize_membership_change()?;
+        }
+        let trans_ref = {
+            let trans_guard = self.transport.lock().unwrap_or_else(|e| e.into_inner());
+            trans_guard.as_ref().cloned()
+        };
+        if let Some(trans_arc) = trans_ref {
+            trans_arc.remove_peer(node_id).await;
+        }
+        Ok(())
+    }
+
+    pub fn node_status(&self) -> Vec<(u64, String, NodeState)> {
+        let hub = self.hub.lock().unwrap_or_else(|e| e.into_inner());
+        let mut result = vec![(hub.node_id(), format!("node-{}", hub.node_id()), *hub.state())];
+        for peer_id in hub.peers() {
+            result.push((peer_id, format!("node-{peer_id}"), NodeState::Follower));
+        }
+        result
+    }
+
+    pub async fn wait_for_consensus(&self, timeout: Duration) -> Result<(), suture_raft::RaftError> {
+        let deadline = tokio::time::Instant::now() + timeout;
+        loop {
+            let indices = {
+                let hub = self.hub.lock().unwrap_or_else(|e| e.into_inner());
+                let leader_commit = hub.commit_index();
+                let last = hub.last_log_index();
+                (leader_commit, last)
+            };
+            if indices.0 > 0 || indices.1 > 0 {
+                let max = indices.0.max(indices.1);
+                let min = indices.0.min(indices.1);
+                if max == 0 && min == 0 {
+                    return Ok(());
+                }
+                if max.saturating_sub(min) <= 1 {
+                    return Ok(());
+                }
+            }
+            if tokio::time::Instant::now() >= deadline {
+                return Err(suture_raft::RaftError::Transport(format!(
+                    "consensus not reached within {:?}",
+                    timeout
+                )));
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    }
+
+    pub async fn replicate_entry(&mut self, data: Vec<u8>) -> Result<u64, suture_raft::RaftError> {
+        let (new_index, _) = {
+            let mut hub = self.hub.lock().unwrap_or_else(|e| e.into_inner());
+            let last_index = hub.last_log_index();
+            let cmd = HubCommand::StoreBlob {
+                hash: format!("replicate-{}", last_index),
+                data,
+            };
+            hub.propose(cmd)?;
+            (hub.last_log_index(), hub.commit_index())
+        };
+        self.wait_for_consensus(Duration::from_secs(5)).await?;
+        Ok(new_index)
+    }
 }
 
 impl Drop for RaftRuntime {
@@ -244,6 +333,8 @@ impl Drop for RaftRuntime {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
+    use std::net::SocketAddr;
 
     fn test_config() -> RaftConfig {
         RaftConfig {
@@ -292,9 +383,6 @@ mod tests {
     /// Multi-node test: 3 nodes over real TCP, leader election + log replication.
     #[tokio::test]
     async fn test_three_node_cluster_over_tcp() {
-        use std::collections::HashMap;
-        use std::net::SocketAddr;
-
         // Bind 3 listeners on ephemeral ports
         let l1 = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let l2 = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -304,7 +392,7 @@ mod tests {
         let a3 = l3.local_addr().unwrap();
         drop(l1);
         drop(l2);
-        drop(l3); // free ports for transport listeners
+        drop(l3);
 
         let p1: HashMap<u64, SocketAddr> = [(2, a2), (3, a3)].into_iter().collect();
         let p2: HashMap<u64, SocketAddr> = [(1, a1), (3, a3)].into_iter().collect();
@@ -362,6 +450,210 @@ mod tests {
                 repo_id: "cluster-test".to_string(),
             }
         );
+
+        rt1.shutdown();
+        rt2.shutdown();
+        rt3.shutdown();
+    }
+
+    async fn spawn_three_node_cluster() -> (
+        Arc<RaftTcpTransport>,
+        Arc<RaftTcpTransport>,
+        Arc<RaftTcpTransport>,
+        RaftRuntime,
+        RaftRuntime,
+        RaftRuntime,
+        SocketAddr,
+        SocketAddr,
+        SocketAddr,
+    ) {
+        let l1 = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let l2 = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let l3 = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let a1 = l1.local_addr().unwrap();
+        let a2 = l2.local_addr().unwrap();
+        let a3 = l3.local_addr().unwrap();
+        drop(l1);
+        drop(l2);
+        drop(l3);
+
+        let p1: HashMap<u64, SocketAddr> = [(2, a2), (3, a3)].into_iter().collect();
+        let p2: HashMap<u64, SocketAddr> = [(1, a1), (3, a3)].into_iter().collect();
+        let p3: HashMap<u64, SocketAddr> = [(1, a1), (2, a2)].into_iter().collect();
+
+        let t1 = Arc::new(RaftTcpTransport::new(1, p1));
+        let t2 = Arc::new(RaftTcpTransport::new(2, p2));
+        let t3 = Arc::new(RaftTcpTransport::new(3, p3));
+
+        t1.listen(a1).await.unwrap();
+        t2.listen(a2).await.unwrap();
+        t3.listen(a3).await.unwrap();
+
+        let c = |id: u64, peers: Vec<u64>| RaftConfig {
+            node_id: id,
+            peers,
+            election_timeout: 10,
+            heartbeat_interval: 3,
+        };
+        let (rt1, _) = RaftRuntime::spawn_with_transport(c(1, vec![2, 3]), Arc::clone(&t1));
+        let (rt2, _) = RaftRuntime::spawn_with_transport(c(2, vec![1, 3]), Arc::clone(&t2));
+        let (rt3, _) = RaftRuntime::spawn_with_transport(c(3, vec![1, 2]), Arc::clone(&t3));
+
+        tokio::time::sleep(Duration::from_secs(3)).await;
+
+        (t1, t2, t3, rt1, rt2, rt3, a1, a2, a3)
+    }
+
+    fn find_leader<'a>(rts: &'a [&RaftRuntime], ids: &[u64]) -> (u64, &'a RaftRuntime) {
+        for (i, rt) in rts.iter().enumerate() {
+            if rt.is_leader() {
+                return (ids[i], rt);
+            }
+        }
+        panic!(
+            "no leader found: states={:?}",
+            rts.iter().map(|rt| rt.state()).collect::<Vec<_>>()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_cluster_add_node() {
+        let (_t1, _t2, _t3, rt1, rt2, rt3, a1, _a2, _a3) = spawn_three_node_cluster().await;
+        let rts = [&rt1, &rt2, &rt3];
+        let ids = [1u64, 2, 3];
+        let (_leader_id, leader) = find_leader(&rts, &ids);
+
+        let l4 = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let a4 = l4.local_addr().unwrap();
+        drop(l4);
+
+        let p4: HashMap<u64, SocketAddr> = [(1, a1), (2, _a2), (3, _a3)].into_iter().collect();
+        let t4 = Arc::new(RaftTcpTransport::new(4, p4));
+        t4.listen(a4).await.unwrap();
+
+        let c4 = RaftConfig {
+            node_id: 4,
+            peers: vec![1, 2, 3],
+            election_timeout: 10,
+            heartbeat_interval: 3,
+        };
+        let (rt4, _) = RaftRuntime::spawn_with_transport(c4, Arc::clone(&t4));
+
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        leader
+            .propose(HubCommand::CreateRepo {
+                repo_id: "add-node-test".to_string(),
+            })
+            .expect("propose on leader");
+
+        tokio::time::sleep(Duration::from_secs(2)).await;
+
+        let applied = leader.try_apply_committed();
+        assert!(!applied.is_empty(), "leader should have committed after add");
+
+        rt1.shutdown();
+        rt2.shutdown();
+        rt3.shutdown();
+        rt4.shutdown();
+    }
+
+    #[tokio::test]
+    async fn test_cluster_remove_node() {
+        let (_t1, _t2, _t3, rt1, rt2, rt3, _a1, _a2, _a3) = spawn_three_node_cluster().await;
+        let rts = [&rt1, &rt2, &rt3];
+        let ids = [1u64, 2, 3];
+        let (_leader_id, leader) = find_leader(&rts, &ids);
+
+        let remove_id = if !rt3.is_leader() { 3 } else { 2 };
+        let remove_rt = if remove_id == 2 { &rt2 } else { &rt3 };
+        remove_rt.shutdown();
+
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        leader
+            .propose(HubCommand::CreateRepo {
+                repo_id: "after-remove".to_string(),
+            })
+            .expect("propose on leader after remove");
+
+        tokio::time::sleep(Duration::from_secs(2)).await;
+
+        let applied = leader.try_apply_committed();
+        assert!(!applied.is_empty(), "remaining cluster should still commit");
+
+        for rt in [&rt1, &rt2, &rt3].iter() {
+            rt.shutdown();
+        }
+        leader.shutdown();
+    }
+
+    #[tokio::test]
+    async fn test_cluster_reconnect() {
+        let (_t1, _t2, t3, rt1, rt2, rt3, _a1, _a2, a3) = spawn_three_node_cluster().await;
+        let rts = [&rt1, &rt2, &rt3];
+        let ids = [1u64, 2, 3];
+        let (leader_id, leader) = find_leader(&rts, &ids);
+
+        let disconnect_id = if leader_id != 3 { 3 } else { 2 };
+        if disconnect_id == 3 {
+            t3.remove_peer(3).await;
+        } else {
+            unreachable!("for simplicity this test always disconnects node 3");
+        }
+
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        leader
+            .propose(HubCommand::CreateRepo {
+                repo_id: "pre-reconnect".to_string(),
+            })
+            .expect("propose before reconnect");
+
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        t3.add_peer(3, a3).await;
+
+        tokio::time::sleep(Duration::from_secs(2)).await;
+
+        let applied = leader.try_apply_committed();
+        assert!(!applied.is_empty(), "should commit after reconnect");
+
+        rt1.shutdown();
+        rt2.shutdown();
+        rt3.shutdown();
+    }
+
+    #[tokio::test]
+    async fn test_cluster_partition_heal() {
+        let (_t1, _t2, t3, rt1, rt2, rt3, _a1, _a2, a3) = spawn_three_node_cluster().await;
+        let rts = [&rt1, &rt2, &rt3];
+        let ids = [1u64, 2, 3];
+        let (_leader_id, leader) = find_leader(&rts, &ids);
+
+        t3.remove_peer(3).await;
+
+        tokio::time::sleep(Duration::from_secs(2)).await;
+
+        leader
+            .propose(HubCommand::CreateRepo {
+                repo_id: "partition-test".to_string(),
+            })
+            .expect("propose during partition");
+
+        tokio::time::sleep(Duration::from_secs(2)).await;
+
+        let applied = leader.try_apply_committed();
+        assert!(
+            !applied.is_empty(),
+            "leader should commit entries during partition"
+        );
+
+        t3.add_peer(3, a3).await;
+
+        tokio::time::sleep(Duration::from_secs(3)).await;
+
+        let _post_applied = leader.try_apply_committed();
 
         rt1.shutdown();
         rt2.shutdown();

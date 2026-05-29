@@ -399,6 +399,42 @@ fn strong_hash(data: &[u8]) -> u64 {
     h
 }
 
+const BINARY_CHECK_WINDOW: usize = 8192;
+
+fn is_likely_binary(data: &[u8]) -> bool {
+    let window = std::cmp::min(data.len(), BINARY_CHECK_WINDOW);
+    data[..window].contains(&0u8)
+}
+
+fn compute_binary_delta(base: &[u8], target: &[u8]) -> Option<Vec<u8>> {
+    let base_hash = blake3::hash(base);
+    let target_hash = blake3::hash(target);
+
+    let min_len = base.len().min(target.len());
+    let mut xor_data = Vec::with_capacity(target.len());
+    for i in 0..min_len {
+        xor_data.push(base[i] ^ target[i]);
+    }
+    if target.len() > base.len() {
+        xor_data.extend_from_slice(&target[base.len()..]);
+    }
+
+    let compressed = zstd::encode_all(xor_data.as_slice(), 3).ok()?;
+
+    if compressed.len() >= target.len() {
+        return None;
+    }
+
+    let mut delta = Vec::with_capacity(1 + 8 + 16 + 16 + compressed.len());
+    delta.push(0x03);
+    delta.extend_from_slice(&(target.len() as u64).to_le_bytes());
+    delta.extend_from_slice(&base_hash.as_bytes()[..16]);
+    delta.extend_from_slice(&target_hash.as_bytes()[..16]);
+    delta.extend_from_slice(&compressed);
+
+    Some(delta)
+}
+
 enum DeltaInstr {
     Copy { base_offset: u64, length: u32 },
     Insert { data: Vec<u8> },
@@ -520,6 +556,12 @@ fn compute_rolling_delta(base: &[u8], target: &[u8]) -> Option<Vec<u8>> {
 
 #[must_use]
 pub fn compute_delta(base: &[u8], target: &[u8]) -> (Vec<u8>, Vec<u8>) {
+    if (is_likely_binary(base) || is_likely_binary(target))
+        && let Some(delta) = compute_binary_delta(base, target)
+    {
+        return (base.to_vec(), delta);
+    }
+
     if base.len() >= BLOCK_SIZE && target.len() >= BLOCK_SIZE {
         if let Some(delta) = compute_rolling_delta(base, target) {
             return (base.to_vec(), delta);
@@ -632,6 +674,42 @@ pub fn apply_delta(base: &[u8], delta: &[u8]) -> Vec<u8> {
                     }
                     _ => break,
                 }
+            }
+
+            result
+        }
+        0x03 => {
+            if delta.len() < 41 {
+                return delta.to_vec();
+            }
+            let target_len =
+                u64::from_le_bytes(delta[1..9].try_into().unwrap_or([0; 8])) as usize;
+            let base_checksum = &delta[9..25];
+            let target_checksum = &delta[25..41];
+            let compressed = &delta[41..];
+
+            let base_hash = blake3::hash(base);
+            if base_hash.as_bytes()[..16] != *base_checksum {
+                return Vec::new();
+            }
+
+            let xor_data = match zstd::decode_all(compressed) {
+                Ok(data) => data,
+                Err(_) => return delta.to_vec(),
+            };
+
+            let mut result = Vec::with_capacity(target_len);
+            let min_len = base.len().min(xor_data.len());
+            for i in 0..min_len {
+                result.push(base[i] ^ xor_data[i]);
+            }
+            if xor_data.len() > base.len() {
+                result.extend_from_slice(&xor_data[base.len()..]);
+            }
+
+            let result_hash = blake3::hash(&result);
+            if result_hash.as_bytes()[..16] != *target_checksum {
+                return Vec::new();
             }
 
             result
@@ -1469,5 +1547,108 @@ mod tests {
             d
         };
         assert_eq!(apply_delta(&base, &delta), target);
+    }
+
+    #[test]
+    fn test_binary_delta_identical() {
+        let data: Vec<u8> = (0..100_000u32)
+            .flat_map(|i| ((i * 7 + 13) % 251).to_le_bytes())
+            .collect();
+        let data = &data[..data.len().min(100_000)];
+        let delta = compute_binary_delta(data, data).expect("should produce delta for identical");
+        assert_eq!(delta[0], 0x03);
+        let compressed_size = delta.len() - 41;
+        assert!(
+            compressed_size < 50,
+            "identical blobs should compress to tiny zstd frame, got {compressed_size}"
+        );
+    }
+
+    #[test]
+    fn test_binary_delta_small_change() {
+        let base: Vec<u8> = (0..1_048_576).map(|i| ((i * 7 + 13) % 251) as u8).collect();
+        let mut target = base.clone();
+        target[500_000] = target[500_000].wrapping_add(1);
+        target[500_001] = target[500_001].wrapping_add(1);
+        target[500_002] = target[500_002].wrapping_add(1);
+        let delta = compute_binary_delta(&base, &target).expect("should produce delta");
+        assert_eq!(delta[0], 0x03);
+        assert!(delta.len() < base.len() / 2);
+    }
+
+    #[test]
+    fn test_binary_delta_large_change() {
+        let base: Vec<u8> = (0..10_000).map(|i| (i % 256) as u8).collect();
+        let target: Vec<u8> = (0..10_000).map(|i| ((i + 128) % 256) as u8).collect();
+        let delta = compute_binary_delta(&base, &target);
+        if let Some(ref d) = delta {
+            assert_eq!(d[0], 0x03);
+            let result = apply_delta(&base, d);
+            assert_eq!(result, target);
+        }
+    }
+
+    #[test]
+    fn test_binary_delta_roundtrip() {
+        let base: Vec<u8> = (0..50_000).map(|i| ((i * 11 + 7) % 251) as u8).collect();
+        let mut target = base.clone();
+        for i in &mut target[10_000..30_000] {
+            *i = i.wrapping_add(42);
+        }
+        target.truncate(45_000);
+        let (_, delta) = compute_delta(&base, &target);
+        assert_eq!(delta[0], 0x03);
+        let result = apply_delta(&base, &delta);
+        assert_eq!(result, target);
+    }
+
+    #[test]
+    fn test_binary_delta_checksum_mismatch() {
+        let base: Vec<u8> = (0..1000).map(|i| ((i * 7) % 251) as u8).collect();
+        let mut target = base.clone();
+        target[500] = target[500].wrapping_add(1);
+        let delta = compute_binary_delta(&base, &target).expect("should produce delta");
+        let wrong_base: Vec<u8> = (0..1000).map(|i| ((i * 11) % 251) as u8).collect();
+        let result = apply_delta(&wrong_base, &delta);
+        assert_ne!(result, target, "wrong base should not produce correct target");
+    }
+
+    #[test]
+    fn test_binary_delta_applied_to_text() {
+        let base = b"The quick brown fox jumps over the lazy dog and enjoys sunshine";
+        let target = b"The quick brown fox jumps over the lazy cat and enjoys sunshine";
+        let (_, delta) = compute_delta(base, target);
+        assert_ne!(delta[0], 0x03, "text input should not produce binary delta");
+        let result = apply_delta(base, &delta);
+        assert_eq!(result.as_slice(), target);
+    }
+
+    #[test]
+    fn test_binary_delta_empty_base() {
+        let target: Vec<u8> = (0..5000).map(|i| ((i * 3) % 251) as u8).collect();
+        let delta = compute_binary_delta(b"", &target).expect("should produce delta");
+        assert_eq!(delta[0], 0x03);
+        let result = apply_delta(b"", &delta);
+        assert_eq!(result, target);
+    }
+
+    #[test]
+    fn test_binary_delta_fallback_to_full() {
+        let mut rng_state: u64 = 12345;
+        let base: Vec<u8> = (0..4096)
+            .map(|_| {
+                rng_state = rng_state.wrapping_mul(6364136223846793005).wrapping_add(1);
+                (rng_state >> 33) as u8
+            })
+            .collect();
+        rng_state = 54321;
+        let target: Vec<u8> = (0..4096)
+            .map(|_| {
+                rng_state = rng_state.wrapping_mul(6364136223846793005).wrapping_add(1);
+                (rng_state >> 33) as u8
+            })
+            .collect();
+        let (_, delta_result) = compute_delta(&base, &target);
+        assert_eq!(delta_result[0], 0x00, "should fall back to full when binary delta not beneficial");
     }
 }
