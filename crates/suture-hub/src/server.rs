@@ -7652,9 +7652,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_repos_empty_and_populated() {
-        let (_hub, _port, base) = start_test_hub().await.unwrap();
+        let (hub, _port, base) = start_test_hub().await.unwrap();
         let client = reqwest::Client::new();
-        let _a_hex = "a".repeat(64);
+        let a_hex = "a".repeat(64);
         let push_body = serde_json::json!({
             "repo_id": "http-repo",
             "patches": [{
@@ -10528,9 +10528,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_pagination_cursor() {
-        let (hub, _port, base) = start_test_hub().await.unwrap();
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
         let client = reqwest::Client::new();
-        let a_hex = "a".repeat(64);
+        let _a_hex = "a".repeat(64);
 
         for i in 0..5 {
             let push_body = serde_json::json!({
