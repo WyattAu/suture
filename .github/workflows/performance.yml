@@ -28,6 +28,16 @@ jobs:
           key: perf
       - name: Run benchmarks
         run: cargo bench --package suture-bench -- --save-baseline main | tee bench-results.txt
+      - name: Cache criterion baseline
+        run: |
+          cd target/criterion
+          tar czf /tmp/criterion-baseline.tar.gz .
+          mkdir -p ${{ runner.temp }}/criterion-cache
+          cp /tmp/criterion-baseline.tar.gz ${{ runner.temp }}/criterion-cache/
+      - uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/criterion-cache
+          key: perf-baseline-${{ github.ref_name }}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: bench-baseline
@@ -43,7 +53,21 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
         with:
           key: perf
+      - uses: actions/cache/restore@v4
+        id: restore-cache
+        with:
+          path: ${{ runner.temp }}/criterion-cache
+          key: perf-baseline-${{ github.event.pull_request.base.ref }}
+      - name: Extract cached baseline
+        if: steps.restore-cache.outputs.cache-hit == 'true'
+        run: |
+          if [ -f ${{ runner.temp }}/criterion-cache/criterion-baseline.tar.gz ]; then
+            mkdir -p target/criterion
+            tar xzf ${{ runner.temp }}/criterion-cache/criterion-baseline.tar.gz -C target/criterion
+            echo "Baseline restored from cache"
+          fi
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        if: steps.restore-cache.outputs.cache-hit != 'true'
         continue-on-error: true
         with:
           name: bench-baseline
