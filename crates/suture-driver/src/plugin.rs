@@ -161,12 +161,19 @@ pub struct WasmDriverPlugin {
     name: String,
     extensions_storage: Vec<String>,
     extensions: Vec<&'static str>,
+    #[allow(dead_code)]
+    engine: wasmtime::Engine,
+    store: std::sync::Mutex<wasmtime::Store<()>>,
+    instance: std::sync::Mutex<wasmtime::Instance>,
 }
 
 #[cfg(feature = "wasm-plugins")]
 impl WasmDriverPlugin {
     pub fn from_file(path: &std::path::Path) -> Result<Self, PluginError> {
-        let engine = wasmtime::Engine::default();
+        let mut config = wasmtime::Config::new();
+        config.consume_fuel(true);
+        let engine =
+            wasmtime::Engine::new(&config).map_err(|e| PluginError::LoadFailed(e.to_string()))?;
         let module = wasmtime::Module::from_file(&engine, path)
             .map_err(|e| PluginError::LoadFailed(e.to_string()))?;
 
@@ -204,9 +211,9 @@ impl WasmDriverPlugin {
             .map_err(|e| PluginError::LoadFailed(e.to_string()))?;
 
         let version = Self::call_version_export(&mut store, &instance)?;
-        if version != 1 {
+        if version < 1 || version > 2 {
             return Err(PluginError::AbiVersionMismatch {
-                expected: 1,
+                expected: 2,
                 actual: version,
             });
         }
@@ -227,6 +234,9 @@ impl WasmDriverPlugin {
             name,
             extensions_storage,
             extensions,
+            engine,
+            store: std::sync::Mutex::new(store),
+            instance: std::sync::Mutex::new(instance),
         };
 
         Ok(plugin)
@@ -286,6 +296,60 @@ impl WasmDriverPlugin {
             None => vec![],
         }
     }
+
+    fn write_to_memory(
+        store: &mut wasmtime::Store<()>,
+        instance: &wasmtime::Instance,
+        data: &[u8],
+    ) -> Result<i32, PluginError> {
+        let memory = instance
+            .get_memory(&mut *store, "memory")
+            .ok_or_else(|| PluginError::LoadFailed("no memory export".to_string()))?;
+
+        let len = data.len() as i32;
+        let current_size = memory.data_size(&mut *store) as i32;
+        if current_size < len + 256 {
+            let needed = (len as u64 + 256 - (current_size as u64)).saturating_add(65535) / 65536;
+            memory
+                .grow(&mut *store, needed as u64)
+                .map_err(|e| PluginError::LoadFailed(format!("failed to grow memory: {e}")))?;
+        }
+
+        let ptr = 256i32;
+        let mem_data = memory.data_mut(&mut *store);
+        let ptr_usize = ptr as usize;
+        let end = ptr_usize + data.len();
+        if end <= mem_data.len() {
+            mem_data[ptr_usize..end].copy_from_slice(data);
+            Ok(ptr)
+        } else {
+            Err(PluginError::LoadFailed(
+                "memory too small for input".to_string(),
+            ))
+        }
+    }
+
+    fn read_string_from_memory(
+        store: &mut wasmtime::Store<()>,
+        instance: &wasmtime::Instance,
+        ptr: i32,
+        len: i32,
+    ) -> String {
+        let memory = match instance.get_memory(&mut *store, "memory") {
+            Some(m) => m,
+            None => return String::new(),
+        };
+        let data: &[u8] = memory.data(&*store);
+        if len <= 0 || ptr < 0 {
+            return String::new();
+        }
+        let start = ptr as usize;
+        let end = start + len as usize;
+        if end > data.len() {
+            return String::new();
+        }
+        String::from_utf8_lossy(&data[start..end]).into_owned()
+    }
 }
 
 #[cfg(feature = "wasm-plugins")]
@@ -319,23 +383,177 @@ impl SutureDriver for WasmDriverPlugin {
 
     fn diff(
         &self,
-        _base_content: Option<&str>,
-        _new_content: &str,
+        base_content: Option<&str>,
+        new_content: &str,
     ) -> Result<Vec<crate::SemanticChange>, crate::DriverError> {
-        Err(crate::DriverError::ParseError(
-            "WASM plugin diff is not yet implemented".to_string(),
-        ))
+        let mut store = self
+            .store
+            .lock()
+            .map_err(|e| crate::DriverError::ParseError(format!("lock poisoned: {e}")))?;
+        let instance = self
+            .instance
+            .lock()
+            .map_err(|e| crate::DriverError::ParseError(format!("lock poisoned: {e}")))?;
+
+        store
+            .set_fuel(1_000_000)
+            .map_err(|e| crate::DriverError::ParseError(format!("fuel error: {e}")))?;
+
+        let new_ptr = Self::write_to_memory(&mut *store, &instance, new_content.as_bytes())
+            .map_err(|e| crate::DriverError::ParseError(e.to_string()))?;
+        let new_len = new_content.len() as i32;
+
+        let (base_ptr, base_len) = match base_content {
+            Some(base) => {
+                let ptr = Self::write_to_memory(&mut *store, &instance, base.as_bytes())
+                    .map_err(|e| crate::DriverError::ParseError(e.to_string()))?;
+                (ptr, base.len() as i32)
+            }
+            None => (0, 0),
+        };
+
+        let diff_fn =
+            instance.get_typed_func::<(i32, i32, i32, i32), (i32, i32)>(&mut *store, "diff");
+        let diff_fn = match diff_fn {
+            Ok(f) => f,
+            Err(_) => {
+                return Err(crate::DriverError::ParseError(
+                    "plugin does not export 'diff'".to_string(),
+                ));
+            }
+        };
+
+        let (result_ptr, result_len) = diff_fn
+            .call(&mut *store, (base_ptr, base_len, new_ptr, new_len))
+            .map_err(|e| crate::DriverError::ParseError(format!("plugin diff() faulted: {e}")))?;
+
+        if result_ptr == 0 && result_len == 0 {
+            return Ok(vec![]);
+        }
+
+        let output = Self::read_string_from_memory(&mut *store, &instance, result_ptr, result_len);
+
+        // Try to parse the output as a list of semantic changes.
+        // The plugin output is a JSON array of change objects.
+        let changes: Vec<crate::SemanticChange> = parse_semantic_changes(&output);
+        Ok(changes)
     }
 
     fn format_diff(
         &self,
-        _base_content: Option<&str>,
-        _new_content: &str,
+        base_content: Option<&str>,
+        new_content: &str,
     ) -> Result<String, crate::DriverError> {
-        Err(crate::DriverError::ParseError(
-            "WASM plugin format_diff is not yet implemented".to_string(),
+        let mut store = self
+            .store
+            .lock()
+            .map_err(|e| crate::DriverError::ParseError(format!("lock poisoned: {e}")))?;
+        let instance = self
+            .instance
+            .lock()
+            .map_err(|e| crate::DriverError::ParseError(format!("lock poisoned: {e}")))?;
+
+        store
+            .set_fuel(1_000_000)
+            .map_err(|e| crate::DriverError::ParseError(format!("fuel error: {e}")))?;
+
+        let new_ptr = Self::write_to_memory(&mut *store, &instance, new_content.as_bytes())
+            .map_err(|e| crate::DriverError::ParseError(e.to_string()))?;
+        let new_len = new_content.len() as i32;
+
+        let (base_ptr, base_len) = match base_content {
+            Some(base) => {
+                let ptr = Self::write_to_memory(&mut *store, &instance, base.as_bytes())
+                    .map_err(|e| crate::DriverError::ParseError(e.to_string()))?;
+                (ptr, base.len() as i32)
+            }
+            None => (0, 0),
+        };
+
+        let format_fn =
+            instance.get_typed_func::<(i32, i32, i32, i32), (i32, i32)>(&mut *store, "format_diff");
+        let format_fn = match format_fn {
+            Ok(f) => f,
+            Err(_) => {
+                return Err(crate::DriverError::ParseError(
+                    "plugin does not export 'format_diff'".to_string(),
+                ));
+            }
+        };
+
+        let (result_ptr, result_len) = format_fn
+            .call(&mut *store, (base_ptr, base_len, new_ptr, new_len))
+            .map_err(|e| {
+                crate::DriverError::ParseError(format!("plugin format_diff() faulted: {e}"))
+            })?;
+
+        if result_ptr == 0 && result_len == 0 {
+            return Ok(String::new());
+        }
+
+        Ok(Self::read_string_from_memory(
+            &mut *store,
+            &instance,
+            result_ptr,
+            result_len,
         ))
     }
+}
+
+#[cfg(feature = "wasm-plugins")]
+fn parse_semantic_changes(json: &str) -> Vec<crate::SemanticChange> {
+    let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(json) else {
+        return vec![];
+    };
+    let mut changes = Vec::new();
+    for item in arr {
+        let obj = match item.as_object() {
+            Some(o) => o,
+            None => continue,
+        };
+        let kind = obj
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("modified");
+        match kind {
+            "added" => {
+                if let (Some(path), Some(value)) = (
+                    obj.get("path").and_then(|v| v.as_str()),
+                    obj.get("value").and_then(|v| v.as_str()),
+                ) {
+                    changes.push(crate::SemanticChange::Added {
+                        path: path.to_owned(),
+                        value: value.to_owned(),
+                    });
+                }
+            }
+            "removed" => {
+                if let (Some(path), Some(old_value)) = (
+                    obj.get("path").and_then(|v| v.as_str()),
+                    obj.get("old_value").and_then(|v| v.as_str()),
+                ) {
+                    changes.push(crate::SemanticChange::Removed {
+                        path: path.to_owned(),
+                        old_value: old_value.to_owned(),
+                    });
+                }
+            }
+            "modified" | _ => {
+                if let (Some(path), Some(old_value), Some(new_value)) = (
+                    obj.get("path").and_then(|v| v.as_str()),
+                    obj.get("old_value").and_then(|v| v.as_str()),
+                    obj.get("new_value").and_then(|v| v.as_str()),
+                ) {
+                    changes.push(crate::SemanticChange::Modified {
+                        path: path.to_owned(),
+                        old_value: old_value.to_owned(),
+                        new_value: new_value.to_owned(),
+                    });
+                }
+            }
+        }
+    }
+    changes
 }
 
 #[cfg(test)]

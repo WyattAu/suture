@@ -11,18 +11,26 @@
 //!   to read its JSON input and write its merge output. Fuel-based timeouts
 //!   and memory limits are enforced.
 //!
-//! # Stable ABI v1 Contract (host-function ABI)
+//! # Stable ABI v2 Contract (host-function ABI)
 //!
 //! ## Plugin must import from `"env"`:
-//! - `get_input_len() -> i32` — length of JSON input buffer
-//! - `get_input_byte(offset: i32) -> i32` — read one byte (returns -1 if OOB)
+//! - `get_input_len() -> i32` — length of JSON input buffer (merge)
+//! - `get_input_byte(offset: i32) -> i32` — read one byte from merge input (returns -1 if OOB)
 //! - `set_output_byte(offset: i32, byte: i32)` — write one byte to output
 //! - `set_output_len(len: i32)` — resize output buffer
+//! - `get_diff_input_len() -> i32` — length of first diff input buffer
+//! - `get_diff_input_byte(offset: i32) -> i32` — read one byte from first diff input
+//! - `get_diff_input2_len() -> i32` — length of second diff input buffer
+//! - `get_diff_input2_byte(offset: i32) -> i32` — read one byte from second diff input
+//! - `set_diff_output_byte(offset: i32, byte: i32)` — write one byte to diff output
+//! - `set_diff_output_len(len: i32)` — resize diff output buffer
 //! - `host_log(level: i32, msg_ptr: i32, msg_len: i32)` — log a message
 //!
 //! ## Plugin must export:
 //! - `suture_merge() -> i32` — perform merge (0=success, 1=conflict, -1=error)
-//! - `suture_abi_version() -> i32` — must return `1`
+//! - `suture_diff() -> i32` — perform diff (0=success, -1=error) **[ABI v2, optional in v1]**
+//! - `suture_format_diff() -> i32` — produce formatted diff string (0=success, -1=error) **[ABI v2, optional in v1]**
+//! - `suture_abi_version() -> i32` — must return `2` (v1 also accepted for backward compat)
 //! - `suture_plugin_name() -> *const u8` — plugin name (not null-terminated)
 //! - `suture_plugin_name_len() -> i32` — length of name
 //! - `suture_plugin_version() -> *const u8` — plugin version (not null-terminated)
@@ -116,8 +124,11 @@ pub trait SutureWasmPlugin {
 // Constants
 // ---------------------------------------------------------------------------
 
-/// Plugin ABI version — plugins must match this
-pub const PLUGIN_ABI_VERSION: u32 = 1;
+/// Plugin ABI version — plugins must match this (or [`MIN_ABI_VERSION`]).
+pub const PLUGIN_ABI_VERSION: u32 = 2;
+
+/// Minimum supported ABI version (v1 plugins are still accepted).
+pub const MIN_ABI_VERSION: u32 = 1;
 
 /// Maximum memory for a plugin (16 MB)
 const MAX_PLUGIN_MEMORY: u64 = 16 * 1024 * 1024;
@@ -340,6 +351,11 @@ struct PluginState {
     input_buffer: Vec<u8>,
     output_buffer: Vec<u8>,
     input_len: usize,
+    diff_input1_buffer: Vec<u8>,
+    diff_input1_len: usize,
+    diff_input2_buffer: Vec<u8>,
+    diff_input2_len: usize,
+    diff_output_buffer: Vec<u8>,
 }
 
 /// A WASM plugin host that uses the *host-function* ABI.
@@ -381,6 +397,11 @@ impl WasmPluginHost {
                 input_buffer: Vec::new(),
                 output_buffer: Vec::new(),
                 input_len: 0,
+                diff_input1_buffer: Vec::new(),
+                diff_input1_len: 0,
+                diff_input2_buffer: Vec::new(),
+                diff_input2_len: 0,
+                diff_output_buffer: Vec::new(),
             },
         );
 
@@ -473,6 +494,86 @@ impl WasmPluginHost {
             )
             .map_err(|e| PluginError::Compilation(e.to_string()))?;
 
+        linker
+            .func_wrap(
+                "env",
+                "get_diff_input_len",
+                |caller: Caller<'_, PluginState>| -> i32 { caller.data().diff_input1_len as i32 },
+            )
+            .map_err(|e| PluginError::Compilation(e.to_string()))?;
+
+        linker
+            .func_wrap(
+                "env",
+                "get_diff_input_byte",
+                |caller: Caller<'_, PluginState>, offset: i32| -> i32 {
+                    let state = caller.data();
+                    if (offset as usize) < state.diff_input1_buffer.len() {
+                        i32::from(state.diff_input1_buffer[offset as usize])
+                    } else {
+                        -1
+                    }
+                },
+            )
+            .map_err(|e| PluginError::Compilation(e.to_string()))?;
+
+        linker
+            .func_wrap(
+                "env",
+                "get_diff_input2_len",
+                |caller: Caller<'_, PluginState>| -> i32 { caller.data().diff_input2_len as i32 },
+            )
+            .map_err(|e| PluginError::Compilation(e.to_string()))?;
+
+        linker
+            .func_wrap(
+                "env",
+                "get_diff_input2_byte",
+                |caller: Caller<'_, PluginState>, offset: i32| -> i32 {
+                    let state = caller.data();
+                    if (offset as usize) < state.diff_input2_buffer.len() {
+                        i32::from(state.diff_input2_buffer[offset as usize])
+                    } else {
+                        -1
+                    }
+                },
+            )
+            .map_err(|e| PluginError::Compilation(e.to_string()))?;
+
+        linker
+            .func_wrap(
+                "env",
+                "set_diff_output_byte",
+                |mut caller: Caller<'_, PluginState>, offset: i32, byte: i32| {
+                    if offset < 0 {
+                        return;
+                    }
+                    let state = caller.data_mut();
+                    let offset = offset as usize;
+                    if state.diff_output_buffer.len() >= 16 * 1024 * 1024 {
+                        return;
+                    }
+                    if offset >= state.diff_output_buffer.len() {
+                        state.diff_output_buffer.resize(offset + 1, 0);
+                    }
+                    state.diff_output_buffer[offset] = byte as u8;
+                },
+            )
+            .map_err(|e| PluginError::Compilation(e.to_string()))?;
+
+        linker
+            .func_wrap(
+                "env",
+                "set_diff_output_len",
+                |mut caller: Caller<'_, PluginState>, len: i32| {
+                    if len < 0 || len as usize > 16 * 1024 * 1024 {
+                        return;
+                    }
+                    caller.data_mut().diff_output_buffer.resize(len as usize, 0);
+                },
+            )
+            .map_err(|e| PluginError::Compilation(e.to_string()))?;
+
         let instance = linker
             .instantiate(&mut store, &module)
             .map_err(|e| PluginError::Runtime(e.to_string()))?;
@@ -486,9 +587,9 @@ impl WasmPluginHost {
                 let version = abi_fn.call(&mut store, ()).map_err(|e| {
                     PluginError::Interface(format!("suture_abi_version call failed: {e}"))
                 })?;
-                if version != PLUGIN_ABI_VERSION as i32 {
+                if version < MIN_ABI_VERSION as i32 || version > PLUGIN_ABI_VERSION as i32 {
                     return Err(PluginError::Interface(format!(
-                        "plugin ABI version {version} does not match host ABI version {PLUGIN_ABI_VERSION}"
+                        "plugin ABI version {version} is not supported (host supports {MIN_ABI_VERSION}..{PLUGIN_ABI_VERSION})"
                     )));
                 }
             }
@@ -583,6 +684,157 @@ impl WasmPluginHost {
             }
             _ => Err(PluginError::Runtime(format!(
                 "Unknown result code: {result_code}"
+            ))),
+        }
+    }
+
+    /// Perform a semantic diff between base and new content.
+    ///
+    /// Sets up the diff input buffers and calls the plugin's `suture_diff`
+    /// export. Returns the diff output on success.
+    ///
+    /// Return codes: `0` = success, `1` = no changes, `-1` = error.
+    /// Returns `Err` if the plugin does not export `suture_diff` (ABI v1).
+    pub fn diff(&self, base: Option<&str>, new_content: &str) -> Result<String, PluginError> {
+        {
+            let mut store = self
+                .store
+                .lock()
+                .map_err(|e| PluginError::Runtime(format!("store lock poisoned: {e}")))?;
+            let state = store.data_mut();
+            state.diff_input1_buffer = base.map(str::as_bytes).unwrap_or_default().to_vec();
+            state.diff_input1_len = state.diff_input1_buffer.len();
+            state.diff_input2_buffer = new_content.as_bytes().to_vec();
+            state.diff_input2_len = state.diff_input2_buffer.len();
+            state.diff_output_buffer = Vec::new();
+            store
+                .set_fuel(DEFAULT_FUEL_BUDGET)
+                .map_err(|e| PluginError::Runtime(e.to_string()))?;
+        }
+
+        let mut store = self
+            .store
+            .lock()
+            .map_err(|e| PluginError::Runtime(format!("store lock poisoned: {e}")))?;
+        let instance = self
+            .instance
+            .lock()
+            .map_err(|e| PluginError::Runtime(format!("instance lock poisoned: {e}")))?;
+
+        let diff_fn = match instance.get_typed_func::<(), i32>(&mut *store, "suture_diff") {
+            Ok(f) => f,
+            Err(_) => {
+                return Err(PluginError::Interface(
+                    "suture_diff not exported (plugin uses ABI v1)".to_owned(),
+                ));
+            }
+        };
+
+        let result_code = diff_fn
+            .call(&mut *store, ())
+            .map_err(|e| PluginError::Runtime(e.to_string()))?;
+
+        let fuel_remaining = store
+            .get_fuel()
+            .map_err(|e| PluginError::Runtime(e.to_string()))?;
+        if fuel_remaining == 0 {
+            return Err(PluginError::Timeout);
+        }
+
+        match result_code {
+            0 => {
+                let output = String::from_utf8(store.data().diff_output_buffer.clone())
+                    .map_err(|e| PluginError::Runtime(e.to_string()))?;
+                Ok(output)
+            }
+            1 => Ok(String::new()),
+            -1 => {
+                let error_msg = read_plugin_error(&instance, &mut store);
+                Err(PluginError::Runtime(if error_msg.is_empty() {
+                    "Plugin diff returned error".to_owned()
+                } else {
+                    format!("Plugin diff error: {error_msg}")
+                }))
+            }
+            _ => Err(PluginError::Runtime(format!(
+                "Unknown diff result code: {result_code}"
+            ))),
+        }
+    }
+
+    /// Produce a formatted diff string between base and new content.
+    ///
+    /// Sets up the diff input buffers and calls the plugin's
+    /// `suture_format_diff` export. Returns the formatted output on success.
+    ///
+    /// Return codes: `0` = success, `-1` = error.
+    /// Returns `Err` if the plugin does not export `suture_format_diff` (ABI v1).
+    pub fn format_diff(
+        &self,
+        base: Option<&str>,
+        new_content: &str,
+    ) -> Result<String, PluginError> {
+        {
+            let mut store = self
+                .store
+                .lock()
+                .map_err(|e| PluginError::Runtime(format!("store lock poisoned: {e}")))?;
+            let state = store.data_mut();
+            state.diff_input1_buffer = base.map(str::as_bytes).unwrap_or_default().to_vec();
+            state.diff_input1_len = state.diff_input1_buffer.len();
+            state.diff_input2_buffer = new_content.as_bytes().to_vec();
+            state.diff_input2_len = state.diff_input2_buffer.len();
+            state.diff_output_buffer = Vec::new();
+            store
+                .set_fuel(DEFAULT_FUEL_BUDGET)
+                .map_err(|e| PluginError::Runtime(e.to_string()))?;
+        }
+
+        let mut store = self
+            .store
+            .lock()
+            .map_err(|e| PluginError::Runtime(format!("store lock poisoned: {e}")))?;
+        let instance = self
+            .instance
+            .lock()
+            .map_err(|e| PluginError::Runtime(format!("instance lock poisoned: {e}")))?;
+
+        let fmt_fn = match instance.get_typed_func::<(), i32>(&mut *store, "suture_format_diff") {
+            Ok(f) => f,
+            Err(_) => {
+                return Err(PluginError::Interface(
+                    "suture_format_diff not exported (plugin uses ABI v1)".to_owned(),
+                ));
+            }
+        };
+
+        let result_code = fmt_fn
+            .call(&mut *store, ())
+            .map_err(|e| PluginError::Runtime(e.to_string()))?;
+
+        let fuel_remaining = store
+            .get_fuel()
+            .map_err(|e| PluginError::Runtime(e.to_string()))?;
+        if fuel_remaining == 0 {
+            return Err(PluginError::Timeout);
+        }
+
+        match result_code {
+            0 => {
+                let output = String::from_utf8(store.data().diff_output_buffer.clone())
+                    .map_err(|e| PluginError::Runtime(e.to_string()))?;
+                Ok(output)
+            }
+            -1 => {
+                let error_msg = read_plugin_error(&instance, &mut store);
+                Err(PluginError::Runtime(if error_msg.is_empty() {
+                    "Plugin format_diff returned error".to_owned()
+                } else {
+                    format!("Plugin format_diff error: {error_msg}")
+                }))
+            }
+            _ => Err(PluginError::Runtime(format!(
+                "Unknown format_diff result code: {result_code}"
             ))),
         }
     }
@@ -910,6 +1162,9 @@ impl Default for PluginRegistry {
 // ---------------------------------------------------------------------------
 
 /// Validate a Wasm module without fully loading it.
+///
+/// Checks for both legacy (memory-passthrough) and host-function ABI exports.
+/// Returns a list of warnings for missing or optional exports.
 pub fn validate_plugin(wasm_bytes: &[u8]) -> Result<Vec<String>> {
     let engine = Engine::default();
 
@@ -923,11 +1178,52 @@ pub fn validate_plugin(wasm_bytes: &[u8]) -> Result<Vec<String>> {
 
     let mut warnings = Vec::new();
 
-    if !exports.contains(&"merge".to_owned()) {
-        warnings.push("missing 'merge' export".to_owned());
+    // Check for legacy ABI exports (WasmPlugin)
+    let has_legacy_merge = exports.contains(&"merge".to_owned());
+    let has_host_merge = exports.contains(&"suture_merge".to_owned());
+
+    if !has_legacy_merge && !has_host_merge {
+        warnings.push("missing 'merge' or 'suture_merge' export".to_owned());
     }
     if !exports.contains(&"memory".to_owned()) {
         warnings.push("missing 'memory' export (required for string I/O)".to_owned());
+    }
+
+    // Check host-function ABI exports (WasmPluginHost)
+    if has_host_merge {
+        // Required host-function ABI exports
+        let required_exports = [
+            ("suture_abi_version", "ABI version negotiation"),
+            ("suture_plugin_name", "plugin name"),
+            ("suture_plugin_name_len", "plugin name length"),
+            ("suture_plugin_version", "plugin version"),
+            ("suture_plugin_version_len", "plugin version length"),
+            ("suture_extensions", "file extension list"),
+            ("suture_extensions_len", "extension list length"),
+            ("suture_error_msg", "error message on failure"),
+            ("suture_error_msg_len", "error message length"),
+        ];
+
+        for (export, description) in &required_exports {
+            if !exports.contains(&export.to_string()) {
+                warnings.push(format!(
+                    "missing host-function ABI export '{export}' ({description})"
+                ));
+            }
+        }
+
+        // ABI v2 optional exports — warn if missing
+        let v2_exports = [
+            ("suture_diff", "semantic diff"),
+            ("suture_format_diff", "formatted diff"),
+        ];
+        for (export, description) in &v2_exports {
+            if !exports.contains(&export.to_string()) {
+                warnings.push(format!(
+                    "optional ABI v2 export '{export}' ({description}) not present"
+                ));
+            }
+        }
     }
 
     Ok(warnings)

@@ -11,6 +11,7 @@ suture-driver = { path = "../suture-driver" }
 suture-driver-json = { path = "../suture-driver-json" }
 suture-driver-yaml = { path = "../suture-driver-yaml" }
 suture-driver-toml = { path = "../suture-driver-toml" }
+suture-wasm-plugin = { path = "../suture-wasm-plugin" }
 serde_json = "1"
 proptest = "1.6"
 libfuzzer-sys = "0.4"
@@ -49,4 +50,9 @@ harness = false
 [[bin]]
 name = "fuzz_diff_input"
 path = "fuzz_targets/fuzz_diff_input.rs"
+harness = false
+
+[[bin]]
+name = "fuzz_wasm_plugin"
+path = "fuzz_targets/fuzz_wasm_plugin.rs"
 harness = false
