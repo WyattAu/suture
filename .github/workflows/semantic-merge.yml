@@ -167,7 +167,7 @@ jobs:
 
       - name: Comment on PR
         if: steps.conflicts.outputs.conflict_count != '0'
-        uses: actions/github-script@ce71cc2ab81d554ebbe88c79ab5975992d79ba08
+        uses: actions/github-script@10b53a9ec6c222bb4ce97aa6bd2b5f739696b536
         with:
           script: |
             const resolved = parseInt("${{ steps.resolve.outputs.resolved }}" || "0");
