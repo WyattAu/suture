@@ -21,14 +21,14 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'push'
     steps:
-      - uses: actions/checkout@900f221
-      - uses: dtolnay/rust-toolchain@3c5f7ea
-      - uses: Swatinem/rust-cache@e18b497
+      - uses: actions/checkout@900f2210b1d28bbbd0bd22d17926b9e224e8f231
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
         with:
           key: perf
       - name: Run benchmarks
         run: cargo bench --package suture-bench -- --save-baseline main | tee bench-results.txt
-      - uses: actions/upload-artifact@ea165f8
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: bench-baseline
           path: target/criterion
@@ -38,12 +38,12 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     steps:
-      - uses: actions/checkout@900f221
-      - uses: dtolnay/rust-toolchain@3c5f7ea
-      - uses: Swatinem/rust-cache@e18b497
+      - uses: actions/checkout@900f2210b1d28bbbd0bd22d17926b9e224e8f231
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
         with:
           key: perf
-      - uses: actions/download-artifact@d3f86a1
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         continue-on-error: true
         with:
           name: bench-baseline

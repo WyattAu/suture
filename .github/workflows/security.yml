@@ -22,15 +22,15 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - uses: actions/checkout@900f221
+      - uses: actions/checkout@900f2210b1d28bbbd0bd22d17926b9e224e8f231
         with:
           fetch-depth: 0
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@3c5f7ea
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9
 
       - name: Cache Cargo artifacts
-        uses: Swatinem/rust-cache@e18b497
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
 
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
@@ -58,7 +58,7 @@ jobs:
           cat sbom.txt
 
       - name: Upload SBOM artifact
-        uses: actions/upload-artifact@ea165f8
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: sbom
           path: sbom.txt

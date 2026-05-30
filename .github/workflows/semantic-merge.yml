@@ -34,12 +34,12 @@ jobs:
 
     steps:
       - name: Checkout PR
-        uses: actions/checkout@900f221
+        uses: actions/checkout@900f2210b1d28bbbd0bd22d17926b9e224e8f231
         with:
           fetch-depth: 0
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@3c5f7ea
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9
 
       - name: Install Suture
         run: |
@@ -167,7 +167,7 @@ jobs:
 
       - name: Comment on PR
         if: steps.conflicts.outputs.conflict_count != '0'
-        uses: actions/github-script@ce71cc2
+        uses: actions/github-script@ce71cc2ab81d554ebbe88c79ab5975992d79ba08
         with:
           script: |
             const resolved = parseInt("${{ steps.resolve.outputs.resolved }}" || "0");
