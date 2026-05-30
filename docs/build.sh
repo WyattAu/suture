@@ -10,24 +10,45 @@ TEMPLATE="$SCRIPT_DIR/template.html"
 SKIP_NAMES=("index" "demo")
 
 get_title() {
-    head -1 "$1" 2>/dev/null | sed 's/^# *//;s/ *$//' || echo "Documentation"
+    local file="$1"
+    # Handle YAML frontmatter: ---\ntitle: "..." \n---
+    local first_line
+    first_line="$(head -1 "$file" 2>/dev/null)"
+    if [ "$first_line" = "---" ]; then
+        # Extract title from frontmatter block
+        local title
+        title="$(awk '/^---/{n++; next} n==1 && /^title:/ {sub(/^title:[[:space:]]*["'"'"']?/, ""); sub(/["'"'"']?[[:space:]]*$/, ""); print; exit}' "$file" 2>/dev/null)"
+        if [ -n "$title" ]; then
+            echo "$title"
+            return
+        fi
+    fi
+    # Fallback: first markdown heading
+    head -1 "$file" 2>/dev/null | sed 's/^# *//;s/ *$//' || echo "Documentation"
 }
 
 get_nav_group() {
-    case "$1" in
+    local base="$1"
+    local dir="${2:-.}"
+    # Blog subdirectory gets its own group
+    if [ "$dir" = "./blog" ] || [ "$dir" = "blog" ]; then
+        echo "Blog"
+        return
+    fi
+    case "$base" in
         quickstart|getting_started)         echo "Getting Started" ;;
         why-suture|semantic-merge|comparing-with-git|comparison)
-                                             echo "Core Concepts" ;;
+                                              echo "Core Concepts" ;;
         cli-reference|api_reference)         echo "Reference" ;;
         git_merge_driver|merge-driver-guide|driver_sdk)
-                                             echo "Merge Drivers" ;;
+                                              echo "Merge Drivers" ;;
         ide-integration|github-action)       echo "Integration" ;;
         document-authors|video-editors|video-merge-guide|data-science)
-                                             echo "Guides" ;;
+                                              echo "Guides" ;;
         onboarding-*)                        echo "Onboarding" ;;
         hub|desktop-build|wasm-feasibility)  echo "Platform" ;;
         release-notes|shipping-checklist|performance)
-                                             echo "Development" ;;
+                                              echo "Development" ;;
         *)                                   echo "Other" ;;
     esac
 }
@@ -63,6 +84,7 @@ generate_nav() {
     local -a names=()
     local -a titles=()
     local -a links=()
+    local -a link_prefixes=()
 
     for ((i=0; i<${#files[@]}; i++)); do
         local f="${files[$i]}"
@@ -70,20 +92,23 @@ generate_nav() {
         local dir="$(dirname "$f")"
         if [ "$dir" = "." ]; then
             local link="${base}.html"
+            local link_prefix=""
         else
             local link="${dir}/${base}.html"
+            local link_prefix="../"
         fi
-        local grp="$(get_nav_group "$base")"
+        local grp="$(get_nav_group "$base" "$dir")"
         local ttl="$(get_display_title "$(get_title "$f")" "$base")"
         groups+=("$grp")
         names+=("$base")
         titles+=("$ttl")
         links+=("$link")
+        link_prefixes+=("$link_prefix")
     done
 
-    local -a order=("Getting Started" "Core Concepts" "Reference" "Merge Drivers" "Integration" "Guides" "Onboarding" "Platform" "Development" "Other")
+    local -a order=("Getting Started" "Core Concepts" "Reference" "Merge Drivers" "Integration" "Guides" "Onboarding" "Platform" "Blog" "Development" "Other")
 
-    echo '<a href="index.html" class="sidebar-home">&larr; Back to Home</a>'
+    echo '<a href="${link_prefix}index.html" class="sidebar-home">&larr; Back to Home</a>'
 
     for grp in "${order[@]}"; do
         local found=0
@@ -103,7 +128,7 @@ generate_nav() {
                 if [ "${names[$i]}" = "$current" ]; then
                     cls="$cls active"
                 fi
-                local html_name="${links[$i]}"
+                local html_name="${link_prefixes[$i]}${links[$i]}"
                 echo "<a href=\"$html_name\" class=\"$cls\">${titles[$i]}</a>"
             fi
         done
@@ -131,6 +156,19 @@ fill_template() {
         printf "%s", s
     }
     ' "$TEMPLATE"
+}
+
+# Strip YAML frontmatter (--- ... ---) from a markdown file.
+# Outputs the file content with frontmatter removed, ready for md2html.
+strip_frontmatter() {
+    local file="$1"
+    local first_line
+    first_line="$(head -1 "$file" 2>/dev/null)"
+    if [ "$first_line" = "---" ]; then
+        awk 'BEGIN{skip=1} /^---$/{skip=0; next} !skip{print}' "$file"
+    else
+        cat "$file"
+    fi
 }
 
 chmod +x "$MD2HTML"
@@ -172,7 +210,7 @@ for md_file in "${md_files[@]}"; do
     echo "  CONV $md_file -> $html_file"
 
     title="$(get_title "$md_file")"
-    content="$(bash "$MD2HTML" "$md_file")"
+    content="$(strip_frontmatter "$md_file" | bash "$MD2HTML" /dev/stdin)"
     nav="$(generate_nav "$base" "${md_files[@]}")"
 
     fill_template "$title" "$content" "$nav" > "$html_file"
@@ -184,7 +222,7 @@ echo "Done. $converted files converted, $skipped skipped."
 
 # Generate sitemap.xml
 echo "Generating sitemap.xml..."
-BASE_URL="https://wyattau.github.io/suture"
+BASE_URL="https://suture.dev"
 SITEMAP='<?xml version="1.0" encoding="UTF-8"?>'
 SITEMAP="$SITEMAP
 <urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">

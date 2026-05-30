@@ -386,13 +386,23 @@ exit $?
 }
 
 fn ensure_git_repo() -> Result<(), Box<dyn std::error::Error>> {
-    let output = std::process::Command::new("git")
+    // Prefer git CLI for authoritative detection, but fall back to
+    // directory-based check when git is not installed (containers, CI).
+    match std::process::Command::new("git")
         .args(["rev-parse", "--git-dir"])
-        .output()?;
-    if !output.status.success() {
-        return Err("not a Git repository".into());
+        .output()
+    {
+        Ok(output) if output.status.success() => Ok(()),
+        Ok(_) => Err("not a Git repository".into()),
+        Err(_e) => {
+            // Git binary not found -- fall back to checking for .git directory.
+            if std::path::Path::new(".git").is_dir() {
+                Ok(())
+            } else {
+                Err("not a Git repository (git binary not found and no .git directory)".into())
+            }
+        }
     }
-    Ok(())
 }
 
 fn cmd_driver_install() -> Result<(), Box<dyn std::error::Error>> {

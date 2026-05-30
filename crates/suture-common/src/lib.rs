@@ -110,10 +110,7 @@ impl BranchName {
     #[must_use]
     pub fn main() -> Self {
         // SAFETY: "main" passes all validation rules in `new()`.
-        match Self::new("main") {
-            Ok(b) => b,
-            Err(_) => unreachable!("hardcoded \"main\" is always a valid branch name"),
-        }
+        Self::new("main").expect("hardcoded \"main\" is always a valid branch name")
     }
 
     pub fn new(name: impl Into<String>) -> Result<Self, CommonError> {

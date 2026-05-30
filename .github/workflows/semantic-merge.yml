@@ -41,27 +41,11 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install Suture
+      - name: Build Suture from source
         run: |
-          cargo install --git https://github.com/WyattAu/suture.git --branch main \
-            --path crates/suture-cli \
-            crates/suture-core \
-            crates/suture-common \
-            crates/suture-driver \
-            crates/suture-ooxml \
-            crates/suture-driver-json \
-            crates/suture-driver-yaml \
-            crates/suture-driver-toml \
-            crates/suture-driver-csv \
-            crates/suture-driver-xml \
-            crates/suture-driver-markdown \
-            crates/suture-driver-docx \
-            crates/suture-driver-xlsx \
-            crates/suture-driver-pptx \
-            crates/suture-driver-sql \
-            crates/suture-driver-pdf \
-            crates/suture-driver-image \
-            crates/suture-driver-otio
+          sudo apt-get update && sudo apt-get install -y protobuf-compiler pkg-config libssl-dev
+          cargo build --release -p suture-cli
+          echo "$PWD/target/release" >> $GITHUB_PATH
 
       - name: Find merge base
         id: merge-base

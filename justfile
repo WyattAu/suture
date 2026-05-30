@@ -1,5 +1,5 @@
 # Suture development tasks
-set shell := ["fish", "-c"]
+set shell := ["bash", "-c"]
 
 EXCLUDE := "--exclude suture-fuzz --exclude suture-py --exclude suture-node --exclude suture-e2e --exclude suture-bench --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon --exclude suture-wasm-plugin"
 
@@ -15,10 +15,10 @@ lint:
     cargo clippy --workspace {{EXCLUDE}} -- -D warnings
 
 fmt:
-    cargo fmt --workspace
+    cargo fmt --all
 
 fmt-check:
-    cargo fmt --workspace -- --check
+    cargo fmt --all -- --check
 
 build:
     cargo build --workspace --release -p suture-cli

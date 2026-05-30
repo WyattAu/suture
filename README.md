@@ -1,16 +1,20 @@
-<div align="center">
-  <h1>Suture</h1>
-  <p><strong>Semantic merge for every format.</strong></p>
-  <p>Automatically resolve merge conflicts in JSON, YAML, TOML, XML, CSV, and 13 more structured file formats.</p>
-  
-  [Install](#installation) · [Quick Start](#quick-start) · [Docs](docs/user-guide.md) · [API](docs/api-reference.md) · [Pricing](#pricing)
-  
-  [![Tests](https://github.com/WyattAu/suture/actions/workflows/ci.yml/badge.svg)](https://github.com/WyattAu/suture/actions/workflows/ci.yml)
-  [![crates.io](https://img.shields.io/crates/v/suture-merge-driver.svg)](https://crates.io/crates/suture-merge-driver)
-  [![npm](https://img.shields.io/npm/v/suture-merge-driver.svg)](https://www.npmjs.com/package/suture-merge-driver)
-  [![PyPI](https://img.shields.io/pypi/v/suture-merge-driver.svg)](https://pypi.org/project/suture-merge-driver/)
-  [![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE-AGPL)
-</div>
+<h1 align="center">Suture</h1>
+<p align="center"><strong>Semantic merge for every format.</strong></p>
+<p align="center">Automatically resolve merge conflicts in JSON, YAML, TOML, XML, CSV, and 13 more structured file formats.</p>
+<p align="center">
+<a href="#installation">Install</a> &middot;
+<a href="#quick-start">Quick Start</a> &middot;
+<a href="docs/user-guide.md">Docs</a> &middot;
+<a href="docs/api-reference.md">API</a> &middot;
+<a href="#pricing">Pricing</a>
+</p>
+<p align="center">
+<a href="https://github.com/WyattAu/suture/actions/workflows/ci.yml"><img src="https://github.com/WyattAu/suture/actions/workflows/ci.yml/badge.svg" alt="Tests"></a>
+<a href="https://crates.io/crates/suture-merge-driver"><img src="https://img.shields.io/crates/v/suture-merge-driver.svg" alt="crates.io"></a>
+<a href="https://www.npmjs.com/package/suture-merge-driver"><img src="https://img.shields.io/npm/v/suture-merge-driver.svg" alt="npm"></a>
+<a href="https://pypi.org/project/suture-merge-driver/"><img src="https://img.shields.io/pypi/v/suture-merge-driver.svg" alt="PyPI"></a>
+<a href="LICENSE-AGPL"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue.svg" alt="License: AGPL-3.0"></a>
+</p>
 
 ---
 
@@ -57,7 +61,7 @@ curl -fsSL https://raw.githubusercontent.com/WyattAu/suture/main/install.sh | sh
 curl -fsSL https://raw.githubusercontent.com/WyattAu/suture/main/scripts/install-merge-driver.sh | bash
 ```
 
-That's it. Git will now automatically merge:
+Git will now automatically merge the following file patterns:
 `*.json` `*.yaml` `*.yml` `*.toml` `*.xml` `*.csv`
 
 ## Quick Start
@@ -196,5 +200,5 @@ suture/
 
 ## License
 
-- **Self-hosted:** AGPL-3.0 (free forever)
+- **Self-hosted:** AGPL-3.0 (perpetual license)
 - **Commercial:** [Suture Commercial License](LICENSE-COMMERCIAL)

@@ -1,61 +1,73 @@
 #!/usr/bin/env bash
-# suture pre-push hook
-# Runs fmt, clippy, and test suite before allowing a push to remote.
-# Install: cp scripts/pre-push .git/hooks/pre-push
+# === suture pre-push quality gate ===
+# Runs full validation (fmt, clippy, full test suite) before allowing a push.
+# Install: cp scripts/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push
 #
-# To bypass (emergency only): SUTURE_SKIP_PUSH_CHECKS=1 git push ...
+# Bypass (emergency only): SUTURE_SKIP_PUSH_CHECKS=1 git push ...
 
 set -euo pipefail
 
 if [ "${SUTURE_SKIP_PUSH_CHECKS:-0}" = "1" ]; then
-    echo "SUTURE_SKIP_PUSH_CHECKS=1 -- skipping pre-push checks"
+    printf "SUTURE_SKIP_PUSH_CHECKS=1 -- bypassing pre-push checks\n"
     exit 0
 fi
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
 NC='\033[0m'
 
-EXCLUDE="--exclude suture-fuzz --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon --exclude suture-wasm-plugin"
+EXCLUDE="--exclude suture-fuzz --exclude suture-py --exclude suture-node --exclude suture-e2e --exclude suture-bench --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon --exclude suture-wasm-plugin"
 
-echo ""
-echo "=== suture pre-push quality gates ==="
-echo ""
+pass()  { echo -e "${GREEN}PASS${NC}"; }
+fail()  { echo -e "${RED}FAIL${NC}"; }
 
-FAIL=0
+header() {
+    echo ""
+    echo -e "${BLUE}=== suture pre-push quality gates ==="
+    echo -e "    $(date -u +'%Y-%m-%dT%H:%M:%SZ')${NC}"
+    echo ""
+}
 
-# --- 1. cargo fmt ---
+header
+
+GATE_FAIL=0
+
+# --- Gate 1: cargo fmt ---
 echo -n "[1/3] cargo fmt --check ... "
-if cargo fmt --all -- --check 2>&1; then
-    echo -e "${GREEN}PASS${NC}"
+if cargo fmt --all -- --check > /tmp/suture-prepush-fmt.log 2>&1; then
+    pass
 else
-    echo -e "${RED}FAIL${NC}"
-    FAIL=1
+    fail
+    echo -e "  ${YELLOW}Formatting issues found.${NC}"
+    GATE_FAIL=1
 fi
 
-# --- 2. cargo clippy (includes type-check, no separate cargo check needed) ---
-echo -n "[2/3] cargo clippy --workspace ${EXCLUDE} -- -D warnings ... "
-if cargo clippy --workspace ${EXCLUDE} -- -D warnings 2>&1; then
-    echo -e "${GREEN}PASS${NC}"
+# --- Gate 2: cargo clippy ---
+echo -n "[2/3] cargo clippy ${EXCLUDE} -- -D warnings ... "
+if cargo clippy --workspace ${EXCLUDE} -- -D warnings > /tmp/suture-prepush-clippy.log 2>&1; then
+    pass
 else
-    echo -e "${RED}FAIL${NC}"
-    FAIL=1
+    fail
+    echo -e "  ${YELLOW}Clippy issues found.${NC}"
+    GATE_FAIL=1
 fi
 
-# --- 3. cargo test (serial for CWD-dependent CLI tests) ---
+# --- Gate 3: cargo test (serial, for CWD-dependent CLI tests) ---
 echo "[3/3] cargo test --workspace ${EXCLUDE} -- --test-threads=1 ..."
-if cargo test --workspace ${EXCLUDE} -- --test-threads=1 2>&1; then
-    echo -e "${GREEN}PASS${NC}"
+if cargo test --workspace ${EXCLUDE} -- --test-threads=1 > /tmp/suture-prepush-test.log 2>&1; then
+    echo -e "  ${GREEN}All tests passed.${NC}"
 else
-    echo -e "${RED}FAIL${NC}"
-    FAIL=1
+    echo -e "  ${RED}Test failures detected.${NC}"
+    grep -E '^(test |failures:|test result:)' /tmp/suture-prepush-test.log | tail -20
+    GATE_FAIL=1
 fi
 
 echo ""
-if [ "$FAIL" -ne 0 ]; then
+if [ "$GATE_FAIL" -ne 0 ]; then
     echo -e "${RED}Pre-push checks FAILED. Push aborted.${NC}"
-    echo -e "${YELLOW}Fix the issues above and try again.${NC}"
+    echo -e "${YELLOW}Fix issues above, re-commit, and try again.${NC}"
     echo -e "${YELLOW}Emergency bypass: SUTURE_SKIP_PUSH_CHECKS=1 git push ...${NC}"
     exit 1
 fi

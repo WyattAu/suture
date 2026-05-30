@@ -104,8 +104,11 @@ footer .footer-links{display:flex;gap:20px;justify-content:center;flex-wrap:wrap
 footer .footer-links a{color:var(--fg2)}
 footer .footer-links a:hover{color:#fff}
 
- @media(max-width:768px){
+ .mobile-menu-btn{display:none;background:none;border:none;color:var(--fg);font-size:1.3rem;cursor:pointer;padding:4px 8px}
+@media(max-width:768px){
   .nav-links{display:none}
+  .nav-links.open{display:flex;flex-direction:column;position:absolute;top:60px;left:0;right:0;background:rgba(10,10,15,.95);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);padding:12px 24px;gap:12px}
+  .mobile-menu-btn{display:block}
   .hero{padding:110px 0 70px}
   section{padding:60px 0}
   h2{font-size:1.5rem}
@@ -121,9 +124,10 @@ footer .footer-links a:hover{color:#fff}
 </head>
 <body>
 
-<nav>
+<nav aria-label="Main navigation">
   <div class="container">
     <a href="#" class="nav-logo">/suture<span>/</span></a>
+    <button class="mobile-menu-btn" aria-label="Toggle navigation menu" aria-expanded="false">&#9776;</button>
     <div class="nav-links">
       <a href="#features">Features</a>
       <a href="#how-it-works">How It Works</a>
@@ -134,7 +138,7 @@ footer .footer-links a:hover{color:#fff}
   </div>
 </nav>
 
-<section class="hero">
+<main>
   <div class="container">
     <p class="section-label">Universal Semantic Version Control</p>
     <h1>Version Control for Everyone, Not Just Code</h1>
@@ -155,42 +159,42 @@ footer .footer-links a:hover{color:#fff}
     <p class="section-desc">Branch, merge, tag, blame, sync, and audit — for JSON configs, Word docs, spreadsheets, and more.</p>
     <div class="features-grid">
       <div class="feature-card">
-        <div class="feature-icon purple">&lt;/&gt;</div>
+        <div class="feature-icon purple" aria-hidden="true">&lt;/&gt;</div>
         <h3>Semantic Merge</h3>
         <p>Understands structure in 18 formats. Two people editing different JSON keys? Merged automatically -- zero conflicts.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon green">--</div>
+        <div class="feature-icon green" aria-hidden="true">--</div>
         <h3>No More Merge Conflicts</h3>
         <p>Structural awareness means parallel edits to different sections, fields, or slides always merge cleanly.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon blue">Y</div>
+        <div class="feature-icon blue" aria-hidden="true">Y</div>
         <h3>Branch &amp; Tag</h3>
         <p>Git-like branching and tagging for documents. Experiment with configs, proposals, or budgets without risk.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon cyan">&lt;-&gt;</div>
+        <div class="feature-icon cyan" aria-hidden="true">&lt;-&gt;</div>
         <h3>Sync Anywhere</h3>
         <p>Replace Google Drive sync with real version control. Push, pull, and mirror repos across machines and teams.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon amber">@</div>
+        <div class="feature-icon amber" aria-hidden="true">@</div>
         <h3>Audit Trail</h3>
         <p>Tamper-evident commit log with cryptographic signatures, blame view, and full history -- for compliance and accountability.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon rose">[*]</div>
+        <div class="feature-icon rose" aria-hidden="true">[*]</div>
         <h3>Cross-Platform</h3>
         <p>Linux, macOS, Windows. Plus a native desktop app and VS Code extension for seamless integration.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon purple">$</div>
+        <div class="feature-icon purple" aria-hidden="true">$</div>
         <h3>64 CLI Commands</h3>
         <p>init, add, commit, branch, merge, rebase, cherry-pick, push, pull, tag, blame, log, diff, status, and many more.</p>
       </div>
       <div class="feature-card">
-        <div class="feature-icon blue">H</div>
+        <div class="feature-icon blue" aria-hidden="true">H</div>
         <h3>Enterprise Ready</h3>
         <p>Document classification, access controls, compliance reporting, and self-hosted Suture Hub for team collaboration.</p>
       </div>
@@ -271,6 +275,9 @@ brew install suture-merge-driver</code></pre>
            <button class="copy-btn" data-copy="# Download from https://github.com/WyattAu/suture/releases">Copy</button>
          </div>
           <pre><code># https://github.com/WyattAu/suture/releases
+# Linux, macOS, Windows -- no Rust needed</code></pre>
+        </div>
+          <pre><code># https://github.com/WyattAu/suture/releases
 # Linux, macOS, Windows — no Rust needed</code></pre>
         </div>
        <div class="install-card">
@@ -297,6 +304,7 @@ brew install suture-merge-driver</code></pre>
     </div>
   </div>
 </section>
+</main>
 
 <footer>
   <div class="container">
@@ -325,6 +333,19 @@ document.querySelectorAll('.copy-btn').forEach(function(btn){
     });
   });
 });
+// Mobile menu toggle
+(function(){
+  var btn = document.querySelector('.mobile-menu-btn');
+  var links = document.querySelector('.nav-links');
+  btn.addEventListener('click',function(){
+    var open = links.classList.toggle('open');
+    btn.setAttribute('aria-expanded',open);
+  });
+  // Close menu when a link is clicked
+  links.querySelectorAll('a').forEach(function(a){
+    a.addEventListener('click',function(){links.classList.remove('open');btn.setAttribute('aria-expanded','false');});
+  });
+})();
 </script>
 </body>
 </html>

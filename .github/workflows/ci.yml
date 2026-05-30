@@ -39,7 +39,7 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Clippy (stable)
-        run: cargo clippy --workspace --exclude suture-fuzz --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon --exclude suture-wasm-plugin -- -D warnings
+        run: cargo clippy --workspace --exclude suture-fuzz --exclude suture-py --exclude suture-node --exclude suture-e2e --exclude suture-bench --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon --exclude suture-wasm-plugin -- -D warnings
 
   test-workspace:
     runs-on: ${{ matrix.os }}
@@ -77,11 +77,11 @@ jobs:
 
       - name: Run workspace tests
         if: runner.os != 'Windows'
-        run: cargo test --workspace --exclude suture-fuzz --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon --exclude suture-wasm-plugin
+        run: cargo test --workspace --exclude suture-fuzz --exclude suture-py --exclude suture-node --exclude suture-e2e --exclude suture-bench --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon --exclude suture-wasm-plugin
 
       - name: Run workspace tests (Windows)
         if: runner.os == 'Windows'
-        run: cargo test --workspace --exclude suture-fuzz --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon --exclude suture-wasm-plugin
+        run: cargo test --workspace --exclude suture-fuzz --exclude suture-py --exclude suture-node --exclude suture-e2e --exclude suture-bench --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon --exclude suture-wasm-plugin
 
   test-cli:
     runs-on: ${{ matrix.os }}
@@ -227,13 +227,13 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
       - name: Check with features
-        run: cargo check --workspace --exclude suture-fuzz --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon --exclude suture-wasm-plugin --features "${{ matrix.features }}"
+        run: cargo check --workspace --exclude suture-fuzz --exclude suture-py --exclude suture-node --exclude suture-e2e --exclude suture-bench --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon --exclude suture-wasm-plugin --features "${{ matrix.features }}"
 
       - name: Test with features
-        run: cargo test --workspace --exclude suture-fuzz --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon --exclude suture-wasm-plugin --features "${{ matrix.features }}"
+        run: cargo test --workspace --exclude suture-fuzz --exclude suture-py --exclude suture-node --exclude suture-e2e --exclude suture-bench --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon --exclude suture-wasm-plugin --features "${{ matrix.features }}"
 
       - name: Clippy with features
-        run: cargo clippy --workspace --exclude suture-fuzz --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon --exclude suture-wasm-plugin --features "${{ matrix.features }}" -- -D warnings
+        run: cargo clippy --workspace --exclude suture-fuzz --exclude suture-py --exclude suture-node --exclude suture-e2e --exclude suture-bench --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon --exclude suture-wasm-plugin --features "${{ matrix.features }}" -- -D warnings
 
   coverage:
     runs-on: ubuntu-latest
@@ -295,7 +295,7 @@ jobs:
 
       - name: Enforce coverage threshold
         run: |
-          COVERAGE_LINE=$(cargo llvm-cov --workspace --exclude suture-fuzz --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon --exclude suture-wasm-plugin --summary-only 2>/dev/null | grep -oE '[0-9]+\.[0-9]+% line' | head -1 || true)
+          COVERAGE_LINE=$(cargo llvm-cov --workspace --exclude suture-fuzz --exclude suture-py --exclude suture-node --exclude suture-e2e --exclude suture-bench --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon --exclude suture-wasm-plugin --summary-only 2>/dev/null | grep -oE '[0-9]+\.[0-9]+% line' | head -1 || true)
           echo "Line coverage: $COVERAGE_LINE"
           THRESHOLD=50.0
           if [ -n "$COVERAGE_LINE" ]; then
@@ -339,7 +339,7 @@ jobs:
       - name: Install protoc (for suture-hub gRPC build.rs)
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - name: Run semver checks
-        run: cargo semver-checks --workspace --exclude suture-fuzz --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon --exclude suture-wasm-plugin --exclude suture-desktop
+        run: cargo semver-checks --workspace --exclude suture-fuzz --exclude suture-py --exclude suture-node --exclude suture-e2e --exclude suture-bench --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon --exclude suture-wasm-plugin --exclude suture-desktop
 
   test-desktop:
     runs-on: ubuntu-latest

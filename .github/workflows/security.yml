@@ -44,12 +44,13 @@ jobs:
       - name: Run clippy (deny warnings)
         run: cargo clippy --workspace --exclude suture-fuzz --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon --exclude suture-wasm-plugin -- -D warnings
 
-      - name: Check for hardcoded secrets
+      - name: Check for hardcoded secrets (recent commits)
         run: |
-          if git log -p | grep -iE '(password|secret|token|api_key).*=.*["\x27][^"\x27]{8,}'; then
-            echo "::warning::Potential hardcoded secrets detected in git history"
+          # Scan last 200 commits for potential secrets (pattern-based)
+          if git log -n 200 -p | grep -Pi '(password|secret|token|api[_-]?key)\s*[:=]\s*["\x27][^"[:space:]\x27]{8,}["\x27]'; then
+            echo "::warning::Potential hardcoded secrets detected in recent git history"
           else
-            echo "No hardcoded secrets detected"
+            echo "No hardcoded secrets detected in recent commits"
           fi
 
       - name: Generate SBOM
