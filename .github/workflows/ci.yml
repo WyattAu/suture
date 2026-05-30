@@ -118,7 +118,7 @@ jobs:
         run: choco install protoc -y
 
       - name: Run CLI tests (with retry)
-        uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60
         with:
           timeout_minutes: 10
           max_attempts: 2
