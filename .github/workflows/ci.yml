@@ -336,6 +336,8 @@ jobs:
           key: semver
       - name: Install cargo-semver-checks
         run: cargo install cargo-semver-checks --locked
+      - name: Install protoc (for suture-hub gRPC build.rs)
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - name: Run semver checks
         run: cargo semver-checks --workspace --exclude suture-fuzz --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon --exclude suture-wasm-plugin --exclude suture-desktop
 
@@ -368,7 +370,7 @@ jobs:
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - name: Check suture-py compiles
-        run: cargo check -p suture-py
+        run: cargo check --manifest-path crates/suture-py/Cargo.toml
       - name: Install maturin
         run: pip install maturin
       - name: Build suture-py wheel

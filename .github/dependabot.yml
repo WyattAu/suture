@@ -9,10 +9,11 @@ updates:
       - "dependencies"
       - "automated"
 
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    labels:
-      - "dependencies"
-      - "github-actions"
+  # NOTE: github-actions ecosystem is intentionally disabled.
+  # All GitHub Actions are pinned to commit SHAs for supply-chain
+  # hardening. Dependabot cannot manage SHA pins effectively; manual
+  # updates are required when bumping action versions.
+  # - package-ecosystem: "github-actions"
+  #   directory: "/"
+  #   schedule:
+  #     interval: "weekly"
