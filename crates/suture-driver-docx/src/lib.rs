@@ -840,7 +840,7 @@ mod tests {
         let merged_main = merged_doc
             .get_part(merged_doc.main_document_path().unwrap())
             .unwrap();
-        let merged_body = parse_body(&merged_main.content).unwrap();
+        let _merged_body = parse_body(&merged_main.content).unwrap();
         let merged_str = merged_main.content.clone();
         assert!(merged_str.contains("<w:tbl>"), "table should be preserved");
         assert!(

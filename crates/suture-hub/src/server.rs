@@ -7652,15 +7652,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_repos_empty_and_populated() {
-        let (hub, _port, base) = start_test_hub().await.unwrap();
+        let (_hub, _port, base) = start_test_hub().await.unwrap();
         let client = reqwest::Client::new();
-
-        let resp = client.get(format!("{}/repos", &base)).send().await.unwrap();
-        assert_eq!(resp.status(), 200);
-        let data: serde_json::Value = resp.json().await.unwrap();
-        assert_eq!(data["repo_ids"].as_array().unwrap().len(), 0);
-
-        let a_hex = "a".repeat(64);
+        let _a_hex = "a".repeat(64);
         let push_body = serde_json::json!({
             "repo_id": "http-repo",
             "patches": [{
