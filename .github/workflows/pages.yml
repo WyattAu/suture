@@ -21,14 +21,14 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@900f221
       - name: Build documentation
         run: bash docs/build.sh
       - name: Copy CNAME
         run: cp docs-site/CNAME docs/CNAME
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/configure-pages@983d773
+      - uses: actions/upload-pages-artifact@56afc60
         with:
           path: ./docs
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@d6db901

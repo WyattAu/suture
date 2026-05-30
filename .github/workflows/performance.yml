@@ -21,14 +21,14 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'push'
     steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@900f221
+      - uses: dtolnay/rust-toolchain@3c5f7ea
+      - uses: Swatinem/rust-cache@e18b497
         with:
           key: perf
       - name: Run benchmarks
         run: cargo bench --package suture-bench -- --save-baseline main | tee bench-results.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8
         with:
           name: bench-baseline
           path: target/criterion
@@ -38,12 +38,12 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@900f221
+      - uses: dtolnay/rust-toolchain@3c5f7ea
+      - uses: Swatinem/rust-cache@e18b497
         with:
           key: perf
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a1
         continue-on-error: true
         with:
           name: bench-baseline
