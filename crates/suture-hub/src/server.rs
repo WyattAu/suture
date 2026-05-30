@@ -10011,7 +10011,7 @@ mod tests {
             .await
             .unwrap();
         let hist_data: serde_json::Value = history.json().await.unwrap();
-        assert!(hist_data["history"].as_array().unwrap().len() >= 1);
+        assert!(!hist_data["history"].as_array().unwrap().is_empty());
     }
 
     #[tokio::test]

@@ -16,9 +16,12 @@ use suture_merge::*;
 // ============================================================================
 
 use std::fmt::Write;
+
+type MergeFn = fn(&str, &str, &str) -> Result<MergeResult, MergeError>;
+
 /// Must NOT panic. Returns Ok(merge_result) or Err(error). Both are fine.
 fn no_panic_merge(
-    merge_fn: fn(&str, &str, &str) -> Result<MergeResult, MergeError>,
+    merge_fn: MergeFn,
     base: &str,
     ours: &str,
     theirs: &str,
@@ -349,11 +352,11 @@ fn stress_json_deep_nesting_100() {
     for _ in 0..100 {
         base.push_str("{\"v\":");
     }
-    base.push_str("0");
+    base.push('0');
     for _ in 0..100 {
-        base.push_str("}");
+        base.push('}');
     }
-    base.push_str("}");
+    base.push('}');
 
     let r = merge_json(&base, &base, &base);
     assert!(
@@ -367,7 +370,7 @@ fn stress_json_deep_nesting_100() {
 fn stress_csv_10000_rows() {
     let mut base = String::from("id,name,value\n");
     for i in 0..10000 {
-        let _ = write!(base, "{},row{},{}\n", i, i, i * 10);
+        let _ = writeln!(base, "{},row{},{}", i, i, i * 10);
     }
     let ours = base.replace("row0", "ROW_ZERO");
     let theirs = base.replace("row9999", "ROW_LAST");
@@ -428,7 +431,7 @@ fn stress_markdown_200_sections() {
 fn stress_yaml_500_keys() {
     let mut base = String::new();
     for i in 0..500 {
-        let _ = write!(base, "key{}: value{}\n", i, i);
+        let _ = writeln!(base, "key{}: value{}", i, i);
     }
     let ours = base.replace("value0", "MODIFIED_0");
     let theirs = base.replace("value499", "MODIFIED_499");
@@ -556,56 +559,20 @@ trivial_test!(
 /// All drivers should handle "no change" identically
 #[test]
 fn consistency_all_drivers_no_change() {
-    let inputs: Vec<(
-        &str,
-        &str,
-        fn(&str, &str, &str) -> Result<MergeResult, MergeError>,
-    )> = vec![
-        (
-            ".json",
-            r#"{"a": 1}"#,
-            merge_json as fn(&str, &str, &str) -> Result<MergeResult, MergeError>,
-        ),
-        (
-            ".yaml",
-            "a: 1\n",
-            merge_yaml as fn(&str, &str, &str) -> Result<MergeResult, MergeError>,
-        ),
-        (
-            ".toml",
-            "a = 1\n",
-            merge_toml as fn(&str, &str, &str) -> Result<MergeResult, MergeError>,
-        ),
-        (
-            ".csv",
-            "a\n1\n",
-            merge_csv as fn(&str, &str, &str) -> Result<MergeResult, MergeError>,
-        ),
+    let inputs: Vec<(&str, &str, MergeFn)> = vec![
+        (".json", r#"{"a": 1}"#, merge_json),
+        (".yaml", "a: 1\n", merge_yaml),
+        (".toml", "a = 1\n", merge_toml),
+        (".csv", "a\n1\n", merge_csv),
     ];
     #[cfg(feature = "xml")]
-    inputs.push((
-        ".xml",
-        "<r><a>1</a></r>",
-        merge_xml as fn(&str, &str, &str) -> Result<MergeResult, MergeError>,
-    ));
+    inputs.push((".xml", "<r><a>1</a></r>", merge_xml));
     #[cfg(feature = "markdown")]
-    inputs.push((
-        ".md",
-        "# A\n\nB\n",
-        merge_markdown as fn(&str, &str, &str) -> Result<MergeResult, MergeError>,
-    ));
+    inputs.push((".md", "# A\n\nB\n", merge_markdown));
     #[cfg(feature = "svg")]
-    inputs.push((
-        ".svg",
-        r#"<svg xmlns="http://www.w3.org/2000/svg"><rect id="r"/></svg>"#,
-        merge_svg as fn(&str, &str, &str) -> Result<MergeResult, MergeError>,
-    ));
+    inputs.push((".svg", r#"<svg xmlns="http://www.w3.org/2000/svg"><rect id="r"/></svg>"#, merge_svg));
     #[cfg(feature = "html")]
-    inputs.push((
-        ".html",
-        "<html><p>a</p></html>",
-        merge_html as fn(&str, &str, &str) -> Result<MergeResult, MergeError>,
-    ));
+    inputs.push((".html", "<html><p>a</p></html>", merge_html));
 
     for (label, content, merge_fn) in inputs {
         let r = merge_fn(content, content, content).unwrap();
@@ -626,18 +593,9 @@ fn consistency_xml_family_basic() {
     let ours = r#"<root><a>10</a><b>2</b></root>"#;
     let theirs = r#"<root><a>1</a><b>20</b></root>"#;
 
-    let mut drivers: Vec<(
-        &str,
-        fn(&str, &str, &str) -> Result<MergeResult, MergeError>,
-    )> = vec![(
-        "xml",
-        merge_xml as fn(&str, &str, &str) -> Result<MergeResult, MergeError>,
-    )];
+    let mut drivers: Vec<(&str, MergeFn)> = vec![("xml", merge_xml)];
     #[cfg(feature = "html")]
-    drivers.push((
-        "html",
-        merge_html as fn(&str, &str, &str) -> Result<MergeResult, MergeError>,
-    ));
+    drivers.push(("html", merge_html));
 
     for (label, merge_fn) in drivers {
         let r = merge_fn(base, ours, theirs).unwrap();

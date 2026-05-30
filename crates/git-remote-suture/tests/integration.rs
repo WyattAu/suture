@@ -1,7 +1,7 @@
 fn parse_suture_url_helper(url: &str) -> (String, String) {
     let stripped = url.strip_prefix("suture://").unwrap_or(url);
     let parts: Vec<&str> = stripped.splitn(2, '/').collect();
-    let host = parts.get(0).unwrap_or(&"localhost:8080");
+    let host = parts.first().unwrap_or(&"localhost:8080");
     let repo_id = parts.get(1).unwrap_or(&"default").to_string();
     (format!("http://{}", host), repo_id)
 }

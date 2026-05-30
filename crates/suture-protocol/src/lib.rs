@@ -1163,8 +1163,8 @@ mod tests {
         for len in [100, 200, 500, 1000] {
             let base: Vec<u8> = (0..len).map(|i| (i % 256) as u8).collect();
             let mut target = base.clone();
-            for i in len / 3..len * 2 / 3 {
-                target[i] = target[i].wrapping_add(1);
+            for byte in target.iter_mut().take(len * 2 / 3).skip(len / 3) {
+                *byte = byte.wrapping_add(1);
             }
             assert_delta_roundtrip(&base, &target);
         }
@@ -1226,7 +1226,7 @@ mod tests {
 
     #[test]
     fn test_delta_completely_different_different_lengths() {
-        assert_delta_roundtrip(&vec![0xAA; 50], &vec![0xBB; 200]);
+        assert_delta_roundtrip(&[0xAA; 50], &[0xBB; 200]);
     }
 
     #[test]
@@ -1267,7 +1267,7 @@ mod tests {
     fn test_delta_prefix_overlap_large() {
         let prefix: Vec<u8> = (0..60u8).collect();
         let mut base = prefix.clone();
-        base.extend_from_slice(&vec![0x00; 60]);
+        base.extend_from_slice(&[0x00; 60]);
         let mut target = prefix.clone();
         target.extend_from_slice(&(60..120u8).collect::<Vec<_>>());
         assert_delta_roundtrip(&base, &target);

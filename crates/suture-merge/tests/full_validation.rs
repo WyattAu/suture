@@ -246,15 +246,12 @@ fn consistency_no_changes() {
     assert_eq!(formatted.trim(), "no changes");
 }
 
+type MergeFn = fn(&str, &str, &str) -> Result<MergeResult, MergeError>;
+
 #[test]
 fn consistency_all_formats_no_change() {
     // Every format should report no changes for identical content
-    let formats: Vec<(
-        &str,
-        &str,
-        &str,
-        fn(&str, &str, &str) -> Result<MergeResult, MergeError>,
-    )> = vec![
+    let formats: Vec<(&str, &str, &str, MergeFn)> = vec![
         (".json", r#"{"a":1}"#, r#"{"a":1}"#, merge_json),
         ("base", "a: 1\n", "a: 1\n", merge_yaml),
         ("base", "a = 1\n", "a = 1\n", merge_toml),

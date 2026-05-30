@@ -42,7 +42,7 @@ fn json_modify_keys(content: &str, keys: &[usize], prefix: &str) -> String {
 fn generate_yaml(n: usize) -> String {
     let mut s = String::new();
     for i in 0..n {
-        let _ = write!(s, "key_{}: value_{}\n", i, i);
+        let _ = writeln!(s, "key_{}: value_{}", i, i);
     }
     s
 }
@@ -66,7 +66,7 @@ fn yaml_modify_keys(content: &str, keys: &[usize], prefix: &str) -> String {
 fn generate_toml(n: usize) -> String {
     let mut s = String::new();
     for i in 0..n {
-        let _ = write!(s, "key_{} = \"value_{}\"\n", i, i);
+        let _ = writeln!(s, "key_{} = \"value_{}\"", i, i);
     }
     s
 }
@@ -112,7 +112,7 @@ fn generate_csv(rows: usize, cols: usize) -> String {
 fn generate_xml(n: usize) -> String {
     let mut s = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<root>\n");
     for i in 0..n {
-        let _ = write!(s, "  <item id=\"{}\">value_{}</item>\n", i, i);
+        let _ = writeln!(s, "  <item id=\"{}\">value_{}\"", i, i);
     }
     s.push_str("</root>\n");
     s

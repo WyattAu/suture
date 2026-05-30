@@ -479,8 +479,11 @@ mod tests {
         let result = driver.merge(base, ours, theirs).unwrap();
         assert!(result.is_some());
         let merged: Value = result.unwrap().parse().unwrap();
-        assert_eq!(merged["pi"], Value::Float(3.14159));
-        assert_eq!(merged["e"], Value::Float(2.71828));
+        #[allow(clippy::approx_constant)]
+        {
+            assert_eq!(merged["pi"], Value::Float(3.14159));
+            assert_eq!(merged["e"], Value::Float(2.71828));
+        }
     }
 
     #[test]

@@ -142,10 +142,10 @@ async fn test_list_blobs() {
     store.put_blob(&hash3, data3).await.expect("put 3 failed");
 
     let mut blobs = store.list_blobs().await.expect("list_blobs failed");
-    blobs.sort_by(|a, b| a.cmp(b));
+    blobs.sort();
 
     let mut expected = vec![hash1, hash2, hash3];
-    expected.sort_by(|a, b| a.cmp(b));
+    expected.sort();
 
     assert_eq!(blobs, expected);
 }

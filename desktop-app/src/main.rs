@@ -1262,23 +1262,18 @@ fn main() {
         .expect("error while running suture-desktop");
 }
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_desktop_binary_compiles() {
-        assert!(true);
-    }
-}
-
 #[cfg(not(feature = "tauri"))]
 fn main() {
     eprintln!("suture-desktop requires the 'tauri' feature.");
     eprintln!("Install system dependencies and rebuild with: cargo build --features tauri");
     eprintln!();
-    eprintln!("Debian/Ubuntu: sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev \\");
-    eprintln!("                libayatana-appindicator3-dev librsvg2-dev");
-    eprintln!("Fedora:        sudo dnf install webkit2gtk4.1-devel gtk3-devel \\");
-    eprintln!("                libappindicator-gtk3-devel librsvg2-devel");
-    eprintln!("Nix:           add webkitgtk_4_1 gtk3 libappindicator-gtk3 librsvg");
     std::process::exit(1);
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_desktop_binary_compiles() {
+        // Compilation test only -- verifies binary builds without tauri feature.
+    }
 }

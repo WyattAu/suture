@@ -554,12 +554,12 @@ mod tests {
             major_dimension: "ROWS".to_owned(),
             values: vec![
                 vec!["name".to_owned(), "score".to_owned()],
-                vec!["Test".to_owned(), "3.14".to_owned()],
+                vec!["Test".to_owned(), "3.14159".to_owned()],
             ],
         };
         let json = SheetsClient::values_to_json_objects(&values).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed[0]["score"], 3.14);
+        assert_eq!(parsed[0]["score"], 3.14159_f64);
     }
 
     #[test]

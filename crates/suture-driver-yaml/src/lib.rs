@@ -1049,10 +1049,7 @@ spec:
         let theirs = "---\na: 1\n---\nb: 2\n";
 
         let result = driver.merge(base, ours, theirs);
-        match result {
-            Ok(_) => {}
-            Err(_) => {}
-        }
+        let _ = result;
     }
 
     #[test]

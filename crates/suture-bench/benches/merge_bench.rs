@@ -21,7 +21,7 @@ fn generate_json(n: usize) -> String {
 fn generate_yaml(n: usize) -> String {
     let mut s = String::new();
     for i in 0..n {
-        let _ = write!(s, "key_{}: value_{}\n", i, i);
+        let _ = writeln!(s, "key_{}: value_{}", i, i);
     }
     s
 }
@@ -29,7 +29,7 @@ fn generate_yaml(n: usize) -> String {
 fn generate_toml(n: usize) -> String {
     let mut s = String::new();
     for i in 0..n {
-        let _ = write!(s, "key_{} = \"value_{}\"\n", i, i);
+        let _ = writeln!(s, "key_{} = \"value_{}\"", i, i);
     }
     s
 }
@@ -37,7 +37,7 @@ fn generate_toml(n: usize) -> String {
 fn generate_csv(n: usize) -> String {
     let mut s = String::from("id,name,value\n");
     for i in 0..n {
-        let _ = write!(s, "{},item_{},{}\n", i, i, i * 10);
+        let _ = writeln!(s, "{},item_{},{}", i, i, i * 10);
     }
     s
 }

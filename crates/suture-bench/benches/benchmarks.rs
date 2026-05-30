@@ -161,7 +161,7 @@ fn bench_dag_lca_diamond(c: &mut Criterion) {
                     |(dag, tip)| {
                         let root = dag.get_node(&dag.patch_ids()[0]).unwrap();
                         let root_id = root.id();
-                        let result = black_box(dag.lca(&tip, &root_id));
+                        let result = black_box(dag.lca(&tip, root_id));
                         assert!(result.is_some());
                     },
                 );
@@ -608,7 +608,7 @@ fn generate_json_keys(n: usize) -> String {
 fn generate_yaml_keys(n: usize) -> String {
     let mut lines = String::new();
     for i in 0..n {
-        let _ = write!(lines, "key_{}: value_{}\n", i, i);
+        let _ = writeln!(lines, "key_{}: value_{}", i, i);
     }
     lines
 }
@@ -616,7 +616,7 @@ fn generate_yaml_keys(n: usize) -> String {
 fn generate_toml_keys(n: usize) -> String {
     let mut lines = String::new();
     for i in 0..n {
-        let _ = write!(lines, "key_{} = \"value_{}\"\n", i, i);
+        let _ = writeln!(lines, "key_{} = \"value_{}\"", i, i);
     }
     lines
 }
@@ -624,7 +624,7 @@ fn generate_toml_keys(n: usize) -> String {
 fn generate_csv_rows(n: usize) -> String {
     let mut csv = String::from("id,name,value\n");
     for i in 0..n {
-        let _ = write!(csv, "{},item_{},{}\n", i, i, i * 10);
+        let _ = writeln!(csv, "{},item_{},{}", i, i, i * 10);
     }
     csv
 }
@@ -1258,7 +1258,7 @@ fn bench_stash_push_pop(c: &mut Criterion) {
             |(_dir, mut repo)| {
                 let count = black_box(repo.stash_push(Some("bench stash")).unwrap());
                 assert!(count > 0);
-                black_box(repo.stash_pop().unwrap());
+                repo.stash_pop().unwrap();
             },
         );
     });

@@ -331,7 +331,7 @@ mod tests {
             "solo commit",
         );
 
-        let result = compose_chain(&[p1.clone()], "eve", "noop").unwrap();
+        let result = compose_chain(std::slice::from_ref(&p1), "eve", "noop").unwrap();
         assert_eq!(result.count, 1);
         assert_eq!(result.patch.id, p1.id);
     }

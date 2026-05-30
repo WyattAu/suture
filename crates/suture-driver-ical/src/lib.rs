@@ -479,6 +479,8 @@ impl SutureDriver for IcalDriver {
 }
 
 #[cfg(test)]
+#[allow(clippy::deref_by_slicing)]
+#[allow(clippy::needless_borrow)]
 mod tests {
     use super::*;
 
@@ -812,6 +814,7 @@ mod tests {
 }
 
 #[cfg(test)]
+#[allow(clippy::needless_borrow)]
 mod fuzz {
     use super::*;
     use proptest::prelude::*;

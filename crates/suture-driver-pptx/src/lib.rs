@@ -953,7 +953,7 @@ mod tests {
             content_hash: 111,
             name: None,
         };
-        let changes = PptxDriver::diff_slides(&[slide.clone()], &[slide]);
+        let changes = PptxDriver::diff_slides(std::slice::from_ref(&slide), std::slice::from_ref(&slide));
         assert!(changes.is_empty());
     }
 

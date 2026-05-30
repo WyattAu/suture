@@ -840,7 +840,7 @@ mod tests {
         let data: Vec<u8> = (0..=255u16)
             .flat_map(|i| {
                 let b = i as u8;
-                std::iter::repeat(b).take(40)
+                std::iter::repeat_n(b, 40)
             })
             .collect();
         let entropy = shannon_entropy(&data);
@@ -861,7 +861,7 @@ mod tests {
                     Supply chain security is important for open source.";
         let entropy = shannon_entropy(text.as_bytes());
         assert!(
-            entropy >= 3.5 && entropy <= 5.5,
+            (3.5..=5.5).contains(&entropy),
             "Expected entropy in range 3.5-5.5 for English text, got {}",
             entropy
         );
@@ -901,7 +901,7 @@ mod tests {
         let high_entropy_data: Vec<u8> = (0..=255u16)
             .flat_map(|i| {
                 let b = i as u8;
-                std::iter::repeat(b).take(100)
+                std::iter::repeat_n(b, 100)
             })
             .collect();
         let report = analyze_file("src/main.rs", &high_entropy_data);
@@ -917,7 +917,7 @@ mod tests {
     #[test]
     fn test_analyze_binary_in_text_file() {
         let mut data = b"hello world\n".to_vec();
-        data.extend(std::iter::repeat(0u8).take(200));
+        data.extend(std::iter::repeat_n(0u8, 200));
         let report = analyze_file("readme.txt", &data);
         assert!(
             report
@@ -1024,7 +1024,7 @@ mod tests {
     #[test]
     fn test_null_byte_detection() {
         let mut data = "normal text".as_bytes().to_vec();
-        data.extend(std::iter::repeat(0u8).take(1000));
+        data.extend(std::iter::repeat_n(0u8, 1000));
         let report = analyze_file("data.bin", &data);
         assert!(
             report
@@ -1051,7 +1051,7 @@ mod tests {
         let data: Vec<u8> = (0..2_000_000)
             .map(|i| {
                 let v = (i % 256) as u8;
-                if v >= 0x20 && v <= 0x7e { 0x01 } else { v }
+                if (0x20..=0x7e).contains(&v) { 0x01 } else { v }
             })
             .collect();
         let report = analyze_file("blob.bin", &data);

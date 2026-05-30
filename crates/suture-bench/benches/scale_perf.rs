@@ -201,10 +201,10 @@ fn build_fanout_dag(
 
     // Merge all branches back
     let mut merge_tip = branch_tips[0];
-    for i in 1..branch_tips.len() {
-        let merge_patch = make_patch(branches * depth_per_branch + i + 1);
+    for (idx, tip) in branch_tips.iter().enumerate().skip(1) {
+        let merge_patch = make_patch(branches * depth_per_branch + idx + 1);
         merge_tip = dag
-            .add_patch(merge_patch, vec![merge_tip, branch_tips[i]])
+            .add_patch(merge_patch, vec![merge_tip, *tip])
             .unwrap();
     }
 
