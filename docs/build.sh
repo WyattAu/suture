@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-MD2HTML="$SCRIPT_DIR/md2html.sh"
+MD2HTML="$SCRIPT_DIR/md2html.awk"
 TEMPLATE="$SCRIPT_DIR/template.html"
 
 SKIP_NAMES=("index" "demo")
@@ -78,8 +78,6 @@ generate_nav() {
     shift
     local files=("$@")
 
-    local prev_group=""
-    local -a sorted_indices=()
     local -a groups=()
     local -a names=()
     local -a titles=()
@@ -98,7 +96,7 @@ generate_nav() {
             local link_prefix="../"
         fi
         local grp="$(get_nav_group "$base" "$dir")"
-        local ttl="$(get_display_title "$(get_title "$f")" "$base")"
+        local ttl="$(get_display_title "${title_cache[$base]}" "$base")"
         groups+=("$grp")
         names+=("$base")
         titles+=("$ttl")
@@ -106,31 +104,28 @@ generate_nav() {
         link_prefixes+=("$link_prefix")
     done
 
+    declare -A group_files_idx
+    for ((i=0; i<${#groups[@]}; i++)); do
+        group_files_idx["${groups[$i]}"]+="$i "
+    done
+
     local -a order=("Getting Started" "Core Concepts" "Reference" "Merge Drivers" "Integration" "Guides" "Onboarding" "Platform" "Blog" "Development" "Other")
 
     echo '<a href="${link_prefix}index.html" class="sidebar-home">&larr; Back to Home</a>'
 
     for grp in "${order[@]}"; do
-        local found=0
-        for ((i=0; i<${#groups[@]}; i++)); do
-            if [ "${groups[$i]}" = "$grp" ]; then
-                found=1
-                break
-            fi
-        done
-        [ "$found" = 0 ] && continue
+        [ -z "${group_files_idx[$grp]+x}" ] && continue
 
         echo "<div class=\"nav-group\">"
         echo "<div class=\"nav-group-title\">$grp</div>"
-        for ((i=0; i<${#groups[@]}; i++)); do
-            if [ "${groups[$i]}" = "$grp" ]; then
-                local cls="nav-item"
-                if [ "${names[$i]}" = "$current" ]; then
-                    cls="$cls active"
-                fi
-                local html_name="${link_prefixes[$i]}${links[$i]}"
-                echo "<a href=\"$html_name\" class=\"$cls\">${titles[$i]}</a>"
+
+        for idx in ${group_files_idx[$grp]}; do
+            local cls="nav-item"
+            if [ "${names[$idx]}" = "$current" ]; then
+                cls="$cls active"
             fi
+            local html_name="${link_prefixes[$idx]}${links[$idx]}"
+            echo "<a href=\"$html_name\" class=\"$cls\">${titles[$idx]}</a>"
         done
         echo "</div>"
     done
@@ -171,7 +166,7 @@ strip_frontmatter() {
     fi
 }
 
-chmod +x "$MD2HTML"
+[ -f "$SCRIPT_DIR/md2html.sh" ] && mv "$SCRIPT_DIR/md2html.sh" "$SCRIPT_DIR/md2html.awk"
 
 mapfile -t md_files < <(find . -name '*.md' | sort)
 
@@ -182,6 +177,14 @@ fi
 
 echo "Building documentation site..."
 echo "Found ${#md_files[@]} markdown files"
+
+declare -A title_cache
+for md_file in "${md_files[@]}"; do
+    base="$(basename "$md_file" .md)"
+    title_cache["$base"]="$(get_title "$md_file")"
+done
+
+base_nav="$(generate_nav "" "${md_files[@]}")"
 
 converted=0
 skipped=0
@@ -210,8 +213,8 @@ for md_file in "${md_files[@]}"; do
     echo "  CONV $md_file -> $html_file"
 
     title="$(get_title "$md_file")"
-    content="$(strip_frontmatter "$md_file" | bash "$MD2HTML" /dev/stdin)"
-    nav="$(generate_nav "$base" "${md_files[@]}")"
+    content="$(strip_frontmatter "$md_file" | awk -f "$MD2HTML")"
+    nav="$(echo "$base_nav" | sed "s/class=\"nav-item\"/class=\"nav-item active\"/; t; b; :a; n; s/class=\"nav-item\"/class=\"nav-item active\"/; t; b")"
 
     fill_template "$title" "$content" "$nav" > "$html_file"
     converted=$((converted + 1))
