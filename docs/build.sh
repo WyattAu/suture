@@ -181,3 +181,44 @@ done
 
 echo ""
 echo "Done. $converted files converted, $skipped skipped."
+
+# Generate sitemap.xml
+echo "Generating sitemap.xml..."
+BASE_URL="https://wyattau.github.io/suture"
+SITEMAP='<?xml version="1.0" encoding="UTF-8"?>'
+SITEMAP="$SITEMAP
+<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">
+  <url>
+    <loc>${BASE_URL}/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>"
+
+for md_file in "${md_files[@]}"; do
+    base="$(basename "$md_file" .md)"
+    dir="$(dirname "$md_file")"
+    if [ "$dir" = "." ]; then
+        html_file="${base}.html"
+        url_path="/${base}.html"
+    else
+        html_file="${dir}/${base}.html"
+        url_path="/${dir}/${base}.html"
+    fi
+    if should_skip "$base"; then
+        continue
+    fi
+    if [ -f "$html_file" ]; then
+        SITEMAP="$SITEMAP
+  <url>
+    <loc>${BASE_URL}${url_path}</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.5</priority>
+  </url>"
+    fi
+done
+
+SITEMAP="$SITEMAP
+</urlset>"
+
+echo -e "$SITEMAP" > sitemap.xml
+echo "Sitemap generated."

@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://wyatt.au/sitemap.xml
+Sitemap: https://wyattau.github.io/suture/sitemap.xml
