@@ -325,7 +325,7 @@ pub async fn mount(
     let mountpoint = mountpoint.to_path_buf();
 
     let _session = fuse3::raw::Session::new(mount_options)
-        .mount(fs, &mountpoint)
+        .mount_with_unprivileged(fs, &mountpoint)
         .await
         .context("FUSE mount failed")?;
 
@@ -417,7 +417,6 @@ mod integration_tests {
     use super::*;
 
     #[tokio::test]
-    #[ignore]
     async fn test_readonly_mount() {
         let dir = tempfile::tempdir().unwrap();
         let repo_path = dir.path().to_path_buf();

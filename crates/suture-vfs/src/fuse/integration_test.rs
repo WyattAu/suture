@@ -3,8 +3,13 @@ use crate::path_translation::PathTranslator;
 use suture_core::repository::Repository;
 use std::path::Path;
 
-fn is_root() -> bool {
-    unsafe { libc::geteuid() == 0 }
+fn has_fusermount3() -> bool {
+    std::process::Command::new("fusermount3")
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
 }
 
 fn setup_repo(repo_path: &Path) -> Repository {
@@ -52,10 +57,9 @@ async fn mount_and_wait(
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_fuse_mount_read_files() {
-    if !is_root() {
-        eprintln!("skipping: requires root");
+    if !has_fusermount3() {
+        eprintln!("skipping: fusermount3 not available");
         return;
     }
 
@@ -92,10 +96,9 @@ async fn test_fuse_mount_read_files() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_fuse_mount_write_creates_patch() {
-    if !is_root() {
-        eprintln!("skipping: requires root");
+    if !has_fusermount3() {
+        eprintln!("skipping: fusermount3 not available");
         return;
     }
 
@@ -144,10 +147,9 @@ async fn test_fuse_mount_write_creates_patch() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_fuse_mount_modify_file() {
-    if !is_root() {
-        eprintln!("skipping: requires root");
+    if !has_fusermount3() {
+        eprintln!("skipping: fusermount3 not available");
         return;
     }
 
@@ -196,10 +198,9 @@ async fn test_fuse_mount_modify_file() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_fuse_mount_directory_listing() {
-    if !is_root() {
-        eprintln!("skipping: requires root");
+    if !has_fusermount3() {
+        eprintln!("skipping: fusermount3 not available");
         return;
     }
 
@@ -245,10 +246,9 @@ async fn test_fuse_mount_directory_listing() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_fuse_mount_delete_file() {
-    if !is_root() {
-        eprintln!("skipping: requires root");
+    if !has_fusermount3() {
+        eprintln!("skipping: fusermount3 not available");
         return;
     }
 
@@ -296,10 +296,9 @@ async fn test_fuse_mount_delete_file() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn test_fuse_mount_stat_file() {
-    if !is_root() {
-        eprintln!("skipping: requires root");
+    if !has_fusermount3() {
+        eprintln!("skipping: fusermount3 not available");
         return;
     }
 

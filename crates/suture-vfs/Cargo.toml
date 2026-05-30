@@ -13,7 +13,7 @@ categories.workspace = true
 [dependencies]
 suture-core = { path = "../suture-core", version = "5.0.0" }
 suture-protocol = { path = "../suture-protocol", version = "5.0.0" }
-fuse3 = { version = "0.9", features = ["tokio-runtime"] }
+fuse3 = { version = "0.9", features = ["tokio-runtime", "unprivileged"] }
 libc = "0.2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
 tracing = "0.1"
