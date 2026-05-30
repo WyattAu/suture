@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Suture — Semantic Merge for Every Format</title>
-    <meta name="description" content="Automatically resolve merge conflicts in JSON, YAML, TOML, XML, CSV, and 12+ more structured file formats.">
+    <title>Suture -- Semantic Version Control</title>
+    <meta name="description" content="Patch-based VCS with semantic merge for 18 file formats. JSON, YAML, TOML, DOCX, XLSX, and more.">
     <meta property="og:title" content="Suture -- Semantic Version Control">
     <meta property="og:description" content="Patch-based VCS with semantic merge for 18 file formats. JSON, YAML, TOML, DOCX, XLSX, and more.">
     <meta property="og:type" content="website">
@@ -17,150 +17,677 @@
     <link rel="canonical" href="https://suture.dev">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>S</text></svg>">
     <style>
+        /* === BRUTALISM + SPATIAL MATERIALISM + AMOEBIC UI === */
+        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+        :root {
+            --bg-void: #06060a;
+            --bg-surface: #0e0e14;
+            --bg-elevated: #16161f;
+            --fg-primary: #f0eff4;
+            --fg-secondary: #7a7a8e;
+            --fg-dim: #3d3d4e;
+            --accent: #c084fc;
+            --accent-hot: #f472b6;
+            --accent-cold: #38bdf8;
+            --border-raw: #2a2a38;
+            --border-accent: #c084fc;
+            --mono: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+            --display: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        }
+
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0f; color: #e0e0e8; line-height: 1.6; }
-        a { color: #6366f1; text-decoration: none; }
-        a:hover { color: #818cf8; }
-        .container { max-width: 800px; margin: 0 auto; padding: 2rem; }
-        h1 { font-size: 2.5rem; font-weight: 800; margin-bottom: 1rem; }
-        h1 span { color: #6366f1; }
-        .hero { text-align: center; padding: 6rem 0 4rem; }
-        .hero p { color: #8888a0; font-size: 1.1rem; max-width: 600px; margin: 1rem auto; }
-        .hero .buttons { display: flex; gap: 1rem; justify-content: center; margin-top: 2rem; flex-wrap: wrap; }
-        .btn { display: inline-flex; padding: 0.6rem 1.2rem; border-radius: 6px; border: 1px solid #2a2a3a; background: #12121a; color: #e0e0e8; font-size: 0.9rem; }
-        .btn:hover { border-color: #6366f1; background: #6366f1; color: white; }
-        .btn-primary { background: #6366f1; border-color: #6366f1; color: white; }
-        .btn-primary:hover { background: #818cf8; }
-        .demo { background: #12121a; border: 1px solid #2a2a3a; border-radius: 12px; padding: 2rem; margin: 2rem 0; }
-        .demo h2 { font-size: 1.25rem; margin-bottom: 1rem; }
-        .demo textarea { width: 100%; min-height: 100px; background: #0a0a0f; border: 1px solid #2a2a3a; border-radius: 6px; color: #e0e0e8; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; padding: 0.75rem; resize: vertical; }
-        .demo .demo-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin-top: 1rem; }
-        .demo .demo-label { font-size: 0.75rem; color: #8888a0; margin-bottom: 0.25rem; text-transform: uppercase; letter-spacing: 0.05em; }
-        .demo .result { grid-column: 1/-1; margin-top: 1rem; padding: 1rem; background: #0a0a0f; border: 1px solid #6366f1; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; min-height: 60px; white-space: pre-wrap; }
-        .demo .merge-btn { margin-top: 1rem; }
-        .formats { display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: center; margin: 2rem 0; }
-        .format { padding: 0.35rem 0.7rem; background: #12121a; border: 1px solid #2a2a3a; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; }
-        .install { background: #12121a; border: 1px solid #2a2a3a; border-radius: 8px; padding: 1.5rem; margin: 2rem 0; text-align: center; }
-        .install h2 { font-size: 1.25rem; margin-bottom: 1rem; }
-        .install code { display: block; background: #0a0a0f; border: 1px solid #2a2a3a; border-radius: 6px; padding: 1rem; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; text-align: left; overflow-x: auto; margin-top: 0.5rem; color: #22c55e; }
-        .install p { color: #8888a0; font-size: 0.85rem; margin-top: 0.5rem; }
-        .links { display: flex; gap: 1.5rem; justify-content: center; margin: 2rem 0; flex-wrap: wrap; }
-        .links a { color: #8888a0; font-size: 0.9rem; }
-        .links a:hover { color: #e0e0e8; }
-        footer { text-align: center; padding: 2rem 0; border-top: 1px solid #2a2a3a; margin-top: 2rem; color: #8888a0; font-size: 0.85rem; }
-        @media (max-width: 600px) {
-            .demo .demo-grid { grid-template-columns: 1fr; }
-            h1 { font-size: 1.75rem; }
+
+        html { scroll-behavior: smooth; }
+
+        body {
+            font-family: var(--display);
+            background: var(--bg-void);
+            color: var(--fg-primary);
+            line-height: 1.6;
+            overflow-x: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        a { color: var(--accent); text-decoration: none; transition: color 0.2s; }
+        a:hover { color: var(--accent-hot); }
+
+        /* Spatial depth layers */
+        .z-0 { position: relative; z-index: 0; }
+        .z-1 { position: relative; z-index: 1; }
+        .z-2 { position: relative; z-index: 2; }
+
+        /* Amoebic blob backgrounds */
+        .blob {
+            position: absolute;
+            border-radius: 40% 60% 70% 30% / 40% 50% 60% 50%;
+            filter: blur(120px);
+            opacity: 0.15;
+            pointer-events: none;
+            animation: morph 20s ease-in-out infinite;
+        }
+
+        @keyframes morph {
+            0%, 100% { border-radius: 40% 60% 70% 30% / 40% 50% 60% 50%; transform: rotate(0deg) scale(1); }
+            25% { border-radius: 70% 30% 50% 60% / 30% 60% 40% 70%; transform: rotate(90deg) scale(1.1); }
+            50% { border-radius: 50% 40% 60% 50% / 60% 30% 70% 40%; transform: rotate(180deg) scale(0.95); }
+            75% { border-radius: 30% 70% 40% 60% / 50% 40% 30% 70%; transform: rotate(270deg) scale(1.05); }
+        }
+
+        /* Navigation - raw, exposed */
+        nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            background: rgba(6, 6, 10, 0.8);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-bottom: 1px solid var(--border-raw);
+        }
+
+        nav .inner {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 0 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 56px;
+        }
+
+        .nav-mark {
+            font-family: var(--mono);
+            font-weight: 700;
+            font-size: 1.1rem;
+            color: var(--fg-primary);
+            letter-spacing: -0.02em;
+        }
+
+        .nav-mark span { color: var(--accent); }
+
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+        }
+
+        .nav-links a {
+            color: var(--fg-secondary);
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-weight: 500;
+        }
+
+        .nav-links a:hover { color: var(--fg-primary); }
+
+        /* Hero - Brutalist oversized typography */
+        .hero {
+            position: relative;
+            text-align: center;
+            padding: 10rem 2rem 6rem;
+            overflow: hidden;
+        }
+
+        .hero .blob-1 {
+            top: -200px;
+            left: 50%;
+            width: 900px;
+            height: 900px;
+            background: var(--accent);
+            transform: translateX(-50%);
+        }
+
+        .hero .blob-2 {
+            top: -100px;
+            right: -200px;
+            width: 500px;
+            height: 500px;
+            background: var(--accent-hot);
+            animation-delay: -7s;
+        }
+
+        .hero h1 {
+            font-size: clamp(3rem, 8vw, 7rem);
+            font-weight: 700;
+            letter-spacing: -0.04em;
+            line-height: 0.95;
+            color: var(--fg-primary);
+            position: relative;
+        }
+
+        .hero h1 .accent-word {
+            color: transparent;
+            background: linear-gradient(135deg, var(--accent), var(--accent-hot), var(--accent-cold));
+            background-clip: text;
+            -webkit-background-clip: text;
+        }
+
+        .hero .tagline {
+            font-size: clamp(1rem, 2vw, 1.3rem);
+            color: var(--fg-secondary);
+            max-width: 560px;
+            margin: 1.5rem auto 2.5rem;
+            font-weight: 300;
+        }
+
+        .hero-actions {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            flex-wrap: wrap;
+            position: relative;
+        }
+
+        /* Buttons - raw edges, bold */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.8rem 1.6rem;
+            font-family: var(--mono);
+            font-size: 0.85rem;
+            font-weight: 500;
+            letter-spacing: 0.02em;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+            text-transform: none;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: var(--bg-void);
+            clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
+        }
+
+        .btn-primary:hover {
+            background: var(--accent-hot);
+            transform: translateY(-2px);
+        }
+
+        .btn-raw {
+            background: transparent;
+            color: var(--fg-primary);
+            border: 1px solid var(--border-raw);
+        }
+
+        .btn-raw:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+            transform: translateY(-2px);
+        }
+
+        /* Format grid - organic amoebic shapes */
+        .formats-section {
+            padding: 4rem 2rem;
+            position: relative;
+        }
+
+        .formats-section .section-label {
+            text-align: center;
+            font-family: var(--mono);
+            font-size: 0.75rem;
+            color: var(--fg-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            margin-bottom: 2rem;
+        }
+
+        .format-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.6rem;
+            justify-content: center;
+            max-width: 700px;
+            margin: 0 auto;
+        }
+
+        .format-tag {
+            font-family: var(--mono);
+            font-size: 0.8rem;
+            font-weight: 500;
+            padding: 0.4rem 0.9rem;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-raw);
+            color: var(--fg-secondary);
+            transition: all 0.25s;
+        }
+
+        .format-tag:nth-child(odd) {
+            border-radius: 4px 12px 4px 12px;
+        }
+
+        .format-tag:nth-child(even) {
+            border-radius: 12px 4px 12px 4px;
+        }
+
+        .format-tag:nth-child(3n) {
+            border-color: var(--accent);
+            color: var(--accent);
+            background: rgba(192, 132, 252, 0.05);
+        }
+
+        .format-tag:hover {
+            border-color: var(--accent-hot);
+            color: var(--accent-hot);
+            transform: scale(1.05);
+        }
+
+        /* Demo section - spatial depth */
+        .demo-section {
+            padding: 4rem 2rem;
+            max-width: 1100px;
+            margin: 0 auto;
+            position: relative;
+        }
+
+        .demo-card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-raw);
+            padding: 2rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .demo-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--accent), transparent);
+        }
+
+        .demo-card h2 {
+            font-size: 1.4rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.02em;
+        }
+
+        .demo-card .demo-sub {
+            color: var(--fg-secondary);
+            font-size: 0.85rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .demo-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 1rem;
+        }
+
+        .demo-label {
+            font-family: var(--mono);
+            font-size: 0.7rem;
+            color: var(--fg-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            margin-bottom: 0.4rem;
+        }
+
+        .demo-label.ours { color: var(--accent); }
+        .demo-label.theirs { color: var(--accent-cold); }
+
+        .demo-card textarea {
+            width: 100%;
+            min-height: 120px;
+            background: var(--bg-void);
+            border: 1px solid var(--border-raw);
+            padding: 0.8rem;
+            font-family: var(--mono);
+            font-size: 0.8rem;
+            line-height: 1.7;
+            color: var(--fg-primary);
+            resize: vertical;
+            transition: border-color 0.2s;
+        }
+
+        .demo-card textarea:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .merge-actions {
+            margin-top: 1rem;
+        }
+
+        .result-box {
+            grid-column: 1 / -1;
+            margin-top: 1rem;
+            padding: 1rem;
+            background: var(--bg-void);
+            border: 1px solid var(--border-raw);
+            font-family: var(--mono);
+            font-size: 0.8rem;
+            min-height: 80px;
+            white-space: pre-wrap;
+            transition: border-color 0.3s;
+        }
+
+        .result-box.merged { border-color: var(--accent); }
+        .result-box.conflict { border-color: #ef4444; }
+        .result-box.error { border-color: #ef4444; }
+
+        /* Install section - brutalist code block */
+        .install-section {
+            padding: 4rem 2rem;
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+
+        .install-block {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-raw);
+            padding: 2rem;
+            text-align: center;
+            position: relative;
+        }
+
+        .install-block h2 {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }
+
+        .install-code {
+            display: block;
+            background: var(--bg-void);
+            border: 1px solid var(--border-raw);
+            padding: 1.2rem;
+            font-family: var(--mono);
+            font-size: 0.82rem;
+            text-align: left;
+            overflow-x: auto;
+            color: var(--accent-cold);
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+
+        .install-code:hover { border-color: var(--accent); }
+
+        .install-note {
+            color: var(--fg-secondary);
+            font-size: 0.8rem;
+            margin-top: 0.75rem;
+        }
+
+        /* Stats row - brutalist data display */
+        .stats-section {
+            padding: 4rem 2rem;
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 1rem;
+        }
+
+        .stat-cell {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-raw);
+            padding: 1.5rem 1rem;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-cell::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: var(--accent);
+            opacity: 0.4;
+        }
+
+        .stat-number {
+            font-family: var(--display);
+            font-size: 2.2rem;
+            font-weight: 700;
+            color: var(--fg-primary);
+            letter-spacing: -0.04em;
+        }
+
+        .stat-label {
+            font-family: var(--mono);
+            font-size: 0.7rem;
+            color: var(--fg-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-top: 0.3rem;
+        }
+
+        /* Links footer - raw */
+        .links-section {
+            padding: 3rem 2rem;
+            max-width: 1100px;
+            margin: 0 auto;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2rem;
+            justify-content: center;
+        }
+
+        .links-section a {
+            color: var(--fg-secondary);
+            font-size: 0.85rem;
+            font-weight: 400;
+            transition: color 0.2s;
+        }
+
+        .links-section a:hover { color: var(--fg-primary); }
+
+        footer {
+            text-align: center;
+            padding: 2rem;
+            border-top: 1px solid var(--border-raw);
+            color: var(--fg-dim);
+            font-family: var(--mono);
+            font-size: 0.75rem;
+        }
+
+        footer a { color: var(--fg-secondary); }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .demo-grid { grid-template-columns: 1fr; }
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+            .nav-links { gap: 1rem; }
+            .nav-links a { font-size: 0.7rem; }
+            .hero { padding: 8rem 1.5rem 4rem; }
+        }
+
+        @media (max-width: 480px) {
+            .stats-grid { grid-template-columns: 1fr 1fr; }
+        }
+
+        /* Reduced motion */
+        @media (prefers-reduced-motion: reduce) {
+            .blob { animation: none; }
+            .format-tag:hover { transform: none; }
+            .btn:hover { transform: none; }
+        }
+
+        /* Focus visible for accessibility */
+        a:focus-visible, button:focus-visible, textarea:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="hero">
-            <h1>Suture</h1>
-            <p>Semantic merge for <span>every format</span></p>
-            <p style="color: #555">Automatically resolve merge conflicts in JSON, YAML, TOML, XML, CSV, and 12+ more structured file formats.</p>
-            <div class="buttons">
-                <a href="#demo" class="btn btn-primary">Try Demo</a>
-                <a href="#install" class="btn">Install</a>
-                <a href="https://github.com/WyattAu/suture" class="btn">GitHub</a>
+
+    <!-- Navigation -->
+    <nav>
+        <div class="inner">
+            <div class="nav-mark">SUT<span>/</span>RE</div>
+            <div class="nav-links">
+                <a href="#demo">Demo</a>
+                <a href="#install">Install</a>
+                <a href="#stats">Stats</a>
+                <a href="https://github.com/WyattAu/suture" rel="noopener" target="_blank">Source</a>
             </div>
         </div>
+    </nav>
 
-        <div class="formats">
-            <span class="format">JSON</span>
-            <span class="format">YAML</span>
-            <span class="format">TOML</span>
-            <span class="format">XML</span>
-            <span class="format">CSV</span>
-            <span class="format">SQL</span>
-            <span class="format">HTML</span>
-            <span class="format">Markdown</span>
-            <span class="format">SVG</span>
-            <span class="format">Properties</span>
-            <span class="format">DOCX</span>
-            <span class="format">XLSX</span>
-            <span class="format">PPTX</span>
-            <span class="format">PDF</span>
-            <span class="format">Image</span>
-            <span class="format">RSS</span>
-            <span class="format">iCal</span>
-            <span class="format">OTIO</span>
+    <!-- Hero -->
+    <section class="hero z-0" aria-label="Introduction">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="z-1">
+            <h1>SUTRE</h1>
+            <p class="tagline">Patch-based version control with structural merge for 18 file formats. No more resolve-by-hand.</p>
+            <div class="hero-actions">
+                <a href="#demo" class="btn btn-primary">Try Live Demo</a>
+                <a href="#install" class="btn btn-raw">Install</a>
+                <a href="https://github.com/WyattAu/suture" class="btn btn-raw" rel="noopener" target="_blank">GitHub</a>
+            </div>
         </div>
+    </section>
 
-        <div class="demo" id="demo">
-            <h2>Interactive Demo</h2>
+    <!-- Format Support -->
+    <section class="formats-section" aria-label="Supported formats">
+        <div class="section-label">18 format drivers</div>
+        <div class="format-grid">
+            <span class="format-tag">JSON</span>
+            <span class="format-tag">YAML</span>
+            <span class="format-tag">TOML</span>
+            <span class="format-tag">XML</span>
+            <span class="format-tag">CSV</span>
+            <span class="format-tag">SQL</span>
+            <span class="format-tag">HTML</span>
+            <span class="format-tag">Markdown</span>
+            <span class="format-tag">SVG</span>
+            <span class="format-tag">Properties</span>
+            <span class="format-tag">DOCX</span>
+            <span class="format-tag">XLSX</span>
+            <span class="format-tag">PPTX</span>
+            <span class="format-tag">PDF</span>
+            <span class="format-tag">Image</span>
+            <span class="format-tag">RSS</span>
+            <span class="format-tag">iCal</span>
+            <span class="format-tag">OTIO</span>
+        </div>
+    </section>
+
+    <!-- Interactive Demo -->
+    <section class="demo-section" id="demo" aria-label="Interactive merge demo">
+        <div class="demo-card">
+            <h2>Three-Way Semantic Merge</h2>
+            <p class="demo-sub">JSON structural merge -- keys merged independently, arrays unioned, conflicts flagged.</p>
             <div class="demo-grid">
                 <div>
-                    <div class="demo-label">Base</div>
-                    <textarea id="demo-base">{
+                    <div class="demo-label">BASE</div>
+                    <textarea id="demo-base" aria-label="Base JSON">{
   "name": "suture",
   "version": "5.0.1",
   "features": ["merge", "diff"]
 }</textarea>
                 </div>
                 <div>
-                    <div class="demo-label" style="color: #6366f1">Ours</div>
-                    <textarea id="demo-ours">{
+                    <div class="demo-label ours">OURS</div>
+                    <textarea id="demo-ours" aria-label="Our changes">{
   "name": "suture",
   "version": "5.1.0",
   "features": ["merge", "diff", "platform"]
 }</textarea>
                 </div>
                 <div>
-                    <div class="demo-label" style="color: #22c55e">Theirs</div>
-                    <textarea id="demo-theirs">{
+                    <div class="demo-label theirs">THEIRS</div>
+                    <textarea id="demo-theirs" aria-label="Their changes">{
   "name": "suture",
   "version": "5.0.1",
   "features": ["merge", "diff"],
   "license": "AGPL-3.0"
 }</textarea>
                 </div>
+                <div class="result-box" id="demo-result" role="status" aria-live="polite">Awaiting input...</div>
             </div>
-            <div class="merge-btn">
+            <div class="merge-actions">
                 <button class="btn btn-primary" onclick="doMerge()">Merge</button>
             </div>
-            <div class="result" id="demo-result">Click "Merge" to see the result...</div>
         </div>
+    </section>
 
-        <div class="install" id="install">
+    <!-- Install -->
+    <section class="install-section" id="install" aria-label="Installation">
+        <div class="install-block">
             <h2>Install as Git Merge Driver</h2>
-            <code>curl -fsSL https://raw.githubusercontent.com/WyattAu/suture/main/scripts/install-merge-driver.sh | bash</code>
-            <p>After install, Git automatically merges *.json, *.yaml, *.yml, *.toml, *.xml, *.csv files.</p>
+            <code class="install-code" role="textbox" tabindex="0" onclick="copyInstall(this)" title="Click to copy">curl -fsSL https://raw.githubusercontent.com/WyattAu/suture/main/scripts/install-merge-driver.sh | bash</code>
+            <p class="install-note">Git will automatically merge *.json, *.yaml, *.yml, *.toml, *.xml, *.csv files.</p>
         </div>
+    </section>
 
-        <div class="links">
-            <a href="https://github.com/WyattAu/suture">GitHub</a>
-            <a href="https://crates.io/crates/suture-merge-driver">crates.io</a>
-            <a href="https://www.npmjs.com/package/suture-merge-driver">npm</a>
-            <a href="https://pypi.org/project/suture-merge-driver/">PyPI</a>
-            <a href="https://github.com/WyattAu/suture/blob/main/CHANGELOG.md">Changelog</a>
-            <a href="https://github.com/WyattAu/suture/blob/main/docs/self-hosting.md">Self-Host</a>
-            <a href="https://github.com/WyattAu/suture/blob/main/docs/ci-integration.md">CI/CD Guide</a>
+    <!-- Stats -->
+    <section class="stats-section" id="stats" aria-label="Project statistics">
+        <div class="stats-grid">
+            <div class="stat-cell">
+                <div class="stat-number">1,759</div>
+                <div class="stat-label">Tests</div>
+            </div>
+            <div class="stat-cell">
+                <div class="stat-number">18</div>
+                <div class="stat-label">Drivers</div>
+            </div>
+            <div class="stat-cell">
+                <div class="stat-number">64</div>
+                <div class="stat-label">CLI Commands</div>
+            </div>
+            <div class="stat-cell">
+                <div class="stat-number">44</div>
+                <div class="stat-label">Crates</div>
+            </div>
+            <div class="stat-cell">
+                <div class="stat-number">0</div>
+                <div class="stat-label">Clippy Warnings</div>
+            </div>
+            <div class="stat-cell">
+                <div class="stat-number">16</div>
+                <div class="stat-label">Lean 4 Proofs</div>
+            </div>
         </div>
+    </section>
+
+    <!-- Links -->
+    <div class="links-section">
+        <a href="https://github.com/WyattAu/suture" rel="noopener" target="_blank">GitHub</a>
+        <a href="https://crates.io/crates/suture-merge-driver" rel="noopener" target="_blank">crates.io</a>
+        <a href="https://www.npmjs.com/package/suture-merge-driver" rel="noopener" target="_blank">npm</a>
+        <a href="https://pypi.org/project/suture-merge-driver/" rel="noopener" target="_blank">PyPI</a>
+        <a href="https://github.com/WyattAu/suture/blob/main/CHANGELOG.md" rel="noopener" target="_blank">Changelog</a>
+        <a href="https://github.com/WyattAu/suture/blob/main/docs/self-hosting.md" rel="noopener" target="_blank">Self-Host</a>
+        <a href="https://github.com/WyattAu/suture/blob/main/docs/ci-integration.md" rel="noopener" target="_blank">CI/CD Guide</a>
     </div>
 
     <footer>
-        <p>Suture — Semantic Merge Platform</p>
-        <p>AGPL-3.0 · <a href="https://github.com/WyattAu/suture">Source</a></p>
+        <p>AGPL-3.0 -- <a href="https://github.com/WyattAu/suture">Source</a></p>
     </footer>
 
     <script>
     function mergeJson(base, ours, theirs) {
         function mergeValue(b, o, t) {
-            if (typeof o === 'object' && o !== null && !Array.isArray(o) && typeof t === 'object' && t !== null && !Array.isArray(t)) {
+            if (typeof o === 'object' && o !== null && !Array.isArray(o) &&
+                typeof t === 'object' && t !== null && !Array.isArray(t)) {
                 var result = {};
                 var allKeys = new Set([...Object.keys(b || {}), ...Object.keys(o || {}), ...Object.keys(t || {})]);
                 allKeys.forEach(function(key) {
-                    result[key] = mergeValue(
-                        (b || {})[key], (o || {})[key], (t || {})[key]
-                    );
+                    result[key] = mergeValue((b || {})[key], (o || {})[key], (t || {})[key]);
                 });
                 return result;
             }
             if (Array.isArray(o) && Array.isArray(t)) {
                 var combined = [...(o || [])];
-                (t || []).forEach(function(item) { if (!(o || []).includes(item) && !(b || []).includes(item)) combined.push(item); });
+                (t || []).forEach(function(item) {
+                    if (!(o || []).includes(item) && !(b || []).includes(item)) combined.push(item);
+                });
                 return combined;
             }
             var oStr = JSON.stringify(o), tStr = JSON.stringify(t), bStr = JSON.stringify(b);
@@ -172,7 +699,7 @@
         try {
             var result = mergeValue(JSON.parse(base), JSON.parse(ours), JSON.parse(theirs));
             return { result: result, conflicts: (JSON.stringify(result) || '').includes('__suture_conflict') };
-        } catch(e) {
+        } catch (e) {
             return { result: 'Error: ' + e.message, conflicts: true };
         }
     }
@@ -184,20 +711,23 @@
         var resultEl = document.getElementById('demo-result');
         try {
             var result = mergeJson(base, ours, theirs);
-            if (result.conflicts) {
-                resultEl.textContent = JSON.stringify(result.result, null, 2);
-                resultEl.style.borderColor = '#ef4444';
-            } else {
-                resultEl.textContent = JSON.stringify(result.result, null, 2);
-                resultEl.style.borderColor = '#6366f1';
-            }
-        } catch(e) {
+            resultEl.textContent = JSON.stringify(result.result, null, 2);
+            resultEl.className = 'result-box ' + (result.conflicts ? 'conflict' : 'merged');
+        } catch (e) {
             resultEl.textContent = 'Error: ' + e.message;
-            resultEl.style.borderColor = '#ef4444';
+            resultEl.className = 'result-box error';
         }
     }
 
-    // Auto-merge on load
+    function copyInstall(el) {
+        var text = el.textContent || el.innerText;
+        navigator.clipboard.writeText(text).then(function() {
+            var original = el.style.borderColor;
+            el.style.borderColor = '#22c55e';
+            setTimeout(function() { el.style.borderColor = original; }, 1000);
+        });
+    }
+
     setTimeout(doMerge, 300);
     </script>
 </body>
