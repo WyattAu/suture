@@ -179,8 +179,8 @@ jobs:
               .map(line => {
                 const [status, ...rest] = line.split(" ");
                 const file = rest.join(" ");
-                if (status === "ok") return `- :white_check_mark: \`${file}\``;
-                if (status === "fail") return `- :x: \`${file}\``;
+                if (status === "ok") return `- [PASS] \`${file}\``;
+                if (status === "fail") return `- [FAIL] \`${file}\``;
                 return `- ${line}`;
               });
 

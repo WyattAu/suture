@@ -203,9 +203,7 @@ fn build_fanout_dag(
     let mut merge_tip = branch_tips[0];
     for (idx, tip) in branch_tips.iter().enumerate().skip(1) {
         let merge_patch = make_patch(branches * depth_per_branch + idx + 1);
-        merge_tip = dag
-            .add_patch(merge_patch, vec![merge_tip, *tip])
-            .unwrap();
+        merge_tip = dag.add_patch(merge_patch, vec![merge_tip, *tip]).unwrap();
     }
 
     (dag, branch_tips)

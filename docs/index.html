@@ -5,6 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Suture — Version Control for Everyone, Not Just Code</title>
 <meta name="description" content="Universal semantic version control system. Replace Google Drive sync with branching, merging, and audit trails for documents. 20+ file formats.">
+<meta property="og:title" content="Suture - Version Control for Everyone, Not Just Code">
+<meta property="og:description" content="Semantic merge for 20+ file formats. Branch, merge, tag, and audit -- for JSON configs, Word docs, spreadsheets, and more.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://suture.dev">
+<meta property="og:image" content="https://suture.dev/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Suture - Version Control for Everyone, Not Just Code">
+<meta name="twitter:description" content="Semantic merge for 20+ file formats. Branch, merge, tag, and audit -- for JSON configs, Word docs, spreadsheets, and more.">
+<meta name="twitter:image" content="https://suture.dev/og.png">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -95,13 +104,18 @@ footer .footer-links{display:flex;gap:20px;justify-content:center;flex-wrap:wrap
 footer .footer-links a{color:var(--fg2)}
 footer .footer-links a:hover{color:#fff}
 
-@media(max-width:768px){
+ @media(max-width:768px){
   .nav-links{display:none}
   .hero{padding:110px 0 70px}
   section{padding:60px 0}
   h2{font-size:1.5rem}
   .features-grid,.install-grid{grid-template-columns:1fr}
   .steps{grid-template-columns:1fr;gap:28px}
+}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.copy-btn:focus-visible,.btn:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+@media(prefers-reduced-motion:reduce){
+  *{animation:none!important;transition-duration:0.01ms!important}
 }
 </style>
 </head>

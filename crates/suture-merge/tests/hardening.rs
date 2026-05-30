@@ -570,7 +570,11 @@ fn consistency_all_drivers_no_change() {
     #[cfg(feature = "markdown")]
     inputs.push((".md", "# A\n\nB\n", merge_markdown));
     #[cfg(feature = "svg")]
-    inputs.push((".svg", r#"<svg xmlns="http://www.w3.org/2000/svg"><rect id="r"/></svg>"#, merge_svg));
+    inputs.push((
+        ".svg",
+        r#"<svg xmlns="http://www.w3.org/2000/svg"><rect id="r"/></svg>"#,
+        merge_svg,
+    ));
     #[cfg(feature = "html")]
     inputs.push((".html", "<html><p>a</p></html>", merge_html));
 

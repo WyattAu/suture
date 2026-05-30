@@ -93,13 +93,13 @@ runs:
           merged_file="$TEMP_DIR/merged_${safe_name}"
 
           if ! git show "origin/${BASE_REF}:${file}" > "$base_file" 2>/dev/null; then
-            TABLE_ROWS+="| \`$file\` | \`$ext\` | ⏭️ skip | New file (not in base branch) |"$'\n'
+            TABLE_ROWS+="| \`$file\` | \`$ext\` | SKIP | New file (not in base branch) |"$'\n'
             SKIP=$((SKIP + 1))
             continue
           fi
 
           if [ ! -f "$file" ]; then
-            TABLE_ROWS+="| \`$file\` | \`$ext\` | ⏭️ skip | File deleted in PR |"$'\n'
+            TABLE_ROWS+="| \`$file\` | \`$ext\` | SKIP | File deleted in PR |"$'\n'
             SKIP=$((SKIP + 1))
             continue
           fi
@@ -108,15 +108,15 @@ runs:
 
           if "$SUTURE_BIN" merge-file "$base_file" "$base_file" "$ours_file" -o "$merged_file" 2>"$TEMP_DIR/err"; then
             if diff -q "$merged_file" "$ours_file" > /dev/null 2>&1; then
-              TABLE_ROWS+="| \`$file\` | \`$ext\` | ✅ mergeable | Semantic merge produced identical result |"$'\n'
+              TABLE_ROWS+="| \`$file\` | \`$ext\` | MERGE | Semantic merge produced identical result |"$'\n'
               PASS=$((PASS + 1))
             else
-              TABLE_ROWS+="| \`$file\` | \`$ext\` | ⚠️ line-only | Merged with differences — consider semantic merge driver |"$'\n'
+              TABLE_ROWS+="| \`$file\` | \`$ext\` | LINE-ONLY | Merged with differences -- consider semantic merge driver |"$'\n'
               LINE_ONLY=$((LINE_ONLY + 1))
             fi
           else
             err_msg=$(tail -1 "$TEMP_DIR/err" 2>/dev/null || echo "unknown error")
-            TABLE_ROWS+="| \`$file\` | \`$ext\` | ❌ conflict | \`${err_msg}\` |"$'\n'
+            TABLE_ROWS+="| \`$file\` | \`$ext\` | CONFLICT | \`${err_msg}\` |"$'\n'
             FAIL=$((FAIL + 1))
           fi
         done
@@ -129,18 +129,18 @@ runs:
         fi
 
         COMMENT=$(cat <<-'BODY'
-        ## 🔀 Suture Semantic Merge Check
+        ## Suture Semantic Merge Check
 
         | File | Format | Status | Details |
         |------|--------|--------|---------|
         $TABLE_ROWS
 
-        **Summary:** ✅ ${PASS} mergeable · ⚠️ ${LINE_ONLY} line-only · ❌ ${FAIL} conflicts · ⏭️ ${SKIP} skipped
+        **Summary:** ${PASS} mergeable / ${LINE_ONLY} line-only / ${FAIL} conflicts / ${SKIP} skipped
 
         ---
 
         <details>
-        <summary>📖 Setting up the Suture Git merge driver</summary>
+        <summary>Setting up the Suture Git merge driver</summary>
 
         Install suture-cli, then configure Git to use semantic merging:
 
