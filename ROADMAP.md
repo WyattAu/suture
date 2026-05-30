@@ -387,6 +387,19 @@
 | Accessibility | WCAG 2.1 AA: focus-visible, aria-label, prefers-reduced-motion | Done |
 | ROADMAP update | Current state updated with audit findings | Done |
 
+## Phase 17: CI Green Pipeline (v11.5) -- COMPLETED
+
+**Goal:** Eliminate all CI failures, harden supply chain, unblock stale Dependabot PRs.
+
+| Task | Details | Status |
+|------|---------|--------|
+| Actions SHA pinning | All 18 action references pinned to verified 40-char commit SHAs via GitHub API | Done |
+| semver-checks fix | Added protobuf-compiler install for tonic::include_proto in suture-hub | Done |
+| test-python-bindings fix | Changed `cargo check -p` to `--manifest-path` for workspace-excluded crate | Done |
+| Scale benchmark fix | Windows CI timeout increased from 60s to 300s for I/O-bound 10K file test | Done |
+| Dependabot cleanup | Disabled github-actions ecosystem (SHAs pinned manually); closed 3 stale PRs | Done |
+| Cargo PR rebase | Rebased 10 Dependabot cargo PRs onto current main (blake3, tokio, tar, etc.) | Done |
+
 ---
 
 ## Version Timeline
@@ -411,12 +424,12 @@
 
 | Metric | v5.4 (now) | v6.0 | v7.0 | v8.0 | v10.0 |
 |--------|------------|------|------|------|-------|
-| Tests | 1,759 | 1,800 | 2,000 | 2,200 | 2,500 |
+| Tests | 1,714 | 1,800 | 2,000 | 2,200 | 2,500 |
 | Branch coverage (critical) | ~60% | >70% | >80% | >85% | >95% |
-| Lean 4 proofs | 16 | 16 | 16 | 18 | 20 |
-| Semantic drivers | 18 | 18 | 20 | 22 | 24 |
+| Lean 4 proofs | 28 | 28 | 30 | 35 | 40 |
+| Semantic drivers | 18 | 20 | 22 | 24 | 26 |
 | crates.io crates | 37 | 37 | 37 | 40 | 42 |
-| CLI commands | 58 | 60 | 62 | 65 | 70 |
+| CLI commands | 64 | 65 | 68 | 70 | 75 |
 | Unsafe blocks | 33 | 30 | 25 | 20 | 15 |
 | Clippy warnings | 0 | 0 | 0 | 0 | 0 |
 | CI pipeline time | ~22m | <15m | <15m | <12m | <10m |
