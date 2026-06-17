@@ -47,4 +47,4 @@ properties = ["dep:suture-driver-properties"]
 all = ["json", "yaml", "toml", "csv", "xml", "markdown", "svg", "html", "ical", "feed", "docx", "xlsx", "pptx", "properties"]
 
 [dev-dependencies]
-zip = { version = "2.2", default-features = false }
+zip = { version = "8.6", default-features = false }

@@ -17,5 +17,5 @@ quick-xml = "0.40"
 serde = { version = "1", features = ["derive"] }
 
 [dev-dependencies]
-zip = { version = "2.2", default-features = false }
+zip = { version = "8.6", default-features = false }
 proptest = "1.6"
