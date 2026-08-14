@@ -54,6 +54,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y pkg-config libssl-dev protobuf-compiler
 
+      # protoc 是 prost/tonic build 脚本的硬依赖(suture-protocol gRPC),
+      # 缺了它 Windows/macOS 的 cargo build 会失败(只有 Linux 装会漏掉这两个平台).
+      - name: Install protoc (macOS)
+        if: runner.os == 'macOS'
+        run: brew install protobuf
+
+      - name: Install protoc (Windows)
+        if: runner.os == 'Windows'
+        run: choco install protoc -y
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
