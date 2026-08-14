@@ -6836,6 +6836,7 @@ version = "5.1.0"
 dependencies = [
  "proptest",
  "roxmltree",
+ "suture-core",
  "suture-driver",
 ]
 

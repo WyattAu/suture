@@ -24,25 +24,6 @@ impl UiDriver {
             .replace('\'', "&apos;")
     }
 
-    /// 检测输入的行尾风格：CRLF 行数多于 LF-only 则视为 CRLF 文件。
-    /// .ui 文件通常由 Windows 工具生成（CRLF），风格化输出需保持一致，
-    /// 否则 `-text` 属性下 git 逐字节比较会把每一行都视为变化。
-    fn uses_crlf(content: &str) -> bool {
-        let mut crlf = 0usize;
-        let mut lf_only = 0usize;
-        let bytes = content.as_bytes();
-        for i in 0..bytes.len() {
-            if bytes[i] == b'\n' {
-                if i > 0 && bytes[i - 1] == b'\r' {
-                    crlf += 1;
-                } else {
-                    lf_only += 1;
-                }
-            }
-        }
-        crlf > lf_only
-    }
-
     fn node_path(node: roxmltree::Node) -> String {
         let mut parts: Vec<String> = Vec::new();
         let mut current = node;
@@ -509,9 +490,6 @@ impl SutureDriver for UiDriver {
             || ours.ends_with('\n')
             || theirs.ends_with('\n');
 
-        // 行尾风格：输入为 CRLF 则输出 CRLF（.ui 由 Windows 工具生成）
-        let crlf = Self::uses_crlf(base) || Self::uses_crlf(ours) || Self::uses_crlf(theirs);
-
         let mut result = String::new();
         result.push_str(leading);
         Self::merge_elements(
@@ -523,14 +501,12 @@ impl SutureDriver for UiDriver {
         .map_or_else(
             || Ok(None),
             |merged| {
-                let merged = if crlf {
-                    merged.replace('\n', "\r\n")
-                } else {
-                    merged
-                };
-                result.push_str(&merged);
+                // .ui 固定 CRLF：String::replace 返回新 String（不改原值），
+                // 直接把转换结果推入输出。
+                result.push_str(&merged.replace('\n', "\r\n"));
                 if trailing_newline {
-                    result.push('\n');
+                    // 尾随换行也需与输出行尾一致（.ui 固定 CRLF，不能 push 裸 \n）
+                    result.push_str("\r\n");
                 }
                 Ok(Some(result))
             },
@@ -1130,6 +1106,216 @@ mod tests {
         assert!(merge_left.contains(">20<"));
         assert!(merge_left.contains(">30<"));
         assert!(merge_left.contains(">4<"));
+    }
+
+    /// 构造 Actions IDE 风格 .ui 文件（模拟真实 bt_watch.ui 结构）：
+    /// - CRLF 行尾 + 尾随换行
+    /// - 多个 scene，每个 scene 含大量跨 scene 完全重复的 `<property>` 行
+    ///   （模拟真实文件的重复缩进/属性行，是触发行级 diff 错位的必要条件）
+    /// - 所有 scene 的 string_resource 属性值完全相同（x=0x0014/y=0x0106/
+    ///   width/height），使冲突行 `x=0x0014` 在 base 中**重复出现多次**，
+    ///   且 drink 场景插在**中间**（该行不是 0x0014 的最后一次出现）——
+    ///   这是旧贪心 diff 远距离匹配、连锁错位的触发条件
+    /// - 每 scene 有唯一锚点行（name/id），供 patience diff 定位
+    /// - `STR_DRINK_SOME_WATER` 的 x/y 属性值可定制（真实问题场景）
+    /// - 总行数 > 2000，确保行级 fallback 走 linear（patience）路径而非 DP
+    fn build_ui_file(scene_count: usize, drink_x: &str, drink_y: &str) -> String {
+        let mut lines: Vec<String> = vec![
+            "<?xml version=\"1.0\" encoding=\"utf-8\" standalone=\"no\" ?>".to_owned(),
+            "<!--Actions IDE, Rapid Application Development-->".to_owned(),
+            "<ui-rad>".to_owned(),
+        ];
+        for s in 0..scene_count {
+            lines.push("    <scene>".to_owned());
+            lines.push(format!("        <property name=\"name\" value=\"SCENE_{s}\" />"));
+            lines.push(format!(
+                "        <property name=\"id\" value=\"{}\" />",
+                s + 30000
+            ));
+            // 20 行跨 scene 完全相同的重复属性（模拟真实文件的重复行）
+            for k in 0..20 {
+                lines.push(format!("        <property name=\"key{k}\" value=\"{k}\" />"));
+            }
+            lines.push("        <element class=\"string_resource\">".to_owned());
+            lines.push(format!(
+                "            <property name=\"name\" value=\"STR_{s}\" />"
+            ));
+            lines.push(format!(
+                "            <property name=\"id\" value=\"{}\" />",
+                s + 1000
+            ));
+            // 所有 scene 使用完全相同的属性值 → 制造大量重复行
+            lines.push("            <property name=\"x\" value=\"0x0014\" />".to_owned());
+            lines.push("            <property name=\"y\" value=\"0x0106\" />".to_owned());
+            lines.push("            <property name=\"width\" value=\"0x0118\" />".to_owned());
+            lines.push("            <property name=\"height\" value=\"0x0078\" />".to_owned());
+            lines.push("        </element>".to_owned());
+            lines.push("    </scene>".to_owned());
+
+            // 把真实问题场景（SCENE_COLOR / STR_DRINK_SOME_WATER）插在中间：
+            // 它后面的 scene 仍含同值 `x=0x0014`，是触发旧贪心连锁错位的必要条件
+            if s == scene_count / 2 {
+                lines.push("    <scene>".to_owned());
+                lines.push("        <property name=\"name\" value=\"SCENE_COLOR\" />".to_owned());
+                lines.push("        <property name=\"id\" value=\"32811\" />".to_owned());
+                lines.push("        <element class=\"string_resource\">".to_owned());
+                lines
+                    .push("            <property name=\"name\" value=\"STR_DRINK_SOME_WATER\" />"
+                        .to_owned());
+                lines.push("            <property name=\"id\" value=\"31915\" />".to_owned());
+                lines.push(format!("            <property name=\"x\" value=\"{drink_x}\" />"));
+                lines.push(format!("            <property name=\"y\" value=\"{drink_y}\" />"));
+                lines.push("            <property name=\"width\" value=\"0x0118\" />".to_owned());
+                lines.push("            <property name=\"height\" value=\"0x0078\" />".to_owned());
+                lines.push("        </element>".to_owned());
+                lines.push("    </scene>".to_owned());
+            }
+        }
+        lines.push("</ui-rad>".to_owned());
+
+        let mut content = lines.join("\r\n");
+        content.push_str("\r\n");
+        content
+    }
+
+    /// 回归测试（2026-08-14）：两个分支**同时修改同一个场景的同一处属性**
+    /// （`SCENE_COLOR` 场景 `STR_DRINK_SOME_WATER` 的 `x` 属性）且内容不同。
+    /// 修复前：语义层 decline 到行级 fallback 后，贪心 diff 在大量重复行上
+    /// 错位（base[5230] 的 `x=0x0014` 远距离匹配到 mod 中另一处同值行），
+    /// 1 行替换膨胀成 14093 行假插入，合并输出出现大量无关行。
+    /// 修复后：语义层检测到同属性冲突 → 返回 None（decline）；行级 fallback
+    /// 只应产生 **1 行真实冲突**，输出不膨胀、无重复行。
+    #[test]
+    fn test_ui_same_scene_same_attr_conflict_single_line() {
+        let base = build_ui_file(80, "0x0014", "0x0106");
+        let ours = build_ui_file(80, "0x0012", "0x0106");
+        let theirs = build_ui_file(80, "0x0016", "0x0106");
+        assert!(base.lines().count() > 2000, "must exceed DP threshold");
+
+        let driver = UiDriver::new();
+
+        // ① 语义层：同一属性两边值不同（0x0012 vs 0x0016）→ 无法自动解决，
+        //    必须 decline 到行级合并（cli 层 fallback）。
+        let semantic = driver.merge(&base, &ours, &theirs).unwrap();
+        assert!(
+            semantic.is_none(),
+            "same attr changed to different values on both sides must decline"
+        );
+
+        // ② 行级 fallback：只应产生 1 行冲突。替换型冲突输出 5 行
+        //    （3 行标记 + ours 1 行 + theirs 1 行），消耗 base 1 行，
+        //    净增 +4（实测真实 bt_watch.ui：108933 → 108937）。
+        let b: Vec<&str> = base.lines().collect();
+        let o: Vec<&str> = ours.lines().collect();
+        let t: Vec<&str> = theirs.lines().collect();
+        let result =
+            suture_core::engine::merge::three_way_merge_lines(&b, &o, &t, "ours", "theirs");
+
+        assert!(!result.is_clean);
+        assert_eq!(result.conflicts, 1, "exactly one real conflict expected");
+        assert_eq!(
+            result.lines.len(),
+            b.len() + 4,
+            "no spurious lines: base {} + 4 (1 replaced by 3 markers + 2 sides) = {}, got {}",
+            b.len(),
+            b.len() + 4,
+            result.lines.len()
+        );
+        // 恰好一组冲突标记
+        let starts = result
+            .lines
+            .iter()
+            .filter(|l| l.starts_with("<<<<<<<"))
+            .count();
+        let divs = result
+            .lines
+            .iter()
+            .filter(|l| l.as_str() == "=======")
+            .count();
+        let ends = result
+            .lines
+            .iter()
+            .filter(|l| l.starts_with(">>>>>>>"))
+            .count();
+        assert_eq!((starts, divs, ends), (1, 1, 1), "one conflict region only");
+
+        // 冲突两侧内容正确（ours 在前、theirs 在后）
+        let ours_idx = result
+            .lines
+            .iter()
+            .position(|l| l.contains("0x0012"))
+            .expect("ours value in conflict");
+        let theirs_idx = result
+            .lines
+            .iter()
+            .position(|l| l.contains("0x0016"))
+            .expect("theirs value in conflict");
+        assert!(ours_idx < theirs_idx, "ours block before theirs block");
+
+        // 冲突区域之外的行必须与 base 完全一致：不重复、不丢失
+        let mut count: std::collections::HashMap<&str, usize> =
+            std::collections::HashMap::new();
+        for l in &b {
+            *count.entry(l).or_insert(0) += 1;
+        }
+        // base 的 0x0014 行被两边同时替换掉，从计数中扣除
+        let x14 = b
+            .iter()
+            .find(|l| l.contains("0x0014"))
+            .expect("base x line");
+        if let Some(c) = count.get_mut(x14) {
+            *c -= 1;
+        }
+        let mut unmatched = 0usize;
+        for l in &result.lines {
+            if l.starts_with("<<<<<<<")
+                || l.starts_with("=======")
+                || l.starts_with(">>>>>>>")
+                || l.contains("0x0012")
+                || l.contains("0x0016")
+            {
+                continue;
+            }
+            match count.get_mut(l.as_str()) {
+                Some(c) if *c > 0 => *c -= 1,
+                _ => unmatched += 1,
+            }
+        }
+        assert_eq!(
+            unmatched, 0,
+            "merged output must not contain spurious/duplicated lines"
+        );
+    }
+
+    /// .ui 固定输出 CRLF 行尾：成功合并（无冲突）时，输出必须全 CRLF
+    /// （含尾随换行），不得出现裸 LF——否则 `-text` 下 git 逐字节比较，
+    /// 行尾不一致会导致解决冲突后全文件 diff。
+    #[test]
+    fn test_ui_merge_success_fixed_crlf() {
+        let driver = UiDriver::new();
+        // ours 改 STR_DRINK_SOME_WATER.x，theirs 改同一元素的 y（不同属性）
+        // → 语义层可自动合并，验证成功路径的行尾
+        let base = build_ui_file(80, "0x0014", "0x0106");
+        let ours = build_ui_file(80, "0x0012", "0x0106");
+        let theirs = build_ui_file(80, "0x0014", "0x0122");
+
+        let merged = driver
+            .merge(&base, &ours, &theirs)
+            .unwrap()
+            .expect("different attrs must auto-merge");
+        assert!(merged.contains("0x0012"), "ours x change applied");
+        assert!(merged.contains("0x0122"), "theirs y change applied");
+
+        // 全 CRLF：去掉 \r\n 后不得残留任何 \n（即无裸 LF）
+        assert!(
+            !merged.replace("\r\n", "").contains('\n'),
+            "output must use CRLF line endings only"
+        );
+        // 尾随换行也必须是 CRLF
+        assert!(merged.ends_with("\r\n"), "trailing CRLF preserved");
+        // 可被 XML 解析（输出有效）
+        let doc = roxmltree::Document::parse(&merged).unwrap();
+        assert_eq!(doc.root_element().tag_name().name(), "ui-rad");
     }
 
     proptest! {

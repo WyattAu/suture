@@ -94,45 +94,183 @@ fn diff_lines_dp(base: &[&str], modified: &[&str]) -> Vec<LineChange> {
 /// Linear-space diff using a hash-based LCS approach.
 /// Uses O(m+n) memory instead of O(m×n). Slightly less optimal on edit
 /// distance but handles files of arbitrary size without memory pressure.
+///
+/// Uses a patience-style algorithm: unique lines (appearing exactly once in
+/// both sequences) are matched as anchors via a longest increasing
+/// subsequence (LIS), then the intervals between anchors are diffed
+/// recursively. This keeps matches monotonic in both sequences, which a plain
+/// greedy match does not: on files with many repeated lines (XML indentation,
+/// closing tags) the greedy algorithm can match a repeated line to a far-away
+/// occurrence, shifting every subsequent line and producing huge spurious
+/// hunks (a 1-line change in a 100k-line .ui file became ~14k inserted
+/// lines).
 fn diff_lines_linear(base: &[&str], modified: &[&str]) -> Vec<LineChange> {
-    // Build index: for each unique line in modified, record all positions
+    coalesce_changes(diff_patience(base, modified, 0))
+}
+
+/// Recursion depth cap for patience diff — content with no unique-line
+/// anchors (e.g. a file made entirely of repeated lines) falls back to the
+/// monotonic greedy diff.
+const MAX_PATIENCE_DEPTH: usize = 10;
+
+/// Patience diff. Small intervals are solved exactly with the DP table; large
+/// intervals are split at LIS-matched unique lines and recursed.
+fn diff_patience(base: &[&str], modified: &[&str], depth: usize) -> Vec<LineChange> {
+    if base.len() <= LCS_DP_THRESHOLD && modified.len() <= LCS_DP_THRESHOLD {
+        return diff_lines_dp(base, modified);
+    }
+    if base.is_empty() {
+        return if modified.is_empty() {
+            Vec::new()
+        } else {
+            vec![LineChange::Inserted(
+                modified
+                    .iter()
+                    .map(std::string::ToString::to_string)
+                    .collect(),
+            )]
+        };
+    }
+    if modified.is_empty() {
+        return vec![LineChange::Deleted(
+            base.iter().map(std::string::ToString::to_string).collect(),
+        )];
+    }
+    if depth >= MAX_PATIENCE_DEPTH {
+        return diff_lines_greedy_monotonic(base, modified);
+    }
+
+    // Count occurrences to identify unique lines (exactly once in both).
+    let mut base_count: std::collections::HashMap<&str, usize> =
+        std::collections::HashMap::with_capacity(base.len().min(10_000));
+    for line in base {
+        *base_count.entry(line).or_insert(0) += 1;
+    }
+    let mut mod_count: std::collections::HashMap<&str, usize> =
+        std::collections::HashMap::with_capacity(modified.len().min(10_000));
+    for line in modified {
+        *mod_count.entry(line).or_insert(0) += 1;
+    }
+
+    let is_unique = |l: &str| base_count.get(l) == Some(&1) && mod_count.get(l) == Some(&1);
+
+    // Map each unique line of modified to its position.
+    let mut mod_unique_pos: std::collections::HashMap<&str, usize> =
+        std::collections::HashMap::with_capacity(modified.len().min(10_000));
+    for (i, line) in modified.iter().enumerate() {
+        if is_unique(line) {
+            mod_unique_pos.insert(line, i);
+        }
+    }
+
+    // Candidate anchor pairs (base_idx, mod_idx), ordered by base_idx.
+    let mut pairs: Vec<(usize, usize)> = Vec::with_capacity(base.len().min(modified.len()));
+    for (i, line) in base.iter().enumerate() {
+        if is_unique(line)
+            && let Some(&mi) = mod_unique_pos.get(line)
+        {
+            pairs.push((i, mi));
+        }
+    }
+
+    // LIS over the modified positions maximizes the number of monotonic anchors.
+    let anchors: Vec<(usize, usize)> = lis_indices(&pairs)
+        .into_iter()
+        .map(|idx| pairs[idx])
+        .collect();
+
+    if anchors.is_empty() {
+        return diff_lines_greedy_monotonic(base, modified);
+    }
+
+    // Recursively diff the gaps between consecutive anchors and concatenate.
+    let mut result: Vec<LineChange> = Vec::new();
+    let mut b_start = 0usize;
+    let mut m_start = 0usize;
+    for &(b_anchor, m_anchor) in &anchors {
+        result.extend(diff_patience(
+            &base[b_start..b_anchor],
+            &modified[m_start..m_anchor],
+            depth + 1,
+        ));
+        result.push(LineChange::Unchanged(vec![base[b_anchor].to_owned()]));
+        b_start = b_anchor + 1;
+        m_start = m_anchor + 1;
+    }
+    result.extend(diff_patience(
+        &base[b_start..],
+        &modified[m_start..],
+        depth + 1,
+    ));
+    result
+}
+
+/// Longest increasing subsequence over the second coordinate of `pairs`.
+/// `pairs` must already be ordered by the first coordinate. Returns the
+/// indices of the LIS, in order.
+fn lis_indices(pairs: &[(usize, usize)]) -> Vec<usize> {
+    if pairs.is_empty() {
+        return Vec::new();
+    }
+    // tails[k] = index in `pairs` of the smallest mod_idx ending an
+    // increasing subsequence of length k+1.
+    let mut tails: Vec<usize> = Vec::with_capacity(pairs.len());
+    let mut prev: Vec<Option<usize>> = vec![None; pairs.len()];
+    for (i, &(_, m)) in pairs.iter().enumerate() {
+        let pos = tails.partition_point(|&ti| pairs[ti].1 < m);
+        if pos == tails.len() {
+            tails.push(i);
+        } else {
+            tails[pos] = i;
+        }
+        if pos > 0 {
+            prev[i] = Some(tails[pos - 1]);
+        }
+    }
+    let mut out = Vec::with_capacity(tails.len());
+    let mut cur = tails.last().copied();
+    while let Some(i) = cur {
+        out.push(i);
+        cur = prev[i];
+    }
+    out.reverse();
+    out
+}
+
+/// Monotonic greedy diff — fallback for content with no unique-line anchors.
+/// Matches each base line to the first unused position of the same value in
+/// modified, skipping positions already passed by an earlier match, so the
+/// matched pairs advance monotonically in both sequences. Unlike the patience
+/// diff it may produce extra insert/delete pairs on repeated-line content,
+/// but it never duplicates output lines. Amortized O(n).
+fn diff_lines_greedy_monotonic(base: &[&str], modified: &[&str]) -> Vec<LineChange> {
+    // Build index: for each line in modified, record all positions in order.
     let mut mod_positions: std::collections::HashMap<&str, Vec<usize>> =
         std::collections::HashMap::with_capacity(modified.len().min(10_000));
     for (i, line) in modified.iter().enumerate() {
         mod_positions.entry(line).or_default().push(i);
     }
 
-    // Find LCS using patience-like matching: for each line in base (in order),
-    // find the first unmatched position in modified.
-    let mut matched_base: Vec<usize> = Vec::with_capacity(base.len().min(modified.len()));
-    let mut matched_mod: std::collections::HashSet<usize> =
-        std::collections::HashSet::with_capacity(base.len().min(modified.len()));
-
-    for line in base {
-        if let Some(positions) = mod_positions.get(line) {
-            for &pos in positions {
-                if !matched_mod.contains(&pos) {
-                    matched_base.push(matched_base.len());
-                    matched_mod.insert(pos);
-                    break;
-                }
-            }
-        }
-    }
-
-    // Now build the diff from the matching
-    // Build matched pairs: for each line in base, find the first unmatched position in modified
-    let mut matched_pairs: Vec<(usize, usize)> = Vec::new();
-    let mut used_mod: std::collections::HashSet<usize> = std::collections::HashSet::new();
+    let mut next_ptr: std::collections::HashMap<&str, usize> =
+        std::collections::HashMap::with_capacity(mod_positions.len());
+    let mut matched_pairs: Vec<(usize, usize)> = Vec::with_capacity(base.len());
+    let mut min_mod_pos = 0usize;
     for (bi, line) in base.iter().enumerate() {
-        if let Some(positions) = mod_positions.get(line) {
-            for &mi in positions {
-                if !used_mod.contains(&mi) {
-                    matched_pairs.push((bi, mi));
-                    used_mod.insert(mi);
-                    break;
-                }
-            }
+        let positions = match mod_positions.get(line) {
+            Some(p) => p,
+            None => continue,
+        };
+        let ptr = next_ptr.entry(line).or_insert(0);
+        // Skip positions already passed by an earlier match (each position is
+        // skipped at most once across all keys, so this is amortized O(1) per
+        // base line).
+        while *ptr < positions.len() && positions[*ptr] < min_mod_pos {
+            *ptr += 1;
+        }
+        if *ptr < positions.len() {
+            matched_pairs.push((bi, positions[*ptr]));
+            min_mod_pos = positions[*ptr] + 1;
+            *ptr += 1;
         }
     }
 
@@ -167,7 +305,7 @@ fn diff_lines_linear(base: &[&str], modified: &[&str]) -> Vec<LineChange> {
         mi += 1;
     }
 
-    coalesce_changes(changes_list)
+    changes_list
 }
 
 /// Try to extend the last change in `result` with `change` if they're the same variant.
@@ -623,5 +761,111 @@ mod tests {
         assert_eq!(result.lines[15], "THEIRS 15");
         // Middle lines should be unchanged
         assert_eq!(result.lines[10], "line 10");
+    }
+
+    /// 回归测试（patience 锚点路径）：贪心匹配在重复行上错位，1 行替换
+    /// 曾产生大量假插入。本案例有唯一行锚点 U1/U2——旧的按行值独立贪心
+    /// 让 base 的 `<p x=0x14 />` 远距离匹配到 mod 末尾的同值行，跳过中间
+    /// 5 行，diff 膨胀且内容错误。
+    #[test]
+    fn test_diff_repeated_lines_no_misalignment() {
+        let base: Vec<&str> = vec![
+            "<e>",
+            "<p id=U1 />",
+            "<p x=0x14 />",
+            "<p y=1 />",
+            "</e>",
+            "<e>",
+            "<p id=U2 />",
+            "<p x=0x14 />",
+            "</e>",
+        ];
+        let modified: Vec<&str> = vec![
+            "<e>",
+            "<p id=U1 />",
+            "<p x=0x12 />",
+            "<p y=1 />",
+            "</e>",
+            "<e>",
+            "<p id=U2 />",
+            "<p x=0x14 />",
+            "</e>",
+        ];
+
+        let changes = diff_lines_linear(&base, &modified);
+        let mut unchanged = 0;
+        let mut deleted: Vec<String> = Vec::new();
+        let mut inserted: Vec<String> = Vec::new();
+        for c in &changes {
+            match c {
+                LineChange::Unchanged(v) => unchanged += v.len(),
+                LineChange::Deleted(v) => deleted.extend(v.iter().cloned()),
+                LineChange::Inserted(v) => inserted.extend(v.iter().cloned()),
+            }
+        }
+        assert_eq!(unchanged, 8, "all but one line unchanged");
+        assert_eq!(deleted, vec!["<p x=0x14 />"], "exactly the replaced line deleted");
+        assert_eq!(inserted, vec!["<p x=0x12 />"], "exactly the new line inserted");
+    }
+
+    /// 回归测试（单调贪心兜底路径）：无唯一行锚点的纯重复内容，不能丢失
+    /// 修改。旧的贪心会让 mod 中的 `a2` 行消失（其位置被重复的 `x` 行
+    /// 抢走），导致合并静默丢失一边的修改。
+    #[test]
+    fn test_diff_greedy_fallback_no_data_loss() {
+        let base: Vec<&str> = vec!["x", "x", "x", "a", "x", "x"];
+        let modified: Vec<&str> = vec!["x", "x", "x", "a2", "x", "x"];
+
+        let changes = diff_lines_linear(&base, &modified);
+        let mut deleted: Vec<String> = Vec::new();
+        let mut inserted: Vec<String> = Vec::new();
+        for c in &changes {
+            match c {
+                LineChange::Deleted(v) => deleted.extend(v.iter().cloned()),
+                LineChange::Inserted(v) => inserted.extend(v.iter().cloned()),
+                _ => {}
+            }
+        }
+        assert_eq!(deleted, vec!["a"], "deleted line must be the replaced one");
+        assert_eq!(
+            inserted, vec!["a2"],
+            "inserted line must be the new one, not a repeated x"
+        );
+    }
+
+    /// 大文件（> LCS_DP_THRESHOLD，自动走 linear 路径）XML 风格重复行：
+    /// 中间 1 行替换必须精确，不得产生假插入/假删除。
+    #[test]
+    fn test_diff_large_xml_like_repeated_lines() {
+        let n = LCS_DP_THRESHOLD + 500;
+        let mut base: Vec<String> = Vec::with_capacity(n * 3);
+        let mut modified: Vec<String> = Vec::with_capacity(n * 3);
+        for i in 0..n {
+            base.push(format!("<block {i}>"));
+            base.push("    <element/>".to_owned());
+            base.push("</block>".to_owned());
+            modified.push(format!("<block {i}>"));
+            modified.push("    <element/>".to_owned());
+            modified.push("</block>".to_owned());
+        }
+        // 中间替换一行（注意避开锚点行本身）
+        let mid = n * 3 / 2 + 1;
+        modified[mid] = "    <element changed/>".to_owned();
+
+        let base_refs: Vec<&str> = base.iter().map(|s| s.as_str()).collect();
+        let mod_refs: Vec<&str> = modified.iter().map(|s| s.as_str()).collect();
+        let changes = diff_lines(&base_refs, &mod_refs);
+
+        let mut deleted = 0;
+        let mut inserted = 0;
+        for c in &changes {
+            match c {
+                LineChange::Deleted(v) => deleted += v.len(),
+                LineChange::Inserted(v) => inserted += v.len(),
+                _ => {}
+            }
+        }
+        assert_eq!(deleted, 1, "exactly one line replaced");
+        assert_eq!(inserted, 1, "exactly one line inserted");
     }
 }

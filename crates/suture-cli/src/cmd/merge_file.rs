@@ -125,7 +125,24 @@ pub async fn cmd_merge_file(
         theirs_label,
     );
 
-    let merged_output: String = result.lines.join("\n");
+    // 行尾保持：.ui 文件（Actions IDE 生成）固定 CRLF，其余格式跟随内容。
+    // 注意：不能用 ours_path 的扩展名判断——git merge driver 传给本命令的
+    // %O/%A/%B 是**无扩展名临时文件**，扩展名判断会永远失败（实测冲突
+    // 文件被输出成 LF 导致解决冲突后全文件 diff）。改为内容检测：.ui 在
+    // git 中因 `-text` 属性保持原样（始终 CRLF），任一输入含 \r\n 即 CRLF。
+    let crlf = base_content.contains("\r\n")
+        || ours_content.contains("\r\n")
+        || theirs_content.contains("\r\n");
+    let sep = if crlf { "\r\n" } else { "\n" };
+    // 尾随换行跟随输入：任何一侧以换行结尾就保留，且与输出行尾一致
+    // （否则 CRLF 文件冲突后会丢失末尾换行，`-text` 下导致额外的文件尾差异）。
+    let trailing_newline = base_content.ends_with('\n')
+        || ours_content.ends_with('\n')
+        || theirs_content.ends_with('\n');
+    let mut merged_output: String = result.lines.join(sep);
+    if trailing_newline {
+        merged_output.push_str(sep);
+    }
     match output_path {
         Some(path) => std::fs::write(path, merged_output.as_bytes())?,
         None => print!("{merged_output}"),

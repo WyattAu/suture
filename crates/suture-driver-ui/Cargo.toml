@@ -15,4 +15,5 @@ suture-driver = { path = "../suture-driver", version = "5.0.0" }
 roxmltree = { version = "0.21", features = ["positions"] }
 
 [dev-dependencies]
+suture-core = { path = "../suture-core", version = "5.0.0" }
 proptest = "1"
