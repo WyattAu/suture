@@ -69,6 +69,12 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      # 显式安装交叉编译 target:dtolnay/rust-toolchain 的 targets 输入
+      # 在存在 rust-toolchain.toml 时可能不生效,导致 arm64 runner 上
+      # x86_64-apple-darwin 交叉编译报 E0463(can't find crate for core).
+      - name: Add cross-compile target (explicit)
+        run: rustup target add ${{ matrix.target }}
+
       - name: Cache Cargo artifacts
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
         with:
