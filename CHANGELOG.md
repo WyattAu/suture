@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [5.3.1-action] - 2026-08-14
+
+### Added
+- **Action UI merge driver** — new `suture-driver-ui` crate for Actions IDE `.ui` files (XML-based, format-preserving output: 4-space indent, attribute order, CRLF line endings, self-closing tags)
+- **Windows install script** — `install.ps1` with interactive guided setup (official binary download / cargo build), 10 merge drivers, plus `-Test` / `-Uninstall` / `-Local` modes
+
+### Fixed
+- **Install script git invocation** — driver commands use relative command name `suture` instead of quoted absolute paths (paths with spaces broke `git config` quoting and sh word-splitting); download URL points to this fork's releases
+
+### Includes
+- All upstream changes up to 5.4.0 (security, performance, quality)
+
 ## [5.4.0] - 2026-05-16
 
 ### Security
