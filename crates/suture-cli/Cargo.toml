@@ -25,6 +25,7 @@ suture-driver-toml = { path = "../suture-driver-toml", version = "5.0.0" }
 suture-driver-csv = { path = "../suture-driver-csv", version = "5.0.0" }
 suture-driver-yaml = { path = "../suture-driver-yaml", version = "5.0.0" }
 suture-driver-xml = { path = "../suture-driver-xml", version = "5.0.0" }
+suture-driver-ui = { path = "../suture-driver-ui", version = "5.0.0" }
 suture-driver-svg = { path = "../suture-driver-svg", version = "5.0.0" }
 suture-ooxml = { path = "../suture-ooxml", version = "5.0.0" }
 suture-driver-docx = { path = "../suture-driver-docx", version = "5.0.0" }

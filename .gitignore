@@ -43,3 +43,4 @@ out/
 *.rmeta
 *.rlib
 *.d.rustc
+share_docs

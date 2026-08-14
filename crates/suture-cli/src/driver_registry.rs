@@ -13,6 +13,7 @@ use suture_driver_pptx::PptxDriver;
 use suture_driver_sql::SqlDriver;
 use suture_driver_svg::SvgDriver;
 use suture_driver_toml::TomlDriver;
+use suture_driver_ui::UiDriver;
 use suture_driver_xlsx::XlsxDriver;
 use suture_driver_xml::XmlDriver;
 use suture_driver_yaml::YamlDriver;
@@ -25,6 +26,7 @@ pub fn builtin_registry() -> DriverRegistry {
     registry.register(Box::new(CsvDriver));
     registry.register(Box::new(YamlDriver));
     registry.register(Box::new(XmlDriver));
+    registry.register(Box::new(UiDriver));
     registry.register(Box::new(MarkdownDriver));
     registry.register(Box::new(ImageDriver));
     registry.register(Box::new(DocxDriver));

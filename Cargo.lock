@@ -6538,6 +6538,7 @@ dependencies = [
  "suture-driver-sql",
  "suture-driver-svg",
  "suture-driver-toml",
+ "suture-driver-ui",
  "suture-driver-xlsx",
  "suture-driver-xml",
  "suture-driver-yaml",
@@ -6827,6 +6828,15 @@ dependencies = [
  "proptest",
  "suture-driver",
  "toml 0.8.2",
+]
+
+[[package]]
+name = "suture-driver-ui"
+version = "5.1.0"
+dependencies = [
+ "proptest",
+ "roxmltree",
+ "suture-driver",
 ]
 
 [[package]]

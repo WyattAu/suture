@@ -152,6 +152,10 @@ configure_drivers() {
     git config $scope_flag merge.xml.driver "suture merge-file --driver xml %O %A %B -o %A"
     ok "  XML driver configured"
 
+    git config $scope_flag merge.ui.name "Suture UI merge driver"
+    git config $scope_flag merge.ui.driver "suture merge-file --driver ui %O %A %B -o %A"
+    ok "  UI driver configured (Qt Designer .ui)"
+
     git config $scope_flag merge.csv.name "Suture CSV merge driver"
     git config $scope_flag merge.csv.driver "suture merge-file --driver csv %O %A %B -o %A"
     ok "  CSV driver configured"
@@ -187,6 +191,8 @@ create_gitattributes() {
 *.xml merge=xml
 *.xsl merge=xml
 *.svg merge=xml
+*.ui merge=ui
+*.ui -text
 *.csv merge=csv
 *.tsv merge=csv
 *.md merge=md
@@ -278,7 +284,7 @@ EOF
 uninstall() {
     info "Removing Suture merge driver configuration..."
 
-    for driver in json yaml toml xml csv md docx xlsx pptx; do
+    for driver in json yaml toml xml ui csv md docx xlsx pptx; do
         git config --global --unset "merge.${driver}.name" 2>/dev/null || true
         git config --global --unset "merge.${driver}.driver" 2>/dev/null || true
         git config --global --unset "merge.${driver}.recursive" 2>/dev/null || true
@@ -295,7 +301,7 @@ uninstall() {
     if [ -f ".gitattributes" ]; then
         local tmp
         tmp="$(mktemp)"
-        grep -v "merge=json\|merge=yaml\|merge=toml\|merge=xml\|merge=csv\|merge=md\|merge=docx\|merge=xlsx\|merge=pptx" .gitattributes > "$tmp" 2>/dev/null || true
+        grep -v "merge=json\|merge=yaml\|merge=toml\|merge=xml\|merge=ui\|merge=csv\|merge=md\|merge=docx\|merge=xlsx\|merge=pptx" .gitattributes > "$tmp" 2>/dev/null || true
         if [ -s "$tmp" ]; then
             mv "$tmp" .gitattributes
         else
@@ -365,7 +371,7 @@ echo ""
 ok "Suture merge driver installed!"
 echo ""
 echo "  Git will now use Suture to automatically merge:"
-echo "    JSON  YAML  TOML  XML  CSV  Markdown"
+echo "    JSON  YAML  TOML  XML  UI  CSV  Markdown"
 echo "    DOCX  XLSX  PPTX (binary merge enabled)"
 echo ""
 echo "  If inside a Git repo, commit the generated .gitattributes:"
