@@ -4,9 +4,9 @@ use std::collections::{HashMap, HashSet};
 use suture_driver::{DriverError, SemanticChange, SutureDriver};
 
 use std::fmt::Write;
-pub struct XmlDriver;
+pub struct UiDriver;
 
-impl XmlDriver {
+impl UiDriver {
     #[must_use]
     pub fn new() -> Self {
         Self
@@ -22,6 +22,25 @@ impl XmlDriver {
             .replace('>', "&gt;")
             .replace('"', "&quot;")
             .replace('\'', "&apos;")
+    }
+
+    /// 检测输入的行尾风格：CRLF 行数多于 LF-only 则视为 CRLF 文件。
+    /// .ui 文件通常由 Windows 工具生成（CRLF），风格化输出需保持一致，
+    /// 否则 `-text` 属性下 git 逐字节比较会把每一行都视为变化。
+    fn uses_crlf(content: &str) -> bool {
+        let mut crlf = 0usize;
+        let mut lf_only = 0usize;
+        let bytes = content.as_bytes();
+        for i in 0..bytes.len() {
+            if bytes[i] == b'\n' {
+                if i > 0 && bytes[i - 1] == b'\r' {
+                    crlf += 1;
+                } else {
+                    lf_only += 1;
+                }
+            }
+        }
+        crlf > lf_only
     }
 
     fn node_path(node: roxmltree::Node) -> String {
@@ -55,8 +74,12 @@ impl XmlDriver {
         format!("/{}", parts.join("/"))
     }
 
+    /// 风格化序列化：匹配 Actions IDE 文件的固定格式——
+    /// 4 空格缩进、属性保持文档顺序（`name=` 在前）、自闭合带空格 ` />`。
+    /// 由于 .ui 由软件生成、格式固定，未修改元素经此序列化后与原文逐字节一致，
+    /// 语义合并的文本 diff 只包含真正变化的部分。
     fn element_to_string(node: roxmltree::Node, indent: usize) -> String {
-        let pad = "  ".repeat(indent);
+        let pad = "    ".repeat(indent);
         let tag = node.tag_name().name();
 
         let attrs: Vec<String> = node
@@ -77,7 +100,7 @@ impl XmlDriver {
             .collect();
 
         if element_children.is_empty() && text.is_empty() {
-            format!("{pad}<{tag}{attr_str}/>")
+            format!("{pad}<{tag}{attr_str} />")
         } else if element_children.is_empty() {
             format!("{pad}<{tag}{attr_str}>{}</{tag}>", Self::escape_xml(text))
         } else {
@@ -86,7 +109,7 @@ impl XmlDriver {
                 let _ = writeln!(
                     result,
                     "{}{}",
-                    "  ".repeat(indent + 1),
+                    "    ".repeat(indent + 1),
                     Self::escape_xml(text)
                 );
             }
@@ -226,16 +249,23 @@ impl XmlDriver {
         let theirs_attrs: HashMap<&str, &str> =
             theirs.attributes().map(|a| (a.name(), a.value())).collect();
 
-        let all_attr_keys: HashSet<&str> = base_attrs
-            .keys()
-            .chain(ours_attrs.keys())
-            .chain(theirs_attrs.keys())
-            .copied()
-            .collect();
+        // 属性顺序：base 原始顺序优先，新增属性按 ours 后 theirs 追加
+        // （保证未修改元素序列化后与原文逐字节一致）
+        let mut attr_order: Vec<&str> = base.attributes().map(|a| a.name()).collect();
+        for a in ours.attributes() {
+            if !attr_order.contains(&a.name()) {
+                attr_order.push(a.name());
+            }
+        }
+        for a in theirs.attributes() {
+            if !attr_order.contains(&a.name()) {
+                attr_order.push(a.name());
+            }
+        }
 
         let mut merged_attrs: Vec<(String, String)> = Vec::new();
 
-        for key in &all_attr_keys {
+        for key in attr_order {
             let bv = base_attrs.get(key).copied();
             let ov = ours_attrs.get(key).copied();
             let tv = theirs_attrs.get(key).copied();
@@ -293,6 +323,8 @@ impl XmlDriver {
                     merged_children.push(Self::element_to_string(t, indent + 1));
                 }
                 (None, Some(o), Some(t)) => {
+                    // 两个分支在 base 末尾之外（同位置）各自新增了元素：
+                    // o == t → 同一新增（去重）；o != t → 两个独立新增，都保留。
                     merged_children.push(Self::element_to_string(o, indent + 1));
                     if o.tag_name().name() != t.tag_name().name()
                         || Self::element_to_string(o, 0) != Self::element_to_string(t, 0)
@@ -315,6 +347,12 @@ impl XmlDriver {
                             }
                         } else {
                             merged_children.push(Self::element_to_string(o, indent + 1));
+                            // 如果两个第一个元素的内容不同，则都保留
+                            if Self::element_to_string(o, 0)
+                                != Self::element_to_string(t, 0)
+                            {
+                                merged_children.push(Self::element_to_string(t, indent + 1));
+                            }
                         }
                     } else if ot == bt {
                         merged_children.push(Self::element_to_string(t, indent + 1));
@@ -327,7 +365,7 @@ impl XmlDriver {
             }
         }
 
-        let pad = "  ".repeat(indent);
+        let pad = "    ".repeat(indent);
         let attr_str = if merged_attrs.is_empty() {
             String::new()
         } else {
@@ -339,7 +377,7 @@ impl XmlDriver {
         };
 
         if merged_children.is_empty() && merged_text.is_empty() {
-            Ok(Some(format!("{pad}<{tag}{attr_str}/>")))
+            Ok(Some(format!("{pad}<{tag}{attr_str} />")))
         } else if merged_children.is_empty() {
             Ok(Some(format!(
                 "{pad}<{tag}{attr_str}>{}</{tag}>",
@@ -351,7 +389,7 @@ impl XmlDriver {
                 let _ = writeln!(
                     result,
                     "{}{}",
-                    "  ".repeat(indent + 1),
+                    "    ".repeat(indent + 1),
                     Self::escape_xml(&merged_text)
                 );
             }
@@ -390,19 +428,19 @@ impl XmlDriver {
     }
 }
 
-impl Default for XmlDriver {
+impl Default for UiDriver {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl SutureDriver for XmlDriver {
+impl SutureDriver for UiDriver {
     fn name(&self) -> &'static str {
-        "XML"
+        "UI"
     }
 
     fn supported_extensions(&self) -> &[&str] {
-        &[".xml"]
+        &[".ui"]
     }
 
     fn diff(
@@ -453,14 +491,29 @@ impl SutureDriver for XmlDriver {
         let theirs_doc = roxmltree::Document::parse(theirs)
             .map_err(|e| DriverError::ParseError(e.to_string()))?;
 
-        let has_declaration = Self::has_xml_declaration(base)
-            || Self::has_xml_declaration(ours)
-            || Self::has_xml_declaration(theirs);
+        // 文档级前导内容（XML 声明、注释、空白）：保留原文（优先 base）。
+        // root 元素之前的文本不属于合并语义范围，原样保留即可。
+        let base_leading = &base[..base_doc.root_element().range().start];
+        let ours_leading = &ours[..ours_doc.root_element().range().start];
+        let theirs_leading = &theirs[..theirs_doc.root_element().range().start];
+        let leading = if !base_leading.trim().is_empty() {
+            base_leading
+        } else if !ours_leading.trim().is_empty() {
+            ours_leading
+        } else {
+            theirs_leading
+        };
+
+        // 尾随换行：仅当某一输入文件以换行结尾时保留（风格保持）
+        let trailing_newline = base.ends_with('\n')
+            || ours.ends_with('\n')
+            || theirs.ends_with('\n');
+
+        // 行尾风格：输入为 CRLF 则输出 CRLF（.ui 由 Windows 工具生成）
+        let crlf = Self::uses_crlf(base) || Self::uses_crlf(ours) || Self::uses_crlf(theirs);
 
         let mut result = String::new();
-        if has_declaration {
-            result.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
-        }
+        result.push_str(leading);
         Self::merge_elements(
             base_doc.root_element(),
             ours_doc.root_element(),
@@ -470,8 +523,15 @@ impl SutureDriver for XmlDriver {
         .map_or_else(
             || Ok(None),
             |merged| {
+                let merged = if crlf {
+                    merged.replace('\n', "\r\n")
+                } else {
+                    merged
+                };
                 result.push_str(&merged);
-                result.push('\n');
+                if trailing_newline {
+                    result.push('\n');
+                }
                 Ok(Some(result))
             },
         )
@@ -483,7 +543,7 @@ fn collect_all_paths(node: roxmltree::Node, out: &mut Vec<SemanticChange>) {
         return;
     }
 
-    let path = XmlDriver::node_path(node);
+    let path = UiDriver::node_path(node);
 
     for attr in node.attributes() {
         out.push(SemanticChange::Added {
@@ -514,20 +574,20 @@ mod tests {
     use proptest::proptest;
 
     #[test]
-    fn test_xml_driver_name() {
-        let driver = XmlDriver::new();
-        assert_eq!(driver.name(), "XML");
+    fn test_ui_driver_name() {
+        let driver = UiDriver::new();
+        assert_eq!(driver.name(), "UI");
     }
 
     #[test]
-    fn test_xml_driver_extensions() {
-        let driver = XmlDriver::new();
-        assert_eq!(driver.supported_extensions(), &[".xml"]);
+    fn test_ui_driver_extensions() {
+        let driver = UiDriver::new();
+        assert_eq!(driver.supported_extensions(), &[".ui"]);
     }
 
     #[test]
     fn test_xml_diff_modified_text() {
-        let driver = XmlDriver::new();
+        let driver = UiDriver::new();
         let old = r#"<root><name>Alice</name></root>"#;
         let new = r#"<root><name>Bob</name></root>"#;
 
@@ -541,7 +601,7 @@ mod tests {
 
     #[test]
     fn test_xml_diff_added_element() {
-        let driver = XmlDriver::new();
+        let driver = UiDriver::new();
         let old = r#"<root><name>Alice</name></root>"#;
         let new = r#"<root><name>Alice</name><email>alice@example.com</email></root>"#;
 
@@ -554,7 +614,7 @@ mod tests {
 
     #[test]
     fn test_xml_diff_removed_element() {
-        let driver = XmlDriver::new();
+        let driver = UiDriver::new();
         let old = r#"<root><name>Alice</name><email>alice@example.com</email></root>"#;
         let new = r#"<root><name>Alice</name></root>"#;
 
@@ -567,7 +627,7 @@ mod tests {
 
     #[test]
     fn test_xml_diff_attribute_change() {
-        let driver = XmlDriver::new();
+        let driver = UiDriver::new();
         let old = r#"<root><item id="1">foo</item></root>"#;
         let new = r#"<root><item id="2">foo</item></root>"#;
 
@@ -581,7 +641,7 @@ mod tests {
 
     #[test]
     fn test_xml_format_diff() {
-        let driver = XmlDriver::new();
+        let driver = UiDriver::new();
         let old = r#"<root><name>Alice</name></root>"#;
         let new = r#"<root><name>Bob</name><email>bob@example.com</email></root>"#;
 
@@ -592,7 +652,7 @@ mod tests {
 
     #[test]
     fn test_xml_merge_no_conflict() {
-        let driver = XmlDriver::new();
+        let driver = UiDriver::new();
         let base = r#"<root><a>1</a><b>2</b><c>3</c></root>"#;
         let ours = r#"<root><a>10</a><b>2</b><c>3</c></root>"#;
         let theirs = r#"<root><a>1</a><b>2</b><c>30</c></root>"#;
@@ -606,7 +666,7 @@ mod tests {
 
     #[test]
     fn test_xml_merge_conflict() {
-        let driver = XmlDriver::new();
+        let driver = UiDriver::new();
         let base = r#"<root><key>original</key></root>"#;
         let ours = r#"<root><key>ours</key></root>"#;
         let theirs = r#"<root><key>theirs</key></root>"#;
@@ -617,7 +677,7 @@ mod tests {
 
     #[test]
     fn test_correctness_merge_determinism() {
-        let driver = XmlDriver::new();
+        let driver = UiDriver::new();
         let base = r#"<root><a>1</a><b>2</b><c>3</c></root>"#;
         let ours = r#"<root><a>10</a><b>2</b><d>4</d></root>"#;
         let theirs = r#"<root><a>1</a><b>20</b><e>5</e></root>"#;
@@ -628,15 +688,15 @@ mod tests {
         if let (Some(m1), Some(m2)) = (r1, r2) {
             let d1 = roxmltree::Document::parse(&m1).unwrap();
             let d2 = roxmltree::Document::parse(&m2).unwrap();
-            let s1 = XmlDriver::element_to_string(d1.root(), 0);
-            let s2 = XmlDriver::element_to_string(d2.root(), 0);
+            let s1 = UiDriver::element_to_string(d1.root(), 0);
+            let s2 = UiDriver::element_to_string(d2.root(), 0);
             assert_eq!(s1, s2, "merge must be commutative");
         }
     }
 
     #[test]
     fn test_correctness_merge_idempotency() {
-        let driver = XmlDriver::new();
+        let driver = UiDriver::new();
         let base = r#"<root><a>1</a><b>2</b></root>"#;
         let ours = r#"<root><a>10</a><b>2</b><c>3</c></root>"#;
 
@@ -649,7 +709,7 @@ mod tests {
 
     #[test]
     fn test_correctness_base_equals_ours() {
-        let driver = XmlDriver::new();
+        let driver = UiDriver::new();
         let base = r#"<root><a>1</a><b>2</b></root>"#;
         let theirs = r#"<root><a>10</a><b>2</b><c>3</c></root>"#;
 
@@ -662,7 +722,7 @@ mod tests {
 
     #[test]
     fn test_correctness_base_equals_theirs() {
-        let driver = XmlDriver::new();
+        let driver = UiDriver::new();
         let base = r#"<root><a>1</a><b>2</b></root>"#;
         let ours = r#"<root><a>10</a><b>2</b><c>3</c></root>"#;
 
@@ -675,7 +735,7 @@ mod tests {
 
     #[test]
     fn test_correctness_all_equal() {
-        let driver = XmlDriver::new();
+        let driver = UiDriver::new();
         let content = r#"<root><x>42</x><y>hello</y></root>"#;
 
         let result = driver.merge(content, content, content).unwrap();
@@ -687,7 +747,7 @@ mod tests {
 
     #[test]
     fn test_correctness_both_add_different_elements() {
-        let driver = XmlDriver::new();
+        let driver = UiDriver::new();
         let base = r#"<root><shared>true</shared></root>"#;
         let ours = r#"<root><shared>true</shared><from_ours>100</from_ours></root>"#;
         let theirs = r#"<root><shared>true</shared><from_theirs>200</from_theirs></root>"#;
@@ -702,7 +762,7 @@ mod tests {
 
     #[test]
     fn test_correctness_both_modify_different_elements() {
-        let driver = XmlDriver::new();
+        let driver = UiDriver::new();
         let base = r#"<root><a>1</a><b>2</b><c>3</c></root>"#;
         let ours = r#"<root><a>10</a><b>2</b><c>3</c></root>"#;
         let theirs = r#"<root><a>1</a><b>2</b><c>30</c></root>"#;
@@ -717,7 +777,7 @@ mod tests {
 
     #[test]
     fn test_correctness_both_modify_same_element_same_value() {
-        let driver = XmlDriver::new();
+        let driver = UiDriver::new();
         let base = r#"<root><key>original</key></root>"#;
         let ours = r#"<root><key>changed</key></root>"#;
         let theirs = r#"<root><key>changed</key></root>"#;
@@ -730,7 +790,7 @@ mod tests {
 
     #[test]
     fn test_correctness_both_modify_same_element_different_value() {
-        let driver = XmlDriver::new();
+        let driver = UiDriver::new();
         let base = r#"<root><key>original</key></root>"#;
         let ours = r#"<root><key>ours</key></root>"#;
         let theirs = r#"<root><key>theirs</key></root>"#;
@@ -741,7 +801,7 @@ mod tests {
 
     #[test]
     fn test_correctness_deeply_nested_merge() {
-        let driver = XmlDriver::new();
+        let driver = UiDriver::new();
         let base = r#"<root><l1><l2><l3><a>1</a><b>2</b><c>3</c></l3></l2></l1></root>"#;
         let ours = r#"<root><l1><l2><l3><a>10</a><b>2</b><c>3</c></l3></l2></l1></root>"#;
         let theirs = r#"<root><l1><l2><l3><a>1</a><b>2</b><c>30</c></l3></l2></l1></root>"#;
@@ -756,7 +816,7 @@ mod tests {
 
     #[test]
     fn test_correctness_unicode_text() {
-        let driver = XmlDriver::new();
+        let driver = UiDriver::new();
         let base = r#"<root><名前>太郎</名前><age>30</age></root>"#;
         let ours = r#"<root><名前>太郎</名前><age>31</age></root>"#;
         let theirs = r#"<root><名前>次郎</名前><age>30</age></root>"#;
@@ -770,7 +830,7 @@ mod tests {
 
     #[test]
     fn test_correctness_large_file() {
-        let driver = XmlDriver::new();
+        let driver = UiDriver::new();
         let mut base_children = String::new();
         let mut ours_children = String::new();
         let mut theirs_children = String::new();
@@ -809,7 +869,7 @@ mod tests {
 
     #[test]
     fn test_correctness_output_validity() {
-        let driver = XmlDriver::new();
+        let driver = UiDriver::new();
         let base = r#"<?xml version="1.0"?><root><a>1</a><b>2</b></root>"#;
         let ours = r#"<?xml version="1.0"?><root><a>10</a><b>2</b></root>"#;
         let theirs = r#"<?xml version="1.0"?><root><a>1</a><b>20</b></root>"#;
@@ -817,7 +877,10 @@ mod tests {
         let result = driver.merge(base, ours, theirs).unwrap();
         assert!(result.is_some());
         let merged_str = result.unwrap();
-        assert!(merged_str.contains("<?xml version=\"1.0\" encoding=\"UTF-8\"?>"));
+        assert!(
+            merged_str.contains("<?xml version=\"1.0\"?>"),
+            "original XML declaration must be preserved"
+        );
         assert!(merged_str.contains(">10<"));
         assert!(merged_str.contains(">20<"));
         assert!(merged_str.contains("<root"));
@@ -826,7 +889,7 @@ mod tests {
 
     #[test]
     fn test_correctness_attribute_merge_same_element() {
-        let driver = XmlDriver::new();
+        let driver = UiDriver::new();
         let base = r#"<root><item id="1" name="a">text</item></root>"#;
         let ours = r#"<root><item id="2" name="a">text</item></root>"#;
         let theirs = r#"<root><item id="1" name="b">text</item></root>"#;
@@ -840,7 +903,7 @@ mod tests {
 
     #[test]
     fn test_correctness_attribute_conflict() {
-        let driver = XmlDriver::new();
+        let driver = UiDriver::new();
         let base = r#"<root><item id="1">text</item></root>"#;
         let ours = r#"<root><item id="2">text</item></root>"#;
         let theirs = r#"<root><item id="3">text</item></root>"#;
@@ -854,7 +917,7 @@ mod tests {
 
     #[test]
     fn test_correctness_attribute_added_by_one_side() {
-        let driver = XmlDriver::new();
+        let driver = UiDriver::new();
         let base = r#"<root><item id="1">text</item></root>"#;
         let ours = r#"<root><item id="1" color="red">text</item></root>"#;
         let theirs = r#"<root><item id="1">text</item></root>"#;
@@ -867,7 +930,7 @@ mod tests {
 
     #[test]
     fn test_correctness_attribute_removed_by_one_side() {
-        let driver = XmlDriver::new();
+        let driver = UiDriver::new();
         let base = r#"<root><item id="1" color="red">text</item></root>"#;
         let ours = r#"<root><item id="1">text</item></root>"#;
         let theirs = r#"<root><item id="1" color="red">text</item></root>"#;
@@ -883,7 +946,7 @@ mod tests {
 
     #[test]
     fn test_correctness_namespace_handling() {
-        let driver = XmlDriver::new();
+        let driver = UiDriver::new();
         let base = r#"<root xmlns:ns="http://example.com"><ns:item>text</ns:item></root>"#;
         let ours = r#"<root xmlns:ns="http://example.com"><ns:item>modified</ns:item></root>"#;
         let theirs = r#"<root xmlns:ns="http://example.com"><ns:item>text</ns:item></root>"#;
@@ -896,7 +959,7 @@ mod tests {
 
     #[test]
     fn test_correctness_cdata_section() {
-        let driver = XmlDriver::new();
+        let driver = UiDriver::new();
         let base = r#"<root><data><![CDATA[original]]></data></root>"#;
         let ours = r#"<root><data><![CDATA[ours]]></data></root>"#;
         let theirs = r#"<root><data><![CDATA[original]]></data></root>"#;
@@ -909,7 +972,7 @@ mod tests {
 
     #[test]
     fn test_correctness_empty_elements() {
-        let driver = XmlDriver::new();
+        let driver = UiDriver::new();
         let base = r#"<root><a/><b/></root>"#;
         let ours = r#"<root><a>filled</a><b/></root>"#;
         let theirs = r#"<root><a/><b>filled</b></root>"#;
@@ -922,7 +985,7 @@ mod tests {
 
     #[test]
     fn test_correctness_both_add_same_element_different_content() {
-        let driver = XmlDriver::new();
+        let driver = UiDriver::new();
         let base = r#"<root><existing>keep</existing></root>"#;
         let ours = r#"<root><existing>keep</existing><new>ours</new></root>"#;
         let theirs = r#"<root><existing>keep</existing><new>theirs</new></root>"#;
@@ -938,8 +1001,85 @@ mod tests {
     }
 
     #[test]
+    fn test_correctness_both_insert_different_elements_at_middle() {
+        // 两个分支在 base 中间位置插入同 tag 的不同元素（真实丢失场景的最小复现）：
+        // ours/theirs 都在 <b> 之后插入 <new>，base 的 <c> 被挤到后续索引。
+        let driver = UiDriver::new();
+        let base = r#"<root><a>1</a><b>2</b><c>3</c></root>"#;
+        let ours = r#"<root><a>1</a><b>2</b><new name="ours">x</new><c>3</c></root>"#;
+        let theirs = r#"<root><a>1</a><b>2</b><new name="theirs">y</new><c>3</c></root>"#;
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(
+            merged.contains(r#"name="ours""#),
+            "ours inserted element must be present"
+        );
+        assert!(
+            merged.contains(r#"name="theirs""#),
+            "theirs inserted element must not be lost"
+        );
+        assert!(merged.contains(">3<"), "base element <c> must be preserved");
+        assert!(merged.contains(">2<"), "base element <b> must be preserved");
+    }
+
+    #[test]
+    fn test_correctness_both_insert_same_element_at_middle() {
+        // 两个分支在相同位置插入完全相同的内容 → 去重，只保留一个。
+        let driver = UiDriver::new();
+        let base = r#"<root><a>1</a><b>2</b><c>3</c></root>"#;
+        let ours = r#"<root><a>1</a><b>2</b><new>dup</new><c>3</c></root>"#;
+        let theirs = r#"<root><a>1</a><b>2</b><new>dup</new><c>3</c></root>"#;
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert_eq!(merged.matches("<new>").count(), 1, "identical insert dedup");
+        assert!(merged.contains(">dup<"));
+        assert!(merged.contains(">3<"));
+    }
+
+    #[test]
+    fn test_ui_style_output() {
+        // 风格化输出：4 空格缩进、自闭合带空格 ` />`、属性保序（name 在前）
+        let driver = UiDriver::new();
+        let base = r#"<ui-rad><property name="w" value="0x1" /><scene><property name="name" value="S1" /></scene></ui-rad>"#;
+        let ours = r#"<ui-rad><property name="w" value="0x1" /><scene><property name="name" value="S1" /></scene><scene><property name="name" value="SCENE_A" /></scene></ui-rad>"#;
+        let theirs = r#"<ui-rad><property name="w" value="0x1" /><scene><property name="name" value="S1" /></scene><scene><property name="name" value="SCENE_B" /></scene></ui-rad>"#;
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        // 4 空格缩进 + 属性顺序（name 在前 value 在后）+ 自闭合 ` />`
+        assert!(merged.contains("    <property name=\"w\" value=\"0x1\" />"));
+        assert!(merged.contains("    <scene>"));
+        assert!(merged.contains("        <property name=\"name\" value=\"S1\" />"));
+        assert!(merged.contains("        <property name=\"name\" value=\"SCENE_A\" />"));
+        assert!(merged.contains("        <property name=\"name\" value=\"SCENE_B\" />"));
+        assert!(merged.contains("    </scene>"));
+    }
+
+    #[test]
+    fn test_ui_attr_order_preserved() {
+        // 未修改元素的属性顺序应保持 base 顺序（序列化后与原文一致）
+        let driver = UiDriver::new();
+        let base = r#"<ui-rad><property name="x" value="1" /><property name="y" value="2" /></ui-rad>"#;
+        let ours = r#"<ui-rad><property name="x" value="1" /><property name="y" value="2" /></ui-rad>"#;
+        let theirs = r#"<ui-rad><property name="x" value="1" /><property name="y" value="2" /></ui-rad>"#;
+
+        let result = driver.merge(base, ours, theirs).unwrap();
+        assert!(result.is_some());
+        let merged = result.unwrap();
+        assert!(
+            merged.contains("name=\"x\" value=\"1\""),
+            "attr order preserved (name first)"
+        );
+    }
+
+    #[test]
     fn test_correctness_mixed_text_and_child_modifications() {
-        let driver = XmlDriver::new();
+        let driver = UiDriver::new();
         let base = r#"<root><parent>base_text<child>1</child></parent></root>"#;
         let ours = r#"<root><parent>ours_text<child>1</child></parent></root>"#;
         let theirs = r#"<root><parent>base_text<child>10</child></parent></root>"#;
@@ -953,7 +1093,7 @@ mod tests {
 
     #[test]
     fn test_correctness_merge_associativity() {
-        let driver = XmlDriver::new();
+        let driver = UiDriver::new();
         let base = r#"<root><a>1</a><b>2</b><c>3</c><d>4</d></root>"#;
         let a = r#"<root><a>10</a><b>2</b><c>3</c><d>4</d></root>"#;
         let b = r#"<root><a>1</a><b>20</b><c>3</c><d>4</d></root>"#;
@@ -979,8 +1119,8 @@ mod tests {
 
         let d_left = roxmltree::Document::parse(&merge_left).unwrap();
         let d_right = roxmltree::Document::parse(&merge_right).unwrap();
-        let s_left = XmlDriver::element_to_string(d_left.root(), 0);
-        let s_right = XmlDriver::element_to_string(d_right.root(), 0);
+        let s_left = UiDriver::element_to_string(d_left.root(), 0);
+        let s_right = UiDriver::element_to_string(d_right.root(), 0);
 
         assert_eq!(
             s_left, s_right,
@@ -996,7 +1136,7 @@ mod tests {
         #[test]
         fn test_merge_identity(content in "[a-z0-9]+") {
             let xml = format!("<root>{}</root>", content);
-            let driver = XmlDriver::new();
+            let driver = UiDriver::new();
             let result = driver.merge(&xml, &xml, &xml).unwrap();
             prop_assert!(result.is_some());
             let merged = result.unwrap();
@@ -1010,7 +1150,7 @@ mod tests {
         ) {
             let base_xml = format!("<root>{}</root>", base);
             let modified_xml = format!("<root>{}</root>", modified);
-            let driver = XmlDriver::new();
+            let driver = UiDriver::new();
             let result = driver.merge(&base_xml, &modified_xml, &modified_xml).unwrap();
             prop_assert!(result.is_some());
             let merged = result.unwrap();
@@ -1031,7 +1171,7 @@ mod tests {
             let ours = format!("<{tag} {attr1}=\"1\"><{child1}>{val1}</{child1}><{child2}>{val2}</{child2}></{tag}>");
             let theirs = format!("<{tag}><{child1}>{val1}</{child1}><{child2}>{val3}</{child2}></{tag}>");
 
-            let driver = XmlDriver::new();
+            let driver = UiDriver::new();
             let result = driver.merge(&base, &ours, &theirs);
             prop_assert!(result.is_ok());
             prop_assert!(result.unwrap().is_some());
@@ -1047,20 +1187,20 @@ mod fuzz {
     proptest! {
         #[test]
         fn proptest_crash_resistance(input in proptest::string::string_regex("[a-zA-Z0-9 \\t\\n.,;:!\\-\\+\\*\\/\\(\\)\\[\\]\\{\\}<>\"'=&#~_@]{0,1000}").unwrap()) {
-            let driver = XmlDriver::new();
+            let driver = UiDriver::new();
             let _ = driver.diff(None, &input);
         }
 
         #[test]
         fn proptest_arbitrary_bytes_dont_panic(input in proptest::collection::vec(proptest::arbitrary::any::<u8>(), 0..5000)) {
-            let driver = XmlDriver::new();
+            let driver = UiDriver::new();
             let s = String::from_utf8_lossy(&input);
             let _ = driver.diff(None, &s);
         }
 
         #[test]
         fn proptest_deterministic(input in proptest::string::string_regex("[a-zA-Z0-9 \\t\\n]{0,500}").unwrap()) {
-            let driver = XmlDriver::new();
+            let driver = UiDriver::new();
             let r1 = driver.diff(None, &input);
             let r2 = driver.diff(None, &input);
             assert_eq!(format!("{:?}", r1), format!("{:?}", r2))
