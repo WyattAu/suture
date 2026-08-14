@@ -105,7 +105,7 @@ $Script:Patterns = @(
 )
 
 # 附加 attributes 属性条目: 模式 -> 属性(与上面的 merge= 条目共存于 attributes 文件)
-# *.ui(Qt Designer 界面文件)本质是 XML,但禁止 git 行尾转换(-text),
+# *.ui(Actions IDE 界面文件)本质是 XML,但禁止 git 行尾转换(-text),
 # 避免 CRLF/LF 规范化破坏文件;合并由 ui driver处理(两者互不冲突).
 $Script:ExtraAttributes = @(
     @{ Pattern = "*.ui"; Attr = "-text" }
@@ -281,7 +281,7 @@ function Download-SutureBinary {
     # 官方资产命名格式: suture-<arch>-<os>.[zip|tar.gz](如 suture-x86_64-windows.zip)
     $arch = if ([Environment]::Is64BitOperatingSystem) { "x86_64" } else { "aarch64" }
     $os = if ($env:OS -match "Windows") { "windows" } elseif ($IsLinux) { "linux" } else { "macos" }
-    $base = "https://github.com/WyattAu/suture/releases/latest/download"
+    $base = "https://github.com/Gocql022/suture/releases/latest/download"
     $candidates = @(
         @{ Name = "suture-${arch}-${os}.zip";    Kind = "zip" },
         @{ Name = "suture-${arch}-${os}.tar.gz"; Kind = "tar" }
@@ -474,13 +474,13 @@ function Configure-Drivers {
     $scopeLabel = if ($RepoOnly) { "local (current repo)" } else { "global" }
     Info "Configuring Git merge drivers ($scopeLabel)..."
 
-    # 正斜杠 + 引号,确保 driver 命令在 MSYS shell 解析下不被破坏
-    $sutureFwd = ($Suture -replace "\\", "/")
-    $sutureQ = '"' + $sutureFwd + '"'
-
+    # 使用相对命令名 suture(依赖 PATH):安装流程已先把安装目录加入 PATH,
+    # 且合并时 git 用 sh 执行 driver 命令,相对命令名最可靠.
+    # 不要用带引号的绝对路径:git config --get 读取时会剥离引号,路径含空格时
+    # sh 按空格拆词,报 "No such file or directory",driver 静默失败.
     foreach ($name in $Script:Drivers.Keys) {
         $d = $Script:Drivers[$name]
-        $cmd = "$sutureQ merge-file --driver $($d.Driver) %O %A %B -o %A"
+        $cmd = "suture merge-file --driver $($d.Driver) %O %A %B -o %A"
         Invoke-GitConfig @("config", $scope, "merge.$name.name", $d.Name) | Out-Null
         Invoke-GitConfig @("config", $scope, "merge.$name.driver", $cmd) | Out-Null
         if ($d.Binary) {

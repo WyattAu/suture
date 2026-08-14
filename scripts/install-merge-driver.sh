@@ -154,7 +154,7 @@ configure_drivers() {
 
     git config $scope_flag merge.ui.name "Suture UI merge driver"
     git config $scope_flag merge.ui.driver "suture merge-file --driver ui %O %A %B -o %A"
-    ok "  UI driver configured (Qt Designer .ui)"
+    ok "  UI driver configured (Actions IDE .ui)"
 
     git config $scope_flag merge.csv.name "Suture CSV merge driver"
     git config $scope_flag merge.csv.driver "suture merge-file --driver csv %O %A %B -o %A"
