@@ -313,8 +313,12 @@ jobs:
           cache-to: type=gha,mode=max
 
   # ── Create GitHub Release ────────────────────────────────────────
+  # 注意:docker job 被 if:false 禁用后会被标记为 skipped,而依赖它的 job
+  # 默认也会连带跳过(即使其他依赖都成功)。因此 release 不依赖 docker,
+  # 并用 !cancelled() 确保只要未被取消就一定执行。
   release:
-    needs: [build, publish-crates, publish-npm, publish-pip, source-tarball, docker]
+    needs: [build, publish-crates, publish-npm, publish-pip, source-tarball]
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
