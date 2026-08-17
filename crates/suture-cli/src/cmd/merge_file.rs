@@ -70,7 +70,8 @@ pub async fn cmd_merge_file(
     if let Some(driver) = driver {
         match driver.merge(&base_content, &ours_content, &theirs_content) {
             Ok(Some(merged)) => {
-                // Clean semantic merge
+                // 先写输出：即使含冲突标记也必须写入（git merge driver 需要
+                // %A 的内容作为冲突状态的工作区文件）。
                 if let Some(path) = output_path {
                     std::fs::write(path, merged.as_bytes())?
                 } else {
@@ -86,6 +87,16 @@ pub async fn cmd_merge_file(
                     } else {
                         print!("{merged}");
                     }
+                }
+                // 部分合并：语义驱动可能输出带冲突标记的内容（如 UI driver
+                // 局部降级——冲突只发生在某个子树，其余部分已语义合并）。
+                // 含标记 → 按冲突处理（exit 1，git 保留该文件为冲突状态）。
+                let conflicts = count_conflict_markers(&merged);
+                if conflicts > 0 {
+                    eprintln!(
+                        "{ANSI_RED}Merge conflicts: {conflicts} conflict(s), 0 auto-merged{ANSI_RESET}"
+                    );
+                    std::process::exit(1);
                 }
                 eprintln!(
                     "{ANSI_GREEN}Merged via {} driver (semantic merge){ANSI_RESET}",
@@ -170,4 +181,16 @@ fn is_binary_extension(ext: &str) -> bool {
         ext,
         "docx" | "docm" | "xlsx" | "xlsm" | "pptx" | "pptm" | "pdf" | "otio"
     )
+}
+
+/// 统计语义合并输出中的冲突标记数量。
+///
+/// 语义驱动（如 UI driver）采用局部降级策略：无法自动解决的子树输出
+/// `<<<<<<< ours` / `=======` / `>>>>>>> theirs` 标记行，其余部分正常合并。
+/// 调用方需据此判断合并是否干净。
+fn count_conflict_markers(content: &str) -> usize {
+    content
+        .lines()
+        .filter(|l| l.starts_with("<<<<<<< "))
+        .count()
 }

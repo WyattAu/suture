@@ -12,10 +12,6 @@ impl UiDriver {
         Self
     }
 
-    fn has_xml_declaration(content: &str) -> bool {
-        content.trim_start().starts_with("<?xml")
-    }
-
     fn escape_xml(s: &str) -> String {
         s.replace('&', "&amp;")
             .replace('<', "&lt;")
@@ -101,6 +97,53 @@ impl UiDriver {
             let _ = write!(result, "{pad}</{tag}>");
             result
         }
+    }
+
+    /// 局部降级合并：当某子树无法语义合并（属性冲突、元素 tag 三方不同、
+    /// 文本三方不同等）时，对该子树做行级三方合并，输出冲突标记。
+    ///
+    /// 关键设计：**不再让整个文件 decline 到行级合并**——否则两个分支在
+    /// 同一位置新增的不同元素（如新场景）会被行级合并误判为冲突。只把
+    /// 冲突限制在最小子树内，其余部分继续走语义合并。
+    ///
+    /// 输出规则：内容行按 `indent` 缩进（与兄弟元素对齐）；冲突标记行
+    /// （`<<<<<<<`/`=======`/`>>>>>>>`）**顶格输出**——VS Code/git 识别
+    /// 冲突标记要求标记位于行首。用户解决冲突删除标记后文件恢复合法。
+    fn merge_subtree_lines(
+        base: roxmltree::Node,
+        ours: roxmltree::Node,
+        theirs: roxmltree::Node,
+        indent: usize,
+    ) -> String {
+        let b = Self::element_to_string(base, 0);
+        let o = Self::element_to_string(ours, 0);
+        let t = Self::element_to_string(theirs, 0);
+        let b_lines: Vec<&str> = b.lines().collect();
+        let o_lines: Vec<&str> = o.lines().collect();
+        let t_lines: Vec<&str> = t.lines().collect();
+        let result = suture_core::engine::merge::three_way_merge_lines(
+            &b_lines,
+            &o_lines,
+            &t_lines,
+            "ours",
+            "theirs",
+        );
+        let pad = "    ".repeat(indent);
+        result
+            .lines
+            .iter()
+            .map(|l| {
+                if l.starts_with("<<<<<<<")
+                    || l == "======="
+                    || l.starts_with(">>>>>>>")
+                {
+                    l.clone()
+                } else {
+                    format!("{pad}{l}")
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     fn diff_nodes(old: roxmltree::Node, new: roxmltree::Node) -> Vec<SemanticChange> {
@@ -205,7 +248,8 @@ impl UiDriver {
         let theirs_tag = theirs.tag_name().name();
 
         if ours_tag != theirs_tag {
-            return Ok(None);
+            // 两分支把同一元素改成不同 tag：无法语义合并 → 局部行级合并
+            return Ok(Some(Self::merge_subtree_lines(base, ours, theirs, indent)));
         }
         let tag = ours_tag;
 
@@ -220,7 +264,8 @@ impl UiDriver {
         } else if theirs_text == base_text {
             ours_text.to_owned()
         } else {
-            return Ok(None);
+            // 文本三方各不同：无法语义合并 → 局部行级合并
+            return Ok(Some(Self::merge_subtree_lines(base, ours, theirs, indent)));
         };
 
         let base_attrs: HashMap<&str, &str> =
@@ -261,7 +306,15 @@ impl UiDriver {
                 (Some(b), Some(o), Some(t)) if t == b => {
                     merged_attrs.push((key.to_string(), o.to_owned()));
                 }
-                (Some(_) | None, Some(_), Some(_)) => return Ok(None),
+                (Some(_) | None, Some(_), Some(_)) => {
+                    // 同一属性两边改成不同值（如场景的 x 坐标冲突）：
+                    // 局部降级为该元素子树的行级合并，只对冲突行输出标记。
+                    // 修复前此处 return Ok(None) 会让整个文件 decline 到行级
+                    // 合并，导致同位置新增的不同场景被误判为冲突。
+                    return Ok(Some(Self::merge_subtree_lines(
+                        base, ours, theirs, indent,
+                    )));
+                }
                 (Some(_) | None, None, Some(t)) => {
                     merged_attrs.push((key.to_string(), t.to_owned()));
                 }
@@ -324,7 +377,11 @@ impl UiDriver {
                             if let Some(merged) = Self::merge_elements(b, o, t, indent + 1)? {
                                 merged_children.push(merged);
                             } else {
-                                return Ok(None);
+                                // 子元素内部无法语义合并（属性/文本冲突）→
+                                // 对该子元素子树做局部行级合并，不向上传播
+                                merged_children.push(Self::merge_subtree_lines(
+                                    b, o, t, indent + 1,
+                                ));
                             }
                         } else {
                             merged_children.push(Self::element_to_string(o, indent + 1));
@@ -340,7 +397,8 @@ impl UiDriver {
                     } else if tt == bt {
                         merged_children.push(Self::element_to_string(o, indent + 1));
                     } else {
-                        return Ok(None);
+                        // 三方 tag 各不相同：无法语义合并 → 局部行级合并
+                        merged_children.push(Self::merge_subtree_lines(b, o, t, indent + 1));
                     }
                 }
             }
@@ -464,6 +522,13 @@ impl SutureDriver for UiDriver {
         Ok(lines.join("\n"))
     }
 
+    /// 语义三方合并。与 trait 默认契约（`None` = 冲突）不同：本 driver 采用
+    /// **局部降级**策略——无法语义合并的子树降级为行级合并（输出冲突标记），
+    /// 其余部分继续语义合并，因此只要三方可解析就返回 `Some`。
+    ///
+    /// 输出可能含 `<<<<<<<`/`=======`/`>>>>>>>` 冲突标记（标记行顶格）。
+    /// 调用方（`suture merge-file`）必须检测标记：含标记视为冲突，
+    /// 写入输出文件后以非 0 退出码结束，git 会保留该文件为冲突状态。
     fn merge(&self, base: &str, ours: &str, theirs: &str) -> Result<Option<String>, DriverError> {
         let base_doc =
             roxmltree::Document::parse(base).map_err(|e| DriverError::ParseError(e.to_string()))?;
@@ -647,16 +712,22 @@ mod tests {
         let ours = r#"<root><key>ours</key></root>"#;
         let theirs = r#"<root><key>theirs</key></root>"#;
 
+        // 局部降级：返回带冲突标记的部分合并结果，而非整体 decline
         let result = driver.merge(base, ours, theirs).unwrap();
-        assert!(result.is_none());
+        let merged = result.expect("partial merge produces conflict-marked output");
+        assert!(merged.contains("<<<<<<< ours"));
+        assert!(merged.contains(">>>>>>> theirs"));
+        assert!(merged.contains("ours"));
+        assert!(merged.contains("theirs"));
     }
 
     #[test]
     fn test_correctness_merge_determinism() {
         let driver = UiDriver::new();
+        // 无冲突场景：ours 改 <a>，theirs 改 <b> → 合并可交换
         let base = r#"<root><a>1</a><b>2</b><c>3</c></root>"#;
-        let ours = r#"<root><a>10</a><b>2</b><d>4</d></root>"#;
-        let theirs = r#"<root><a>1</a><b>20</b><e>5</e></root>"#;
+        let ours = r#"<root><a>10</a><b>2</b><c>3</c></root>"#;
+        let theirs = r#"<root><a>1</a><b>20</b><c>3</c></root>"#;
 
         let r1 = driver.merge(base, ours, theirs).unwrap();
         let r2 = driver.merge(base, theirs, ours).unwrap();
@@ -666,7 +737,7 @@ mod tests {
             let d2 = roxmltree::Document::parse(&m2).unwrap();
             let s1 = UiDriver::element_to_string(d1.root(), 0);
             let s2 = UiDriver::element_to_string(d2.root(), 0);
-            assert_eq!(s1, s2, "merge must be commutative");
+            assert_eq!(s1, s2, "clean merge must be commutative");
         }
     }
 
@@ -771,8 +842,12 @@ mod tests {
         let ours = r#"<root><key>ours</key></root>"#;
         let theirs = r#"<root><key>theirs</key></root>"#;
 
+        // 局部降级：文本三方各不同 → 带冲突标记的部分合并结果
         let result = driver.merge(base, ours, theirs).unwrap();
-        assert!(result.is_none());
+        let merged = result.expect("conflicting text changes produce marked output");
+        assert!(merged.contains("ours"));
+        assert!(merged.contains("theirs"));
+        assert!(merged.contains("<<<<<<< ours"));
     }
 
     #[test]
@@ -885,10 +960,11 @@ mod tests {
         let theirs = r#"<root><item id="3">text</item></root>"#;
 
         let result = driver.merge(base, ours, theirs).unwrap();
-        assert!(
-            result.is_none(),
-            "conflicting attribute changes should conflict"
-        );
+        // 局部降级：同一属性两边改不同值 → 带冲突标记的部分合并结果
+        let merged = result.expect("conflicting attrs produce marked output");
+        assert!(merged.contains("id=\"2\""));
+        assert!(merged.contains("id=\"3\""));
+        assert!(merged.contains("<<<<<<< ours"));
     }
 
     #[test]
@@ -1178,13 +1254,105 @@ mod tests {
         content
     }
 
-    /// 回归测试（2026-08-14）：两个分支**同时修改同一个场景的同一处属性**
-    /// （`SCENE_COLOR` 场景 `STR_DRINK_SOME_WATER` 的 `x` 属性）且内容不同。
-    /// 修复前：语义层 decline 到行级 fallback 后，贪心 diff 在大量重复行上
-    /// 错位（base[5230] 的 `x=0x0014` 远距离匹配到 mod 中另一处同值行），
-    /// 1 行替换膨胀成 14093 行假插入，合并输出出现大量无关行。
-    /// 修复后：语义层检测到同属性冲突 → 返回 None（decline）；行级 fallback
-    /// 只应产生 **1 行真实冲突**，输出不膨胀、无重复行。
+    /// 在 `</ui-rad>` 前追加一个完整场景：模拟分支在 scene 列表末尾
+    /// （文件末尾、`<resource>` 之前）新增场景——与真实 bt_watch.ui 中
+    /// 两个分支各自新增场景的插入位置一致。
+    fn with_extra_scene(content: &str, scene_name: &str, scene_id: u32) -> String {
+        let scene = format!(
+            "    <scene>\r\n        <property name=\"name\" value=\"{scene_name}\" />\r\n        <property name=\"id\" value=\"{scene_id}\" />\r\n        <element class=\"string_resource\">\r\n            <property name=\"name\" value=\"STR_{scene_name}\" />\r\n            <property name=\"x\" value=\"0x0014\" />\r\n            <property name=\"y\" value=\"0x0106\" />\r\n        </element>\r\n    </scene>\r\n"
+        );
+        content.replace("</ui-rad>", &format!("{scene}</ui-rad>"))
+    }
+
+    /// 回归测试（2026-08-17，真实 bt_watch.ui 场景）：两个分支**同时**做三件事：
+    /// ① 修改同一场景同一属性为不同值（对应 STR_DAY.x：0x0038 vs 0x0044）；
+    /// ② 各自在 scene 列表末尾新增一个不同的场景
+    ///    （SCENE_EMERGENCY_CONNECT_COPY vs SCENE_SPORT_RECORD_NO_DATA_COPY）；
+    /// ③ 各自做一些不冲突的修改。
+    ///
+    /// 修复前：① 使语义层整体 decline 到行级合并 → 行级合并把 ② 的
+    /// "同一位置插入不同场景"误判为冲突 → 输出 **2 个冲突区域**
+    /// （x 属性 + 整个新场景块，实测真实文件）。
+    /// 修复后：语义层局部降级——② 的场景新增走语义合并（两个都保留），
+    /// 只有 ① 的属性行输出冲突标记 → **1 个冲突区域**。
+    #[test]
+    fn test_ui_partial_merge_keeps_both_new_scenes() {
+        let base = build_ui_file(80, "0x0014", "0x0106");
+        let ours = with_extra_scene(
+            &build_ui_file(80, "0x0012", "0x0106"),
+            "SCENE_EMERGENCY_CONNECT_COPY",
+            53021,
+        );
+        let theirs = with_extra_scene(
+            &build_ui_file(80, "0x0016", "0x0106"),
+            "SCENE_SPORT_RECORD_NO_DATA_COPY",
+            53021,
+        );
+
+        let driver = UiDriver::new();
+        let merged = driver
+            .merge(&base, &ours, &theirs)
+            .unwrap()
+            .expect("partial merge must produce output");
+
+        // 两个新场景都在（不冲突，语义层保留）——这是本次修复的核心
+        assert!(
+            merged.contains("SCENE_EMERGENCY_CONNECT_COPY"),
+            "ours new scene must be kept"
+        );
+        assert!(
+            merged.contains("SCENE_SPORT_RECORD_NO_DATA_COPY"),
+            "theirs new scene must be kept"
+        );
+
+        // 恰好 1 个冲突区域（只有 x 属性）
+        let starts = merged.matches("<<<<<<< ").count();
+        let divs = merged.matches("=======").count();
+        let ends = merged.matches(">>>>>>> ").count();
+        assert_eq!(
+            (starts, divs, ends),
+            (1, 1, 1),
+            "only the x-attr conflict should remain"
+        );
+
+        // 冲突两侧内容正确（ours 在前、theirs 在后）
+        let ours_idx = merged.find("0x0012").expect("ours value in conflict");
+        let theirs_idx = merged.find("0x0016").expect("theirs value in conflict");
+        assert!(ours_idx < theirs_idx, "ours block before theirs block");
+
+        // 冲突标记行顶格（VS Code/git 识别要求行首）
+        let markers: Vec<&str> = merged
+            .lines()
+            .filter(|l| {
+                l.starts_with("<<<<<<< ") || *l == "=======" || l.starts_with(">>>>>>> ")
+            })
+            .collect();
+        assert_eq!(markers.len(), 3, "3 marker lines total");
+        assert!(
+            markers.iter().all(|l| !l.starts_with(' ')),
+            "conflict markers must be at line start"
+        );
+
+        // 移除冲突标记后 XML 可解析，且两个新场景仍在（内容完整）
+        let cleaned = merged
+            .lines()
+            .filter(|l| !l.starts_with("<<<<<<< ") && *l != "=======" && !l.starts_with(">>>>>>> "))
+            .collect::<Vec<_>>()
+            .join("\r\n");
+        let doc = roxmltree::Document::parse(&cleaned).unwrap();
+        assert_eq!(doc.root_element().tag_name().name(), "ui-rad");
+        assert!(cleaned.contains("SCENE_EMERGENCY_CONNECT_COPY"));
+        assert!(cleaned.contains("SCENE_SPORT_RECORD_NO_DATA_COPY"));
+    }
+
+    /// 回归测试（2026-08-14 + 2026-08-17 更新）：两个分支**同时修改同一个场景
+    /// 的同一处属性**（`SCENE_COLOR` 场景 `STR_DRINK_SOME_WATER` 的 `x` 属性）
+    /// 且内容不同。
+    /// - 2026-08-14 修复（patience diff）：行级 fallback 在重复行上不再错位，
+    ///   只产生 1 行真实冲突、无膨胀。
+    /// - 2026-08-17 修复（局部降级）：语义层不再整体 decline——属性冲突改为
+    ///   对该元素子树做行级合并，输出带冲突标记的部分合并结果，其余部分
+    ///   继续语义合并（否则同位置新增的不同场景会被行级合并误判为冲突）。
     #[test]
     fn test_ui_same_scene_same_attr_conflict_single_line() {
         let base = build_ui_file(80, "0x0014", "0x0106");
@@ -1194,17 +1362,21 @@ mod tests {
 
         let driver = UiDriver::new();
 
-        // ① 语义层：同一属性两边值不同（0x0012 vs 0x0016）→ 无法自动解决，
-        //    必须 decline 到行级合并（cli 层 fallback）。
+        // ① 语义层：同一属性两边值不同（0x0012 vs 0x0016）→ 局部降级，
+        //    返回含恰好 1 组冲突标记的部分合并结果（不再整体 decline）。
         let semantic = driver.merge(&base, &ours, &theirs).unwrap();
-        assert!(
-            semantic.is_none(),
-            "same attr changed to different values on both sides must decline"
+        let merged = semantic.expect("partial merge must produce output");
+        assert_eq!(
+            merged.matches("<<<<<<< ").count(),
+            1,
+            "exactly one conflict region in partial merge"
         );
+        assert!(merged.contains("0x0012"), "ours value in conflict");
+        assert!(merged.contains("0x0016"), "theirs value in conflict");
 
-        // ② 行级 fallback：只应产生 1 行冲突。替换型冲突输出 5 行
-        //    （3 行标记 + ours 1 行 + theirs 1 行），消耗 base 1 行，
-        //    净增 +4（实测真实 bt_watch.ui：108933 → 108937）。
+        // ② 行级 fallback（merge_subtree_lines 底层）：只应产生 1 行冲突。
+        //    替换型冲突输出 5 行（3 行标记 + ours 1 行 + theirs 1 行），
+        //    消耗 base 1 行，净增 +4（实测真实 bt_watch.ui：108933 → 108937）。
         let b: Vec<&str> = base.lines().collect();
         let o: Vec<&str> = ours.lines().collect();
         let t: Vec<&str> = theirs.lines().collect();

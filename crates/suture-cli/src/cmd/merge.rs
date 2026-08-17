@@ -937,7 +937,8 @@ fn semantic_remerge_both_modified(
 
         // Try semantic 3-way merge with the YAML driver
         let merged_content = match driver.merge(base, ours, theirs) {
-            Ok(Some(content)) => content,
+            // 语义输出含冲突标记（如 UI driver 局部降级）→ 不视为干净合并
+            Ok(Some(content)) if !content.lines().any(|l| l.starts_with("<<<<<<< ")) => content,
             _ => manual_line_merge(ours, theirs),
         };
 
