@@ -26,7 +26,8 @@
 
 .PARAMETER Uninstall
     移除本脚本添加的所有 Suture merge driver 配置,
-    并从用户级/系统级 PATH 中移除 suture 安装目录(含 suture.exe 的目录).
+    并从用户级/系统级 PATH 中移除 suture 相关目录,
+    同时删除这些目录下的 suture.exe 文件(若存在).
 
 .PARAMETER Test
     仅验证当前配置,不做修改.
@@ -377,7 +378,12 @@ function Add-ToPath {
     Ok "  已添加 $scopeName PATH: $Dir"
 }
 
-# 从 PATH(系统级或用户级)中移除存在 suture.exe 的目录
+# 从 PATH(系统级或用户级)中移除 suture 相关目录,并删除这些目录下的 suture.exe.
+# 匹配规则(绝对路径,不区分大小写):
+#   1. 路径中存在独立路径段 "suture"(如 C:\Program Files\suture\bin,
+#      D:\...\suture\target\release)——不要求目录下仍有 suture.exe,
+#      避免卸载后 PATH 残留;
+#   2. 或该目录下实际存在 suture.exe(兼容自定义目录名).
 # 返回值: $true=已移除 / $false=未找到无需修改 / $null=因权限不足跳过
 function Remove-FromPath {
     param([bool]$UseUserScope)
@@ -394,13 +400,34 @@ function Remove-FromPath {
 
     $kept = New-Object System.Collections.Generic.List[string]
     $removed = New-Object System.Collections.Generic.List[string]
+    $deletedFiles = New-Object System.Collections.Generic.List[string]
     foreach ($e in @($cur -split ';' | Where-Object { $_.Trim() })) {
         $clean = $e.Trim().Trim('"')
-        $exe = Join-Path $clean "suture.exe"
-        if ($clean -and [System.IO.Path]::IsPathRooted($clean) -and (Test-Path -LiteralPath $exe -ErrorAction SilentlyContinue)) {
-            $removed.Add($e)
-        } else {
+        # 独立路径段 "suture"(不区分大小写)或目录下有 suture.exe
+        $hasSutureSeg = $clean -match '(^|[\\/])suture([\\/]|$)'
+        $hasExe = Test-Path -LiteralPath (Join-Path $clean "suture.exe") -ErrorAction SilentlyContinue
+        $isSutureDir = $clean -and [System.IO.Path]::IsPathRooted($clean) -and ($hasSutureSeg -or $hasExe)
+        if (-not $isSutureDir) {
             $kept.Add($e)
+            continue
+        }
+        $removed.Add($e)
+        # 删除该目录下的 suture.exe(若存在)
+        $exe = Join-Path $clean "suture.exe"
+        if (Test-Path -LiteralPath $exe -ErrorAction SilentlyContinue) {
+            try {
+                Remove-Item -LiteralPath $exe -Force -ErrorAction Stop
+                $deletedFiles.Add($exe)
+            } catch {
+                Warn "  无法删除 $exe : $_"
+            }
+        }
+        # 目录已空则一并删除(安装目录通常只放 suture.exe)
+        if (Test-Path -LiteralPath $clean -ErrorAction SilentlyContinue) {
+            $items = @(Get-ChildItem -LiteralPath $clean -Force -ErrorAction SilentlyContinue)
+            if ($items.Count -eq 0) {
+                Remove-Item -LiteralPath $clean -Force -ErrorAction SilentlyContinue
+            }
         }
     }
 
@@ -408,6 +435,9 @@ function Remove-FromPath {
 
     [Environment]::SetEnvironmentVariable("PATH", ($kept -join ';'), $target)
     Ok "  已从 $scopeName PATH 移除: $($removed -join '; ')"
+    foreach ($f in $deletedFiles) {
+        Ok "  已删除 suture.exe: $f"
+    }
     return $true
 }
 
@@ -701,11 +731,11 @@ function Uninstall-Configuration {
     }
     Ok "Suture merge driver uninstalled"
 
-    # 从 PATH 中移除 suture 安装目录(用户级与系统级)
+    # 从 PATH 中移除 suture 相关目录并删除其中的 suture.exe(用户级与系统级)
     $u = Remove-FromPath $true
     $m = Remove-FromPath $false
     if (($u -eq $false) -and ($m -eq $false)) {
-        Info "  PATH 中未找到 suture.exe 所在目录,无需修改"
+        Info "  PATH 中未找到 suture 相关目录,无需修改"
     }
 }
 
@@ -721,7 +751,7 @@ Suture Git Merge Driver Installer (PowerShell)
 
 选项(不指定时以交互式引导询问):
   -Local          仅配置当前仓库(默认:全局)
-  -Uninstall      移除本脚本添加的所有 Suture merge driver 配置,并清理 PATH 中的 suture 目录
+  -Uninstall      移除本脚本添加的所有 Suture merge driver 配置,并清理 PATH 中的 suture 目录与 suture.exe 文件
   -Test           仅验证当前配置,不做修改
   -Help           显示本帮助
   -InstallDir <路径>  自定义安装目录(默认引导询问,如 C:\Program Files\suture\bin)
