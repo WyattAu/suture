@@ -804,8 +804,16 @@ mod tests {
             }
         }
         assert_eq!(unchanged, 8, "all but one line unchanged");
-        assert_eq!(deleted, vec!["<p x=0x14 />"], "exactly the replaced line deleted");
-        assert_eq!(inserted, vec!["<p x=0x12 />"], "exactly the new line inserted");
+        assert_eq!(
+            deleted,
+            vec!["<p x=0x14 />"],
+            "exactly the replaced line deleted"
+        );
+        assert_eq!(
+            inserted,
+            vec!["<p x=0x12 />"],
+            "exactly the new line inserted"
+        );
     }
 
     /// 回归测试（单调贪心兜底路径）：无唯一行锚点的纯重复内容，不能丢失
@@ -828,7 +836,8 @@ mod tests {
         }
         assert_eq!(deleted, vec!["a"], "deleted line must be the replaced one");
         assert_eq!(
-            inserted, vec!["a2"],
+            inserted,
+            vec!["a2"],
             "inserted line must be the new one, not a repeated x"
         );
     }

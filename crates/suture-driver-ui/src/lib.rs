@@ -122,21 +122,14 @@ impl UiDriver {
         let o_lines: Vec<&str> = o.lines().collect();
         let t_lines: Vec<&str> = t.lines().collect();
         let result = suture_core::engine::merge::three_way_merge_lines(
-            &b_lines,
-            &o_lines,
-            &t_lines,
-            "ours",
-            "theirs",
+            &b_lines, &o_lines, &t_lines, "ours", "theirs",
         );
         let pad = "    ".repeat(indent);
         result
             .lines
             .iter()
             .map(|l| {
-                if l.starts_with("<<<<<<<")
-                    || l == "======="
-                    || l.starts_with(">>>>>>>")
-                {
+                if l.starts_with("<<<<<<<") || l == "=======" || l.starts_with(">>>>>>>") {
                     l.clone()
                 } else {
                     format!("{pad}{l}")
@@ -311,9 +304,7 @@ impl UiDriver {
                     // 局部降级为该元素子树的行级合并，只对冲突行输出标记。
                     // 修复前此处 return Ok(None) 会让整个文件 decline 到行级
                     // 合并，导致同位置新增的不同场景被误判为冲突。
-                    return Ok(Some(Self::merge_subtree_lines(
-                        base, ours, theirs, indent,
-                    )));
+                    return Ok(Some(Self::merge_subtree_lines(base, ours, theirs, indent)));
                 }
                 (Some(_) | None, None, Some(t)) => {
                     merged_attrs.push((key.to_string(), t.to_owned()));
@@ -380,15 +371,16 @@ impl UiDriver {
                                 // 子元素内部无法语义合并（属性/文本冲突）→
                                 // 对该子元素子树做局部行级合并，不向上传播
                                 merged_children.push(Self::merge_subtree_lines(
-                                    b, o, t, indent + 1,
+                                    b,
+                                    o,
+                                    t,
+                                    indent + 1,
                                 ));
                             }
                         } else {
                             merged_children.push(Self::element_to_string(o, indent + 1));
                             // 如果两个第一个元素的内容不同，则都保留
-                            if Self::element_to_string(o, 0)
-                                != Self::element_to_string(t, 0)
-                            {
+                            if Self::element_to_string(o, 0) != Self::element_to_string(t, 0) {
                                 merged_children.push(Self::element_to_string(t, indent + 1));
                             }
                         }
@@ -551,9 +543,8 @@ impl SutureDriver for UiDriver {
         };
 
         // 尾随换行：仅当某一输入文件以换行结尾时保留（风格保持）
-        let trailing_newline = base.ends_with('\n')
-            || ours.ends_with('\n')
-            || theirs.ends_with('\n');
+        let trailing_newline =
+            base.ends_with('\n') || ours.ends_with('\n') || theirs.ends_with('\n');
 
         let mut result = String::new();
         result.push_str(leading);
@@ -1116,9 +1107,12 @@ mod tests {
     fn test_ui_attr_order_preserved() {
         // 未修改元素的属性顺序应保持 base 顺序（序列化后与原文一致）
         let driver = UiDriver::new();
-        let base = r#"<ui-rad><property name="x" value="1" /><property name="y" value="2" /></ui-rad>"#;
-        let ours = r#"<ui-rad><property name="x" value="1" /><property name="y" value="2" /></ui-rad>"#;
-        let theirs = r#"<ui-rad><property name="x" value="1" /><property name="y" value="2" /></ui-rad>"#;
+        let base =
+            r#"<ui-rad><property name="x" value="1" /><property name="y" value="2" /></ui-rad>"#;
+        let ours =
+            r#"<ui-rad><property name="x" value="1" /><property name="y" value="2" /></ui-rad>"#;
+        let theirs =
+            r#"<ui-rad><property name="x" value="1" /><property name="y" value="2" /></ui-rad>"#;
 
         let result = driver.merge(base, ours, theirs).unwrap();
         assert!(result.is_some());
@@ -1203,14 +1197,18 @@ mod tests {
         ];
         for s in 0..scene_count {
             lines.push("    <scene>".to_owned());
-            lines.push(format!("        <property name=\"name\" value=\"SCENE_{s}\" />"));
+            lines.push(format!(
+                "        <property name=\"name\" value=\"SCENE_{s}\" />"
+            ));
             lines.push(format!(
                 "        <property name=\"id\" value=\"{}\" />",
                 s + 30000
             ));
             // 20 行跨 scene 完全相同的重复属性（模拟真实文件的重复行）
             for k in 0..20 {
-                lines.push(format!("        <property name=\"key{k}\" value=\"{k}\" />"));
+                lines.push(format!(
+                    "        <property name=\"key{k}\" value=\"{k}\" />"
+                ));
             }
             lines.push("        <element class=\"string_resource\">".to_owned());
             lines.push(format!(
@@ -1235,12 +1233,17 @@ mod tests {
                 lines.push("        <property name=\"name\" value=\"SCENE_COLOR\" />".to_owned());
                 lines.push("        <property name=\"id\" value=\"32811\" />".to_owned());
                 lines.push("        <element class=\"string_resource\">".to_owned());
-                lines
-                    .push("            <property name=\"name\" value=\"STR_DRINK_SOME_WATER\" />"
-                        .to_owned());
+                lines.push(
+                    "            <property name=\"name\" value=\"STR_DRINK_SOME_WATER\" />"
+                        .to_owned(),
+                );
                 lines.push("            <property name=\"id\" value=\"31915\" />".to_owned());
-                lines.push(format!("            <property name=\"x\" value=\"{drink_x}\" />"));
-                lines.push(format!("            <property name=\"y\" value=\"{drink_y}\" />"));
+                lines.push(format!(
+                    "            <property name=\"x\" value=\"{drink_x}\" />"
+                ));
+                lines.push(format!(
+                    "            <property name=\"y\" value=\"{drink_y}\" />"
+                ));
                 lines.push("            <property name=\"width\" value=\"0x0118\" />".to_owned());
                 lines.push("            <property name=\"height\" value=\"0x0078\" />".to_owned());
                 lines.push("        </element>".to_owned());
@@ -1323,9 +1326,7 @@ mod tests {
         // 冲突标记行顶格（VS Code/git 识别要求行首）
         let markers: Vec<&str> = merged
             .lines()
-            .filter(|l| {
-                l.starts_with("<<<<<<< ") || *l == "=======" || l.starts_with(">>>>>>> ")
-            })
+            .filter(|l| l.starts_with("<<<<<<< ") || *l == "=======" || l.starts_with(">>>>>>> "))
             .collect();
         assert_eq!(markers.len(), 3, "3 marker lines total");
         assert!(
@@ -1425,8 +1426,7 @@ mod tests {
         assert!(ours_idx < theirs_idx, "ours block before theirs block");
 
         // 冲突区域之外的行必须与 base 完全一致：不重复、不丢失
-        let mut count: std::collections::HashMap<&str, usize> =
-            std::collections::HashMap::new();
+        let mut count: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
         for l in &b {
             *count.entry(l).or_insert(0) += 1;
         }
