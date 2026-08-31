@@ -4,9 +4,7 @@ members = [
     "crates/*",
     "desktop-app",
 ]
-exclude = [
-    "crates/suture-py",
-]
+
 
 # Note: CWD-dependent tests in suture-cli use a mutex guard.
 # CI should use: cargo test -- --test-threads=1
@@ -19,6 +17,10 @@ readme = "README.md"
 homepage = "https://github.com/WyattAu/suture"
 categories = ["development-tools"]
 keywords = ["vcs", "version-control", "patch", "semantic-merge", "dvcs"]
+
+[workspace.dependencies]
+salting = { path = "../salting" }
+tokenkit = { path = "../tokenkit" }
 
 [profile.release]
 lto = true

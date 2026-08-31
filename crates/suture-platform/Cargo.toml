@@ -37,9 +37,9 @@ tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.39", features = ["bundled"] }
-jsonwebtoken = "9"
-argon2 = "0.5"
-rand = "0.9"
+salting = { workspace = true }
+tokenkit = { workspace = true }
+zeroize = { version = "1", features = ["derive"] }
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 tracing = "0.1"
