@@ -1,0 +1,95 @@
+# bitbucket-pipelines.yml -- Example Suture semantic merge integration
+# Add this to your project's bitbucket-pipelines.yml
+
+definitions:
+  services:
+    docker:
+      memory: 2048
+
+pipelines:
+  pull-requests:
+    "**":
+      - step:
+          name: Suture Semantic Merge Check
+          image: rust:1-bookworm
+          size: 2x
+          caches:
+            - cargo
+          services:
+            - docker
+          script:
+            - apt-get update && apt-get install -y pkg-config libssl-dev libsqlite3-dev protobuf-compiler
+            - cargo install --locked suture-cli
+            - |
+              #!/usr/bin/env bash
+              set -eo pipefail
+
+              SUTURE_BIN="suture"
+              TEMP_DIR=$(mktemp -d)
+              trap 'rm -rf "$TEMP_DIR"' EXIT
+
+              FILE_PATTERNS='*.json,*.yaml,*.yml,*.toml,*.xml,*.csv,*.md,*.docx,*.xlsx,*.pptx'
+              FAIL_ON_CONFLICT="false"
+
+              # Build regex from patterns
+              PATTERN_REGEX=$(echo "$FILE_PATTERNS" | sed 's/,/|/g; s/\*/\\./g; s/\./\\./g')
+
+              CHANGED_FILES=$(git diff --name-only "origin/$BITBUCKET_PR_DESTINATION_BRANCH" HEAD || true)
+
+              if [ -z "$CHANGED_FILES" ]; then
+                echo "No changed files detected."
+                exit 0
+              fi
+
+              PASS=0
+              FAIL=0
+              LINE_ONLY=0
+              SKIP=0
+
+              for file in $CHANGED_FILES; do
+                if ! echo "$file" | grep -qE "$PATTERN_REGEX"; then
+                  continue
+                fi
+
+                ext="${file##*.}"
+                safe_name=$(printf '%s' "$file" | tr '/' '_')
+                base_file="$TEMP_DIR/base_${safe_name}"
+                ours_file="$TEMP_DIR/ours_${safe_name}"
+                merged_file="$TEMP_DIR/merged_${safe_name}"
+
+                if ! git show "origin/$BITBUCKET_PR_DESTINATION_BRANCH:${file}" > "$base_file" 2>/dev/null; then
+                  echo "SKIP $file -- New file (not in base branch)"
+                  SKIP=$((SKIP + 1))
+                  continue
+                fi
+
+                if [ ! -f "$file" ]; then
+                  echo "SKIP $file -- File deleted in PR"
+                  SKIP=$((SKIP + 1))
+                  continue
+                fi
+
+                cp "$file" "$ours_file"
+
+                if "$SUTURE_BIN" merge-file "$base_file" "$base_file" "$ours_file" -o "$merged_file" 2>"$TEMP_DIR/err"; then
+                  if diff -q "$merged_file" "$ours_file" > /dev/null 2>&1; then
+                    echo "MERGE $file -- Semantic merge produced identical result"
+                    PASS=$((PASS + 1))
+                  else
+                    echo "LINE-ONLY $file -- Merged with differences"
+                    LINE_ONLY=$((LINE_ONLY + 1))
+                  fi
+                else
+                  err_msg=$(tail -1 "$TEMP_DIR/err" 2>/dev/null || echo "unknown error")
+                  echo "CONFLICT $file -- $err_msg"
+                  FAIL=$((FAIL + 1))
+                fi
+              done
+
+              echo ""
+              echo "Semantic merge check complete: $PASS mergeable, $LINE_ONLY line-only, $FAIL conflicts, $SKIP skipped."
+
+              if [ "$FAIL" -gt 0 ] && [ "$FAIL_ON_CONFLICT" = "true" ]; then
+                echo "ERROR: $FAIL file(s) have semantic merge conflicts"
+                exit 1
+              fi

@@ -1,0 +1,42 @@
+[metadata]
+version = "0.1.0"
+last_updated = "2025-01-01T00:00:00Z"
+registry_url = "https://plugins.suture.dev"
+
+[[plugin]]
+id = "example-json-merger"
+name = "JSON Semantic Merger"
+version = "0.1.0"
+author = "Suture Team"
+description = "Default JSON merge driver with array strategy support"
+format = ["json"]
+abi_version = 2
+license = "MIT"
+repository = "https://github.com/WyattAu/suture"
+homepage = "https://suture.dev"
+wasm_url = "https://plugins.suture.dev/json-merger/v0.1.0/plugin.wasm"
+checksum_sha256 = ""
+wasm_size_bytes = 0
+min_suture_version = "0.1.0"
+max_suture_version = ""
+tags = ["json", "merge", "builtin"]
+verified = true
+
+[[plugin]]
+id = "example-yaml-merger"
+name = "YAML Semantic Merger"
+version = "0.1.0"
+author = "Suture Team"
+description = "YAML merge driver preserving anchors and aliases"
+format = ["yaml", "yml"]
+abi_version = 2
+license = "MIT"
+repository = "https://github.com/WyattAu/suture"
+homepage = "https://suture.dev"
+wasm_url = "https://plugins.suture.dev/yaml-merger/v0.1.0/plugin.wasm"
+checksum_sha256 = ""
+wasm_size_bytes = 0
+min_suture_version = "0.1.0"
+max_suture_version = ""
+tags = ["yaml", "merge", "builtin"]
+verified = true

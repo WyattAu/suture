@@ -14,6 +14,7 @@ pub mod middleware;
 pub mod oauth;
 pub mod orgs;
 pub mod plugins;
+pub mod quota;
 pub mod rate_limit;
 pub mod server;
 pub mod stripe;

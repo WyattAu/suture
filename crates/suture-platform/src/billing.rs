@@ -5,7 +5,11 @@
 // Suture Commercial License (for enterprise features).
 // See LICENSE-AGPL and LICENSE-COMMERCIAL in the repo root.
 
-use axum::{Extension, Json, extract::State, http::StatusCode};
+use axum::{
+    Extension, Json,
+    extract::{Path, State},
+    http::StatusCode,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::auth::Claims;
@@ -182,6 +186,102 @@ pub async fn usage_handler(
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<UsageReport>, (StatusCode, Json<serde_json::Value>)> {
     match get_usage(&state.db, &claims.sub) {
+        Ok(report) => Ok(Json(report)),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e.to_string()})),
+        )),
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrgUsageReport {
+    pub tier: Tier,
+    pub merges_used: i64,
+    pub merges_limit: i64,
+    pub storage_bytes: i64,
+    pub storage_limit: i64,
+    pub api_calls: i64,
+    pub period: String,
+    pub org_id: String,
+}
+
+pub fn record_org_merge(db: &PlatformDb, org_id: &str) -> anyhow::Result<()> {
+    let conn = db
+        .conn()
+        .map_err(|e| anyhow::anyhow!("failed to get db connection for recording org merge: {e}"))?;
+    let month = chrono::Utc::now().format("%Y-%m").to_string();
+    conn.execute(
+        "INSERT INTO org_usage (org_id, month, merges_used) VALUES (?1, ?2, 1)
+         ON CONFLICT(org_id, month) DO UPDATE SET merges_used = merges_used + 1",
+        rusqlite::params![org_id, month],
+    )?;
+    Ok(())
+}
+
+pub fn increment_org_api_calls(db: &PlatformDb, org_id: &str) -> anyhow::Result<()> {
+    let conn = db.conn().map_err(|e| {
+        anyhow::anyhow!("failed to get db connection for recording org api call: {e}")
+    })?;
+    let month = chrono::Utc::now().format("%Y-%m").to_string();
+    conn.execute(
+        "INSERT INTO org_usage (org_id, month, api_calls) VALUES (?1, ?2, 1)
+         ON CONFLICT(org_id, month) DO UPDATE SET api_calls = api_calls + 1",
+        rusqlite::params![org_id, month],
+    )?;
+    Ok(())
+}
+
+pub fn get_org_usage(db: &PlatformDb, org_id: &str) -> anyhow::Result<OrgUsageReport> {
+    let conn = db
+        .conn()
+        .map_err(|e| anyhow::anyhow!("failed to get db connection for org usage report: {e}"))?;
+
+    let tier_str: String = conn.query_row(
+        "SELECT tier FROM orgs WHERE org_id = ?1",
+        rusqlite::params![org_id],
+        |row| row.get(0),
+    )?;
+    let tier = Tier::from_str(&tier_str);
+
+    let month = chrono::Utc::now().format("%Y-%m").to_string();
+    let usage: (i64, i64, i64) = conn
+        .query_row(
+            "SELECT merges_used, storage_bytes, api_calls FROM org_usage WHERE org_id = ?1 AND month = ?2",
+            rusqlite::params![org_id, month],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap_or((0, 0, 0));
+
+    let merges_limit = tier.max_merges_per_month();
+    let storage_limit = tier.max_storage_bytes();
+
+    Ok(OrgUsageReport {
+        tier,
+        merges_used: usage.0,
+        merges_limit: if merges_limit > 0 { merges_limit } else { -1 },
+        storage_bytes: usage.1,
+        storage_limit,
+        api_calls: usage.2,
+        period: month,
+        org_id: org_id.to_string(),
+    })
+}
+
+pub fn can_org_merge(db: &PlatformDb, org_id: &str) -> anyhow::Result<bool> {
+    let report = get_org_usage(db, org_id)?;
+    if report.merges_limit < 0 {
+        return Ok(true);
+    }
+    Ok(report.merges_used < report.merges_limit)
+}
+
+pub async fn org_usage_handler(
+    State(state): State<AppState>,
+    Extension(_claims): Extension<Claims>,
+    Path(org_id): Path<String>,
+) -> Result<Json<OrgUsageReport>, (StatusCode, Json<serde_json::Value>)> {
+    match get_org_usage(&state.db, &org_id) {
         Ok(report) => Ok(Json(report)),
         Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,

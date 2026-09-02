@@ -6972,6 +6972,10 @@ pub async fn run_server(
             Arc::clone(&hub),
             crate::audit::audit_middleware,
         ))
+        .layer(axum::middleware::from_fn_with_state(
+            Arc::clone(&hub),
+            crate::telemetry::telemetry_middleware,
+        ))
         .with_state(Arc::clone(&hub))
         .layer(set_request_id)
         .layer(propagate_request_id);

@@ -12,6 +12,7 @@ pub mod middleware;
 pub mod server;
 pub mod sso;
 pub mod storage;
+pub mod telemetry;
 pub mod types;
 pub mod webhooks;
 

@@ -1,70 +1,162 @@
-# .gitlab-ci.yml — Example Suture merge integration
+# .gitlab-ci.yml -- Example Suture semantic merge integration
 # Add this to your project's .gitlab-ci.yml
+#
+# Two modes supported:
+# 1. Local: Builds suture-cli and runs merge checks directly (recommended)
+# 2. Remote: Calls a self-hosted Suture Hub merge API
 
 stages:
   - merge-check
   - test
 
 variables:
-  SUTURE_API_URL: "https://merge.suture.dev/api"
-  # Or self-hosted:
+  # Remote API mode (optional -- set if using a Hub instance)
   # SUTURE_API_URL: "https://suture.example.com/api"
+  SUTURE_CLI_EXCLUDES: "--exclude suture-fuzz --exclude suture-py --exclude suture-e2e --exclude suture-bench --exclude suture-vfs --exclude suture-lsp --exclude suture-daemon --exclude suture-wasm-plugin"
 
-# Auto-merge structured files on merge requests
-suture:merge:
+# ---------------------------------------------------------------------------
+# Local mode: build suture-cli and check MR mergeability
+# ---------------------------------------------------------------------------
+suture:local-merge:
   stage: merge-check
-  image: node:20-alpine
+  image: rust:1-bookworm
   rules:
     - if: $CI_MERGE_REQUEST_IID
+  cache:
+    key: suture-${CI_COMMIT_REF_SLUG}
+    paths:
+      - target/
+      - cargo-cache/
   before_script:
-    - apk add --no-cache git jq
+    - apt-get update && apt-get install -y --no-install-recommends pkg-config libssl-dev libsqlite3-dev protobuf-compiler
   script:
     - |
-      # Get the merge base
-      BASE_SHA=$(git merge-base origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME HEAD)
+      cargo build --release -p suture-cli
+      SUTURE_BIN="${CI_PROJECT_DIR}/target/release/suture"
+      TEMP_DIR=$(mktemp -d)
+      trap 'rm -rf "$TEMP_DIR"' EXIT
 
-      # Files to check for semantic merge
-      FILES="package.json tsconfig.json .eslintrc.json"
+      FILE_PATTERNS='*.json,*.yaml,*.yml,*.toml,*.xml,*.csv,*.md,*.docx,*.xlsx,*.pptx'
 
-      for FILE in $FILES; do
-        if [ -f "$FILE" ]; then
-          echo "Checking $FILE for merge conflicts..."
+      # Build regex from patterns
+      PATTERN_REGEX=$(echo "$FILE_PATTERNS" | sed 's/,/|/g; s/\*/\\./g; s/\./\\./g')
 
-          # Get file content at each ref
-          BASE_CONTENT=$(git show "$BASE_SHA:$FILE" 2>/dev/null || echo "")
-          HEAD_CONTENT=$(cat "$FILE")
-          MR_CONTENT=$(git show "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME:$FILE" 2>/dev/null || echo "")
+      CHANGED_FILES=$(git diff --name-only "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME" HEAD || true)
 
-          # Call Suture API
-          RESULT=$(curl -s -X POST "$SUTURE_API_URL/merge" \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"driver\": \"${FILE##*.}\",
-              \"base\": $(echo "$BASE_CONTENT" | jq -Rs .),
-              \"ours\": $(echo "$HEAD_CONTENT" | jq -Rs .),
-              \"theirs\": $(echo "$MR_CONTENT" | jq -Rs .)
-            }")
+      if [ -z "$CHANGED_FILES" ]; then
+        echo "No changed files detected."
+        exit 0
+      fi
 
-          # Check for conflicts
-          HAS_CONFLICTS=$(echo "$RESULT" | jq -r '.conflicts // false')
-          if [ "$HAS_CONFLICTS" = "true" ]; then
-            echo "WARNING: Merge conflicts detected in $FILE"
-            echo "$RESULT" | jq '.conflict_details'
+      PASS=0
+      FAIL=0
+      LINE_ONLY=0
+      SKIP=0
+      TABLE_ROWS="| File | Format | Status | Details |"
+      TABLE_ROWS="${TABLE_ROWS}"$'\n'"|------|--------|--------|---------|"
+
+      for file in $CHANGED_FILES; do
+        if ! echo "$file" | grep -qE "$PATTERN_REGEX"; then
+          continue
+        fi
+
+        ext="${file##*.}"
+        safe_name=$(printf '%s' "$file" | tr '/' '_')
+        base_file="$TEMP_DIR/base_${safe_name}"
+        ours_file="$TEMP_DIR/ours_${safe_name}"
+        merged_file="$TEMP_DIR/merged_${safe_name}"
+
+        if ! git show "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME:${file}" > "$base_file" 2>/dev/null; then
+          TABLE_ROWS="${TABLE_ROWS}"$'\n'"| \`$file\` | \`$ext\` | SKIP | New file |"
+          SKIP=$((SKIP + 1))
+          continue
+        fi
+
+        if [ ! -f "$file" ]; then
+          TABLE_ROWS="${TABLE_ROWS}"$'\n'"| \`$file\` | \`$ext\` | SKIP | Deleted |"
+          SKIP=$((SKIP + 1))
+          continue
+        fi
+
+        cp "$file" "$ours_file"
+
+        if "$SUTURE_BIN" merge-file "$base_file" "$base_file" "$ours_file" -o "$merged_file" 2>"$TEMP_DIR/err"; then
+          if diff -q "$merged_file" "$ours_file" > /dev/null 2>&1; then
+            TABLE_ROWS="${TABLE_ROWS}"$'\n'"| \`$file\` | \`$ext\` | MERGE | Clean merge |"
+            PASS=$((PASS + 1))
           else
-            MERGED=$(echo "$RESULT" | jq -r '.result // empty')
-            if [ -n "$MERGED" ]; then
-              echo "$MERGED" > "$FILE"
-              echo "Successfully merged $FILE"
-            fi
+            TABLE_ROWS="${TABLE_ROWS}"$'\n'"| \`$file\` | \`$ext\` | LINE-ONLY | Differences detected |"
+            LINE_ONLY=$((LINE_ONLY + 1))
           fi
+        else
+          err_msg=$(tail -1 "$TEMP_DIR/err" 2>/dev/null || echo "unknown error")
+          TABLE_ROWS="${TABLE_ROWS}"$'\n'"| \`$file\` | \`$ext\` | CONFLICT | ${err_msg} |"
+          FAIL=$((FAIL + 1))
         fi
       done
 
-      # Commit if any files changed
-      git diff --quiet || {
-        git config user.name "Suture Bot"
-        git config user.email "suture-bot@example.com"
-        git commit -am "Auto-merge structured files via Suture"
-        git push origin HEAD:$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME
-      }
+      echo ""
+      echo "## Suture Semantic Merge Check"
+      echo ""
+      echo "$TABLE_ROWS"
+      echo ""
+      echo "**Summary:** ${PASS} mergeable / ${LINE_ONLY} line-only / ${FAIL} conflicts / ${SKIP} skipped"
+
+      if [ "$FAIL" -gt 0 ]; then
+        echo "WARNING: $FAIL file(s) have semantic merge conflicts"
+      fi
+
+      echo "Semantic merge check complete."
   allow_failure: false
+
+# ---------------------------------------------------------------------------
+# Remote mode: call a Suture Hub merge API
+# (Uncomment and configure SUTURE_API_URL above)
+# ---------------------------------------------------------------------------
+# suture:remote-merge:
+#   stage: merge-check
+#   image: alpine:3.19
+#   rules:
+#     - if: $CI_MERGE_REQUEST_IID
+#   before_script:
+#     - apk add --no-cache git jq curl
+#   script:
+#     - |
+#       BASE_SHA=$(git merge-base origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME HEAD)
+#       FILES="package.json tsconfig.json"
+#
+#       for FILE in $FILES; do
+#         if [ -f "$FILE" ]; then
+#           BASE_CONTENT=$(git show "$BASE_SHA:$FILE" 2>/dev/null || echo "")
+#           HEAD_CONTENT=$(cat "$FILE")
+#           MR_CONTENT=$(git show "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME:$FILE" 2>/dev/null || echo "")
+#
+#           RESULT=$(curl -sf -X POST "$SUTURE_API_URL/merge" \
+#             -H "Content-Type: application/json" \
+#             -d "{
+#               \"driver\": \"${FILE##*.}\",
+#               \"base\": $(echo "$BASE_CONTENT" | jq -Rs .),
+#               \"ours\": $(echo "$HEAD_CONTENT" | jq -Rs .),
+#               \"theirs\": $(echo "$MR_CONTENT" | jq -Rs .)
+#             }") || continue
+#
+#           HAS_CONFLICTS=$(echo "$RESULT" | jq -r '.conflicts // false')
+#           if [ "$HAS_CONFLICTS" = "true" ]; then
+#             echo "WARNING: Merge conflicts in $FILE"
+#           else
+#             MERGED=$(echo "$RESULT" | jq -r '.result // empty')
+#             if [ -n "$MERGED" ]; then
+#               echo "$MERGED" > "$FILE"
+#               echo "Merged $FILE"
+#             fi
+#           fi
+#         fi
+#       done
+#
+#       git diff --quiet || {
+#         git config user.name "Suture Bot"
+#         git config user.email "suture-bot@example.com"
+#         git commit -am "Auto-merge structured files via Suture"
+#         git push origin HEAD:$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME
+#       }
+#   allow_failure: false

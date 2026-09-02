@@ -18,6 +18,7 @@ use std::sync::Arc;
 use crate::Config;
 use crate::auth::Claims;
 use crate::db::PlatformDb;
+use crate::quota::QuotaEnforcer;
 use crate::rate_limit::RateLimiter;
 use suture_wasm_plugin::PluginManager;
 
@@ -26,6 +27,7 @@ pub struct AppState {
     pub db: Arc<PlatformDb>,
     pub config: Arc<Config>,
     pub rate_limiter: Arc<RateLimiter>,
+    pub quota_enforcer: Arc<QuotaEnforcer>,
     pub plugins: Arc<std::sync::Mutex<PluginManager>>,
     pub start_time: std::time::Instant,
 }
@@ -71,6 +73,7 @@ pub async fn start(config: Config) -> anyhow::Result<()> {
         db: Arc::new(db),
         config: Arc::new(config),
         rate_limiter: Arc::new(RateLimiter::new()),
+        quota_enforcer: Arc::new(QuotaEnforcer::new()),
         plugins,
         start_time: std::time::Instant::now(),
     };
@@ -116,6 +119,10 @@ pub async fn start(config: Config) -> anyhow::Result<()> {
             put(crate::orgs::update_member_role_handler),
         )
         .route(
+            "/api/orgs/{org_id}/usage",
+            get(crate::billing::org_usage_handler),
+        )
+        .route(
             "/api/invitations",
             get(crate::orgs::list_invitations_handler),
         )
@@ -144,6 +151,14 @@ pub async fn start(config: Config) -> anyhow::Result<()> {
         .layer(middleware::from_fn_with_state(
             state.clone(),
             crate::middleware::require_auth,
+        ))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            crate::quota::quota_middleware,
+        ))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            crate::quota::record_usage_middleware,
         ))
         .layer(middleware::from_fn_with_state(
             state.clone(),

@@ -41,8 +41,13 @@ suture-s3 = { path = "../suture-s3", version = "5.0.0", optional = true }
 async-trait = { version = "0.1", optional = true }
 toml = "0.8"
 uuid = { version = "1", features = ["v4"] }
-tower-http = { version = "0.6", features = ["request-id"] }
+tower-http = { version = "0.6", features = ["request-id", "trace"] }
 chrono = "0.4"
+tracing-opentelemetry = { version = "0.28", optional = true }
+opentelemetry = { version = "0.27", features = ["trace"], optional = true }
+opentelemetry-otlp = { version = "0.27", features = ["grpc-tonic"], optional = true }
+opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"], optional = true }
+opentelemetry-semantic-conventions = { version = "0.27", optional = true }
 
 [dev-dependencies]
 blake3 = "1"
@@ -63,3 +68,4 @@ tonic-build = "0.13"
 default = []
 raft-cluster = ["dep:suture-raft"]
 s3-backend = ["dep:suture-s3", "dep:async-trait"]
+otel = ["dep:tracing-opentelemetry", "dep:opentelemetry", "dep:opentelemetry-otlp", "dep:opentelemetry_sdk", "dep:opentelemetry-semantic-conventions"]

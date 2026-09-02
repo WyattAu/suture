@@ -113,6 +113,17 @@ impl PlatformDb {
 
             CREATE INDEX IF NOT EXISTS idx_org_invitations_email ON org_invitations(email);
             CREATE INDEX IF NOT EXISTS idx_org_invitations_org ON org_invitations(org_id);
+
+            CREATE TABLE IF NOT EXISTS org_usage (
+                org_id TEXT NOT NULL REFERENCES orgs(org_id) ON DELETE CASCADE,
+                month TEXT NOT NULL,
+                merges_used INTEGER NOT NULL DEFAULT 0,
+                storage_bytes INTEGER NOT NULL DEFAULT 0,
+                api_calls INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (org_id, month)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_org_usage_month ON org_usage(month);
             "
         )?;
 

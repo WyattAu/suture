@@ -90,6 +90,11 @@ a:hover{color:#a78bfa}
   .doc h1{font-size:1.5rem}
   .doc h2{font-size:1.2rem}
 }
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+a:focus-visible,.nav-item:focus-visible,.menu-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+@media(prefers-reduced-motion:reduce){
+  *{animation:none!important;transition-duration:0.01ms!important}
+}
 </style>
 </head>
 <body>
@@ -110,7 +115,7 @@ a:hover{color:#a78bfa}
 
 <div class="layout">
   <aside class="sidebar" id="sidebar">
-    <a href="index.html" class="sidebar-home">&larr; Back to Home</a>
+    <a href="${link_prefix}index.html" class="sidebar-home">&larr; Back to Home</a>
 <div class="nav-group">
 <div class="nav-group-title">Getting Started</div>
 <a href="getting_started.html" class="nav-item">Getting Started with Suture</a>
@@ -118,7 +123,6 @@ a:hover{color:#a78bfa}
 </div>
 <div class="nav-group">
 <div class="nav-group-title">Core Concepts</div>
-<a href="semantic-merge.html" class="nav-item">---</a>
 <a href="comparing-with-git.html" class="nav-item">Suture vs. Git: When to Use What</a>
 <a href="comparison.html" class="nav-item">Suture vs Other Version Control Systems</a>
 <a href="semantic-merge.html" class="nav-item">Semantic Merge</a>
@@ -149,7 +153,7 @@ a:hover{color:#a78bfa}
 </div>
 <div class="nav-group">
 <div class="nav-group-title">Onboarding</div>
-<a href="onboarding-guide.html" class="nav-item">Suture Onboarding Guide</a>
+<a href=".././deployment/onboarding-guide.html" class="nav-item">Suture Onboarding Guide</a>
 <a href="onboarding-defence.html" class="nav-item">Suture VCS — Defence Contractor Onboarding Guide</a>
 <a href="onboarding-film.html" class="nav-item">Suture VCS — Onboarding Guide for Film & TV Post-Production</a>
 <a href="onboarding-youtube.html" class="nav-item">Suture VCS — Onboarding Guide for YouTube Channel Managers & PE Firms</a>
@@ -161,6 +165,21 @@ a:hover{color:#a78bfa}
 <a href="wasm-feasibility.html" class="nav-item">WASM Feasibility Report: Suture Semantic Merge Engine</a>
 </div>
 <div class="nav-group">
+<div class="nav-group-title">Blog</div>
+<a href=".././blog/hn-launch-post.html" class="nav-item">Show HN: Suture – Semantic merge for 18 file formats (JSON, YAML, XML, CSV, Word, Excel, PDF...)</a>
+<a href=".././blog/hn-show-launch.html" class="nav-item active">Show HN: Suture – Semantic merge for JSON, YAML, TOML, XML, CSV (18 formats)</a>
+<a href=".././blog/launch-v5.1.0.html" class="nav-item">Suture 5.1.0: Semantic Merge for Every Format</a>
+<a href=".././blog/reddit-launch.html" class="nav-item">Suture 5.1.0 – Semantic merge for 18 file formats, git merge driver, TUI, LSP, WASM plugins, Raft consensus, SaaS platform</a>
+<a href=".././blog/reddit-launch-post.html" class="nav-item">Title: r/programming: I built a semantic merge engine that understands file structure — works with JSON, YAML, XML, Word, Excel, and 13 more formats</a>
+<a href=".././blog/semantic-merge-explained.html" class="nav-item">Semantic Merge Explained: How Structure-Aware Merging Actually Works</a>
+<a href=".././blog/semantic-merge-for-17-file-formats.html" class="nav-item">Semantic Merge for 17 File Formats</a>
+<a href=".././blog/semantic-merge-for-binary-documents.html" class="nav-item">I Built a Semantic Merge Engine in Rust That Understands Word, Excel, and PowerPoint Files</a>
+<a href=".././blog/semantic-merge.html" class="nav-item">Semantic Merge: How Suture Makes Structured File Merges Painless</a>
+<a href=".././blog/stop-having-merge-conflicts-in-json.html" class="nav-item">Stop Having Merge Conflicts in package.json</a>
+<a href=".././blog/twitter-launch.html" class="nav-item">Suture 5.1.0 is live — semantic merge for every format.</a>
+<a href=".././blog/why-git-merge-fails-on-json.html" class="nav-item">Why Git Merge Fails on JSON (And How to Never See a Config Conflict Again)</a>
+</div>
+<div class="nav-group">
 <div class="nav-group-title">Development</div>
 <a href="performance.html" class="nav-item">Suture Performance Baseline</a>
 <a href="shipping-checklist.html" class="nav-item">Suture v2.9.0 Shipping Checklist</a>
@@ -168,34 +187,23 @@ a:hover{color:#a78bfa}
 <div class="nav-group">
 <div class="nav-group-title">Other</div>
 <a href="api-reference.html" class="nav-item">Suture Platform API Reference</a>
-<a href="architecture.html" class="nav-item">Suture Architecture v5.3.1</a>
-<a href="hn-launch-post.html" class="nav-item">Show HN: Suture – Semantic merge for 18 file formats (JSON, YAML, XML, CSV, Word, Excel, PDF...)</a>
-<a href="hn-show-launch.html" class="nav-item active">Show HN: Suture – Semantic merge for JSON, YAML, TOML, XML, CSV (18 formats)</a>
-<a href="launch-v5.1.0.html" class="nav-item">Suture 5.1.0: Semantic Merge for Every Format</a>
-<a href="reddit-launch.html" class="nav-item">Suture 5.1.0 – Semantic merge for 18 file formats, git merge driver, TUI, LSP, WASM plugins, Raft consensus, SaaS platform</a>
-<a href="reddit-launch-post.html" class="nav-item">Title: r/programming: I built a semantic merge engine that understands file structure — works with JSON, YAML, XML, Word, Excel, and 13 more formats</a>
-<a href="semantic-merge-explained.html" class="nav-item">Semantic Merge Explained: How Structure-Aware Merging Actually Works</a>
-<a href="semantic-merge-for-17-file-formats.html" class="nav-item">Semantic Merge for 17 File Formats</a>
-<a href="semantic-merge-for-binary-documents.html" class="nav-item">---</a>
-<a href="stop-having-merge-conflicts-in-json.html" class="nav-item">Stop Having Merge Conflicts in package.json</a>
-<a href="twitter-launch.html" class="nav-item">Suture 5.1.0 is live — semantic merge for every format.</a>
-<a href="why-git-merge-fails-on-json.html" class="nav-item">Why Git Merge Fails on JSON (And How to Never See a Config Conflict Again)</a>
+<a href="architecture.html" class="nav-item">Suture Architecture v5.3.1 (Post-Audit)</a>
 <a href="ci-integration.html" class="nav-item">CI Integration Guide</a>
 <a href="demo.html" class="nav-item">Suture Demo: Semantic Merge in 60 Seconds</a>
-<a href="deployment.html" class="nav-item">Deployment Guide</a>
-<a href="github-action-marketplace.html" class="nav-item">GitHub Action Marketplace Submission</a>
-<a href="stripe-setup.html" class="nav-item">Stripe Setup Guide</a>
-<a href="vscode-marketplace.html" class="nav-item">VS Code Marketplace Submission</a>
+<a href=".././deployment/deployment.html" class="nav-item">Deployment Guide</a>
+<a href=".././deployment/github-action-marketplace.html" class="nav-item">GitHub Action Marketplace Submission</a>
+<a href=".././deployment/stripe-setup.html" class="nav-item">Stripe Setup Guide</a>
+<a href=".././deployment/vscode-marketplace.html" class="nav-item">VS Code Marketplace Submission</a>
 <a href="deploy-runbook.html" class="nav-item">Suture 5.4.0 Deployment Runbook</a>
 <a href="gitlab-ci-integration.html" class="nav-item">GitLab CI Integration</a>
 <a href="git-merge-driver.html" class="nav-item">Git Merge Driver — Comprehensive Guide</a>
 <a href="merge-driver-quickstart.html" class="nav-item">5-Minute Git Merge Driver Quickstart</a>
 <a href="PRODUCTION_ROADMAP.html" class="nav-item">Suture Production Roadmap</a>
-<a href="enterprise-features.html" class="nav-item">Enterprise Features Roadmap</a>
-<a href="multi-region-raft.html" class="nav-item">Multi-Region Raft Clusters</a>
-<a href="partner-integrations.html" class="nav-item">Partner Integration Roadmap</a>
-<a href="plugin-sdk.html" class="nav-item">Suture Plugin SDK</a>
-<a href="audit-report.html" class="nav-item">Security Audit Report</a>
+<a href=".././roadmap/enterprise-features.html" class="nav-item">Enterprise Features Roadmap</a>
+<a href=".././roadmap/multi-region-raft.html" class="nav-item">Multi-Region Raft Clusters</a>
+<a href=".././roadmap/partner-integrations.html" class="nav-item">Partner Integration Roadmap</a>
+<a href=".././roadmap/plugin-sdk.html" class="nav-item">Suture Plugin SDK</a>
+<a href=".././security/audit-report.html" class="nav-item">Security Audit Report</a>
 <a href="self-hosting.html" class="nav-item">Self-Hosting Suture Hub</a>
 <a href="stripe-onboarding.html" class="nav-item">Stripe Onboarding Guide</a>
 <a href="user-guide.html" class="nav-item">Suture User Guide</a>

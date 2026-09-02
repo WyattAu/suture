@@ -5,13 +5,11 @@
 // Suture Commercial License (for enterprise features).
 // See LICENSE-AGPL and LICENSE-COMMERCIAL in the repo root.
 
+use crate::db::PlatformDb;
 use chrono::Utc;
 use salting::{hash_password as salting_hash, verify_password as salting_verify};
 use serde::{Deserialize, Serialize};
 use tokenkit::service::{JwtAlgorithm, JwtConfig, JwtService};
-use zeroize::Zeroizing;
-
-use crate::db::PlatformDb;
 
 const SESSION_DURATION_HOURS: i64 = 24 * 7;
 
@@ -89,7 +87,7 @@ pub fn create_jwt(
     };
     let config = JwtConfig {
         algorithm: JwtAlgorithm::HS256,
-        secret: Zeroizing::new(secret.to_owned()),
+        secret: secret.to_owned(),
         ..Default::default()
     };
     let service = JwtService::new(config);
@@ -101,7 +99,7 @@ pub fn create_jwt(
 pub fn verify_jwt(token: &str, secret: &str) -> anyhow::Result<Claims> {
     let config = JwtConfig {
         algorithm: JwtAlgorithm::HS256,
-        secret: Zeroizing::new(secret.to_owned()),
+        secret: secret.to_owned(),
         ..Default::default()
     };
     let service = JwtService::new(config);
