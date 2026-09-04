@@ -747,6 +747,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "cas-kit"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "848c7cc0ceb087308eabf12a84feea0d95bf816d29d46a893bd842b97263962c"
+dependencies = [
+ "blake3",
+ "tempfile",
+ "thiserror 2.0.18",
+ "zstd",
+]
+
+[[package]]
 name = "cast"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6017,7 +6029,7 @@ checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 
 [[package]]
 name = "salting"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "argon2",
  "rand 0.8.6",
@@ -6801,6 +6813,7 @@ name = "suture-core"
 version = "5.1.0"
 dependencies = [
  "blake3",
+ "cas-kit",
  "chrono",
  "dirs",
  "ed25519-dalek",
@@ -6815,7 +6828,6 @@ dependencies = [
  "thiserror 2.0.18",
  "toml 0.8.2",
  "tracing",
- "zstd",
 ]
 
 [[package]]
@@ -8038,7 +8050,7 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokenkit"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "jsonwebtoken",
