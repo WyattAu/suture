@@ -19,8 +19,8 @@ categories = ["development-tools"]
 keywords = ["vcs", "version-control", "patch", "semantic-merge", "dvcs"]
 
 [workspace.dependencies]
-salting = { path = "../salting" }
-tokenkit = { path = "../tokenkit" }
+salting = { version = "1" }
+tokenkit = { version = "0.1" }
 
 [profile.release]
 lto = true
