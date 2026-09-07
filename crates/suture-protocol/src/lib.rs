@@ -6,7 +6,6 @@
 //! All types are serializable via `serde` for JSON transport.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const PROTOCOL_VERSION_V2: u32 = 2;
@@ -341,380 +340,32 @@ pub enum LfsAction {
     Error,
 }
 
-const BLOCK_SIZE: usize = 4096;
-const RABIN_BASE: u64 = 257;
-const MERSENNE61: u64 = (1u64 << 61) - 1;
-
-#[inline]
-fn mersenne_reduce(x: u128) -> u64 {
-    let mut r = (x & MERSENNE61 as u128) + (x >> 61);
-    if r >= MERSENNE61 as u128 {
-        r -= MERSENNE61 as u128;
-    }
-    r as u64
-}
-
-#[inline]
-fn mod_sub(a: u64, b: u64) -> u64 {
-    mersenne_reduce(a as u128 + MERSENNE61 as u128 - b as u128)
-}
-
-fn mod_pow(mut base: u64, mut exp: usize) -> u64 {
-    let mut result: u64 = 1;
-    while exp > 0 {
-        if exp & 1 == 1 {
-            result = mersenne_reduce(result as u128 * base as u128);
-        }
-        base = mersenne_reduce(base as u128 * base as u128);
-        exp >>= 1;
-    }
-    result
-}
-
-fn rabin_hash(data: &[u8]) -> u64 {
-    let mut h: u64 = 0;
-    for &b in data {
-        h = mersenne_reduce(h as u128 * RABIN_BASE as u128 + b as u128);
-    }
-    h
-}
-
-fn rabin_roll(h: u64, old_byte: u8, new_byte: u8, base_power: u64) -> u64 {
-    let old_contrib = mersenne_reduce(old_byte as u128 * base_power as u128);
-    let h2 = mod_sub(h, old_contrib);
-    mersenne_reduce(h2 as u128 * RABIN_BASE as u128 + new_byte as u128)
-}
-
-fn strong_hash(data: &[u8]) -> u64 {
-    let mut h: u64 = 0xcbf29ce484222325;
-    for &b in data {
-        h ^= b as u64;
-        h = h.wrapping_mul(0x100000001b3);
-    }
-    h ^= h >> 33;
-    h = h.wrapping_mul(0xff51afd7ed558ccd);
-    h ^= h >> 33;
-    h = h.wrapping_mul(0xc4ceb9fe1a85ec53);
-    h ^= h >> 33;
-    h
-}
-
-const BINARY_CHECK_WINDOW: usize = 8192;
-
-fn is_likely_binary(data: &[u8]) -> bool {
-    let window = std::cmp::min(data.len(), BINARY_CHECK_WINDOW);
-    data[..window].contains(&0u8)
-}
-
-fn compute_binary_delta(base: &[u8], target: &[u8]) -> Option<Vec<u8>> {
-    let base_hash = blake3::hash(base);
-    let target_hash = blake3::hash(target);
-
-    let min_len = base.len().min(target.len());
-    let mut xor_data = Vec::with_capacity(target.len());
-    for i in 0..min_len {
-        xor_data.push(base[i] ^ target[i]);
-    }
-    if target.len() > base.len() {
-        xor_data.extend_from_slice(&target[base.len()..]);
-    }
-
-    let compressed = zstd::encode_all(xor_data.as_slice(), 3).ok()?;
-
-    if compressed.len() >= target.len() {
-        return None;
-    }
-
-    let mut delta = Vec::with_capacity(1 + 8 + 16 + 16 + compressed.len());
-    delta.push(0x03);
-    delta.extend_from_slice(&(target.len() as u64).to_le_bytes());
-    delta.extend_from_slice(&base_hash.as_bytes()[..16]);
-    delta.extend_from_slice(&target_hash.as_bytes()[..16]);
-    delta.extend_from_slice(&compressed);
-
-    Some(delta)
-}
-
-enum DeltaInstr {
-    Copy { base_offset: u64, length: u32 },
-    Insert { data: Vec<u8> },
-}
-
-fn compute_rolling_delta(base: &[u8], target: &[u8]) -> Option<Vec<u8>> {
-    if base.len() < BLOCK_SIZE || target.len() < BLOCK_SIZE {
-        return None;
-    }
-
-    let num_blocks = base.len() / BLOCK_SIZE;
-    if num_blocks == 0 {
-        return None;
-    }
-
-    let mut hash_table: HashMap<u64, Vec<(usize, u64)>> = HashMap::new();
-    for i in 0..num_blocks {
-        let block = &base[i * BLOCK_SIZE..(i + 1) * BLOCK_SIZE];
-        let rh = rabin_hash(block);
-        let sh = strong_hash(block);
-        hash_table.entry(rh).or_default().push((i, sh));
-    }
-
-    let base_power = mod_pow(RABIN_BASE, BLOCK_SIZE - 1);
-    let mut instructions: Vec<DeltaInstr> = Vec::new();
-    let mut pending_insert_start: usize = 0;
-    let mut pos: usize = 0;
-    let mut prev_rabin: Option<u64> = None;
-
-    while pos + BLOCK_SIZE <= target.len() {
-        let rh = match prev_rabin {
-            Some(pr) if pos > 0 => rabin_roll(
-                pr,
-                target[pos - 1],
-                target[pos + BLOCK_SIZE - 1],
-                base_power,
-            ),
-            _ => rabin_hash(&target[pos..pos + BLOCK_SIZE]),
-        };
-        prev_rabin = Some(rh);
-
-        let mut matched = false;
-        if let Some(candidates) = hash_table.get(&rh) {
-            let sh = strong_hash(&target[pos..pos + BLOCK_SIZE]);
-            for &(block_idx, ref_sh) in candidates {
-                if sh == ref_sh {
-                    let base_offset = block_idx * BLOCK_SIZE;
-                    let mut match_len = BLOCK_SIZE;
-
-                    while pos + match_len < target.len()
-                        && base_offset + match_len < base.len()
-                        && target[pos + match_len] == base[base_offset + match_len]
-                    {
-                        match_len += 1;
-                    }
-
-                    match_len = match_len.min(u32::MAX as usize);
-
-                    if pending_insert_start < pos {
-                        instructions.push(DeltaInstr::Insert {
-                            data: target[pending_insert_start..pos].to_vec(),
-                        });
-                    }
-
-                    instructions.push(DeltaInstr::Copy {
-                        base_offset: base_offset as u64,
-                        length: match_len as u32,
-                    });
-
-                    pos += match_len;
-                    pending_insert_start = pos;
-                    prev_rabin = None;
-                    matched = true;
-                    break;
-                }
-            }
-        }
-
-        if !matched {
-            pos += 1;
-        }
-    }
-
-    if pending_insert_start < target.len() {
-        instructions.push(DeltaInstr::Insert {
-            data: target[pending_insert_start..].to_vec(),
-        });
-    }
-
-    let mut delta = Vec::new();
-    delta.push(0x02);
-    delta.extend_from_slice(&(target.len() as u64).to_le_bytes());
-    delta.extend_from_slice(&(instructions.len() as u32).to_le_bytes());
-
-    for instr in &instructions {
-        match instr {
-            DeltaInstr::Copy {
-                base_offset,
-                length,
-            } => {
-                delta.push(0x01);
-                delta.extend_from_slice(&base_offset.to_le_bytes());
-                delta.extend_from_slice(&length.to_le_bytes());
-            }
-            DeltaInstr::Insert { data } => {
-                delta.push(0x02);
-                delta.extend_from_slice(&(data.len() as u32).to_le_bytes());
-                delta.extend_from_slice(data);
-            }
-        }
-    }
-
-    if delta.len() < target.len() {
-        Some(delta)
-    } else {
-        None
-    }
-}
-
+/// Compute a delta transforming `base` into `target`.
+///
+/// Returns `(base_copy, delta)`; the first element is a copy of `base`.
+/// Delegates to `delta-kit` — wire format unchanged (opcodes `0x00`
+/// full, `0x01` prefix/suffix, `0x02` rolling-hash instruction stream,
+/// `0x03` binary XOR+Zstd).
 #[must_use]
 pub fn compute_delta(base: &[u8], target: &[u8]) -> (Vec<u8>, Vec<u8>) {
-    if (is_likely_binary(base) || is_likely_binary(target))
-        && let Some(delta) = compute_binary_delta(base, target)
-    {
-        return (base.to_vec(), delta);
-    }
-
-    if base.len() >= BLOCK_SIZE && target.len() >= BLOCK_SIZE {
-        if let Some(delta) = compute_rolling_delta(base, target) {
-            return (base.to_vec(), delta);
-        }
-        let mut full = vec![0x00];
-        full.extend_from_slice(target);
-        return (base.to_vec(), full);
-    }
-
-    let prefix_len = base
-        .iter()
-        .zip(target.iter())
-        .take_while(|(a, b)| a == b)
-        .count();
-
-    let max_suffix_base = base.len().saturating_sub(prefix_len);
-    let max_suffix_target = target.len().saturating_sub(prefix_len);
-    let suffix_len = base[prefix_len..]
-        .iter()
-        .rev()
-        .zip(target[prefix_len..].iter().rev())
-        .take_while(|(a, b)| a == b)
-        .count()
-        .min(max_suffix_base)
-        .min(max_suffix_target);
-
-    let changed_start = prefix_len;
-    let changed_end_target = target.len().saturating_sub(suffix_len);
-    let changed = &target[changed_start..changed_end_target];
-
-    if changed.len() < target.len() {
-        let mut delta = Vec::new();
-        delta.push(0x01);
-        delta.extend_from_slice(&(prefix_len as u64).to_le_bytes());
-        delta.extend_from_slice(&(suffix_len as u64).to_le_bytes());
-        delta.extend_from_slice(&(target.len() as u64).to_le_bytes());
-        delta.extend_from_slice(changed);
-        (base.to_vec(), delta)
-    } else {
-        let mut full = vec![0x00];
-        full.extend_from_slice(target);
-        (base.to_vec(), full)
-    }
+    delta_kit::compute_delta(base, target)
 }
 
+/// Apply `delta` to `base`, reconstructing the target.
+///
+/// Infallible with the historical silent-repair semantics (delegates to
+/// `delta_kit::apply_delta_lenient`): unknown opcodes, truncated
+/// headers, and failed zstd frames pass the delta through unchanged;
+/// out-of-range records are skipped; `0x03` checksum mismatches yield
+/// an empty vector.
 #[must_use]
 pub fn apply_delta(base: &[u8], delta: &[u8]) -> Vec<u8> {
-    if delta.is_empty() {
-        return Vec::new();
-    }
-    match delta[0] {
-        0x00 => delta[1..].to_vec(),
-        0x01 => {
-            if delta.len() < 25 {
-                return delta.to_vec();
-            }
-            let prefix_len = u64::from_le_bytes(delta[1..9].try_into().unwrap_or([0; 8])) as usize;
-            let suffix_len = u64::from_le_bytes(delta[9..17].try_into().unwrap_or([0; 8])) as usize;
-            let total_len = u64::from_le_bytes(delta[17..25].try_into().unwrap_or([0; 8])) as usize;
-            let changed = &delta[25..];
+    delta_kit::apply_delta_lenient(base, delta)
+}
 
-            let mut result = Vec::with_capacity(total_len);
-            result.extend_from_slice(&base[..prefix_len.min(base.len())]);
-            result.extend_from_slice(changed);
-            result.extend_from_slice(&base[base.len().saturating_sub(suffix_len)..]);
-            result
-        }
-        0x02 => {
-            if delta.len() < 13 {
-                return delta.to_vec();
-            }
-            let target_len = u64::from_le_bytes(delta[1..9].try_into().unwrap_or([0; 8])) as usize;
-            let num_instr = u32::from_le_bytes(delta[9..13].try_into().unwrap_or([0; 4])) as usize;
-            let mut result = Vec::with_capacity(target_len);
-            let mut offset = 13;
-
-            for _ in 0..num_instr {
-                if offset >= delta.len() {
-                    break;
-                }
-                match delta[offset] {
-                    0x01 => {
-                        if offset + 13 > delta.len() {
-                            break;
-                        }
-                        let base_offset = u64::from_le_bytes(
-                            delta[offset + 1..offset + 9].try_into().unwrap_or([0; 8]),
-                        ) as usize;
-                        let length = u32::from_le_bytes(
-                            delta[offset + 9..offset + 13].try_into().unwrap_or([0; 4]),
-                        ) as usize;
-                        let end = base_offset.saturating_add(length);
-                        if end <= base.len() {
-                            result.extend_from_slice(&base[base_offset..end]);
-                        }
-                        offset += 13;
-                    }
-                    0x02 => {
-                        if offset + 5 > delta.len() {
-                            break;
-                        }
-                        let length = u32::from_le_bytes(
-                            delta[offset + 1..offset + 5].try_into().unwrap_or([0; 4]),
-                        ) as usize;
-                        let data_end = offset + 5 + length;
-                        if data_end <= delta.len() {
-                            result.extend_from_slice(&delta[offset + 5..data_end]);
-                        }
-                        offset = data_end;
-                    }
-                    _ => break,
-                }
-            }
-
-            result
-        }
-        0x03 => {
-            if delta.len() < 41 {
-                return delta.to_vec();
-            }
-            let target_len = u64::from_le_bytes(delta[1..9].try_into().unwrap_or([0; 8])) as usize;
-            let base_checksum = &delta[9..25];
-            let target_checksum = &delta[25..41];
-            let compressed = &delta[41..];
-
-            let base_hash = blake3::hash(base);
-            if base_hash.as_bytes()[..16] != *base_checksum {
-                return Vec::new();
-            }
-
-            let xor_data = match zstd::decode_all(compressed) {
-                Ok(data) => data,
-                Err(_) => return delta.to_vec(),
-            };
-
-            let mut result = Vec::with_capacity(target_len);
-            let min_len = base.len().min(xor_data.len());
-            for i in 0..min_len {
-                result.push(base[i] ^ xor_data[i]);
-            }
-            if xor_data.len() > base.len() {
-                result.extend_from_slice(&xor_data[base.len()..]);
-            }
-
-            let result_hash = blake3::hash(&result);
-            if result_hash.as_bytes()[..16] != *target_checksum {
-                return Vec::new();
-            }
-
-            result
-        }
-        _ => delta.to_vec(),
-    }
+#[cfg(test)]
+fn compute_binary_delta(base: &[u8], target: &[u8]) -> Option<Vec<u8>> {
+    delta_kit::compute_binary_delta(base, target)
 }
 
 #[cfg(test)]
@@ -1655,5 +1306,58 @@ mod tests {
             delta_result[0], 0x00,
             "should fall back to full when binary delta not beneficial"
         );
+    }
+
+    /// Wire-compat regression: the golden `0x01` byte fixture below was
+    /// produced by the pre-extraction inline algorithm and cross-checked
+    /// against `delta-kit`'s tests/wire_format.rs golden during adoption.
+    /// Both directions must keep applying cleanly.
+    #[test]
+    fn golden_delta_wire_compat_cross_kit() {
+        let base = b"Hello, World!";
+        let target = b"Hello, Rust!";
+
+        // Golden bytes emitted by the OLD inline algorithm:
+        // prefix "Hello, " (7) + suffix "!" (1), target_len 12, "Rust".
+        let mut expected = Vec::new();
+        expected.push(0x01u8);
+        expected.extend_from_slice(&7u64.to_le_bytes());
+        expected.extend_from_slice(&1u64.to_le_bytes());
+        expected.extend_from_slice(&12u64.to_le_bytes());
+        expected.extend_from_slice(b"Rust");
+
+        let (base_copy, delta) = compute_delta(base, target);
+        assert_eq!(base_copy, base.to_vec());
+        assert_eq!(
+            delta, expected,
+            "compute_delta must keep emitting legacy wire bytes"
+        );
+
+        // Old-algorithm bytes apply via delta-kit's strict decoder...
+        assert_eq!(
+            delta_kit::apply_delta(base, &delta).expect("golden delta must apply"),
+            target.to_vec()
+        );
+        // ...and delta-kit-produced bytes apply via the legacy path.
+        let (_c, kit_delta) = delta_kit::compute_delta(base, target);
+        assert_eq!(kit_delta, expected);
+        assert_eq!(apply_delta(base, &kit_delta), target.to_vec());
+
+        // Binary path (0x03): header layout + cross-kit application both ways.
+        let bin_base = vec![0u8; 8192];
+        let mut bin_target = bin_base.clone();
+        bin_target[100] = 0xAB;
+        let (_, bin_delta) = compute_delta(&bin_base, &bin_target);
+        assert_eq!(bin_delta[0], 0x03);
+        assert_eq!(
+            &bin_delta[1..9],
+            &(bin_target.len() as u64).to_le_bytes(),
+            "0x03 header must keep the u64 LE target length at [1..9)"
+        );
+        assert_eq!(
+            delta_kit::apply_delta(&bin_base, &bin_delta).expect("binary golden must apply"),
+            bin_target
+        );
+        assert_eq!(apply_delta(&bin_base, &bin_delta), bin_target);
     }
 }

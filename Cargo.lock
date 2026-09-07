@@ -1596,6 +1596,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac6b926516df9c60bfa16e107b21086399f8285a44ca9711344b9e553c5146e2"
 
 [[package]]
+name = "delta-kit"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bcc187a022c540d0996ce799f0670250fd81ae9bb093e9d664de8d071f981cbf"
+dependencies = [
+ "blake3",
+ "hashbrown 0.17.0",
+ "thiserror 2.0.18",
+ "zstd",
+]
+
+[[package]]
 name = "deltae"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7288,7 +7300,7 @@ dependencies = [
 name = "suture-protocol"
 version = "5.1.0"
 dependencies = [
- "blake3",
+ "delta-kit",
  "serde",
  "serde_json",
  "suture-common",
