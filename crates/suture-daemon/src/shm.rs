@@ -1,8 +1,8 @@
-use std::fs::{File, OpenOptions};
+use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
-use memmap2::MmapMut;
+use shm_rings::status::PodStatus;
 
 pub const SHM_MAGIC: u64 = 0x5755544D;
 pub const SHM_VERSION: u32 = 1;
@@ -90,6 +90,27 @@ impl ShmStatus {
 unsafe impl Send for ShmStatus {}
 unsafe impl Sync for ShmStatus {}
 
+/// Layout/identity contract for `shm_rings::status`: magic at offset 0,
+/// version at offset 8 (the convention `ShmStatus` already follows), with
+/// the suture-specific constants carried here rather than in the shared
+/// crate.
+impl PodStatus for ShmStatus {
+    const MAGIC: u64 = SHM_MAGIC;
+    const VERSION: u32 = SHM_VERSION;
+
+    fn magic(&self) -> u64 {
+        self.magic
+    }
+
+    fn version(&self) -> u32 {
+        self.version
+    }
+
+    fn set_magic(&mut self) {
+        self.magic = SHM_MAGIC;
+    }
+}
+
 pub fn shm_path_for_pid(pid: u32) -> PathBuf {
     std::env::temp_dir().join(format!("suture-shm-{pid}"))
 }
@@ -102,95 +123,20 @@ pub fn create_shm_segment(
     pid: u32,
 ) -> Result<PathBuf, anyhow::Error> {
     let path = shm_path_for_pid(pid);
-
-    let mut file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(&path)?;
-
-    file.set_len(SHM_SIZE as u64)?;
-    file.write_all(&[0u8; SHM_SIZE])?;
-    file.flush()?;
-
-    // SAFETY: The file was just created with set_len(SHM_SIZE) and fully
-    // written with zeroes, so it is a valid backing for a mutable mapping.
-    let mut mmap = unsafe { MmapMut::map_mut(&file)? };
-    let status = ShmStatus::new(repo_count, total_patches, total_blobs, head_branch, pid);
-    // SAFETY: `status` is a valid ShmStatus value on the stack. We reinterpret
-    // it as a byte slice of exactly size_of::<ShmStatus>() bytes, which is
-    // guaranteed by the static assert on line 29 to equal SHM_SIZE (176). The
-    // pointer is derived from a live reference so it is properly aligned and
-    // valid for the given length.
-    let bytes = unsafe {
-        std::slice::from_raw_parts(
-            std::ptr::from_ref::<ShmStatus>(&status) as *const u8,
-            std::mem::size_of::<ShmStatus>(),
-        )
-    };
-    mmap[..bytes.len()].copy_from_slice(bytes);
-    mmap.flush()?;
-
+    shm_rings::status::create(&path, &ShmStatus::new(repo_count, total_patches, total_blobs, head_branch, pid))?;
     Ok(path)
 }
 
 pub fn read_shm_status(path: &Path) -> Result<ShmStatus, anyhow::Error> {
-    let file = File::open(path)?;
-    // SAFETY: The file was created by create_shm_segment with a known size
-    // (SHM_SIZE). mmap2::Mmap::map requires only that the file is open for
-    // reading, which it is. The length check below guards against truncation.
-    let mmap = unsafe { memmap2::Mmap::map(&file)? };
-
-    if mmap.len() < std::mem::size_of::<ShmStatus>() {
-        anyhow::bail!(
-            "SHM file too small: {} bytes, expected at least {}",
-            mmap.len(),
-            std::mem::size_of::<ShmStatus>()
-        );
-    }
-    // SAFETY: We just verified mmap.len() >= size_of::<ShmStatus>(), so the read
-    // is within the mapped region's bounds.
-    let status: ShmStatus = unsafe { std::ptr::read(mmap.as_ptr() as *const ShmStatus) };
-
-    if status.magic != SHM_MAGIC {
-        anyhow::bail!(
-            "invalid SHM magic: expected {SHM_MAGIC:#x}, got {:#x}",
-            status.magic
-        );
-    }
-
-    Ok(status)
+    Ok(shm_rings::status::read(path)?)
 }
 
 pub fn update_shm_status(path: &Path, status: &ShmStatus) -> Result<(), anyhow::Error> {
-    let file = OpenOptions::new().read(true).write(true).open(path)?;
-    // SAFETY: The file was created by create_shm_segment with a known size
-    // (SHM_SIZE) and is opened with read+write permissions, making it a
-    // valid backing for a mutable mapping.
-    let mut mmap = unsafe { MmapMut::map_mut(&file)? };
-
-    // SAFETY: `status` is a valid reference to a ShmStatus with the same
-    // layout as the mapped region. The byte slice length exactly equals
-    // size_of::<ShmStatus>(), and the pointer is derived from a live
-    // reference so it is properly aligned and valid for the given length.
-    let bytes = unsafe {
-        std::slice::from_raw_parts(
-            std::ptr::from_ref::<ShmStatus>(status) as *const u8,
-            std::mem::size_of::<ShmStatus>(),
-        )
-    };
-    mmap[..bytes.len()].copy_from_slice(bytes);
-    mmap.flush()?;
-
-    Ok(())
+    Ok(shm_rings::status::update(path, status)?)
 }
 
 pub fn cleanup_shm(path: &Path) -> Result<(), anyhow::Error> {
-    if path.exists() {
-        std::fs::remove_file(path)?;
-    }
-    Ok(())
+    Ok(shm_rings::status::cleanup(path)?)
 }
 
 pub fn write_pid_file(pid: u32) -> Result<(), anyhow::Error> {
@@ -229,6 +175,9 @@ pub fn remove_pid_file() -> Result<(), anyhow::Error> {
 mod tests {
     use super::*;
     use std::sync::Mutex;
+
+    use memmap2::MmapMut;
+    use std::fs::OpenOptions;
 
     // Serialize SHM tests since they all share the same file path
     static TEST_LOCK: Mutex<()> = Mutex::new(());
