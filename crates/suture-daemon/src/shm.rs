@@ -123,7 +123,10 @@ pub fn create_shm_segment(
     pid: u32,
 ) -> Result<PathBuf, anyhow::Error> {
     let path = shm_path_for_pid(pid);
-    shm_rings::status::create(&path, &ShmStatus::new(repo_count, total_patches, total_blobs, head_branch, pid))?;
+    shm_rings::status::create(
+        &path,
+        &ShmStatus::new(repo_count, total_patches, total_blobs, head_branch, pid),
+    )?;
     Ok(path)
 }
 
