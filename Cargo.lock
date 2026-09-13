@@ -748,11 +748,12 @@ dependencies = [
 
 [[package]]
 name = "cas-kit"
-version = "0.1.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "848c7cc0ceb087308eabf12a84feea0d95bf816d29d46a893bd842b97263962c"
+checksum = "27854f776b6d7aed89b4b62c342a760d56149bdf6c2b8ade87e2d53aa4e4e45b"
 dependencies = [
  "blake3",
+ "clap",
  "tempfile",
  "thiserror 2.0.18",
  "zstd",

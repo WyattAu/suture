@@ -13,7 +13,7 @@ categories.workspace = true
 
 [dependencies]
 suture-common = { path = "../suture-common", version = "5.0.0" }
-cas-kit = "0.1"
+cas-kit = "0.2"
 blake3 = "1.8"
 chrono = { version = "0.4", features = ["serde"] }
 rusqlite = { version = "0.39", features = ["bundled"] }
