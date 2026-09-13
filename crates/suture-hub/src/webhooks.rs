@@ -116,8 +116,10 @@ impl WebhookManager {
 
     /// Sign a payload with HMAC-SHA256.
     ///
-    /// The signature is prefixed with `sha256=` for compatibility with
-    /// GitHub's webhook signature format.
+    /// Returns the bare hex digest; the delivery paths prefix it as
+    /// `sha256=` (GitHub's webhook signature wire format) when setting the
+    /// `X-Suture-Signature` header, which is the form `verify_signature`
+    /// accepts.
     pub fn sign_payload(&self, payload: &str, secret: &str) -> Option<String> {
         use hmac::{Hmac, Mac};
         use sha2::Sha256;
@@ -137,28 +139,20 @@ impl WebhookManager {
 
     /// Verify a webhook signature.
     ///
-    /// Used by consumers to validate incoming webhook payloads.
+    /// Used by consumers to validate incoming webhook payloads. Comparison
+    /// is constant-time (delegated to `webhookkit`'s `subtle`-backed
+    /// verifier) to prevent timing attacks.
     pub fn verify_signature(payload: &str, secret: &str, signature: &str) -> bool {
-        let expected_sig = match signature.strip_prefix("sha256=") {
-            Some(sig) => sig,
-            None => return false,
+        let Some(expected_sig) = signature.strip_prefix("sha256=") else {
+            return false;
         };
 
-        let manager = Self::new();
-        match manager.sign_payload(payload, secret) {
-            Some(computed) => {
-                // Constant-time comparison to prevent timing attacks.
-                if computed.len() != expected_sig.len() {
-                    return false;
-                }
-                computed
-                    .as_bytes()
-                    .iter()
-                    .zip(expected_sig.as_bytes().iter())
-                    .all(|(a, b)| a == b)
-            }
-            None => false,
-        }
+        webhookkit::verify_hmac_sha256(
+            payload.as_bytes(),
+            secret.as_bytes(),
+            expected_sig.as_bytes(),
+        )
+        .is_ok()
     }
 
     /// Trigger webhooks for an event.

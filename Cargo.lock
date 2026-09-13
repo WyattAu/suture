@@ -7180,6 +7180,7 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid",
+ "webhookkit",
  "zstd",
 ]
 
@@ -9379,6 +9380,20 @@ dependencies = [
  "phf_codegen 0.13.1",
  "string_cache",
  "string_cache_codegen",
+]
+
+[[package]]
+name = "webhookkit"
+version = "1.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c01cd27112fe8e6ba5742167582615a670abfd7fca14cafb8d46ae6ff0499d16"
+dependencies = [
+ "hex",
+ "hmac",
+ "serde_json",
+ "sha2",
+ "subtle",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
