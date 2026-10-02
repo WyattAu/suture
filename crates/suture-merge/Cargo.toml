@@ -48,3 +48,6 @@ all = ["json", "yaml", "toml", "csv", "xml", "markdown", "svg", "html", "ical", 
 
 [dev-dependencies]
 zip = { version = "2.2", default-features = false }
+
+[package.metadata.layers]
+tier = "L1"

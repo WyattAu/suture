@@ -22,3 +22,6 @@ rusqlite = { version = "0.39", features = ["bundled"], optional = true }
 
 [features]
 persist = ["dep:rusqlite"]
+
+[package.metadata.layers]
+tier = "L1"

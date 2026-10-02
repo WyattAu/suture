@@ -16,3 +16,6 @@ toml = "0.8"
 
 [dev-dependencies]
 proptest = "1.6"
+
+[package.metadata.layers]
+tier = "L1"

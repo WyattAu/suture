@@ -70,3 +70,6 @@ default = []
 raft-cluster = ["dep:suture-raft"]
 s3-backend = ["dep:suture-s3", "dep:async-trait"]
 otel = ["dep:tracing-opentelemetry", "dep:opentelemetry", "dep:opentelemetry-otlp", "dep:opentelemetry_sdk", "dep:opentelemetry-semantic-conventions"]
+
+[package.metadata.layers]
+tier = "L3"

@@ -19,3 +19,6 @@ zstd = "0.13"
 
 [dev-dependencies]
 serde_json = "1"
+
+[package.metadata.layers]
+tier = "L1"

@@ -33,3 +33,6 @@ humantime = "2"
 
 [dev-dependencies]
 suture-hub = { path = "../suture-hub", version = "5.0.0" }
+
+[package.metadata.layers]
+tier = "L3"

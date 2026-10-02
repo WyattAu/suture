@@ -26,3 +26,6 @@ suture-driver-pptx = { path = "../suture-driver-pptx", version = "5.0.0" }
 ratatui = "0.30"
 crossterm = "0.29"
 unicode-width = "0.2"
+
+[package.metadata.layers]
+tier = "L3"

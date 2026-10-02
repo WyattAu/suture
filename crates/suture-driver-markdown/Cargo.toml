@@ -15,3 +15,6 @@ suture-driver = { path = "../suture-driver", version = "5.0.0" }
 
 [dev-dependencies]
 proptest = "1.6"
+
+[package.metadata.layers]
+tier = "L1"

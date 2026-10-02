@@ -22,3 +22,6 @@ wasmtime = { version = "44", optional = true }
 [features]
 default = []
 wasm-plugins = ["dep:wasmtime"]
+
+[package.metadata.layers]
+tier = "L1"

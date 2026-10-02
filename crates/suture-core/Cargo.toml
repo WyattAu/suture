@@ -33,3 +33,6 @@ proptest = "1.6"
 
 [features]
 default = []
+
+[package.metadata.layers]
+tier = "L1"

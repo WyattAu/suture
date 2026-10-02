@@ -16,3 +16,6 @@ lopdf = "0.40"
 
 [dev-dependencies]
 proptest = "1.6"
+
+[package.metadata.layers]
+tier = "L1"
