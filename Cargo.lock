@@ -7252,7 +7252,7 @@ dependencies = [
 
 [[package]]
 name = "suture-platform"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "axum 0.8.9",

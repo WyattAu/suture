@@ -1,8 +1,8 @@
 [package]
 name = "suture-platform"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
-description = "Hosted Suture platform — semantic merge as a service"
+description = "Core logic of suture"
 license = "AGPL-3.0-or-later"
 repository = "https://github.com/WyattAu/suture"
 
