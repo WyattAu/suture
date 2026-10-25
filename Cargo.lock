@@ -6936,7 +6936,7 @@ dependencies = [
 
 [[package]]
 name = "suture-driver-example"
-version = "5.1.0"
+version = "5.1.1"
 dependencies = [
  "proptest",
  "serde",
