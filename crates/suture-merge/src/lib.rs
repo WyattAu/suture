@@ -102,16 +102,6 @@ pub fn merge_pptx(base: &str, ours: &str, theirs: &str) -> Result<MergeResult, M
     perform_merge(&suture_driver_pptx::PptxDriver, base, ours, theirs)
 }
 
-#[cfg(feature = "properties")]
-pub fn merge_properties(base: &str, ours: &str, theirs: &str) -> Result<MergeResult, MergeError> {
-    perform_merge(
-        &suture_driver_properties::PropertiesDriver,
-        base,
-        ours,
-        theirs,
-    )
-}
-
 pub fn merge_auto(
     base: &str,
     ours: &str,

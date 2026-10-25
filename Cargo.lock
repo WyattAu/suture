@@ -6901,7 +6901,7 @@ dependencies = [
 
 [[package]]
 name = "suture-driver"
-version = "5.1.0"
+version = "5.1.1"
 dependencies = [
  "indexmap 2.14.0",
  "serde",
@@ -7203,7 +7203,7 @@ dependencies = [
 
 [[package]]
 name = "suture-merge"
-version = "5.1.0"
+version = "5.1.2"
 dependencies = [
  "suture-driver",
  "suture-driver-csv",
@@ -7214,7 +7214,6 @@ dependencies = [
  "suture-driver-json",
  "suture-driver-markdown",
  "suture-driver-pptx",
- "suture-driver-properties",
  "suture-driver-svg",
  "suture-driver-toml",
  "suture-driver-xlsx",
