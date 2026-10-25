@@ -1,11 +1,11 @@
 [package]
 name = "suture-merge"
-version = "5.1.2"
+version = "5.1.3"
 rust-version = "1.94"
 edition = "2024"
 license.workspace = true
 repository.workspace = true
-description = "Patch-based semantic merge for structured files: JSON, YAML, TOML, CSV, XML, Markdown, SVG, HTML, iCal, feeds, DOCX, XLSX and PPTX drivers"
+description = "Core logic of suture"
 homepage.workspace = true
 keywords = ["merge", "semantic-merge", "json", "yaml", "docx"]
 readme = "README.md"
