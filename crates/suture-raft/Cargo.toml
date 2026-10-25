@@ -1,10 +1,10 @@
 [package]
 name = "suture-raft"
-version = "5.1.0"
+version = "5.1.1"
 edition = "2024"
 license.workspace = true
 repository.workspace = true
-description = "Raft consensus protocol implementation for Suture cluster coordination"
+description = "Core logic of suture"
 homepage.workspace = true
 keywords.workspace = true
 readme.workspace = true
